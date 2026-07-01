@@ -88,12 +88,30 @@ No network access to F1 data? Start the backend in demo mode and everything stil
 cd backend && PITWALL_IQ_MOCK_MODE=true uvicorn app.main:app --port 8000
 ```
 
-The Explorer loads the bundled, clearly-labelled **2026 Austrian GP** demo race — a
-realistic simulated race with a full strategy story (LEC's costly 3-stop, a VSC cheap-stop
-window, VER's winning 2-stop). Flip **Demo** off in the UI to attempt real data.
+The Explorer loads a bundled, clearly-labelled **example** race — a realistic simulated
+session with a full strategy story (LEC's costly 3-stop, a VSC cheap-stop window, VER's
+winning 2-stop). This is an explicit backend/dev switch — there is no Demo toggle in the
+UI; to use real data, run the backend normally (`uvicorn app.main:app --port 8000`).
 
 > **Scope:** Pitwall IQ is a **website** (Next.js frontend + FastAPI backend). There is
 > no desktop or mobile app in the current scope.
+
+---
+
+## Pages & modes
+
+| Page | Purpose — the question it answers |
+|---|---|
+| **Race Explorer** | *"What happened in this session, and why?"* — deep analysis of one selected session: Race Story, Charts, Strategy, Pace, Compare, Ask. |
+| **Historical** | *"What happened across seasons, circuits and championships?"* — an archive browser: official results, qualifying, standings and past winners, 1950–present. |
+
+The Explorer is a current-session **analysis workspace**; Historical is an **archive**,
+not a second race picker.
+
+**Simple / Advanced** (global toggle, top-right, remembered across visits) changes *every*
+tab: Simple is visual and plain-English (story cards, pace bars, verdict-first compare, no
+dense tables or diagnostics); Advanced adds full tables, clean-air pace, undercut/pit-loss
+math, confidence, assumptions, source reports and diagnostics.
 
 ---
 

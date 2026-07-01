@@ -289,6 +289,57 @@ def _h_what_happened(q, ctx, ents):
                            "Compare with a rival", "Explain simply"])
 
 
+def _h_could_do_better(q, ctx, ents):
+    """'what could X have done better to win?' / 'why didn't X win?' — tactical."""
+    if ctx.is_practice:
+        return None
+    if not re.search(r"(what|how)\s+(could|should|might|would)\s+.*(better|won|win|different)|"
+                     r"why\s+(didn'?t|couldn'?t|did\s?n'?t)\s+.*\bwin|done differently|"
+                     r"deserved to win", q, re.I):
+        return None
+    winner = ctx.strategy.winner
+    drivers = ents["drivers"]
+    code = drivers[0] if drivers else None
+    if not code:  # "who deserved to win" style → hidden-pace / runner-up
+        code = ctx.strategy.hidden_pace_driver or next(
+            (c.driver for c in ctx.session.classification if c.position == 2), None)
+    if not code:
+        return None
+    c, p = ctx.class_by_driver.get(code), ctx.pace_by_driver.get(code)
+    wc, wp = ctx.class_by_driver.get(winner), ctx.pace_by_driver.get(winner)
+    if not c:
+        return _missing(q, [f"race data for {code}"], ctx)
+    if code == winner:
+        return _qa(q, f"{code} did win — P{c.grid or '?'} to P1. They controlled track position and "
+                   f"nailed the stops.", "could_better", "high", ctx, [code],
+                   follow_ups=["What was the turning point?", "Explain simply"])
+
+    where, options = [], []
+    if c.position and wc and wc.position:
+        where.append(f"finished P{c.position}, {max(0, c.position - wc.position)} place(s) behind {winner}")
+    if p and wp and p.pace_rank and wp.pace_rank:
+        if p.pace_rank <= wp.pace_rank:
+            where.append(f"actually had comparable pace (P{p.pace_rank} clean-air vs {winner} P{wp.pace_rank})")
+            options.append("track position — not speed — cost them, so a pit sequence that kept them ahead was the main lever")
+        else:
+            where.append(f"was ~{p.pace_rank - wp.pace_rank} pace positions off {winner}")
+            options.append("raw pace was the ceiling; strategy alone likely wouldn't have won it")
+    ref = _reference_stops(ctx.session, code)
+    if c.pit_stops > ref:
+        options.append(f"matching the {ref}-stop cars instead of {c.pit_stops} would have saved ~{20.5 * (c.pit_stops - ref):.0f}s of pit loss")
+    victims = [u for u in ctx.strategy.undercuts if u.victim == code]
+    if victims:
+        options.append(f"covering {victims[0].attacker}'s lap-{victims[0].pit_lap} stop would have avoided the undercut")
+    if p and p.traffic_laps >= 8:
+        options.append(f"clearer air — they spent {p.traffic_laps} laps in traffic")
+
+    ans = (f"To beat {winner}, {code} " + ("; ".join(where) if where else "needed more") + ". "
+           + ("Their best options: " + "; ".join(options[:2]) + "."
+              if options else f"There was no obvious path — {winner} had it covered on pace and strategy."))
+    return _qa(q, ans, "could_better", "medium" if options else "low", ctx, [code, winner],
+               follow_ups=["Compare their tyres", "Show the position chart", "Explain simply"])
+
+
 def _h_explain_race(q, ctx, ents):
     """Whole-session summary: 'explain the race', 'what happened', 'summarise'."""
     if ents["drivers"] or ents["teams"]:
@@ -607,7 +658,7 @@ def _h_gainer_loser(q, ctx, ents):
 
 
 HANDLERS = [
-    _h_overtake, _h_what_happened, _h_explain_race,
+    _h_could_do_better, _h_overtake, _h_what_happened, _h_explain_race,
     _h_practice_longrun, _h_practice_laps, _h_practice_fastest,
     _h_why_lost, _h_undercut, _h_vsc, _h_pit_loss, _h_compare, _h_alt_strategy, _h_worst_team,
     _h_best_pace, _h_winner, _h_tyre, _h_weather, _h_gainer_loser,
@@ -693,7 +744,8 @@ _TITLES = {
     "tyre_strategy": "Tyre strategy", "weather": "Conditions", "explain": "Race summary",
     "practice_fastest": "Fastest in the session", "practice_longrun": "Best long-run pace",
     "practice_laps": "Most laps", "practice_team": "Team pace in practice",
-    "gainer": "Biggest mover", "loser": "Biggest loss", "alt_strategy": "Was there a better call?",
+    "could_better": "What could have gone better", "gainer": "Biggest mover",
+    "loser": "Biggest loss", "alt_strategy": "Was there a better call?",
     "worst_team": "Who lost most vs pace", "overview": "Session overview",
 }
 

@@ -52,24 +52,57 @@ def _chain(year: int):
 # --------------------------------------------------------------------------- #
 # session load
 # --------------------------------------------------------------------------- #
+def _reason_code(year: int, attempts: list[dict]) -> str:
+    """A single machine-readable reason the UI maps to helpful guidance."""
+    from datetime import date
+    if year > date.today().year:
+        return "future_session"
+    cats = {a.get("category") for a in attempts}
+    if not attempts:
+        return "not_found"
+    if cats == {"disabled"}:
+        return "live_disabled"
+    if cats <= {"not_available"}:
+        return "no_source_coverage"
+    if "timeout" in cats:
+        return "timeout"
+    if cats & {"unreachable"}:
+        return "source_error"
+    return "source_error"
+
+
+_REASON_MESSAGE = {
+    "future_session": "This session may not have happened yet, so no source has data for it.",
+    "no_source_coverage": "None of our sources (OpenF1, FastF1, Jolpica) cover this session — "
+                          "it may be too old for detailed timing, or the name didn't match.",
+    "source_error": "The data sources were unreachable. This is usually a temporary network issue.",
+    "timeout": "The data sources took too long to respond. Please try again.",
+    "not_found": "We couldn't find this session. Check the season, Grand Prix and session.",
+    "live_disabled": "Live data fetching is turned off on this server.",
+    "partial_data": "Only part of this session's data was available.",
+}
+
+
 class DataUnavailableError(RuntimeError):
-    """No real data could be loaded. Carries structured, user-safe attempt info.
+    """No real data could be loaded. Carries a structured, user-safe reason.
 
     The website NEVER silently substitutes demo data for a failed real fetch —
     this is raised instead, and the API turns it into an honest error the UI can
-    show with a retry + a link to the Data Sources diagnostics.
+    show with reason-specific guidance, retry, and quick alternatives.
     """
     def __init__(self, year: int, gp: str, session_type: str, attempts: list[dict]):
         self.year, self.gp, self.session_type = year, gp, session_type
         self.attempts = attempts
-        self.retryable = any(a.get("retryable") for a in attempts) or not attempts
-        super().__init__(f"No real data for {gp} {year} {session_type}")
+        self.reason = _reason_code(year, attempts)
+        self.retryable = self.reason in ("source_error", "timeout") or any(a.get("retryable") for a in attempts)
+        super().__init__(f"No real data for {gp} {year} {session_type} ({self.reason})")
 
     def to_payload(self) -> dict:
         return {
             "error": "data_unavailable",
+            "reason": self.reason,
             "message": (f"We couldn't load real data for {self.gp} {self.year} "
-                        f"({self.session_type}) from any source."),
+                        f"({self.session_type}). {_REASON_MESSAGE.get(self.reason, '')}").strip(),
             "retryable": self.retryable,
             "attempts": self.attempts,
         }

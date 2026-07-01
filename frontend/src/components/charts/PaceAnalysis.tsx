@@ -6,11 +6,14 @@ import {
 import type { DriverPaceSummary, RaceSession } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { InfoTip } from "@/components/ui/InfoTip";
+import { Term } from "@/components/ui/Term";
+import { useIsSimple } from "@/lib/mode";
 import { cx, fmtLap } from "@/lib/format";
 
 export function PaceAnalysis({
   session, pace, selected,
 }: { session: RaceSession; pace: DriverPaceSummary[]; selected: string[] }) {
+  const simple = useIsSimple();
   const ranked = useMemo(
     () => [...pace].sort((a, b) => (a.pace_rank ?? 99) - (b.pace_rank ?? 99)),
     [pace],
@@ -46,6 +49,56 @@ export function PaceAnalysis({
       .map((t) => ({ ...t, avg: t.vals.reduce((a, b) => a + b, 0) / t.vals.length }))
       .sort((a, b) => a.avg - b.avg);
   }, [pace]);
+
+  // ---- SIMPLE: visual pace ranking + one plain-English takeaway ----
+  if (simple) {
+    const withPace = ranked.filter((p) => p.clean_air_pace != null);
+    const fastest = withPace[0];
+    const slowestShown = withPace.slice(0, 10)[withPace.slice(0, 10).length - 1];
+    const maxGap = Math.max(0.001, ...withPace.slice(0, 10).map(
+      (p) => (p.clean_air_pace ?? 0) - (fastest?.clean_air_pace ?? 0)));
+    const mismatch = fastest && fastest.finish && fastest.pace_rank && fastest.finish > fastest.pace_rank;
+    return (
+      <div className="space-y-4">
+        {fastest && (
+          <div className="rounded-xl border border-white/[0.06] bg-base-800/50 p-4">
+            <div className="label text-speed">Fastest car</div>
+            <div className="mt-0.5 text-2xl font-semibold text-speed">{fastest.driver}</div>
+            <p className="mt-1 text-sm text-ink-muted">
+              {fastest.name} had the quickest <Term>clean-air pace</Term> — the truest measure of speed
+              once fuel and tyres are evened out.
+              {mismatch ? ` Despite that they only finished P${fastest.finish}.`
+                : fastest.finish === 1 ? " And they converted it into the win." : ""}
+            </p>
+          </div>
+        )}
+        <div className="rounded-xl border border-white/[0.06] bg-base-800/50 p-4">
+          <div className="mb-3 flex items-center gap-1.5">
+            <span className="label">Pace ranking</span>
+            <InfoTip text="Each driver's true one-lap speed, fuel- and tyre-corrected. Bars show the gap to the fastest car." />
+          </div>
+          <div className="space-y-2">
+            {withPace.slice(0, 10).map((p) => {
+              const gap = (p.clean_air_pace ?? 0) - (fastest?.clean_air_pace ?? 0);
+              return (
+                <div key={p.driver} className="flex items-center gap-2">
+                  <span className="w-9 text-sm font-semibold">{p.driver}</span>
+                  <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
+                    <span className="block h-full rounded-full"
+                      style={{ width: `${100 - (gap / maxGap) * 75}%`, background: p.team_color }} />
+                  </span>
+                  <span className="w-24 text-right text-xs tabular-nums text-ink-muted">
+                    {gap === 0 ? "fastest" : `+${gap.toFixed(2)}s`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <ConstructorRank rows={constructorRank} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -119,27 +172,33 @@ export function PaceAnalysis({
         </table>
       </div>
 
-      {/* constructor pace ranking */}
-      <div>
-        <div className="label mb-2 flex items-center gap-1.5">
-          Constructor pace ranking
-          <InfoTip text="Teams ranked by the average clean-air pace of their drivers — who had the quickest car, regardless of where they finished." />
-        </div>
-        <div className="grid gap-1.5 sm:grid-cols-2">
-          {constructorRank.map((t, i) => {
-            const gap = t.avg - constructorRank[0].avg;
-            return (
-              <div key={t.team} className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-base-800/50 px-3 py-2">
-                <span className="w-4 tabular-nums text-ink-faint">{i + 1}</span>
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: t.color }} />
-                <span className="flex-1 text-sm">{t.team}</span>
-                <span className="tabular-nums text-xs text-ink-muted">
-                  {i === 0 ? "reference" : `+${gap.toFixed(2)}s`}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+      <ConstructorRank rows={constructorRank} />
+    </div>
+  );
+}
+
+function ConstructorRank({ rows }: { rows: { team: string; color: string; avg: number }[] }) {
+  if (!rows.length) return null;
+  return (
+    <div>
+      <div className="label mb-2 flex items-center gap-1.5">
+        Constructor pace ranking
+        <InfoTip text="Teams ranked by the average clean-air pace of their drivers — who had the quickest car, regardless of where they finished." />
+      </div>
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        {rows.map((t, i) => {
+          const gap = t.avg - rows[0].avg;
+          return (
+            <div key={t.team} className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-base-800/50 px-3 py-2">
+              <span className="w-4 tabular-nums text-ink-faint">{i + 1}</span>
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: t.color }} />
+              <span className="flex-1 text-sm">{t.team}</span>
+              <span className="tabular-nums text-xs text-ink-muted">
+                {i === 0 ? "reference" : `+${gap.toFixed(2)}s`}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

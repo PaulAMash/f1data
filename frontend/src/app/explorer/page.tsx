@@ -57,6 +57,14 @@ export default function ExplorerPage() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
+    // Honor a ?year&gp&session deep-link (from the home page examples); else meta default.
+    const q = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    const qYear = q?.get("year"); const qGp = q?.get("gp"); const qSession = q?.get("session");
+    if (qGp) {
+      setSel({ year: qYear ? Number(qYear) : 2025, gp: qGp, session: qSession || "Race" });
+      api.meta().then(setMeta).catch(() => setMeta(null));
+      return;
+    }
     api.meta().then((m) => { setMeta(m); setSel((s) => ({ ...s, year: m.default_year })); })
       .catch(() => setMeta(null));
   }, []);
@@ -136,7 +144,8 @@ export default function ExplorerPage() {
 
         {loading && <LoadingDashboard />}
         {error && !loading && (
-          <DataUnavailable error={error} onRetry={() => setRefreshKey((k) => k + 1)} />
+          <DataUnavailable error={error} onRetry={() => setRefreshKey((k) => k + 1)}
+            onPick={(s) => setSel(s)} onOpenData={() => setTab("data")} />
         )}
 
         {bundle && session && !loading && !error && (
@@ -217,8 +226,25 @@ export default function ExplorerPage() {
   );
 }
 
-/** Honest failure — no fake data. Shows the reason + retry + diagnostics link. */
-function DataUnavailable({ error, onRetry }: { error: ApiError; onRetry: () => void }) {
+/** Honest, reason-specific failure — no fake data. Offers quick alternatives. */
+const ALTERNATIVES: { label: string; sel: Selection }[] = [
+  { label: "2025 Australian GP · Race", sel: { year: 2025, gp: "Australian Grand Prix", session: "Race" } },
+  { label: "2024 Monaco GP · Race", sel: { year: 2024, gp: "Monaco Grand Prix", session: "Race" } },
+  { label: "2024 British GP · Race", sel: { year: 2024, gp: "British Grand Prix", session: "Race" } },
+];
+const REASON_HINT: Record<string, string> = {
+  future_session: "This session may not have happened yet — try a completed race.",
+  no_source_coverage: "This session isn't covered by our sources (it may be too old for detailed timing). Try the Historical archive for official results.",
+  source_error: "The data sources were unreachable — usually a temporary network issue. Retry in a moment.",
+  timeout: "The sources took too long to respond. Retry.",
+  not_found: "We couldn't find this session — check the season, Grand Prix and session.",
+  live_disabled: "Live data is turned off on this server.",
+};
+
+function DataUnavailable({ error, onRetry, onPick, onOpenData }: {
+  error: ApiError; onRetry: () => void; onPick: (s: Selection) => void; onOpenData: () => void;
+}) {
+  const hint = REASON_HINT[error.reason] ?? "";
   return (
     <Card>
       <CardBody className="flex flex-col items-center gap-3 py-10 text-center">
@@ -226,25 +252,39 @@ function DataUnavailable({ error, onRetry }: { error: ApiError; onRetry: () => v
           <AlertTriangle size={20} className="text-amber" />
         </span>
         <div>
-          <h3 className="text-base font-semibold">We couldn&apos;t load real data for this session</h3>
+          <h3 className="text-base font-semibold">We couldn&apos;t load this session</h3>
           <p className="mx-auto mt-1 max-w-md text-sm text-ink-muted">{error.message}</p>
+          {hint && <p className="mx-auto mt-1 max-w-md text-xs text-ink-faint">{hint}</p>}
         </div>
-        {error.attempts?.length > 0 && (
-          <ul className="mx-auto max-w-md space-y-0.5 text-left text-xs text-ink-faint">
-            {error.attempts.slice(0, 4).map((a: any, i: number) => (
-              <li key={i}>· {a.source}: {a.category}</li>
-            ))}
-          </ul>
-        )}
+
         <div className="mt-1 flex flex-wrap justify-center gap-2">
-          <button onClick={onRetry} className="pill-btn">
-            <RefreshCw size={14} /> Retry
-          </button>
+          {error.retryable && (
+            <button onClick={onRetry} className="pill-btn"><RefreshCw size={14} /> Retry</button>
+          )}
+          <a href="/history" className="pill-btn"><BookOpen size={14} /> Open Historical results</a>
+          <button onClick={onOpenData} className="pill-btn"><Database size={14} /> Check data sources</button>
         </div>
-        <p className="text-xs text-ink-faint">
-          Try another session, or check the backend and your network. Real data comes from OpenF1,
-          FastF1 and Jolpica.
-        </p>
+
+        <div className="mt-2 w-full max-w-md">
+          <div className="label mb-1.5">Try a known session</div>
+          <div className="flex flex-wrap justify-center gap-1.5">
+            {ALTERNATIVES.map((a) => (
+              <button key={a.label} onClick={() => onPick(a.sel)}
+                className="chip hover:border-white/20 hover:text-ink">{a.label}</button>
+            ))}
+          </div>
+        </div>
+
+        {error.attempts?.length > 0 && (
+          <details className="mt-1 text-xs text-ink-faint">
+            <summary className="cursor-pointer">What we tried</summary>
+            <ul className="mt-1 space-y-0.5 text-left">
+              {error.attempts.slice(0, 4).map((a: any, i: number) => (
+                <li key={i}>· {a.source}: {a.category}</li>
+              ))}
+            </ul>
+          </details>
+        )}
       </CardBody>
     </Card>
   );

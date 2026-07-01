@@ -45,8 +45,9 @@ def results(year: int, event: str, session: str) -> dict:
     if cat not in _JOLPICA_SESSIONS:
         return {"available": False, "year": year, "event": event, "session": session,
                 "source": "jolpica", "rows": [],
-                "note": f"{session} data isn't available from the historical source "
-                        f"(Jolpica/Ergast) for this event."}
+                "note": f"Practice data isn't available from Jolpica/Ergast for {year}. "
+                        f"Try Race or Qualifying here, or use Race Explorer for newer "
+                        f"detailed sessions."}
 
     rnd, meta = jol._resolve_round(year, event)  # noqa: SLF001
     if not rnd:

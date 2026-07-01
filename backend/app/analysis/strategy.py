@@ -127,10 +127,21 @@ def compute_strategy(session: RaceSession, pace: list[DriverPaceSummary]) -> Str
     gainers = [_mv(c, net(c)) for c in ranked_by_net if net(c) > 0][:4]
     losers = [_mv(c, net(c)) for c in sorted(classified, key=net) if net(c) < 0][:4]
 
-    # pit counts / avg pit loss
+    # pit counts / avg pit loss — prefer measured pit-lane time, then OpenF1 stop
+    # duration, then derived estimate; label which so the UI can be honest.
     pit_counts = {c.driver: c.pit_stops for c in session.classification}
-    lane_times = [ps.pit_lane_time for ps in session.pit_stops if ps.pit_lane_time]
-    avg_pit_loss = round(sum(lane_times) / len(lane_times), 2) if lane_times else None
+    lane_times = [ps.pit_lane_time or ps.stop_duration for ps in session.pit_stops
+                  if (ps.pit_lane_time or ps.stop_duration)]
+    est_times = [ps.estimated_stationary_time for ps in session.pit_stops
+                 if ps.estimated_stationary_time]
+    if lane_times:
+        avg_pit_loss = round(sum(lane_times) / len(lane_times), 2)
+        avg_pit_loss_kind = "measured"
+    elif est_times:
+        avg_pit_loss = round(sum(est_times) / len(est_times), 2)
+        avg_pit_loss_kind = "estimated"
+    else:
+        avg_pit_loss, avg_pit_loss_kind = None, None
 
     # tyre summary
     tyre_summary = []
@@ -200,6 +211,7 @@ def compute_strategy(session: RaceSession, pace: list[DriverPaceSummary]) -> Str
         biggest_gainers=gainers, biggest_losers=losers,
         best_strategy=best_strategy, worst_strategy=worst_strategy,
         best_pit_timing=best_pit_timing, avg_pit_loss=avg_pit_loss,
+        avg_pit_loss_kind=avg_pit_loss_kind,
         pit_counts=pit_counts, tyre_summary=tyre_summary,
         turning_points=turning_points, undercuts=undercuts,
         hidden_pace_driver=hidden_pace_driver, strategy_helped_driver=strategy_helped_driver,

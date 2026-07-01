@@ -103,6 +103,7 @@ export interface StrategySummary {
   turning_points: RaceInsight[]; undercuts: UndercutEvent[];
   hidden_pace_driver?: string | null; strategy_helped_driver?: string | null;
   weather_summary?: string | null; insights: RaceInsight[]; story: string[];
+  avg_pit_loss_kind?: string | null;
 }
 
 export interface PracticeDriverRow {

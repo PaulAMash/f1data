@@ -354,6 +354,7 @@ class StrategySummary(BaseModel):
     worst_strategy: Optional[dict] = None
     best_pit_timing: Optional[dict] = None
     avg_pit_loss: Optional[float] = None
+    avg_pit_loss_kind: Optional[str] = None   # measured | estimated | None
     pit_counts: dict = Field(default_factory=dict)
     tyre_summary: list[dict] = Field(default_factory=list)
     turning_points: list[RaceInsight] = Field(default_factory=list)

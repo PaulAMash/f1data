@@ -23,8 +23,15 @@ export function RaceOverview({ bundle }: { bundle: RaceBundle }) {
           value={dotd?.driver ?? strategy.driver_of_the_day ?? "—"}
           sub={strategy.dotd_reason ?? undefined}
           info="Analytical pick: gained positions, weighted by race pace and a win-from-behind bonus." />
-        <StatTile label="Avg pit loss" value={fmtSec(strategy.avg_pit_loss)}
-          sub="pit-lane time" info="Average total pit-lane time lost per stop across the field — the cost of a green-flag stop." />
+        {strategy.avg_pit_loss != null ? (
+          <StatTile label="Avg pit loss" value={fmtSec(strategy.avg_pit_loss)}
+            sub={strategy.avg_pit_loss_kind === "estimated" ? "estimated" : "pit-lane time"}
+            info="Average pit-lane time lost per stop across the field — the cost of a green-flag stop." />
+        ) : (
+          <StatTile label="Avg pit loss" value="Unavailable"
+            sub="not provided by source"
+            info="This session's source doesn't include pit-lane timing. OpenF1/Jolpica provide it where available." />
+        )}
         <StatTile label="Race" value={`${session.total_laps} laps`}
           sub={session.circuit?.name ?? session.grand_prix} />
       </div>

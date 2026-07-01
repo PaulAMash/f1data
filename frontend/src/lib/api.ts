@@ -19,10 +19,10 @@ function resolveApiBase(): string {
 export const API_BASE = resolveApiBase();
 
 export class ApiError extends Error {
-  // `retryable` and `attempts` come from the backend's structured error payloads
-  // (e.g. 503 data_unavailable) so the UI can show honest retry / diagnostics.
-  constructor(message: string, public status = 0,
-              public retryable = false, public attempts: any[] = []) {
+  // `reason`/`retryable`/`attempts` come from the backend's structured error
+  // payloads (e.g. 503 data_unavailable) so the UI can show reason-specific help.
+  constructor(message: string, public status = 0, public retryable = false,
+              public attempts: any[] = [], public reason: string = "") {
     super(message);
   }
 }
@@ -32,7 +32,7 @@ async function handle<T>(res: Response, path: string): Promise<T> {
   let body: any = null;
   try { body = await res.json(); } catch { /* non-JSON error */ }
   if (body && body.message) {
-    throw new ApiError(body.message, res.status, !!body.retryable, body.attempts ?? []);
+    throw new ApiError(body.message, res.status, !!body.retryable, body.attempts ?? [], body.reason ?? "");
   }
   throw new ApiError(`API error ${res.status} on ${path}`, res.status, res.status >= 500);
 }
