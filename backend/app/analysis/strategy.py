@@ -190,8 +190,12 @@ def compute_strategy(session: RaceSession, pace: list[DriverPaceSummary]) -> Str
     insights = _all_insights(session, pace_by_driver, undercuts, best_strategy,
                              worst_strategy, best_pit_timing, turning_points)
 
+    winner = classified[0].driver if classified else None
+    story = _story(session, classified, winner, gainers, losers, best_strategy,
+                   worst_strategy, hidden_pace_driver, best_pit_timing, weather_summary)
+
     return StrategySummary(
-        winner=(classified[0].driver if classified else None),
+        winner=winner,
         driver_of_the_day=dotd, dotd_reason=dotd_reason,
         biggest_gainers=gainers, biggest_losers=losers,
         best_strategy=best_strategy, worst_strategy=worst_strategy,
@@ -199,8 +203,33 @@ def compute_strategy(session: RaceSession, pace: list[DriverPaceSummary]) -> Str
         pit_counts=pit_counts, tyre_summary=tyre_summary,
         turning_points=turning_points, undercuts=undercuts,
         hidden_pace_driver=hidden_pace_driver, strategy_helped_driver=strategy_helped_driver,
-        weather_summary=weather_summary, insights=insights,
+        weather_summary=weather_summary, insights=insights, story=story,
     )
+
+
+def _story(session, classified, winner, gainers, losers, best_strategy, worst_strategy,
+           hidden_pace_driver, best_pit_timing, weather_summary) -> list[str]:
+    """3-5 plain-English sentences summarizing the race for the Race Story view."""
+    s: list[str] = []
+    win = next((c for c in classified if c.driver == winner), None)
+    if win:
+        from_grid = f" from P{win.grid}" if win.grid and win.grid > 1 else " from pole"
+        s.append(f"{win.name} won the {session.grand_prix}{from_grid}, running a "
+                 f"{win.pit_stops}-stop race.")
+    if best_strategy:
+        s.append(best_strategy["detail"])
+    if worst_strategy:
+        s.append(worst_strategy["detail"])
+    elif hidden_pace_driver:
+        s.append(f"{hidden_pace_driver} had strong underlying pace that their result didn't show.")
+    if gainers:
+        g = gainers[0]
+        s.append(f"{g['driver']} was the day's biggest mover, up {g['net']} places to P{g['finish']}.")
+    if best_pit_timing and "VSC" in best_pit_timing.get("kind", ""):
+        s.append(best_pit_timing["detail"])
+    if weather_summary:
+        s.append(f"Conditions: {weather_summary}.")
+    return s[:5]
 
 
 # --------------------------------------------------------------------------- #

@@ -43,6 +43,7 @@ from ..models import (
     TrackStatus,
     TrackStatusWindow,
     WeatherPoint,
+    session_category,
 )
 
 
@@ -248,7 +249,12 @@ def _fetch_via_fastf1(year: int, gp: str, session_type: str) -> RaceSession:
             lap_no = _int(lp.get("LapNumber"))
             if lap_no is None:
                 continue
-            pit_stops.append(PitStop(driver=code, lap=lap_no))
+            # FastF1 gives no stop duration; pit-lane time is enriched later
+            # (Jolpica) or estimated by PitStopDataService — no scary note needed.
+            pit_stops.append(PitStop(
+                driver=code, lap=lap_no, source="fastf1", confidence="low",
+                compound_before=_compound_before(stints, code, lap_no),
+                compound_after=_compound_after(stints, code, lap_no)))
 
     # --- race control + windows --- #
     race_control, windows = _race_control_from_fastf1(session)
@@ -265,19 +271,43 @@ def _fetch_via_fastf1(year: int, gp: str, session_type: str) -> RaceSession:
     )
 
     constructors = _constructors(team_colors)
-
-    if session_type.lower() == "race" and not any(p.stationary_time for p in pit_stops):
-        notes.append("Pit-stop stationary times aren't in FastF1; lane times only.")
+    cat = session_category(session_type)
+    report = _fastf1_report(laps, stints, pit_stops, weather, race_control)
 
     return RaceSession(
         year=year, grand_prix=str(ev.get("EventName") or gp),
         official_name=str(ev.get("OfficialEventName") or ""),
-        session_type=session_type, circuit=circuit, total_laps=total_laps,
-        data_source=DataSource.LIVE, fetched_at=_now(), notes=notes,
+        session_type=session_type, category=cat, circuit=circuit, total_laps=total_laps,
+        data_source=DataSource.LIVE, fetched_at=_now(), notes=notes, source_report=report,
         drivers=drivers, constructors=constructors, classification=_sort_classification(classification),
         laps=laps, stints=stints, pit_stops=pit_stops, race_control=race_control,
         weather=weather, positions=positions, track_status_windows=windows,
     )
+
+
+def _compound_before(stints, code, lap):
+    prev = [s for s in stints if s.driver == code and s.end_lap <= lap]
+    return max(prev, key=lambda s: s.end_lap).compound if prev else Compound.UNKNOWN
+
+
+def _compound_after(stints, code, lap):
+    nxt = [s for s in stints if s.driver == code and s.start_lap > lap]
+    return min(nxt, key=lambda s: s.start_lap).compound if nxt else Compound.UNKNOWN
+
+
+def _fastf1_report(laps, stints, pit_stops, weather, race_control):
+    from ..models import FacetSource, SourceReport
+    def f(name, present, conf="high", detail=None):
+        return FacetSource(facet=name, source="fastf1" if present else "none",
+                           confidence=conf if present else "low", detail=detail)
+    facets = [
+        f("laps", bool(laps)), f("tyres", bool(stints)),
+        f("pit_stops", bool(pit_stops), conf="low",
+          detail="FastF1 has no stop duration; enriched from Jolpica / estimated."),
+        f("weather", bool(weather)), f("race_control", bool(race_control)),
+    ]
+    missing = [x.facet for x in facets if x.source == "none"]
+    return SourceReport(data_source=DataSource.LIVE, fetched_at=_now(), facets=facets, missing=missing)
 
 
 def _race_control_from_fastf1(session) -> tuple[list[RaceControlEvent], list[TrackStatusWindow]]:
@@ -495,7 +525,9 @@ def _fetch_via_static(year: int, gp: str, session_type: str) -> RaceSession:
     total_laps = max((l.lap for l in laps), default=0)
     return RaceSession(
         year=year, grand_prix=race_name or gp, session_type=session_type,
+        category=session_category(session_type),
         total_laps=total_laps, data_source=DataSource.LIVE, fetched_at=_now(), notes=notes,
+        source_report=_fastf1_report(laps, stints, pit_stops, weather, race_control),
         drivers=drivers, constructors=_constructors(team_colors),
         classification=_sort_classification(classification), laps=laps, stints=stints,
         pit_stops=pit_stops, race_control=race_control, weather=weather,

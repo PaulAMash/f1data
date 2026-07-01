@@ -30,7 +30,21 @@ export interface Stint {
 }
 export interface PitStop {
   driver: string; lap: number; stationary_time?: number | null;
-  pit_lane_time?: number | null; under_vsc: boolean; under_safety_car: boolean;
+  pit_lane_time?: number | null; stop_duration?: number | null;
+  estimated_stationary_time?: number | null;
+  compound_before: Compound; compound_after: Compound;
+  under_vsc: boolean; under_safety_car: boolean;
+  source: string; confidence: string; explanation?: string | null;
+}
+export interface Overtake {
+  lap: number; overtaker: string; overtaken: string; position_after?: number | null;
+  kind: string; source: string; detail?: string | null;
+}
+export interface FacetSource { facet: string; source: string; confidence: string; detail?: string | null; }
+export interface SourceProbe { name: string; reachable?: boolean | null; detail?: string | null; }
+export interface SourceReport {
+  data_source: DataSource; fetched_at?: string | null; facets: FacetSource[];
+  probes: SourceProbe[]; missing: string[]; partial: boolean; cache_key?: string | null;
 }
 export interface RaceControlEvent {
   lap?: number | null; time?: string | null; category: string; flag?: string | null;
@@ -50,13 +64,15 @@ export interface ClassificationRow {
   grid?: number | null; laps_completed?: number | null; status: string; gap?: string | null;
   best_lap?: number | null; pit_stops: number; points?: number | null; retired: boolean;
 }
+export type SessionCategory = "race" | "qualifying" | "sprint" | "practice";
 export interface RaceSession {
   year: number; grand_prix: string; official_name?: string | null; session_type: string;
-  circuit?: Circuit | null; total_laps: number; data_source: DataSource;
-  fetched_at?: string | null; notes: string[];
+  category: SessionCategory; circuit?: Circuit | null; total_laps: number; data_source: DataSource;
+  fetched_at?: string | null; partial: boolean; notes: string[]; source_report?: SourceReport | null;
   drivers: Driver[]; constructors: Constructor[]; classification: ClassificationRow[];
-  laps: Lap[]; stints: Stint[]; pit_stops: PitStop[]; race_control: RaceControlEvent[];
-  weather: WeatherPoint[]; positions: PositionPoint[]; track_status_windows: TrackStatusWindow[];
+  laps: Lap[]; stints: Stint[]; pit_stops: PitStop[]; overtakes: Overtake[];
+  race_control: RaceControlEvent[]; weather: WeatherPoint[]; positions: PositionPoint[];
+  track_status_windows: TrackStatusWindow[];
 }
 
 export interface StintPace {
@@ -86,17 +102,34 @@ export interface StrategySummary {
   avg_pit_loss?: number | null; pit_counts: Record<string, number>; tyre_summary: any[];
   turning_points: RaceInsight[]; undercuts: UndercutEvent[];
   hidden_pace_driver?: string | null; strategy_helped_driver?: string | null;
-  weather_summary?: string | null; insights: RaceInsight[];
+  weather_summary?: string | null; insights: RaceInsight[]; story: string[];
+}
+
+export interface PracticeDriverRow {
+  driver: string; name: string; team: string; team_color: string;
+  best_lap?: number | null; best_lap_rank?: number | null; gap_to_fastest?: number | null;
+  laps_completed: number; long_run_pace?: number | null; long_run_laps: number;
+  consistency_score?: number | null; improvement?: number | null;
+  compounds: string[]; best_sectors: (number | null)[]; low_running: boolean;
+}
+export interface PracticeSummary {
+  session_type: string; fastest_driver?: string | null; fastest_lap?: number | null;
+  best_long_run_driver?: string | null; most_laps_driver?: string | null;
+  most_improved_driver?: string | null; most_consistent_driver?: string | null;
+  track_evolving: boolean; rows: PracticeDriverRow[]; team_ranking: any[];
+  story: string[]; notes: string[];
 }
 
 export interface RaceBundle {
-  source: DataSource; source_label: string;
+  source: DataSource; source_label: string; category: SessionCategory;
   session: RaceSession; strategy: StrategySummary; pace: DriverPaceSummary[];
+  practice?: PracticeSummary | null;
 }
 
 export interface QuestionAnswer {
-  source?: DataSource; question: string; answer: string; kind: string;
+  source?: DataSource; category?: SessionCategory; question: string; answer: string; kind: string;
   used_llm: boolean; confidence: string; supporting: Record<string, any>; missing_data: string[];
+  entities: Record<string, any>; follow_ups: string[]; simple: boolean;
 }
 export interface SimulationResult {
   source?: DataSource; driver: string; summary: string;

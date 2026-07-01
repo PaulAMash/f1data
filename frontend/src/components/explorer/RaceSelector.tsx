@@ -16,16 +16,13 @@ export function RaceSelector({
 }) {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [races, setRaces] = useState<GrandPrix[]>([]);
-  const [calSource, setCalSource] = useState<string>("");
 
   useEffect(() => {
     api.seasons().then((r) => setSeasons(r.seasons)).catch(() => setSeasons([]));
   }, []);
 
   useEffect(() => {
-    api.races(value.year)
-      .then((r) => { setRaces(r.races); setCalSource(r.source); })
-      .catch(() => setRaces([]));
+    api.races(value.year).then((r) => setRaces(r.races)).catch(() => setRaces([]));
   }, [value.year, value.mock]);
 
   const currentRace = races.find((r) => r.name === value.gp);
@@ -59,12 +56,6 @@ export function RaceSelector({
       <button onClick={onRefresh} disabled={loading} className="pill-btn h-[38px]" title="Refetch (bypass cache)">
         <RefreshCw size={14} className={cx(loading && "animate-spin")} /> Refresh
       </button>
-
-      {calSource && (
-        <span className="ml-auto self-center text-[11px] text-ink-faint">
-          calendar: {calSource === "live" ? "live F1" : "demo"}
-        </span>
-      )}
     </div>
   );
 }

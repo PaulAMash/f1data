@@ -291,10 +291,14 @@ def simulate() -> RaceSession:
                 continue
             under_vsc = VSC_START <= pl <= VSC_END
             stationary = round(rng.uniform(2.2, 3.1), 2)
+            comp_before = _stint_at(p, pl)[1]
+            comp_after = _stint_at(p, pl + 1)[1]
             pit_stops.append(PitStop(
                 driver=p.code, lap=pl, stationary_time=stationary,
                 pit_lane_time=round(PIT_LOSS_VSC if under_vsc else PIT_LOSS_GREEN, 1),
-                under_vsc=under_vsc,
+                compound_before=comp_before, compound_after=comp_after,
+                under_vsc=under_vsc, source="mock", confidence="high",
+                explanation="Simulated stationary time.",
             ))
 
     # --- 6. race control ---------------------------------------------------- #
@@ -381,10 +385,121 @@ def simulate() -> RaceSession:
     return RaceSession(
         year=2026, grand_prix="Austrian Grand Prix",
         official_name="FORMULA 1 AUSTRIAN GRAND PRIX 2026",
-        session_type="Race", circuit=circuit, total_laps=TOTAL_LAPS,
+        session_type="Race", category="race", circuit=circuit, total_laps=TOTAL_LAPS,
         data_source=DataSource.MOCK,
         notes=["Simulated demo race — realistic model, not an official result."],
         drivers=drivers, constructors=constructors, classification=classification,
         laps=laps, stints=stints, pit_stops=pit_stops, race_control=rc,
         weather=weather, positions=positions, track_status_windows=windows,
+    )
+
+
+# =========================================================================== #
+# Practice session simulator
+# =========================================================================== #
+def simulate_practice(session_name: str = "Practice 2") -> RaceSession:
+    """A realistic FP session: short push runs + long runs, track evolution.
+
+    No finishing positions/DNFs — it produces a *session classification* by best
+    lap, plus stints (runs) the analysis turns into long-run pace, tyre usage etc.
+    """
+    rng = random.Random(2026_06_27)
+    circuit = Circuit(id="red_bull_ring", name="Red Bull Ring", locality="Spielberg",
+                      country="Austria", length_km=4.318, laps=TOTAL_LAPS)
+    drivers: list[Driver] = [Driver(number=p.number, code=p.code, name=p.name, team=p.team,
+                                    team_color=TEAM_COLORS.get(p.team, "#888888"), country=p.country)
+                             for p in PLANS]
+
+    laps: list[Lap] = []
+    stints: list[Stint] = []
+    # session-wide track evolution: laps get ~1.2s faster from start to end
+    EVO = 1.2
+    # run plans per driver: list of (compound, n_laps). Some do a long run; a few low-running.
+    def run_plan(i: int):
+        if i % 7 == 5:           # low-running / reliability day
+            return [("HARD", rng.randint(3, 5))]
+        return [("HARD", rng.randint(6, 9)),        # installation / long-ish
+                ("MEDIUM", rng.randint(10, 16)),    # long run (race sim)
+                ("SOFT", rng.randint(2, 3))]        # quali sim push run
+
+    global_lap = 0
+    total_time = 60.0  # minutes of session
+    for i, p in enumerate(PLANS):
+        plan = run_plan(i)
+        lap_counter = 0
+        stint_no = 0
+        for comp_name, n in plan:
+            stint_no += 1
+            comp = Compound(comp_name)
+            run_start = lap_counter + 1
+            for k in range(n):
+                lap_counter += 1
+                global_lap += 1
+                is_out = k == 0
+                is_in = k == n - 1
+                age = k + 1
+                # position in session 0..1 for track evolution
+                frac = min(1.0, global_lap / (len(PLANS) * 20))
+                lt = p.base_pace
+                lt += COMPOUND_OFFSET[comp]
+                lt += COMPOUND_DEG[comp] * (age - 1)
+                lt -= EVO * frac                      # track rubbers in
+                lt += 0.35 * (n - k) / max(1, n) * (2 if comp == Compound.MEDIUM else 0)  # fuel on long run
+                lt += rng.uniform(-0.10, 0.15)
+                if is_out:
+                    lt += 3.5                          # out-lap
+                if is_in:
+                    lt += 4.0                          # in-lap
+                outlier = is_out or is_in
+                laps.append(Lap(driver=p.code, lap=lap_counter, lap_time=round(lt, 3),
+                                compound=comp, tyre_age=age, stint=stint_no,
+                                pit_out=is_out, is_outlier=outlier))
+            clean = sorted(l.lap_time for l in laps
+                           if l.driver == p.code and l.stint == stint_no and not l.is_outlier)
+            stints.append(Stint(driver=p.code, stint=stint_no, compound=comp,
+                                start_lap=run_start, end_lap=lap_counter, laps=n, is_new_tyre=True,
+                                avg_lap=round(sum(clean) / len(clean), 3) if clean else None,
+                                median_lap=round(clean[len(clean) // 2], 3) if clean else None,
+                                best_lap=round(min(clean), 3) if clean else None))
+
+    # session classification by best lap
+    best_by: dict[str, float] = {}
+    laps_by: dict[str, int] = {}
+    for l in laps:
+        laps_by[l.driver] = laps_by.get(l.driver, 0) + 1
+        if l.lap_time and not l.is_outlier:
+            best_by[l.driver] = min(best_by.get(l.driver, 9e9), l.lap_time)
+    order = sorted(best_by, key=lambda c: best_by[c])
+    classification: list[ClassificationRow] = []
+    for pos, code in enumerate(order, start=1):
+        p = next(pp for pp in PLANS if pp.code == code)
+        classification.append(ClassificationRow(
+            position=pos, driver=code, name=p.name, team=p.team,
+            team_color=TEAM_COLORS.get(p.team, "#888888"),
+            laps_completed=laps_by.get(code, 0), status="Ran",
+            best_lap=round(best_by[code], 3), pit_stops=0, retired=False))
+
+    weather = [WeatherPoint(lap=None, time_min=round(m, 1),
+                            air_temp=round(24 + 2 * (m / total_time), 1),
+                            track_temp=round(38 + 8 * (m / total_time), 1),
+                            humidity=round(40 - 4 * (m / total_time), 1), rainfall=False,
+                            wind_speed=round(rng.uniform(2, 4), 1))
+               for m in range(0, int(total_time) + 1, 10)]
+
+    constructors = []
+    seen = set()
+    for p in PLANS:
+        if p.team not in seen:
+            seen.add(p.team)
+            constructors.append(Constructor(id=p.team.lower().replace(" ", "_"), name=p.team,
+                                            color=TEAM_COLORS.get(p.team, "#888888")))
+
+    return RaceSession(
+        year=2026, grand_prix="Austrian Grand Prix",
+        official_name="FORMULA 1 AUSTRIAN GRAND PRIX 2026",
+        session_type=session_name, category="practice", circuit=circuit,
+        total_laps=max(laps_by.values(), default=0), data_source=DataSource.MOCK,
+        notes=["Simulated demo practice session — realistic model, not official."],
+        drivers=drivers, constructors=constructors, classification=classification,
+        laps=laps, stints=stints, weather=weather,
     )

@@ -19,15 +19,16 @@ the F1 hosts are reachable.
 
 ## Highlights
 
-- **Race Explorer** — season / GP / session picker with final classification, grid→finish, gainers & losers, tyre summary, weather, driver-of-the-day and best/worst strategy calls.
-- **Interactive position chart** — one line per driver, P1 at top, VSC/SC bands, pit markers, rich hover (tyre, age, gap, pit & race-control status), toggle/highlight/zoom, end-of-line labels.
-- **Tyre strategy timeline** — lap-accurate stint Gantt colour-coded by compound, undercut markers, neutralization windows, per-stint hover (avg/median/best lap + degradation).
-- **Pace analysis** — fuel- & tyre-corrected clean-air pace separates real speed from track position; consistency score, traffic laps, tyre-limited flag, constructor pace ranking.
-- **Strategy explainer** — deterministic, template-driven insight cards: turning points, best/worst calls, undercuts, missed cheap stops, hidden pace. No AI guesswork.
-- **Ask in plain English** — “Why did Leclerc lose places?”, “Who benefited from the VSC?” — answered from computed data; optional LLM only polishes wording.
-- **Driver comparison** — position trace, cumulative time delta, pace/pit/strategy table, final verdict.
-- **Strategy Simulator Lite** — a clearly-labelled what-if estimate grounded in real pit loss, degradation and rejoin gaps.
-- **Race control & weather timeline**, and a **Historical mode** (standings 1950+, circuit winners).
+- **Race Story first** — a plain-English recap and answer-first cards (winner, best pace, turning point, biggest loss) lead every race, with a **Simple / Advanced** toggle so a new fan and a hardcore fan both feel at home.
+- **Multi-source real data** — a `DataSourceManager` combines **OpenF1**, **FastF1** and **Jolpica/Ergast** by era, enriches pit-stop durations and overtakes, and reports exactly which source fed each facet — tucked away in a **Data Sources** panel, not shoved in your face.
+- **Practice-aware** — Practice 1/2/3 switch to a practice UI: fastest lap, long-run (race-sim) pace, laps completed, most improved, tyre usage — no fake DNFs, no meaningless race-strategy cards.
+- **Interactive position chart** — one line per driver, P1 at top, VSC/SC bands, pit markers, rich hover, toggle/highlight/zoom, end-of-line labels.
+- **Tyre strategy timeline** — lap-accurate stint Gantt, undercut markers, neutralization windows, per-stint hover.
+- **Pace analysis** — fuel- & tyre-corrected clean-air pace separates real speed from track position; consistency, traffic, constructor ranking.
+- **Strategy explainer** — deterministic insight cards: turning points, best/worst calls, undercuts, missed cheap stops, hidden pace.
+- **Ask in plain English (upgraded)** — messy questions work: *“how did george overtake verstappen last minute”*, *“who had the best long run in FP2”*. Fuzzy driver/team matching, overtake reasoning, a **Simplify** button, follow-up chips, and it **never dead-ends** — always a best-effort answer with an honest confidence level.
+- **Driver comparison**, **Strategy Simulator Lite**, **race control & weather timeline**, and a **Historical mode** (standings 1950+).
+- **Clean pit-stop labels** — “Stop 2.4s”, “Pit loss 21.8s”, or “~3.1s est.” with a source/confidence tooltip — never a scary warning.
 
 ## Tech stack
 
@@ -92,22 +93,44 @@ window, VER's winning 2-stop). Flip **Demo** off in the UI to attempt real data.
 ## How the data pipeline works
 
 ```
- Browser (Next.js)  ──►  FastAPI  ──►  service.py  ──►  adapters
-                                          │                ├─ pitwall_adapter  (FastF1 / F1 archive)  ── real
-   normalized JSON  ◄── analysis engine ◄─┤                ├─ history_adapter  (Jolpica/Ergast)        ── real
-   + data-source tag                      └─ cache.py       └─ mock_adapter     (simulated race)        ── demo
+ Browser (Next.js) ─► FastAPI ─► service.py ─► DataSourceManager ─┬─ openf1_adapter   (OpenF1)        ── real
+                                                                   ├─ pitwall_adapter  (FastF1)        ── real
+ normalized JSON ◄─ analysis engine ◄──────────────────┐          ├─ jolpica_adapter  (Jolpica/Ergast)── real
+ + per-facet source report                             │          ├─ pitstop_service  (best pit times)
+                                                cache.py┘          └─ mock_adapter     (simulated)      ── demo
 ```
 
-Resolution order for a session (`service.get_session`):
+**Source priority (chosen automatically by `DataSourceManager`):**
 
-1. **Force demo** (UI toggle or `PITWALL_IQ_MOCK_MODE`) → simulated race, tagged `mock`.
-2. **Local cache** (a previously-fetched real session) → tagged `cache`.
-3. **Live fetch** via pitwall/FastF1 → normalized, cached, tagged `live`.
-4. **Fetch failed** → simulated race with an explanatory note, tagged `mock`.
+| Era | Order |
+|---|---|
+| **2023+** | OpenF1 → FastF1 → Jolpica → cache → demo |
+| **2018–2022** | FastF1 → Jolpica → cache → demo |
+| **pre-2018** | Jolpica (advanced facets marked unavailable) → cache → demo |
 
-Every API response carries a `source` (`live` / `cache` / `mock`) that the UI renders as a
-badge, so you always know where the numbers came from. See
+The first source that returns a usable session becomes the *primary*; the manager then
+**enriches** it — pit-stop durations via `PitStopDataService` (OpenF1 → Jolpica → FastF1
+lane time → estimate), overtakes (OpenF1 or inferred from the position trace) — and attaches
+a **source report** describing which source fed each facet, at what confidence.
+
+Session resolution: **force demo** → **cache** → **live chain** → **demo fallback** (with an
+explanatory note). Every response is tagged `live` / `cache` / `mock`; the UI surfaces this in
+the **Data Sources** panel, and only shows a prominent chip when it matters (Demo / Partial).
+Mock data never silently masquerades as real. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md).
+
+### Data / diagnostics endpoints
+
+```
+GET /api/session                       full bundle (session + strategy + pace + practice)
+GET /api/session/load                  normalized session only (debug)
+GET /api/session/source-report         which source fed each facet + counts
+GET /api/session/raw-preview           first rows of laps/pits/overtakes (debug)
+GET /api/session/cache/clear           clear one cached session, or all
+GET /api/sessions/available            session types for a GP (Practice…Race)
+GET /api/health/data-sources           reachability of OpenF1 / FastF1 / Jolpica / cache
+POST /api/ask   { question, simple }   plain-English answer (simple = beginner language)
+```
 
 ---
 
@@ -150,23 +173,27 @@ Or from the repo root: `make test`.
 
 | Symptom | Fix |
 |---|---|
-| Dashboard shows an **amber "Demo data"** badge unexpectedly | The backend couldn't reach the F1 hosts (`livetiming.formula1.com`, `api.jolpi.ca`). Check outbound network / proxy policy. The note under the header explains the exact reason. |
-| Frontend error: *"Cannot reach the API"* | The backend isn't running, or `NEXT_PUBLIC_API_BASE` points at the wrong URL. Start the backend on port 8000. |
-| `pip install f1pitwall[full]` fails on **PyJWT** | A system-managed PyJWT can block the upgrade. Re-run with `pip install --ignore-installed PyJWT "f1pitwall[full]"`. |
-| Real fetch is **slow the first time** | FastF1 downloads and caches session data on first access; subsequent loads are served from the local cache instantly. |
-| A specific session has **no pit-stop times** | The F1 `PitStopSeries` feed only covers 2025+. Pre-2025 stops are derived from stint boundaries (noted in the session's `notes`). |
-| Want to force real data | Turn the **Demo** toggle off in the UI, or set `PITWALL_IQ_MOCK_MODE=false`, and ensure the F1 hosts are reachable. |
+| Dashboard shows an **amber "Demo data"** chip unexpectedly | Every live source (OpenF1 `api.openf1.org`, FastF1 `livetiming.formula1.com`, Jolpica `api.jolpi.ca`) was unreachable. Open the **Data** tab → **Check now** to see which. Usually an outbound network / egress-policy block. |
+| A **"Partial data"** chip appears | The primary source didn't provide every facet (e.g. an older season with no tyre/weather data). The Data tab lists exactly what's missing. This is expected, not a bug. |
+| Frontend error: *"Cannot reach the API"* | The backend isn't running, or `NEXT_PUBLIC_API_BASE` is wrong. Start the backend on port 8000. |
+| `pip install f1pitwall[full]` fails on **PyJWT** | Re-run with `pip install --ignore-installed PyJWT "f1pitwall[full]"`. |
+| Real fetch is **slow the first time** | FastF1 caches on first access; later loads are instant. Force a re-fetch from the Data tab → **Refetch**. |
+| **How do I clear the cache?** | Data tab → **Clear cache**, or `GET /api/session/cache/clear` (optionally with `?year=&gp=&session=`). |
+| **How do I test real data?** | Turn the **Demo** toggle off (or `PITWALL_IQ_MOCK_MODE=false`), ensure the hosts above are reachable, pick a real season/GP/session, and check the **Data** tab to confirm the source is OpenF1/FastF1/Jolpica rather than the demo generator. |
+| A pit stop shows **"~3.1s est."** | No source published a measured stop duration, so it's estimated from pit-lane loss (low confidence — hover for the explanation). Not an error. |
 
 ---
 
 ## Known limitations
 
 - **Live car telemetry/GPS** during an in-progress session needs an `F1TV_TOKEN`. All completed-session and open-data features work without it.
-- **Clean-air pace** is a fuel- and tyre-corrected estimate; it's a fair comparison of car speed, not an official metric.
-- **Strategy Simulator Lite** is intentionally a directional estimate (labelled as such), not a full race simulation.
-- **Undercut/overcut detection** is heuristic (from the position trace); it catches the clear cases, not every micro-swing.
-- **Historical mode** is deliberately basic but cleanly architected to grow.
-- The bundled demo race is **simulated** (realistic, not an official result) and is only used when real data can't be fetched.
+- **OpenF1** covers 2023-present; it's the preferred primary there (best for pit durations, overtakes and practice). Older seasons fall back to FastF1, then Jolpica.
+- **Pit-stop duration** isn't published by every source. Order of preference: OpenF1 `pit_duration` → Jolpica `duration` → FastF1 pit-lane time → an estimate from pit-lane loss (labelled low-confidence). Pre-2011 races usually have none.
+- **Overtakes** use OpenF1's endpoint where present, otherwise they're inferred from the lap-by-lap position trace (clear swaps, not every micro-move) — flagged as `inferred`.
+- **Clean-air / long-run pace** are fuel- and tyre-aware estimates, fair for comparison but not official; practice pace especially is indicative (fuel loads and engine modes are unknown).
+- **Strategy Simulator Lite** is a directional estimate, not a full race simulation.
+- **Pre-2018 sessions**: advanced facets (tyres, weather, sectors, race control) are marked unavailable rather than faked.
+- The bundled **demo** race/practice is simulated (realistic, not official) and is only used when demo mode is on or every real source fails — and it's always clearly labelled.
 
 ## Acknowledgements
 

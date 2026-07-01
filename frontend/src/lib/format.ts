@@ -36,3 +36,15 @@ export function netBadge(net?: number | null): { text: string; tone: "up" | "dow
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
 }
+
+// Clean, user-friendly pit-stop label (mirrors the backend PitStopDataService).
+export function pitLabel(p: {
+  stationary_time?: number | null; stop_duration?: number | null;
+  estimated_stationary_time?: number | null; pit_lane_time?: number | null;
+}): { text: string; kind: "measured" | "estimated" | "lane" | "unknown" } {
+  const stat = p.stationary_time ?? p.stop_duration;
+  if (stat != null) return { text: `Stop ${stat.toFixed(1)}s`, kind: "measured" };
+  if (p.estimated_stationary_time != null) return { text: `~${p.estimated_stationary_time.toFixed(1)}s est.`, kind: "estimated" };
+  if (p.pit_lane_time != null) return { text: `Pit loss ${p.pit_lane_time.toFixed(1)}s`, kind: "lane" };
+  return { text: "—", kind: "unknown" };
+}

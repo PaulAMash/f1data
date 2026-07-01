@@ -62,6 +62,11 @@ export function DriverComparison({
         <>
           <div className="grid gap-4 lg:grid-cols-2">
             <ChartCard title="Position trace" info="Where each car ran, lap by lap. P1 at the top.">
+              {positionData.length === 0 ? (
+                <div className="flex h-[240px] items-center justify-center text-center text-xs text-ink-faint">
+                  Position order isn't tracked in this session (practice has no running order).
+                </div>
+              ) : (
               <div className="h-[240px]">
                 <ResponsiveContainer>
                   <LineChart data={positionData} margin={{ top: 6, right: 12, bottom: 2, left: -8 }}>
@@ -78,6 +83,7 @@ export function DriverComparison({
                   </LineChart>
                 </ResponsiveContainer>
               </div>
+              )}
             </ChartCard>
 
             <ChartCard title="Cumulative time delta"

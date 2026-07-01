@@ -40,11 +40,35 @@ def test_qa_intents():
     assert answer_question("Who won?", ctx).kind == "winner"
 
 
-def test_qa_reports_missing_data():
+def test_qa_never_dead_ends():
+    """Even an unanswerable question gets a best-effort answer, not a dead-end."""
     ctx = _ctx()
     a = answer_question("What was the tyre pressure for ZZZ?", ctx)
-    assert a.kind in ("fallback", "missing")
-    assert a.missing_data
+    assert a.answer and len(a.answer) > 20        # always says something useful
+    assert a.kind in ("overview", "missing")      # best-effort, not a hard fail
+    assert a.follow_ups                            # always offers next steps
+
+
+def test_qa_overtake_and_practice():
+    from app.adapters.mock_adapter import get_mock_session
+    from app.analysis.engine import analyze
+    # overtake question resolves fuzzy names and answers
+    ctx = _ctx()
+    a = answer_question("how did george overtake verstappen last minute", ctx)
+    assert a.kind == "overtake"
+    assert "RUS" in a.entities.get("drivers", []) and "VER" in a.entities.get("drivers", [])
+    # practice question routes to practice logic
+    fp = get_mock_session(2026, "Austrian Grand Prix", "Practice 2")
+    strat, pace = analyze(fp)
+    pctx = QAContext(session=fp, strategy=strat, pace=pace)
+    ans = answer_question("who was fastest in practice?", pctx)
+    assert ans.kind in ("practice_fastest", "fastest")
+
+
+def test_qa_simple_mode():
+    ctx = _ctx()
+    a = answer_question("why did leclerc lose places?", ctx, simple=True)
+    assert a.simple and a.answer.lower().startswith("in simple terms")
 
 
 def test_api_session_and_ask():

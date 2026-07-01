@@ -56,8 +56,16 @@ export const api = {
   compare: (year: number, gp: string, session: string, a: string, b: string, mock = false) =>
     get<any>("/api/compare", { year, gp, session, a, b, mock }),
   ask: (body: {
-    year: number; gp: string; session: string; question: string; mock?: boolean;
+    year: number; gp: string; session: string; question: string; mock?: boolean; simple?: boolean;
   }) => post<QuestionAnswer>("/api/ask", body),
+  sessionsAvailable: (year: number, gp: string) =>
+    get<{ source: string; sessions: string[] }>("/api/sessions/available", { year, gp }),
+  dataSourceHealth: () =>
+    get<{ probes: { name: string; reachable: boolean | null; detail?: string }[] }>("/api/health/data-sources"),
+  sourceReport: (year: number, gp: string, session: string, mock = false) =>
+    get<any>("/api/session/source-report", { year, gp, session, mock }),
+  clearCache: (year?: number, gp?: string, session?: string) =>
+    get<{ cleared: number }>("/api/session/cache/clear", { year, gp, session }),
   simulate: (body: {
     year: number; gp: string; session: string; driver: string;
     new_pit_lap?: number | null; num_stops?: number | null; compounds?: string[] | null; mock?: boolean;
