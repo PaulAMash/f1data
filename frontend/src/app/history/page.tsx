@@ -7,6 +7,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 import { Skeleton, EmptyState } from "@/components/ui/misc";
 import { InfoTip } from "@/components/ui/InfoTip";
+import { HistoricalExplorer } from "@/components/history/HistoricalExplorer";
 import { api } from "@/lib/api";
 import type { DataSource } from "@/lib/types";
 import { cx } from "@/lib/format";
@@ -46,12 +47,16 @@ export default function History() {
       <NavBar active="history" />
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
         <div className="mb-5">
-          <div className="label">Historical mode</div>
-          <h1 className="text-2xl font-semibold tracking-tight">Championships, winners & records</h1>
+          <div className="label">Historical</div>
+          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Explore F1 history</h1>
           <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-            Standings and past winners from 1950 to today via Jolpica/Ergast. A basic explorer,
-            architected to grow — falls back to labelled sample data when the source is unreachable.
+            Real results, qualifying and standings from 1950 to today, via Jolpica/Ergast.
           </p>
+        </div>
+
+        {/* Functional data explorer: year → Grand Prix → session → results */}
+        <div className="mb-4">
+          <HistoricalExplorer />
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">

@@ -130,6 +130,16 @@ export interface QuestionAnswer {
   source?: DataSource; category?: SessionCategory; question: string; answer: string; kind: string;
   used_llm: boolean; confidence: string; supporting: Record<string, any>; missing_data: string[];
   entities: Record<string, any>; follow_ups: string[]; simple: boolean;
+  // structured, analyst-style fields
+  answer_title?: string | null;
+  short_answer?: string | null;
+  detailed_answer: string[];
+  evidence: string[];
+  beginner_summary?: string | null;
+  advanced_notes: string[];
+  related_drivers: string[];
+  related_laps: number[];
+  analysis_steps: string[];
 }
 export interface SimulationResult {
   source?: DataSource; driver: string; summary: string;

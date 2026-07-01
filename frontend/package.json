@@ -5,19 +5,12 @@
   "description": "Pitwall IQ — F1 race intelligence UI",
   "scripts": {
     "dev": "next dev",
-    "dev:desktop": "NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8765 next dev",
     "build": "next build",
-    "build:desktop": "BUILD_TARGET=desktop NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8765 next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit",
-    "tauri": "tauri",
-    "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build --config src-tauri/tauri.bundle.conf.json",
-    "desktop:icons": "tauri icon src-tauri/icons/app-icon.png"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.0.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.417.0",
     "next": "14.2.15",
@@ -26,7 +19,6 @@
     "recharts": "2.12.7"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0",
     "@types/node": "20.14.10",
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.0",

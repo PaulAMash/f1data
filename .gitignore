@@ -38,13 +38,3 @@ yarn-error.log*
 # TS incremental build cache
 frontend/tsconfig.tsbuildinfo
 *.tsbuildinfo
-
-# --- Rust / Tauri desktop ---
-frontend/src-tauri/target/
-frontend/src-tauri/gen/
-# bundled backend sidecar binaries are built per-platform, not committed
-frontend/src-tauri/binaries/*
-!frontend/src-tauri/binaries/.gitignore
-
-# --- desktop packaging artifacts ---
-desktop/build/

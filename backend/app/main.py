@@ -10,17 +10,18 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from . import cache, service
-from .adapters import pitstop_service
+from .adapters import history_adapter, historical, pitstop_service
+from .adapters.data_source_manager import DataUnavailableError
 from .analysis.engine import analyze, compare_drivers
 from .analysis.practice import compute_practice
 from .analysis.qa import QAContext, answer_question
 from .analysis.whatif import simulate_whatif
-from .adapters import history_adapter
 from .config import get_settings
 from .models import DataSource
 
@@ -37,13 +38,19 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(DataUnavailableError)
+async def _data_unavailable(_request: Request, exc: DataUnavailableError):
+    # Honest failure — no silent demo data. The UI shows retry + Data Sources link.
+    return JSONResponse(status_code=503, content=exc.to_payload())
+
+
 # --------------------------------------------------------------------------- #
 # meta / health
 # --------------------------------------------------------------------------- #
 @app.get("/api/health")
 @app.get("/health")
 def health():
-    """Liveness probe. Also served at /health for the desktop sidecar gate."""
+    """Liveness probe (also served at /health) for deployment health checks."""
     return {"ok": True, "service": "pitwall-iq-backend", "status": "ok"}
 
 
@@ -230,3 +237,50 @@ def history_standings(year: int = Query(...), type: str = Query("driver")):
 def history_circuit(circuit: str = Query(...)):
     rows, src = history_adapter.get_circuit_winners(circuit)
     return {"source": src.value, "circuit": circuit, "winners": rows}
+
+
+# --------------------------------------------------------------------------- #
+# Historical Data Explorer (year / event / session → real results)
+# --------------------------------------------------------------------------- #
+def _hist_guard(fn, **fields):
+    """Run a historical lookup; turn source failures into honest, structured info."""
+    try:
+        return fn()
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger("pitwall_iq").info("historical lookup failed: %s", exc)
+        return {"available": False, "error": "source_unavailable",
+                "message": "The historical data source (Jolpica/Ergast) was unreachable. "
+                           "Please retry.", "retryable": True, **fields}
+
+
+@app.get("/api/historical/seasons")
+def historical_seasons():
+    return _hist_guard(lambda: {"seasons": historical.seasons()}, seasons=[])
+
+
+@app.get("/api/historical/events")
+def historical_events(year: int = Query(...)):
+    return _hist_guard(lambda: {"year": year, "events": historical.events(year)}, events=[])
+
+
+@app.get("/api/historical/sessions")
+def historical_sessions(year: int = Query(...), event: str = Query(...)):
+    return _hist_guard(lambda: historical.sessions_for(year, event))
+
+
+@app.get("/api/historical/results")
+def historical_results(year: int = Query(...), event: str = Query(...), session: str = Query("Race")):
+    return _hist_guard(lambda: historical.results(year, event, session),
+                       year=year, event=event, session=session, rows=[])
+
+
+@app.get("/api/historical/source-report")
+def historical_source_report(year: int = Query(...), event: str = Query(...), session: str = Query("Race")):
+    def build():
+        res = historical.results(year, event, session)
+        return {"year": year, "event": event, "session": session,
+                "source": res.get("source", "jolpica"),
+                "available": res.get("available", False),
+                "confidence": res.get("confidence"), "note": res.get("note"),
+                "row_count": len(res.get("rows", []))}
+    return _hist_guard(build, year=year, event=event, session=session)

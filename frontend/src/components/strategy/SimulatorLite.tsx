@@ -12,8 +12,8 @@ type Mode = "pit" | "stops" | "compounds";
 const COMPOUNDS = ["SOFT", "MEDIUM", "HARD"];
 
 export function SimulatorLite({
-  bundle, year, gp, session, mock,
-}: { bundle: RaceBundle; year: number; gp: string; session: string; mock: boolean }) {
+  bundle, year, gp, session,
+}: { bundle: RaceBundle; year: number; gp: string; session: string }) {
   const ranked = [...bundle.pace].sort((a, b) => (a.pace_rank ?? 99) - (b.pace_rank ?? 99));
   const [driver, setDriver] = useState(bundle.strategy.hidden_pace_driver ?? ranked[0]?.driver ?? "");
   const [mode, setMode] = useState<Mode>("pit");
@@ -26,7 +26,7 @@ export function SimulatorLite({
   async function run() {
     setLoading(true);
     try {
-      const body: any = { year, gp, session, driver, mock };
+      const body: any = { year, gp, session, driver };
       if (mode === "pit") body.new_pit_lap = pitLap;
       if (mode === "stops") body.num_stops = stops;
       if (mode === "compounds") body.compounds = seq;

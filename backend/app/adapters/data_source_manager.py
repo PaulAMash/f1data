@@ -52,10 +52,48 @@ def _chain(year: int):
 # --------------------------------------------------------------------------- #
 # session load
 # --------------------------------------------------------------------------- #
+class DataUnavailableError(RuntimeError):
+    """No real data could be loaded. Carries structured, user-safe attempt info.
+
+    The website NEVER silently substitutes demo data for a failed real fetch —
+    this is raised instead, and the API turns it into an honest error the UI can
+    show with a retry + a link to the Data Sources diagnostics.
+    """
+    def __init__(self, year: int, gp: str, session_type: str, attempts: list[dict]):
+        self.year, self.gp, self.session_type = year, gp, session_type
+        self.attempts = attempts
+        self.retryable = any(a.get("retryable") for a in attempts) or not attempts
+        super().__init__(f"No real data for {gp} {year} {session_type}")
+
+    def to_payload(self) -> dict:
+        return {
+            "error": "data_unavailable",
+            "message": (f"We couldn't load real data for {self.gp} {self.year} "
+                        f"({self.session_type}) from any source."),
+            "retryable": self.retryable,
+            "attempts": self.attempts,
+        }
+
+
+def _classify(exc: Exception) -> tuple[str, bool]:
+    """(category, retryable) from an adapter exception — no secrets, no tracebacks."""
+    msg = str(exc).lower()
+    if any(t in msg for t in ("no ", "not found", "no session", "no results", "matches")):
+        return "not_available", False
+    if any(t in msg for t in ("timeout", "timed out")):
+        return "timeout", True
+    if any(t in msg for t in ("connection", "connect", "resolve", "network",
+                              "403", "407", "proxy", "ssl", "certificate")):
+        return "unreachable", True
+    return "error", True
+
+
 def load_session(year: int, gp: str, session_type: str,
                  force_mock: bool = False, refresh: bool = False) -> RaceSession:
     settings = get_settings()
 
+    # Explicit, developer-only demo mode (make demo / PITWALL_IQ_MOCK_MODE=true).
+    # Never used as a silent fallback for a failed real fetch.
     if force_mock or settings.mock_mode:
         return mock_adapter.get_mock_session(year, gp, session_type)
 
@@ -66,8 +104,8 @@ def load_session(year: int, gp: str, session_type: str,
                 cached.source_report.data_source = DataSource.CACHE
             return cached
 
+    attempts: list[dict] = []
     if settings.enable_live_fetch:
-        errors: list[str] = []
         for name, fetch in _chain(year):
             try:
                 session = fetch(year, gp, session_type)
@@ -78,17 +116,17 @@ def load_session(year: int, gp: str, session_type: str,
                     log.warning("cache save failed: %s", exc)
                 return session
             except Exception as exc:  # noqa: BLE001
-                errors.append(f"{name}: {str(exc)[:120]}")
-                log.info("source %s failed: %s", name, exc)
-        # everything failed -> mock, clearly labelled with the reason
-        session = mock_adapter.get_mock_session(year, gp, session_type)
-        session.notes = ["Live data unavailable from every source — showing demo data.",
-                         *[f"· {e}" for e in errors[:4]]]
-        if session.source_report:
-            session.source_report.missing = ["all live sources unreachable"]
-        return session
+                category, retryable = _classify(exc)
+                attempts.append({"source": name, "category": category,
+                                 "message": str(exc)[:160], "retryable": retryable})
+                log.info("source %s failed (%s): %s", name, category, exc)
+    else:
+        attempts.append({"source": "live", "category": "disabled",
+                         "message": "Live fetching is disabled (PITWALL_IQ_ENABLE_LIVE=false).",
+                         "retryable": False})
 
-    return mock_adapter.get_mock_session(year, gp, session_type)
+    # No silent demo fallback — surface an honest, structured error.
+    raise DataUnavailableError(year, gp, session_type, attempts)
 
 
 def _post_process(session: RaceSession, primary: str) -> None:

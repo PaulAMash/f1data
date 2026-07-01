@@ -20,8 +20,8 @@ const FACET_LABEL: Record<string, string> = {
 };
 
 export function DataSourcesPanel({
-  year, gp, session, mock, onRefetch,
-}: { year: number; gp: string; session: string; mock: boolean; onRefetch: () => void }) {
+  year, gp, session, onRefetch,
+}: { year: number; gp: string; session: string; onRefetch: () => void }) {
   const simple = useIsSimple();
   const [report, setReport] = useState<any>(null);
   const [probes, setProbes] = useState<any[]>([]);
@@ -31,9 +31,9 @@ export function DataSourcesPanel({
 
   useEffect(() => {
     setLoading(true);
-    api.sourceReport(year, gp, session, mock)
+    api.sourceReport(year, gp, session)
       .then(setReport).catch(() => setReport(null)).finally(() => setLoading(false));
-  }, [year, gp, session, mock]);
+  }, [year, gp, session]);
 
   function checkHealth() {
     setProbing(true);

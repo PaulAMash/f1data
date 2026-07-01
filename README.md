@@ -5,17 +5,21 @@ Ask <em>why</em> a race unfolded the way it did — strategy, pace, tyres, pit s
 
 ---
 
-Pitwall IQ is a full-stack F1 race-intelligence app. It pulls real race/session data
-through the open-source [**pitwall**](https://github.com/darshjoshi/pitwall) stack
-(FastF1 + the F1 live-timing archive + Jolpica/Ergast), normalizes it into clean
+Pitwall IQ is a **website** (Next.js frontend + FastAPI backend). It pulls real
+race/session data from **OpenF1, FastF1 and Jolpica/Ergast**, normalizes it into clean
 models, runs a **deterministic analysis engine** over it, and presents an interactive,
 broadcast-styled dashboard. It answers plain-English questions from the computed data —
 **no API key required**.
 
-When a completed session can't be fetched (e.g. the F1 data hosts are blocked by a
-network policy), the app falls back to a **realistic simulated race**, clearly labelled
-as demo data. The real data adapter is fully implemented and used automatically wherever
-the F1 hosts are reachable.
+Real data is the default and only normal path. If every source fails, the app shows an
+**honest error with retry** — it never silently substitutes fake data. A clearly-labelled
+**demo mode** exists as an explicit developer/offline switch (`PITWALL_IQ_MOCK_MODE=true`).
+
+> **Scope:** website only. There is no desktop or mobile app.
+
+**New F1 fan or seasoned analyst?** A global **Simple / Advanced** toggle (top-right)
+switches the whole app between a plain-English race story and deep analytics — your
+choice is remembered across visits.
 
 ## Highlights
 
@@ -88,35 +92,8 @@ The Explorer loads the bundled, clearly-labelled **2026 Austrian GP** demo race 
 realistic simulated race with a full strategy story (LEC's costly 3-stop, a VSC cheap-stop
 window, VER's winning 2-stop). Flip **Demo** off in the UI to attempt real data.
 
----
-
-## Desktop app (macOS)
-
-Pitwall IQ also runs as a real macOS `.app` via **Tauri v2** — it wraps the same UI and
-**auto-starts the backend** as a local sidecar, so you just open the app (no terminal,
-no browser). The web workflow above is unchanged.
-
-```bash
-make desktop-deps          # once: Tauri CLI + PyInstaller (Rust must be installed too)
-make desktop-dev           # run the desktop app in dev (auto-starts the backend)
-make desktop-build-mac     # build the macOS .app + .dmg
-```
-
-The built app appears at:
-
-```
-frontend/src-tauri/target/release/bundle/macos/Pitwall IQ.app
-frontend/src-tauri/target/release/bundle/dmg/Pitwall IQ_2.0.0_<arch>.dmg
-```
-
-The desktop shell launches the FastAPI backend on `127.0.0.1:8765`, waits for
-`/health`, then reveals the window; it stops the backend on quit. Demo/real data both
-work (OpenF1 + Jolpica are bundled; FastF1 is opt-in). Full guide — including
-**signing & notarization** for distributing to other Macs — in
-[`docs/DESKTOP.md`](docs/DESKTOP.md). iOS/Windows plans in
-[`docs/MOBILE_ROADMAP.md`](docs/MOBILE_ROADMAP.md).
-
-> The macOS `.app`/`.dmg` must be **built on a Mac** (Apple's toolchain is macOS-only).
+> **Scope:** Pitwall IQ is a **website** (Next.js frontend + FastAPI backend). There is
+> no desktop or mobile app in the current scope.
 
 ---
 
@@ -143,11 +120,14 @@ The first source that returns a usable session becomes the *primary*; the manage
 lane time → estimate), overtakes (OpenF1 or inferred from the position trace) — and attaches
 a **source report** describing which source fed each facet, at what confidence.
 
-Session resolution: **force demo** → **cache** → **live chain** → **demo fallback** (with an
-explanatory note). Every response is tagged `live` / `cache` / `mock`; the UI surfaces this in
-the **Data Sources** panel, and only shows a prominent chip when it matters (Demo / Partial).
-Mock data never silently masquerades as real. See
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md).
+Session resolution: **explicit demo mode** → **cache** → **live chain** → **honest error**.
+There is **no silent demo fallback**: if every real source fails, the API returns a
+structured `503 data_unavailable` (which sources were tried, whether it's retryable) and
+the UI shows a retry + a link to Data Sources. Every response is tagged `live` / `cache`
+/ `mock`; the UI surfaces this in the tucked-away **Data Sources** panel. See
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md),
+[`docs/ASK_ENGINE.md`](docs/ASK_ENGINE.md) and
+[`docs/HISTORICAL_EXPLORER.md`](docs/HISTORICAL_EXPLORER.md).
 
 ### Data / diagnostics endpoints
 
@@ -171,14 +151,17 @@ Nothing is required for the app to run on open data.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PITWALL_IQ_MOCK_MODE` | `false` | Always serve the simulated demo race |
+| `PITWALL_IQ_MOCK_MODE` | `false` | **Explicit** demo/offline mode (labelled sample data). Not a silent fallback |
 | `PITWALL_IQ_ENABLE_LIVE` | `true` | Attempt real fetches |
 | `PITWALL_IQ_USE_FASTF1` | `true` | Use FastF1 for rich lap data |
 | `PITWALL_IQ_CACHE_DIR` | `backend/data/cache` | Where real sessions are cached |
 | `PITWALL_IQ_DEFAULT_YEAR` | `2026` | Season shown first |
+| `PITWALL_IQ_CORS` | `http://localhost:3000` | Allowed CORS origin(s) — set to your frontend URL |
 | `F1TV_TOKEN` | — | **Optional**, server-side only. Live car telemetry/GPS during a *live* session. Never sent to the browser |
 | `ANTHROPIC_API_KEY` | — | **Optional**, server-side only. Polishes Q&A wording; facts always come from the engine |
-| `NEXT_PUBLIC_API_BASE` | `http://localhost:8000` | Frontend → backend URL |
+| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000` | Frontend → backend URL (set to your deployed backend in production) |
+
+**Deploying?** See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for backend + frontend hosting steps.
 
 **Secrets never reach the frontend.** Tokens/keys are read only by the backend; the
 frontend receives a boolean `llm_available` flag, never the key itself.
@@ -188,7 +171,7 @@ frontend receives a boolean `llm_available` flag, never the key itself.
 ## Tests, lint & typecheck
 
 ```bash
-# backend (14 tests: simulator consistency, analysis, Q&A, API)
+# backend (25 tests: simulator consistency, analysis, Q&A, practice, hardening, API)
 cd backend && python -m pytest
 
 # frontend
@@ -205,7 +188,7 @@ Or from the repo root: `make test`.
 |---|---|
 | Dashboard shows an **amber "Demo data"** chip unexpectedly | Every live source (OpenF1 `api.openf1.org`, FastF1 `livetiming.formula1.com`, Jolpica `api.jolpi.ca`) was unreachable. Open the **Data** tab → **Check now** to see which. Usually an outbound network / egress-policy block. |
 | A **"Partial data"** chip appears | The primary source didn't provide every facet (e.g. an older season with no tyre/weather data). The Data tab lists exactly what's missing. This is expected, not a bug. |
-| Frontend error: *"Cannot reach the API"* | The backend isn't running, or `NEXT_PUBLIC_API_BASE` is wrong. Start the backend on port 8000. |
+| Frontend error: *"Cannot reach the API"* | The backend isn't running, or `NEXT_PUBLIC_API_BASE_URL` is wrong. Start the backend on port 8000. |
 | `pip install f1pitwall[full]` fails on **PyJWT** | Re-run with `pip install --ignore-installed PyJWT "f1pitwall[full]"`. |
 | Real fetch is **slow the first time** | FastF1 caches on first access; later loads are instant. Force a re-fetch from the Data tab → **Refetch**. |
 | **How do I clear the cache?** | Data tab → **Clear cache**, or `GET /api/session/cache/clear` (optionally with `?year=&gp=&session=`). |

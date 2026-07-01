@@ -3,8 +3,9 @@ import { useState } from "react";
 import { CornerDownLeft, MessageSquareText, Sparkles, Wand2 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { QuestionAnswer, SessionCategory } from "@/lib/types";
+import { useIsSimple } from "@/lib/mode";
 import { Badge } from "@/components/ui/Badge";
-import { Spinner } from "@/components/ui/misc";
+import { AnalysisProgress } from "./AnalysisProgress";
 
 const RACE_SUGGESTIONS = [
   "Explain the race simply",
@@ -13,7 +14,6 @@ const RACE_SUGGESTIONS = [
   "Who had the best race pace?",
   "Who benefited most from the VSC?",
   "Which driver lost the most time in the pits?",
-  "Did the extra stop make sense?",
 ];
 const PRACTICE_SUGGESTIONS = [
   "Who was fastest?",
@@ -24,33 +24,40 @@ const PRACTICE_SUGGESTIONS = [
   "Explain this session simply",
 ];
 
+const MIN_THINK_MS = 1500; // makes the analysis feel considered, not instant
+
 export function QuestionBox({
-  year, gp, session, mock, llmAvailable, category,
+  year, gp, session, llmAvailable, category,
 }: {
-  year: number; gp: string; session: string; mock: boolean;
-  llmAvailable: boolean; category: SessionCategory;
+  year: number; gp: string; session: string; llmAvailable: boolean; category: SessionCategory;
 }) {
+  const simple = useIsSimple();
   const [q, setQ] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [thinking, setThinking] = useState(false);
   const [history, setHistory] = useState<QuestionAnswer[]>([]);
   const suggestions = category === "practice" ? PRACTICE_SUGGESTIONS : RACE_SUGGESTIONS;
 
-  async function ask(question: string, simple = false) {
+  async function ask(question: string, forceSimple = false) {
     const text = question.trim();
-    if (!text || loading) return;
-    setLoading(true);
+    if (!text || thinking) return;
+    setThinking(true);
     setQ("");
+    const started = Date.now();
     try {
-      const res = await api.ask({ year, gp, session, question: text, mock, simple });
+      const res = await api.ask({ year, gp, session, question: text, simple: forceSimple || undefined });
+      const elapsed = Date.now() - started;
+      if (elapsed < MIN_THINK_MS) await new Promise((r) => setTimeout(r, MIN_THINK_MS - elapsed));
       setHistory((h) => [res, ...h]);
     } catch (e: any) {
       setHistory((h) => [{
-        question: text, answer: e.message ?? "Something went wrong.", kind: "error",
+        question: text, answer: e?.message ?? "Something went wrong.", kind: "error",
         used_llm: false, confidence: "low", supporting: {}, missing_data: [],
-        entities: {}, follow_ups: [], simple: false,
-      }, ...h]);
+        entities: {}, follow_ups: [], simple: false, answer_title: "Couldn't answer",
+        short_answer: e?.message ?? "Something went wrong.", detailed_answer: [], evidence: [],
+        beginner_summary: null, advanced_notes: [], related_drivers: [], related_laps: [], analysis_steps: [],
+      } as QuestionAnswer, ...h]);
     } finally {
-      setLoading(false);
+      setThinking(false);
     }
   }
 
@@ -62,61 +69,104 @@ export function QuestionBox({
   return (
     <div>
       <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-base-850/80 p-2 focus-within:border-accent/40">
-        <MessageSquareText size={16} className="ml-1.5 text-ink-faint" />
+        <MessageSquareText size={16} className="ml-1.5 shrink-0 text-ink-faint" />
         <input
           value={q} onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && ask(q)}
           placeholder={category === "practice"
-            ? "Ask about this session…  e.g. who had the best long run?"
-            : "Ask about this race…  e.g. how did George overtake Max?"}
-          className="flex-1 bg-transparent py-1.5 text-sm text-ink outline-none placeholder:text-ink-faint"
+            ? "Ask about this session… e.g. who had the best long run?"
+            : "Ask about this race… e.g. how did George overtake Max?"}
+          className="min-w-0 flex-1 bg-transparent py-1.5 text-sm text-ink outline-none placeholder:text-ink-faint"
         />
-        <button onClick={() => ask(q)} disabled={loading || !q.trim()}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40">
-          {loading ? <Spinner size={14} /> : <CornerDownLeft size={14} />} Ask
+        <button onClick={() => ask(q)} disabled={thinking || !q.trim()}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40">
+          <CornerDownLeft size={14} /> <span className="hidden sm:inline">Ask</span>
         </button>
       </div>
 
       <div className="mt-2 flex flex-wrap gap-1.5">
         {suggestions.map((s) => (
-          <button key={s} onClick={() => ask(s)} disabled={loading}
+          <button key={s} onClick={() => ask(s)} disabled={thinking}
             className="chip hover:border-white/20 hover:text-ink disabled:opacity-40">{s}</button>
         ))}
       </div>
 
       <p className="mt-2 text-xs text-ink-faint">
-        Answers come from the loaded session data.{" "}
-        {llmAvailable ? "An LLM may polish the wording — the facts are computed."
-          : "No API key needed — plain-English answers from the analysis engine."}
+        Answers are computed from the loaded session data.{" "}
+        {llmAvailable ? "An LLM may polish the wording — the facts stay computed."
+          : "No API key needed."}
       </p>
 
       <div className="mt-4 space-y-3">
+        {thinking && <AnalysisProgress />}
         {history.map((a, i) => (
-          <div key={i} className="animate-fade-in rounded-xl border border-white/[0.06] bg-base-850/50 p-4">
-            <div className="mb-1.5 flex items-center gap-2">
-              <span className="text-sm font-semibold text-ink">{a.question}</span>
-              <span className="ml-auto flex items-center gap-1.5">
-                {a.used_llm && <Badge tone="speed"><Sparkles size={10} /> polished</Badge>}
-                <Badge tone={a.confidence === "high" ? "good" : a.confidence === "low" ? "bad" : "neutral"}>{a.confidence}</Badge>
-              </span>
-            </div>
-            <p className="text-sm leading-relaxed text-ink-muted">{a.answer}</p>
-            {a.missing_data.length > 0 && a.kind === "missing" && (
-              <p className="mt-1.5 text-xs text-amber">What's missing: {a.missing_data.join(", ")}</p>
-            )}
-            <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              {!a.simple && (
-                <button onClick={() => ask(a.question, true)}
-                  className="chip border-speed/30 text-speed hover:bg-speed/10">
-                  <Wand2 size={11} /> Simplify
-                </button>
-              )}
-              {a.follow_ups.filter((f) => !/simpl/i.test(f)).slice(0, 3).map((fu) => (
-                <button key={fu} onClick={() => onFollow(fu, a)}
-                  className="chip hover:border-white/20 hover:text-ink">{fu}</button>
-              ))}
-            </div>
-          </div>
+          <AnswerCard key={i} a={a} simple={simple} onFollow={(fu) => onFollow(fu, a)}
+            onSimplify={() => ask(a.question, true)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AnswerCard({ a, simple, onFollow, onSimplify }: {
+  a: QuestionAnswer; simple: boolean; onFollow: (fu: string) => void; onSimplify: () => void;
+}) {
+  const short = (simple && a.beginner_summary) ? a.beginner_summary : (a.short_answer || a.answer);
+  const paras = a.detailed_answer?.length ? a.detailed_answer : (a.answer ? [a.answer] : []);
+  const showDetail = !simple && paras.length > 0 && paras.join(" ") !== short;
+
+  return (
+    <div className="animate-fade-in rounded-xl border border-white/[0.06] bg-base-850/50 p-4">
+      <div className="mb-1 flex flex-wrap items-center gap-2">
+        <span className="text-sm font-semibold text-ink">{a.question}</span>
+        <span className="ml-auto flex items-center gap-1.5">
+          {a.used_llm && <Badge tone="speed"><Sparkles size={10} /> polished</Badge>}
+          <Badge tone={a.confidence === "high" ? "good" : a.confidence === "low" ? "bad" : "neutral"}>
+            {a.confidence}
+          </Badge>
+        </span>
+      </div>
+
+      {a.answer_title && <div className="text-[11px] font-semibold uppercase tracking-wide text-accent-soft/80">{a.answer_title}</div>}
+      <p className="mt-0.5 text-sm leading-relaxed text-ink">{short}</p>
+
+      {showDetail && (
+        <div className="mt-2 space-y-1.5">
+          {paras.map((p, i) => <p key={i} className="text-sm leading-relaxed text-ink-muted">{p}</p>)}
+        </div>
+      )}
+
+      {a.evidence?.length > 0 && (
+        <ul className="mt-2.5 space-y-1">
+          {a.evidence.slice(0, simple ? 3 : 5).map((e, i) => (
+            <li key={i} className="flex gap-2 text-xs text-ink-muted">
+              <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-accent-soft/70" />{e}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!simple && a.advanced_notes?.length > 0 && (
+        <div className="mt-2.5 rounded-lg border border-white/[0.05] bg-base-900/40 p-2">
+          <div className="label mb-1">Analyst notes</div>
+          <ul className="space-y-0.5">
+            {a.advanced_notes.map((n, i) => <li key={i} className="text-xs text-ink-faint">{n}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {a.missing_data?.length > 0 && a.kind === "missing" && (
+        <p className="mt-1.5 text-xs text-amber">What&apos;s missing: {a.missing_data.join(", ")}</p>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        {!a.simple && (
+          <button onClick={onSimplify} className="chip border-speed/30 text-speed hover:bg-speed/10">
+            <Wand2 size={11} /> Simplify
+          </button>
+        )}
+        {a.follow_ups?.filter((f) => !/simpl/i.test(f)).slice(0, 3).map((fu) => (
+          <button key={fu} onClick={() => onFollow(fu)} className="chip hover:border-white/20 hover:text-ink">{fu}</button>
         ))}
       </div>
     </div>

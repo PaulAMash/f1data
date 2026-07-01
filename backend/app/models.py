@@ -377,6 +377,16 @@ class QuestionAnswer(BaseModel):
     entities: dict = Field(default_factory=dict)     # {drivers: [...], teams: [...], ...}
     follow_ups: list[str] = Field(default_factory=list)  # suggested next questions/actions
     simple: bool = False                             # answer already in beginner language
+    # --- richer structured answer (analyst-style) ---
+    answer_title: Optional[str] = None
+    short_answer: Optional[str] = None
+    detailed_answer: list[str] = Field(default_factory=list)   # paragraphs
+    evidence: list[str] = Field(default_factory=list)          # supporting bullets
+    beginner_summary: Optional[str] = None
+    advanced_notes: list[str] = Field(default_factory=list)
+    related_drivers: list[str] = Field(default_factory=list)
+    related_laps: list[int] = Field(default_factory=list)
+    analysis_steps: list[str] = Field(default_factory=list)    # "what I checked"
 
 
 # --------------------------------------------------------------------------- #

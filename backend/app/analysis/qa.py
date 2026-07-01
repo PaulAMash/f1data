@@ -675,9 +675,90 @@ def answer_question(question: str, ctx: QAContext, simple: bool = False) -> Ques
         result = _best_effort(q, ctx, ents)
 
     result.entities = {"drivers": ents["drivers"], "teams": ents["teams"]}
+    _enrich_structure(result, ctx, ents, simple)
     if simple:
         result = _make_simple(result)
     return _maybe_polish(result, ctx)
+
+
+# --------------------------------------------------------------------------- #
+# structured, analyst-style answer (derived from the computed answer + evidence)
+# --------------------------------------------------------------------------- #
+_TITLES = {
+    "overtake": "How the pass happened", "what_happened": "What happened",
+    "why_lost": "Why they lost ground", "best_pace": "Best race pace",
+    "vsc": "Who benefited from the neutralization", "compare_drivers": "Head-to-head",
+    "compare_teams": "Team-vs-team", "pit_loss": "Time lost in the pits",
+    "undercut": "Undercut / overcut", "winner": "Race winner", "fastest": "Fastest",
+    "tyre_strategy": "Tyre strategy", "weather": "Conditions", "explain": "Race summary",
+    "practice_fastest": "Fastest in the session", "practice_longrun": "Best long-run pace",
+    "practice_laps": "Most laps", "practice_team": "Team pace in practice",
+    "gainer": "Biggest mover", "loser": "Biggest loss", "alt_strategy": "Was there a better call?",
+    "worst_team": "Who lost most vs pace", "overview": "Session overview",
+}
+
+_STEPS = {
+    "overtake": ["Reading the position trace", "Checking pit windows around the move",
+                 "Comparing tyre age & lap pace", "Looking for race-control events"],
+    "why_lost": ["Comparing grid vs finish", "Checking clean-air pace vs result",
+                 "Counting pit stops & losses", "Looking for undercuts & traffic"],
+    "best_pace": ["Fuel- & tyre-correcting every lap", "Filtering out traffic laps",
+                  "Ranking clean-air pace"],
+    "vsc": ["Finding VSC / Safety Car windows", "Checking who pitted inside them",
+            "Estimating the time saved"],
+    "compare_drivers": ["Aligning both cars lap-by-lap", "Comparing pace, pits & tyres",
+                        "Building the verdict"],
+    "compare_teams": ["Pulling both teams' cars", "Comparing pace / results", "Building the verdict"],
+}
+_DEFAULT_STEPS = ["Reading the loaded session data", "Checking the relevant metrics",
+                  "Building the explanation"]
+
+
+def _sentences(text: str) -> list[str]:
+    parts = re.split(r"(?<=[.!?])\s+", text.strip())
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _enrich_structure(qa: QuestionAnswer, ctx: QAContext, ents: dict, simple: bool) -> None:
+    sents = _sentences(qa.answer)
+    qa.answer_title = _TITLES.get(qa.kind, "Analysis")
+    qa.short_answer = sents[0] if sents else qa.answer
+    qa.detailed_answer = _paragraphs(sents)
+    qa.related_drivers = ents.get("drivers", [])
+    qa.analysis_steps = _STEPS.get(qa.kind, _DEFAULT_STEPS)
+
+    # evidence bullets from remaining sentences + structured supporting data
+    ev: list[str] = [s for s in sents[1:] if len(s) > 3][:4]
+    sup = qa.supporting or {}
+    if sup.get("lap"):
+        ev.append(f"Key lap: {sup['lap']} ({sup.get('kind', 'position change')}).")
+        qa.related_laps = [int(sup["lap"])] if str(sup["lap"]).isdigit() else []
+    if sup.get("source"):
+        ev.append(f"Overtake data source: {sup['source']}.")
+    qa.evidence = ev
+
+    # beginner summary (plain-English, jargon-stripped short answer)
+    beginner = qa.short_answer
+    for pat, repl in _JARGON:
+        beginner = re.sub(pat, repl, beginner, flags=re.I)
+    qa.beginner_summary = beginner
+
+    # advanced notes: confidence, method, gaps, assumptions
+    notes = [f"Confidence: {qa.confidence}."]
+    if qa.missing_data:
+        notes.append("Missing data: " + ", ".join(qa.missing_data) + ".")
+    if qa.kind in ("best_pace", "why_lost"):
+        notes.append("Pace figures are fuel- and tyre-corrected clean-air estimates.")
+    if qa.kind == "overtake" and sup.get("source") == "inferred":
+        notes.append("Overtake inferred from the lap-by-lap position trace, not an explicit feed.")
+    qa.advanced_notes = notes
+
+
+def _paragraphs(sents: list[str]) -> list[str]:
+    if len(sents) <= 2:
+        return [" ".join(sents)] if sents else []
+    mid = (len(sents) + 1) // 2
+    return [" ".join(sents[:mid]), " ".join(sents[mid:])]
 
 
 def _qa(q, answer, kind, confidence, ctx, drivers, follow_ups=None, supporting=None, missing=None):

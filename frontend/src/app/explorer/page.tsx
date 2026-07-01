@@ -2,14 +2,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity, BookOpen, Database, GitCompareArrows, MessageSquareText,
-  Gauge, Layers, LineChart, Timer, Wind, Braces, TestTube,
+  Gauge, Layers, LineChart, Timer, Wind, Braces, RefreshCw, AlertTriangle,
 } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
 import { RaceSelector, type Selection } from "@/components/explorer/RaceSelector";
 import { Tabs } from "@/components/ui/Tabs";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { InfoTip } from "@/components/ui/InfoTip";
-import { Skeleton, ErrorState, EmptyState } from "@/components/ui/misc";
+import { Skeleton, EmptyState } from "@/components/ui/misc";
 import { RaceStory } from "@/components/dashboard/RaceStory";
 import { PracticeView } from "@/components/dashboard/PracticeView";
 import { DataSourcesPanel } from "@/components/dashboard/DataSourcesPanel";
@@ -21,10 +21,9 @@ import { StrategyExplainer } from "@/components/strategy/StrategyExplainer";
 import { QuestionBox } from "@/components/strategy/QuestionBox";
 import { DriverComparison } from "@/components/driver-comparison/DriverComparison";
 import { SimulatorLite } from "@/components/strategy/SimulatorLite";
-import { ModeProvider, useMode } from "@/lib/mode";
-import { api } from "@/lib/api";
+import { useMode } from "@/lib/mode";
+import { api, ApiError } from "@/lib/api";
 import type { Meta, RaceBundle } from "@/lib/types";
-import { cx } from "@/lib/format";
 
 const RACE_TABS = [
   { id: "story", label: "Race Story", icon: <BookOpen size={14} /> },
@@ -45,52 +44,49 @@ const PRACTICE_TABS = [
 ];
 
 export default function ExplorerPage() {
-  return (
-    <ModeProvider>
-      <Explorer />
-    </ModeProvider>
-  );
-}
-
-function Explorer() {
-  const { mode, setMode } = useMode();
+  const { mode } = useMode();
+  const isAdvanced = mode === "advanced";
   const [meta, setMeta] = useState<Meta | null>(null);
-  const [sel, setSel] = useState<Selection>({ year: 2026, gp: "Austrian Grand Prix", session: "Race", mock: false });
+  const [sel, setSel] = useState<Selection>({ year: 2026, gp: "Austrian Grand Prix", session: "Race" });
   const [bundle, setBundle] = useState<RaceBundle | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
   const [tab, setTab] = useState("story");
   const [chartTab, setChartTab] = useState("position");
   const [selected, setSelected] = useState<string[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
-    api.meta().then((m) => { setMeta(m); setSel((s) => ({ ...s, year: m.default_year, mock: m.mock_mode })); })
+    api.meta().then((m) => { setMeta(m); setSel((s) => ({ ...s, year: m.default_year })); })
       .catch(() => setMeta(null));
   }, []);
 
   const load = useCallback((refresh: boolean) => {
     setLoading(true); setError(null);
-    api.session(sel.year, sel.gp, sel.session, sel.mock, refresh)
+    api.session(sel.year, sel.gp, sel.session, refresh)
       .then((b) => { setBundle(b); setSelected([]); })
-      .catch((e) => setError(e.message))
+      .catch((e) => { setBundle(null); setError(e instanceof ApiError ? e : new ApiError(String(e?.message ?? e))); })
       .finally(() => setLoading(false));
-  }, [sel.year, sel.gp, sel.session, sel.mock]);
+  }, [sel.year, sel.gp, sel.session]);
 
   useEffect(() => {
     load(refreshKey > 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sel.year, sel.gp, sel.session, sel.mock, refreshKey]);
+  }, [sel.year, sel.gp, sel.session, refreshKey]);
 
   const session = bundle?.session;
   const category = bundle?.category ?? "race";
-  const tabs = category === "practice" ? PRACTICE_TABS : RACE_TABS;
+  const baseTabs = category === "practice" ? PRACTICE_TABS : RACE_TABS;
+  // In Simple mode the Data tab is tucked away unless data is partial or advanced.
+  const tabs = useMemo(
+    () => baseTabs.filter((t) => t.id !== "data" || isAdvanced || !!session?.partial),
+    [baseTabs, isAdvanced, session?.partial],
+  );
 
-  // keep the active tab valid when the session category changes
   useEffect(() => {
     if (!tabs.some((t) => t.id === tab)) setTab(tabs[0].id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category]);
+  }, [category, isAdvanced]);
 
   const subtitle = useMemo(() => {
     if (!session) return "";
@@ -100,17 +96,17 @@ function Explorer() {
   return (
     <div className="min-h-screen">
       <NavBar active="explorer" />
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+      <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-6">
         {/* clean header */}
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight">
-                {session ? session.grand_prix : "Loading…"}
-              </h1>
-              {bundle?.source === "mock" && <DemoChip />}
-              {bundle?.source !== "mock" && session?.partial && <PartialChip onClick={() => setTab("data")} />}
-            </div>
+        <div className="mb-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
+              {session ? session.grand_prix : loading ? "Loading…" : "Race Explorer"}
+            </h1>
+            {bundle?.source === "mock" && <DemoChip />}
+            {bundle?.source !== "mock" && session?.partial && <PartialChip onClick={() => setTab("data")} />}
+          </div>
+          {(session || loading) && (
             <p className="mt-0.5 text-sm text-ink-muted">
               {subtitle}
               {bundle && (
@@ -120,8 +116,7 @@ function Explorer() {
                 </button>
               )}
             </p>
-          </div>
-          <ModeToggle mode={mode} setMode={setMode} />
+          )}
         </div>
 
         {/* compact controls */}
@@ -130,24 +125,23 @@ function Explorer() {
             onRefresh={() => setRefreshKey((k) => k + 1)} />
         </div>
 
-        {/* subtle data note only when it matters */}
-        {session?.notes?.length && (bundle?.source === "mock" || session.partial) ? (
+        {/* honest demo note (only when the backend is explicitly in demo mode) */}
+        {session?.notes?.length && bundle?.source === "mock" ? (
           <p className="mb-4 rounded-lg border border-amber/15 bg-amber/[0.04] px-3 py-1.5 text-xs text-amber/90">
             {session.notes[0]}
           </p>
         ) : null}
 
-        <Tabs items={tabs} active={tab} onChange={setTab} className="mb-5" />
+        {(bundle || loading) && <Tabs items={tabs} active={tab} onChange={setTab} className="mb-5" />}
 
         {loading && <LoadingDashboard />}
-        {error && !loading && <Card><ErrorState message={error} onRetry={() => setRefreshKey((k) => k + 1)} /></Card>}
+        {error && !loading && (
+          <DataUnavailable error={error} onRetry={() => setRefreshKey((k) => k + 1)} />
+        )}
 
         {bundle && session && !loading && !error && (
           <div className="animate-fade-in">
-            {/* ---- race sections ---- */}
-            {category !== "practice" && tab === "story" && (
-              <RaceStory bundle={bundle} onJump={setTab} />
-            )}
+            {category !== "practice" && tab === "story" && <RaceStory bundle={bundle} onJump={setTab} />}
             {category !== "practice" && tab === "charts" && (
               <div className="space-y-4">
                 <Tabs items={[
@@ -178,10 +172,9 @@ function Explorer() {
                   <StrategyExplainer strategy={bundle.strategy}
                     onFocusDrivers={(d) => { setSelected(d); setChartTab("position"); setTab("charts"); }} />
                 </Section>
-                {mode === "advanced" && (
+                {isAdvanced && (
                   <Section title="Strategy simulator (lite)" info="A directional what-if estimate grounded in the real race — clearly not an exact result.">
-                    <SimulatorLite bundle={bundle} year={sel.year} gp={session.grand_prix}
-                      session={sel.session} mock={bundle.source === "mock"} />
+                    <SimulatorLite bundle={bundle} year={sel.year} gp={session.grand_prix} session={sel.session} />
                   </Section>
                 )}
               </div>
@@ -192,29 +185,26 @@ function Explorer() {
               </Section>
             )}
 
-            {/* ---- practice sections ---- */}
             {category === "practice" && bundle.practice && ["story", "pace", "runs"].includes(tab) && (
               <PracticeView practice={bundle.practice} session={session}
                 section={tab as "story" | "pace" | "runs"} />
             )}
 
-            {/* ---- shared sections ---- */}
             {tab === "compare" && (
               <Section title="Driver comparison">
                 <DriverComparison bundle={bundle} year={sel.year} gp={session.grand_prix}
-                  session={sel.session} mock={bundle.source === "mock"} initial={selected} />
+                  session={sel.session} initial={selected} />
               </Section>
             )}
             {tab === "ask" && (
               <Section title="Ask about this session" info="Answered from the loaded data. Works with no API key. Try messy, plain-English questions.">
                 <QuestionBox year={sel.year} gp={session.grand_prix} session={sel.session}
-                  mock={bundle.source === "mock"} llmAvailable={meta?.llm_available ?? false}
-                  category={category} />
+                  llmAvailable={meta?.llm_available ?? false} category={category} />
               </Section>
             )}
             {tab === "data" && (
               <DataSourcesPanel year={sel.year} gp={session.grand_prix} session={sel.session}
-                mock={bundle.source === "mock"} onRefetch={() => setRefreshKey((k) => k + 1)} />
+                onRefetch={() => setRefreshKey((k) => k + 1)} />
             )}
           </div>
         )}
@@ -227,27 +217,43 @@ function Explorer() {
   );
 }
 
-function ModeToggle({ mode, setMode }: { mode: string; setMode: (m: any) => void }) {
+/** Honest failure — no fake data. Shows the reason + retry + diagnostics link. */
+function DataUnavailable({ error, onRetry }: { error: ApiError; onRetry: () => void }) {
   return (
-    <div className="flex items-center gap-2">
-      <InfoTip label="Simple vs Advanced" text="Simple keeps it plain-English and story-first. Advanced adds full tables, raw metrics, the simulator and diagnostics." />
-      <div className="flex rounded-lg border border-white/[0.06] bg-base-850/60 p-1 text-xs">
-        {(["simple", "advanced"] as const).map((m) => (
-          <button key={m} onClick={() => setMode(m)}
-            className={cx("rounded-md px-3 py-1.5 font-medium capitalize transition-colors",
-              mode === m ? "bg-accent/15 text-accent-soft" : "text-ink-muted hover:text-ink")}>
-            {m}
+    <Card>
+      <CardBody className="flex flex-col items-center gap-3 py-10 text-center">
+        <span className="grid h-11 w-11 place-items-center rounded-full bg-amber/10 ring-1 ring-amber/25">
+          <AlertTriangle size={20} className="text-amber" />
+        </span>
+        <div>
+          <h3 className="text-base font-semibold">We couldn&apos;t load real data for this session</h3>
+          <p className="mx-auto mt-1 max-w-md text-sm text-ink-muted">{error.message}</p>
+        </div>
+        {error.attempts?.length > 0 && (
+          <ul className="mx-auto max-w-md space-y-0.5 text-left text-xs text-ink-faint">
+            {error.attempts.slice(0, 4).map((a: any, i: number) => (
+              <li key={i}>· {a.source}: {a.category}</li>
+            ))}
+          </ul>
+        )}
+        <div className="mt-1 flex flex-wrap justify-center gap-2">
+          <button onClick={onRetry} className="pill-btn">
+            <RefreshCw size={14} /> Retry
           </button>
-        ))}
-      </div>
-    </div>
+        </div>
+        <p className="text-xs text-ink-faint">
+          Try another session, or check the backend and your network. Real data comes from OpenF1,
+          FastF1 and Jolpica.
+        </p>
+      </CardBody>
+    </Card>
   );
 }
 
 function DemoChip() {
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-amber/40 bg-amber/10 px-2 py-0.5 text-[11px] font-semibold text-amber"
-      title="Simulated demo data — shown because live F1 data wasn't fetched.">
+      title="Explicit demo mode is enabled on the backend (sample data).">
       Demo data
     </span>
   );

@@ -13,9 +13,9 @@ import { InfoTip } from "@/components/ui/InfoTip";
 import { fmtLap, fmtSec } from "@/lib/format";
 
 export function DriverComparison({
-  bundle, year, gp, session, mock, initial,
+  bundle, year, gp, session, initial,
 }: {
-  bundle: RaceBundle; year: number; gp: string; session: string; mock: boolean; initial: string[];
+  bundle: RaceBundle; year: number; gp: string; session: string; initial: string[];
 }) {
   const codes = bundle.session.drivers.map((d) => d.code);
   const ranked = [...bundle.pace].sort((a, b) => (a.pace_rank ?? 99) - (b.pace_rank ?? 99));
@@ -30,12 +30,12 @@ export function DriverComparison({
   useEffect(() => {
     let cancel = false;
     setLoading(true); setErr(null);
-    api.compare(year, gp, session, a, b, mock)
+    api.compare(year, gp, session, a, b)
       .then((r) => { if (!cancel) setData(r); })
       .catch((e) => { if (!cancel) setErr(e.message); })
       .finally(() => { if (!cancel) setLoading(false); });
     return () => { cancel = true; };
-  }, [a, b, year, gp, session, mock]);
+  }, [a, b, year, gp, session]);
 
   const positionData = useMemo(() => {
     const byLap = new Map<number, any>();
