@@ -5,7 +5,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge, TeamDot } from "@/components/ui/Badge";
 import { StatTile } from "@/components/ui/StatTile";
 import { InfoTip } from "@/components/ui/InfoTip";
-import { fmtLap, fmtSec, netBadge, ordinal } from "@/lib/format";
+import { fmtGap, fmtLap, fmtSec, netBadge, ordinal } from "@/lib/format";
 
 export function RaceOverview({ bundle }: { bundle: RaceBundle }) {
   const { session, strategy } = bundle;
@@ -89,7 +89,7 @@ export function RaceOverview({ bundle }: { bundle: RaceBundle }) {
                       </td>
                       <td className="py-2 pr-2 tabular-nums text-ink-muted">{c.pit_stops}</td>
                       <td className="py-2 pr-2 tabular-nums text-ink-muted">{fmtLap(c.best_lap)}</td>
-                      <td className="py-2 pr-2 tabular-nums text-ink-faint">{c.retired ? c.status : (c.gap ?? "—")}</td>
+                      <td className="py-2 pr-2 tabular-nums text-ink-faint">{c.retired ? c.status : fmtGap(c.position, c.gap)}</td>
                       <td className="py-2 pr-5 text-right tabular-nums">{c.points ?? "—"}</td>
                     </tr>
                   );

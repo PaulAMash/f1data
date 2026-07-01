@@ -22,8 +22,9 @@ export function NavBar({ active }: { active?: "home" | "explorer" | "history" })
           <Link href="/history" className={link(active === "history")}>Historical</Link>
         </nav>
 
+        {/* The Simple/Advanced toggle only appears where it changes the content. */}
         <div className="ml-auto">
-          <ModeToggle />
+          {active !== "home" && <ModeToggle />}
         </div>
       </div>
     </header>

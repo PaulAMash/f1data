@@ -55,18 +55,20 @@ export default function ExplorerPage() {
   const [chartTab, setChartTab] = useState("position");
   const [selected, setSelected] = useState<string[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [currentSeason, setCurrentSeason] = useState<number | null>(null);
 
   useEffect(() => {
-    // Honor a ?year&gp&session deep-link (from the home page examples); else meta default.
+    api.meta().then(setMeta).catch(() => setMeta(null));
     const q = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
     const qYear = q?.get("year"); const qGp = q?.get("gp"); const qSession = q?.get("session");
-    if (qGp) {
-      setSel({ year: qYear ? Number(qYear) : 2025, gp: qGp, session: qSession || "Race" });
-      api.meta().then(setMeta).catch(() => setMeta(null));
-      return;
-    }
-    api.meta().then((m) => { setMeta(m); setSel((s) => ({ ...s, year: m.default_year })); })
-      .catch(() => setMeta(null));
+    // Default Race Explorer to the current season's latest race; honor a deep-link if present.
+    api.current().then((cur) => {
+      setCurrentSeason(cur.year);
+      if (qGp) setSel({ year: qYear ? Number(qYear) : cur.year, gp: qGp, session: qSession || "Race" });
+      else if (cur.gp) setSel({ year: cur.year, gp: cur.gp, session: "Race" });
+    }).catch(() => {
+      if (qGp) setSel({ year: qYear ? Number(qYear) : 2025, gp: qGp, session: qSession || "Race" });
+    });
   }, []);
 
   const load = useCallback((refresh: boolean) => {
@@ -132,6 +134,13 @@ export default function ExplorerPage() {
           <RaceSelector value={sel} onChange={setSel} loading={loading}
             onRefresh={() => setRefreshKey((k) => k + 1)} />
         </div>
+
+        {currentSeason && sel.year < currentSeason && (
+          <p className="mb-4 rounded-lg border border-sky-400/15 bg-sky-400/[0.04] px-3 py-1.5 text-xs text-sky-300/90">
+            You&apos;re viewing a previous season ({sel.year}). Full past-season browsing lives in{" "}
+            <a href="/history" className="underline decoration-dotted">Historical</a>.
+          </p>
+        )}
 
         {/* honest demo note (only when the backend is explicitly in demo mode) */}
         {session?.notes?.length && bundle?.source === "mock" ? (

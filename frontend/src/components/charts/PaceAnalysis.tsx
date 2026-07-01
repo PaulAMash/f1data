@@ -7,6 +7,7 @@ import type { DriverPaceSummary, RaceSession } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { Term } from "@/components/ui/Term";
+import { DriverBadge } from "@/components/ui/DriverBadge";
 import { useIsSimple } from "@/lib/mode";
 import { cx, fmtLap } from "@/lib/format";
 
@@ -82,12 +83,14 @@ export function PaceAnalysis({
               const gap = (p.clean_air_pace ?? 0) - (fastest?.clean_air_pace ?? 0);
               return (
                 <div key={p.driver} className="flex items-center gap-2">
-                  <span className="w-9 text-sm font-semibold">{p.driver}</span>
+                  <DriverBadge driver={session.drivers.find((d) => d.code === p.driver)}
+                    code={p.driver} name={p.name} team={p.team} teamColor={p.team_color}
+                    size={24} className="w-36 shrink-0" />
                   <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
                     <span className="block h-full rounded-full"
                       style={{ width: `${100 - (gap / maxGap) * 75}%`, background: p.team_color }} />
                   </span>
-                  <span className="w-24 text-right text-xs tabular-nums text-ink-muted">
+                  <span className="w-20 text-right text-xs tabular-nums text-ink-muted">
                     {gap === 0 ? "fastest" : `+${gap.toFixed(2)}s`}
                   </span>
                 </div>

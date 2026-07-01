@@ -3,10 +3,10 @@ import { Crown, Flag, Sparkles, TrendingDown, TrendingUp, Wrench } from "lucide-
 import type { RaceBundle } from "@/lib/types";
 import { useIsSimple } from "@/lib/mode";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
-import { Badge, TeamDot } from "@/components/ui/Badge";
 import { Term } from "@/components/ui/Term";
+import { DriverBadge } from "@/components/ui/DriverBadge";
 import { RaceOverview } from "./RaceOverview";
-import { fmtLap, fmtSec, pitLabel } from "@/lib/format";
+import { fmtGap, pitLabel } from "@/lib/format";
 
 /**
  * The default, user-friendly overview. Leads with a plain-English story, then a
@@ -16,6 +16,7 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
   const simple = useIsSimple();
   const { session, strategy } = bundle;
   const cls = session.classification;
+  const driverOf = (code?: string | null) => session.drivers.find((d) => d.code === code) ?? null;
   const winner = cls.find((c) => c.driver === strategy.winner);
   const topPace = [...bundle.pace].sort((a, b) => (a.pace_rank ?? 99) - (b.pace_rank ?? 99))[0];
   const loser = strategy.biggest_losers[0];
@@ -39,23 +40,24 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
         </CardBody>
       </Card>
 
-      {/* answer-first key cards */}
+      {/* answer-first key cards (clickable → the tab with the detail) */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KeyCard icon={<Crown size={15} />} tone="accent" label="Winner"
-          value={winner?.driver ?? "—"} sub={winner?.name}
-          why="Took the chequered flag first." />
+          value={winner?.name ?? winner?.driver ?? "—"} sub={winner?.team}
+          why="Took the chequered flag first." onClick={() => onJump?.("charts")} />
         <KeyCard icon={<TrendingUp size={15} />} tone="speed" label="Best race pace"
-          value={topPace?.driver ?? "—"}
+          value={driverOf(topPace?.driver)?.name ?? topPace?.driver ?? "—"}
           sub={<>fastest <Term>clean-air pace</Term></>}
-          why="Quickest once fuel and tyres are accounted for — the true speed merchant." />
+          why="Quickest once fuel and tyres are accounted for. Tap to open Pace."
+          onClick={() => onJump?.("pace")} />
         <KeyCard icon={<Flag size={15} />} tone="amber" label="Turning point"
           value={turningPoint ? turningPoint.title.split("(")[0].trim() : "—"}
           sub={turningPoint?.lap_range ? `Lap ${turningPoint.lap_range.join("–")}` : undefined}
-          why="The moment that most shaped the result." onClick={() => onJump?.("strategy")} />
+          why="The moment that most shaped the result. Tap for Strategy." onClick={() => onJump?.("strategy")} />
         <KeyCard icon={<TrendingDown size={15} />} tone="default" label="Biggest loss"
-          value={loser?.driver ?? "—"}
+          value={driverOf(loser?.driver)?.name ?? loser?.driver ?? "—"}
           sub={loser ? `P${loser.grid}→P${loser.finish}` : undefined}
-          why="Lost the most places versus where they started." />
+          why="Lost the most places. Tap to ask why." onClick={() => onJump?.("ask")} />
       </div>
 
       {/* podium + movers (simple) or full overview (advanced) */}
@@ -63,20 +65,19 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
         <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
           <Card>
             <CardHeader title="Top 5" info={undefined} />
-            <CardBody className="space-y-1.5">
+            <CardBody className="space-y-2">
               {cls.filter((c) => c.position && c.position <= 5).map((c) => (
-                <div key={c.driver} className="flex items-center gap-3 text-sm">
-                  <span className="w-5 text-center font-bold text-ink-muted">{c.position}</span>
-                  <TeamDot color={c.team_color} />
-                  <span className="font-semibold">{c.driver}</span>
-                  <span className="text-ink-faint">{c.name}</span>
-                  <span className="ml-auto tabular-nums text-xs text-ink-muted">{c.gap ?? "—"}</span>
+                <div key={c.driver} className="flex items-center gap-3">
+                  <span className="w-5 text-center text-sm font-bold text-ink-muted">{c.position}</span>
+                  <DriverBadge driver={driverOf(c.driver)} code={c.driver} name={c.name}
+                    team={c.team} teamColor={c.team_color} className="flex-1" />
+                  <span className="tabular-nums text-xs text-ink-muted">{fmtGap(c.position, c.gap)}</span>
                 </div>
               ))}
             </CardBody>
           </Card>
           <div className="space-y-4">
-            <MiniMover title="Biggest mover" mover={gainer} tone="up" />
+            <MiniMover title="Biggest mover" mover={gainer} driver={driverOf(gainer?.driver)} tone="up" />
             <PitStrip bundle={bundle} />
           </div>
         </div>
@@ -108,17 +109,19 @@ function KeyCard({
   );
 }
 
-function MiniMover({ title, mover, tone }: { title: string; mover: any; tone: "up" | "down" }) {
+function MiniMover({ title, mover, driver, tone }: {
+  title: string; mover: any; driver: any; tone: "up" | "down";
+}) {
   return (
     <Card>
       <CardHeader title={title} />
       <CardBody>
         {mover ? (
-          <div className="flex items-center gap-2 text-sm">
-            <TeamDot color={mover.team_color} />
-            <span className="font-semibold">{mover.driver}</span>
+          <div className="flex items-center gap-2">
+            <DriverBadge driver={driver} code={mover.driver} team={mover.team}
+              teamColor={mover.team_color} size={26} className="flex-1" />
             <span className="text-xs text-ink-faint">P{mover.grid}→P{mover.finish}</span>
-            <span className={`ml-auto font-semibold ${tone === "up" ? "text-emerald-300" : "text-rose-300"}`}>
+            <span className={`font-semibold ${tone === "up" ? "text-emerald-300" : "text-rose-300"}`}>
               {tone === "up" ? "▲" : "▼"} {Math.abs(mover.net)}
             </span>
           </div>
@@ -129,9 +132,20 @@ function MiniMover({ title, mover, tone }: { title: string; mover: any; tone: "u
 }
 
 function PitStrip({ bundle }: { bundle: RaceBundle }) {
-  // fastest stop across the field, cleanly labelled
   const stops = bundle.session.pit_stops;
-  if (!stops.length) return null;
+  // Never imply a stop count when the source has no trustworthy pit data.
+  if (!stops.length || bundle.session.pit_data_reliable === false) {
+    return (
+      <Card>
+        <CardHeader title={<span className="flex items-center gap-1.5"><Wrench size={14} /> Pit stops</span>} />
+        <CardBody>
+          <p className="text-xs text-ink-faint">
+            Pit-stop data isn&apos;t available from this session&apos;s source.
+          </p>
+        </CardBody>
+      </Card>
+    );
+  }
   const measured = stops.filter((p) => p.stationary_time ?? p.stop_duration);
   const fastest = measured.sort((a, b) =>
     ((a.stationary_time ?? a.stop_duration)! - (b.stationary_time ?? b.stop_duration)!))[0];

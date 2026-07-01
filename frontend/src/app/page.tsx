@@ -1,6 +1,6 @@
 import Link from "next/link";
 import {
-  ArrowRight, BookOpen, Braces, Database, MessageSquareText, Radar, Timer, Trophy,
+  ArrowRight, BookOpen, Database, MessageSquareText, Timer, Trophy,
 } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
 
@@ -27,9 +27,6 @@ export default function Landing() {
       <section className="relative overflow-hidden">
         <div className="mx-auto max-w-7xl px-4 pb-14 pt-16 sm:px-6 sm:pt-24">
           <div className="animate-fade-in">
-            <span className="chip mb-5">
-              <Radar size={13} className="text-accent-soft" /> Virtual pit wall
-            </span>
             <h1 className="max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">
               Understand any <span className="text-accent-soft">F1 race</span>.
             </h1>

@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, ChevronDown, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
 import { useIsSimple } from "@/lib/mode";
@@ -72,11 +72,9 @@ export function HistoricalExplorer() {
 
   useEffect(() => { fetchResults(); }, [fetchResults]);
 
-  const allSessions = useMemo(
-    () => [...sessions.available, ...sessions.unavailable],
-    [sessions],
-  );
-  const isUnavailableSession = sessions.unavailable.includes(session);
+  // Only offer sessions the historical source actually supports — no "(n/a)" options.
+  const allSessions = sessions.available;
+  const isUnavailableSession = false;
 
   return (
     <Card>
@@ -91,7 +89,7 @@ export function HistoricalExplorer() {
           <Sel label="Grand Prix" className="col-span-2 sm:col-span-1" value={event} onChange={setEvent}
             options={(events.length ? events : [{ name: event || "—" }]).map((e) => ({ value: e.name, label: e.name }))} />
           <Sel label="Session" value={session} onChange={setSession}
-            options={allSessions.map((s) => ({ value: s, label: s + (sessions.unavailable.includes(s) ? " (n/a)" : "") }))} />
+            options={allSessions.map((s) => ({ value: s, label: s }))} />
           <button onClick={() => setNonce((n) => n + 1)} disabled={loading}
             className="pill-btn h-[38px] justify-center self-end">
             <RefreshCw size={14} className={cx(loading && "animate-spin")} /> Refresh

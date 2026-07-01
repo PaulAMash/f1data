@@ -13,6 +13,7 @@ export interface Circuit {
 export interface Driver {
   number: string; code: string; name: string; team: string;
   team_color: string; grid?: number | null; country?: string | null;
+  headshot_url?: string | null;
 }
 export interface Constructor { id: string; name: string; color: string; }
 
@@ -68,7 +69,8 @@ export type SessionCategory = "race" | "qualifying" | "sprint" | "practice";
 export interface RaceSession {
   year: number; grand_prix: string; official_name?: string | null; session_type: string;
   category: SessionCategory; circuit?: Circuit | null; total_laps: number; data_source: DataSource;
-  fetched_at?: string | null; partial: boolean; notes: string[]; source_report?: SourceReport | null;
+  fetched_at?: string | null; partial: boolean; pit_data_reliable?: boolean;
+  notes: string[]; source_report?: SourceReport | null;
   drivers: Driver[]; constructors: Constructor[]; classification: ClassificationRow[];
   laps: Lap[]; stints: Stint[]; pit_stops: PitStop[]; overtakes: Overtake[];
   race_control: RaceControlEvent[]; weather: WeatherPoint[]; positions: PositionPoint[];

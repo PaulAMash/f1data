@@ -4,13 +4,21 @@ import { Trophy, Users } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Tabs } from "@/components/ui/Tabs";
-import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 import { Skeleton, EmptyState } from "@/components/ui/misc";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { HistoricalExplorer } from "@/components/history/HistoricalExplorer";
+import { useIsAdvanced } from "@/lib/mode";
 import { api } from "@/lib/api";
 import type { DataSource } from "@/lib/types";
 import { cx } from "@/lib/format";
+
+/** Accurate, non-misleading source label (never "Live" for archive data). */
+function SourceTag({ source }: { source: DataSource }) {
+  const advanced = useIsAdvanced();
+  if (!advanced) return null;
+  const label = source === "mock" ? "Sample data" : source === "cache" ? "Cached" : "via Jolpica";
+  return <span className="rounded-md border border-white/10 px-2 py-0.5 text-[11px] text-ink-faint">{label}</span>;
+}
 
 const YEARS = Array.from({ length: 9 }, (_, i) => 2026 - i);
 const CIRCUITS = ["austria", "monza", "monaco", "silverstone", "spa", "suzuka", "bahrain", "brazil"];
@@ -67,7 +75,7 @@ export default function History() {
               info={<InfoTip text="Points and wins for the selected season." />}
               right={
                 <div className="flex items-center gap-2">
-                  <DataSourceBadge source={source} />
+                  <SourceTag source={source} />
                   <select value={year} onChange={(e) => setYear(Number(e.target.value))}
                     className="rounded-lg border border-white/10 bg-base-800 px-2.5 py-1.5 text-sm outline-none">
                     {YEARS.map((y) => <option key={y} value={y} className="bg-base-800">{y}</option>)}
@@ -116,7 +124,7 @@ export default function History() {
               title="Past winners at circuit"
               right={
                 <div className="flex items-center gap-2">
-                  <DataSourceBadge source={winSource} />
+                  <SourceTag source={winSource} />
                   <select value={circuit} onChange={(e) => setCircuit(e.target.value)}
                     className="rounded-lg border border-white/10 bg-base-800 px-2.5 py-1.5 text-sm capitalize outline-none">
                     {CIRCUITS.map((c) => <option key={c} value={c} className="bg-base-800">{c}</option>)}

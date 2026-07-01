@@ -37,6 +37,20 @@ export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
 }
 
+// Safe race-gap display. The winner never shows a "+seconds" value, and absurd
+// values (a source leaking cumulative race time) are hidden rather than shown.
+export function fmtGap(position?: number | null, gap?: string | null): string {
+  if (position === 1) return "Winner";
+  if (!gap) return "—";
+  const g = String(gap);
+  if (/lap/i.test(g)) return g;                 // "+1 Lap" etc.
+  const m = g.match(/([-+]?\d+(?:\.\d+)?)/);
+  if (!m) return g === "LEADER" ? "Winner" : "—";
+  const secs = parseFloat(m[1]);
+  if (!isFinite(secs) || secs < 0 || secs > 300) return "—";  // not a plausible gap
+  return `+${secs.toFixed(secs < 100 ? 3 : 1)}s`.replace("++", "+");
+}
+
 // Clean, user-friendly pit-stop label (mirrors the backend PitStopDataService).
 export function pitLabel(p: {
   stationary_time?: number | null; stop_duration?: number | null;

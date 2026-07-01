@@ -226,8 +226,11 @@ def _story(session, classified, winner, gainers, losers, best_strategy, worst_st
     win = next((c for c in classified if c.driver == winner), None)
     if win:
         from_grid = f" from P{win.grid}" if win.grid and win.grid > 1 else " from pole"
-        s.append(f"{win.name} won the {session.grand_prix}{from_grid}, running a "
-                 f"{win.pit_stops}-stop race.")
+        # Only mention the stop count when pit data is trustworthy — never claim a
+        # "0-stop race" just because a source lacked pit data.
+        strat = (f", running a {win.pit_stops}-stop race"
+                 if session.pit_data_reliable and win.pit_stops > 0 else "")
+        s.append(f"{win.name} won the {session.grand_prix}{from_grid}{strat}.")
     if best_strategy:
         s.append(best_strategy["detail"])
     if worst_strategy:

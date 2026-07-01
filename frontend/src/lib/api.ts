@@ -79,6 +79,8 @@ export const api = {
   ask: (body: {
     year: number; gp: string; session: string; question: string; simple?: boolean;
   }) => post<QuestionAnswer>("/api/ask", body),
+  current: () =>
+    get<{ year: number; gp: string | null; session: string; seasons: number[] }>("/api/current"),
   sessionsAvailable: (year: number, gp: string) =>
     get<{ source: string; sessions: string[] }>("/api/sessions/available", { year, gp }),
   dataSourceHealth: () =>

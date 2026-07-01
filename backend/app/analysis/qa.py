@@ -428,7 +428,7 @@ def _practice_team(q, ctx, team):
 
 # ---- race handlers (kept + upgraded) ---- #
 def _h_why_lost(q, ctx, ents):
-    if ctx.is_practice or not re.search(r"\b(lose|lost|drop|dropped|fall|fell|slip|struggl)\b", q, re.I):
+    if ctx.is_practice or not re.search(r"\b(lose|lost|drop|dropped|fall|fell|slip|struggl|bad race|go wrong)\b", q, re.I):
         return None
     drivers = ents["drivers"]
     if not drivers:
@@ -437,26 +437,70 @@ def _h_why_lost(q, ctx, ents):
     p, c = ctx.pace_by_driver.get(code), ctx.class_by_driver.get(code)
     if not c:
         return _missing(q, [f"race data for {code}"], ctx)
-    reasons = []
     if c.retired:
-        reasons.append(f"retired from the race ({c.status})")
-    if c.grid and c.position and c.position > c.grid:
-        reasons.append(f"dropped from P{c.grid} to P{c.position}")
+        return _qa(q, f"{code} didn't lose places on merit — they retired from the race ({c.status}) "
+                   f"after starting P{c.grid or '?'}. Look at the lap they dropped out on the position chart.",
+                   "why_lost", "high", ctx, [code], follow_ups=["Show the position chart", "Explain simply"])
+
+    # --- mechanism: where and how they fell, from the position trace ---
+    pos = {(pp.driver, pp.lap): pp.position for pp in ctx.session.positions}
+    pit_laps = {ps.lap for ps in ctx.session.pit_stops if ps.driver == code}
+    drops, prev = [], None
+    for lap in range(1, ctx.session.total_laps + 1):
+        cur = pos.get((code, lap))
+        if cur is not None and prev is not None and cur > prev:
+            drops.append((lap, prev, cur))
+        if cur is not None:
+            prev = cur
+
+    def near_vsc(lap):
+        return any(w.start_lap - 1 <= lap <= w.end_lap + 1 for w in ctx.session.track_status_windows)
+
+    mech, laps_seen = [], []
+    for lap, a, b in sorted(drops, key=lambda d: d[2] - d[1], reverse=True)[:2]:
+        laps_seen.append(lap)
+        if any(abs(lap - pl) <= 1 for pl in pit_laps):
+            mech.append(f"in the pit cycle around lap {lap} (P{a}→P{b})")
+        elif near_vsc(lap):
+            mech.append(f"during the neutralization around lap {lap} (P{a}→P{b})")
+        else:
+            mech.append(f"on track around lap {lap} (P{a}→P{b})")
+
+    # --- evidence ---
+    ev = []
     if p and p.pace_rank and c.position and c.position > p.pace_rank:
-        reasons.append(f"finished {c.position - p.pace_rank} place(s) below their P{p.pace_rank} pace")
+        ev.append(f"their clean-air pace was worth about P{p.pace_rank}, so the result was "
+                  f"{c.position - p.pace_rank} place(s) worse than their speed")
     ref = _reference_stops(ctx.session, code)
-    if c.pit_stops > ref:
-        reasons.append(f"ran {c.pit_stops} stops vs the {ref} most used (~{20.5*(c.pit_stops-ref):.0f}s extra pit loss)")
+    if ctx.session.pit_data_reliable and c.pit_stops > ref:
+        ev.append(f"an extra stop ({c.pit_stops} vs the {ref} most cars ran) cost roughly "
+                  f"{20.5 * (c.pit_stops - ref):.0f}s of pit-lane time")
     victims = [u for u in ctx.strategy.undercuts if u.victim == code]
     if victims:
-        reasons.append(f"was undercut by {victims[0].attacker} around lap {victims[0].pit_lap}")
+        ev.append(f"they were undercut by {victims[0].attacker} around lap {victims[0].pit_lap}")
     if p and p.traffic_laps >= 8:
-        reasons.append(f"spent {p.traffic_laps} laps in traffic")
-    if not reasons:
-        return _qa(q, f"{code} finished P{c.position} from P{c.grid} — no single big loss stands out; a steady race.",
-                   "why_lost", "medium", ctx, [code])
-    return _qa(q, f"{code} lost ground mainly because they " + "; ".join(reasons) + ".",
-               "why_lost", "high", ctx, [code], follow_ups=["Show the position chart", "Explain simply"])
+        ev.append(f"they spent {p.traffic_laps} laps stuck in traffic (dirty air)")
+
+    # --- assemble a non-circular explanation ---
+    head = (f"{c.name} slipped from P{c.grid} to P{c.position}" if c.grid and c.position
+            else f"{c.name} lost ground")
+    if mech:
+        cause = ("pit strategy / timing" if any("pit" in m for m in mech)
+                 else "the neutralization window" if any("neutral" in m for m in mech)
+                 else "on-track battles")
+        head += f", and the trace shows the damage came {mech[0]}"
+        if len(mech) > 1:
+            head += f" and again {mech[1]}"
+        head += f" — pointing to {cause} rather than a lack of pace."
+    else:
+        head += ", most likely through the pit cycle or traffic rather than raw pace."
+    body = (" The strongest clues: " + "; ".join(ev) + "." if ev
+            else " There isn't enough pit/gap detail to prove the exact cause, but the position "
+                 "trace is where the loss shows up.")
+    conf = "high" if (mech and ev) else "medium" if ev else "low"
+    return _qa(q, head + body, "why_lost", conf, ctx, [code],
+               supporting={"lap": laps_seen[0] if laps_seen else None},
+               follow_ups=["Show the position chart", "Compare with teammate", "Compare their tyres", "Explain simply"])
 
 
 def _h_best_pace(q, ctx, ents):

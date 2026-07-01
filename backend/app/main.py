@@ -88,6 +88,12 @@ def races(year: int):
     return {"source": src.value, "year": year, "races": [g.model_dump() for g in data]}
 
 
+@app.get("/api/current")
+def current_default():
+    """Current season + latest Grand Prix for Race Explorer to open by default."""
+    return service.get_current()
+
+
 @app.get("/api/sessions/available")
 def sessions_available(year: int = Query(...), gp: str = Query(...)):
     """Which session types are available for a given GP (Practice…Race)."""

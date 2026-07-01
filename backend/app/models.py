@@ -93,6 +93,7 @@ class Driver(BaseModel):
     team_color: str = "#888888"
     grid: Optional[int] = None        # starting position
     country: Optional[str] = None
+    headshot_url: Optional[str] = None  # OpenF1 portrait where available
 
 
 # --------------------------------------------------------------------------- #
@@ -271,6 +272,7 @@ class RaceSession(BaseModel):
     data_source: DataSource = DataSource.MOCK
     fetched_at: Optional[str] = None
     partial: bool = False             # some facets missing but session still usable
+    pit_data_reliable: bool = True    # False when the source has no trustworthy pit data
     notes: list[str] = Field(default_factory=list)
     source_report: Optional[SourceReport] = None
 

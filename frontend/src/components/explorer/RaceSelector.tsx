@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Calendar, ChevronDown, RefreshCw } from "lucide-react";
+import Link from "next/link";
+import { Calendar, ChevronDown, History, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
-import type { GrandPrix, Season } from "@/lib/types";
+import type { GrandPrix } from "@/lib/types";
 import { cx } from "@/lib/format";
 
 const SESSION_TYPES = ["Practice 1", "Practice 2", "Practice 3", "Qualifying", "Sprint", "Race"];
@@ -14,13 +15,10 @@ export function RaceSelector({
 }: {
   value: Selection; onChange: (s: Selection) => void; onRefresh: () => void; loading: boolean;
 }) {
-  const [seasons, setSeasons] = useState<Season[]>([]);
   const [races, setRaces] = useState<GrandPrix[]>([]);
 
-  useEffect(() => {
-    api.seasons().then((r) => setSeasons(r.seasons)).catch(() => setSeasons([]));
-  }, []);
-
+  // Race Explorer is scoped to whatever season is loaded (the current season by
+  // default) — there is no season dropdown here; past seasons live in Historical.
   useEffect(() => {
     api.races(value.year).then((r) => setRaces(r.races)).catch(() => setRaces([]));
   }, [value.year]);
@@ -30,9 +28,10 @@ export function RaceSelector({
 
   return (
     <div className="grid grid-cols-2 items-end gap-2.5 sm:flex sm:flex-wrap">
-      <Field label="Season" icon={<Calendar size={13} />}>
-        <Select value={String(value.year)} onChange={(v) => onChange({ ...value, year: Number(v) })}
-          options={(seasons.length ? seasons.map((s) => s.year) : [value.year]).map((y) => ({ value: String(y), label: String(y) }))} />
+      <Field label="Season">
+        <span className="inline-flex h-[38px] items-center gap-1.5 rounded-lg border border-white/10 bg-base-850/60 px-3 text-sm text-ink">
+          <Calendar size={13} className="text-ink-faint" /> {value.year}
+        </span>
       </Field>
 
       <Field label="Grand Prix" className="col-span-2">
@@ -49,6 +48,12 @@ export function RaceSelector({
         className="pill-btn h-[38px] justify-center self-end" title="Refetch (bypass cache)">
         <RefreshCw size={14} className={cx(loading && "animate-spin")} /> Refresh
       </button>
+
+      <Link href="/history"
+        className="inline-flex h-[38px] items-center gap-1.5 self-end rounded-lg px-2.5 text-xs text-ink-faint hover:text-ink-muted"
+        title="Browse previous seasons in Historical">
+        <History size={13} /> Previous seasons? <span className="underline decoration-dotted">Explore F1 History</span>
+      </Link>
     </div>
   );
 }

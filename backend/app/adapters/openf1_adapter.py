@@ -175,7 +175,7 @@ def fetch_session(year: int, gp: str, session_type: str) -> RaceSession:
                      "name": d.get("full_name") or code}
         drivers.append(Driver(number=str(num), code=code, name=dmap[num]["name"], team=team,
                               team_color=color, grid=grid_by_num.get(num),
-                              country=d.get("country_code")))
+                              country=d.get("country_code"), headshot_url=d.get("headshot_url")))
     facet("drivers", bool(drivers))
 
     def code_of(num) -> str:
