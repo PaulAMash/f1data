@@ -41,8 +41,10 @@ app.add_middleware(
 # meta / health
 # --------------------------------------------------------------------------- #
 @app.get("/api/health")
+@app.get("/health")
 def health():
-    return {"status": "ok"}
+    """Liveness probe. Also served at /health for the desktop sidecar gate."""
+    return {"ok": True, "service": "pitwall-iq-backend", "status": "ok"}
 
 
 @app.get("/api/meta")

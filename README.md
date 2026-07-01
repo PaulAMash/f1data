@@ -90,6 +90,36 @@ window, VER's winning 2-stop). Flip **Demo** off in the UI to attempt real data.
 
 ---
 
+## Desktop app (macOS)
+
+Pitwall IQ also runs as a real macOS `.app` via **Tauri v2** — it wraps the same UI and
+**auto-starts the backend** as a local sidecar, so you just open the app (no terminal,
+no browser). The web workflow above is unchanged.
+
+```bash
+make desktop-deps          # once: Tauri CLI + PyInstaller (Rust must be installed too)
+make desktop-dev           # run the desktop app in dev (auto-starts the backend)
+make desktop-build-mac     # build the macOS .app + .dmg
+```
+
+The built app appears at:
+
+```
+frontend/src-tauri/target/release/bundle/macos/Pitwall IQ.app
+frontend/src-tauri/target/release/bundle/dmg/Pitwall IQ_2.0.0_<arch>.dmg
+```
+
+The desktop shell launches the FastAPI backend on `127.0.0.1:8765`, waits for
+`/health`, then reveals the window; it stops the backend on quit. Demo/real data both
+work (OpenF1 + Jolpica are bundled; FastF1 is opt-in). Full guide — including
+**signing & notarization** for distributing to other Macs — in
+[`docs/DESKTOP.md`](docs/DESKTOP.md). iOS/Windows plans in
+[`docs/MOBILE_ROADMAP.md`](docs/MOBILE_ROADMAP.md).
+
+> The macOS `.app`/`.dmg` must be **built on a Mac** (Apple's toolchain is macOS-only).
+
+---
+
 ## How the data pipeline works
 
 ```

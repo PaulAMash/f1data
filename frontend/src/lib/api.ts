@@ -5,8 +5,25 @@ import type {
   GrandPrix, Meta, QuestionAnswer, RaceBundle, Season, SimulationResult,
 } from "./types";
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || "http://localhost:8000";
+// The desktop sidecar always listens here (see backend/desktop_server.py).
+const DESKTOP_API_BASE = "http://127.0.0.1:8765";
+
+/**
+ * Resolve the backend base URL across all three run modes:
+ *   1. Browser web dev / prod  → NEXT_PUBLIC_API_BASE(_URL), else localhost:8000
+ *   2. Tauri desktop (packaged) → the bundled sidecar on 127.0.0.1:8765
+ *   3. Tauri desktop (dev)      → same sidecar port
+ * An explicit env var always wins so you can point the app anywhere.
+ */
+function resolveApiBase(): string {
+  const env =
+    process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE;
+  if (env) return env.replace(/\/$/, "");
+  if (typeof window !== "undefined" && "__TAURI__" in window) return DESKTOP_API_BASE;
+  return "http://localhost:8000";
+}
+
+export const API_BASE = resolveApiBase();
 
 export class ApiError extends Error {
   constructor(message: string, public status = 0) {

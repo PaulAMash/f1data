@@ -1,0 +1,27 @@
+[package]
+name = "pitwall-iq"
+version = "2.0.0"
+description = "Pitwall IQ — F1 race intelligence desktop app"
+authors = ["Pitwall IQ"]
+edition = "2021"
+rust-version = "1.77.2"
+
+# lib + bin layout keeps the app mobile-ready (Tauri v2 iOS/Android use the lib).
+[lib]
+name = "pitwall_iq_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
