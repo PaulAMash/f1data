@@ -1,0 +1,11 @@
+# Pitwall IQ backend
+# Real F1 data comes through pitwall (f1pitwall) + FastF1 + Jolpica/Ergast.
+f1pitwall[full]>=1.1.0    # pitwall MCP data layer + FastF1 full engine (pandas, numpy…)
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.6
+pydantic-settings>=2.1
+requests>=2.28
+
+# Optional: enables the LLM *polish* layer for Q&A answers (never required).
+# anthropic>=0.39

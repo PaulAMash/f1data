@@ -1,0 +1,40 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- backend data ---
+backend/data/cache/*.json
+!backend/data/cache/.gitkeep
+# FastF1's own on-disk cache, if created next to the package
+fastf1_cache/
+
+# --- Node / Next.js ---
+node_modules/
+.next/
+out/
+.turbo/
+npm-debug.log*
+yarn-error.log*
+
+# --- env / secrets ---
+.env
+.env.local
+.env.*.local
+*.local
+
+# --- editor / OS ---
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# TS incremental build cache
+frontend/tsconfig.tsbuildinfo
+*.tsbuildinfo

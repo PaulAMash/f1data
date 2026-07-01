@@ -1,0 +1,390 @@
+"""
+Deterministic race simulator that produces a *realistic* normalized RaceSession.
+
+Why simulate instead of hand-writing numbers? A race intelligence app is only as
+good as the internal consistency of its data: positions must follow from lap
+times, gaps must follow from positions, undercuts must actually work out in the
+maths. So we model pace + tyre degradation + fuel burn + pit loss + a VSC window
+and let positions/gaps/stints fall out of the physics. The result is a dataset
+the analysis engine can be genuinely tested against.
+
+The scripted 2026 Austrian GP tells the demo story the product is built around:
+  * LEC starts P2 with strong pace but Ferrari commits to a 3-stop and he loses
+    track position to 2-stoppers -> the "hidden pace / strategy mistake" driver.
+  * VER protects track position on a clean 2-stop and wins.
+  * PIA and RUS pit under a VSC window (laps 34-37) and gain cheap time.
+  * HAM runs a short middle stint that forces a long final hard stint.
+
+This module is deterministic (fixed seed) so the demo is identical every run.
+"""
+from __future__ import annotations
+
+import random
+from dataclasses import dataclass, field
+
+from ..models import (
+    ClassificationRow,
+    Circuit,
+    Compound,
+    Constructor,
+    DataSource,
+    Driver,
+    Lap,
+    PitStop,
+    PositionPoint,
+    RaceControlEvent,
+    RaceSession,
+    Stint,
+    TrackStatus,
+    TrackStatusWindow,
+    WeatherPoint,
+)
+
+# --------------------------------------------------------------------------- #
+# Static reference — 2026 grid (subset, ordered by grid position)
+# --------------------------------------------------------------------------- #
+TEAM_COLORS = {
+    "Red Bull Racing": "#3671C6",
+    "Ferrari": "#E8002D",
+    "McLaren": "#FF8000",
+    "Mercedes": "#27F4D2",
+    "Aston Martin": "#229971",
+    "Williams": "#64C4FF",
+    "Alpine": "#FF87BC",
+    "Haas F1 Team": "#B6BABD",
+    "Kick Sauber": "#52E252",
+    "Racing Bulls": "#6692FF",
+}
+
+
+@dataclass
+class Plan:
+    number: str
+    code: str
+    name: str
+    team: str
+    grid: int
+    base_pace: float                     # reference clean lap in seconds (lower = faster)
+    stints: list[tuple[str, int]]        # (compound, pit-in lap) ; last pit-in lap == total_laps
+    country: str = ""
+    dnf_lap: int | None = None
+    dnf_reason: str = ""
+
+
+TOTAL_LAPS = 71
+BASE_LAP = 65.5           # green, full-tank reference at Red Bull Ring
+FUEL_GAIN = 0.055         # seconds/lap the car gets faster as fuel burns
+PIT_LOSS_GREEN = 20.6     # net pit-lane time loss under green
+PIT_LOSS_VSC = 10.2       # net pit-lane loss when the field is slowed (cheap stop)
+VSC_LAP_PENALTY = 17.5    # extra time per lap for a car circulating under VSC
+VSC_START, VSC_END = 34, 37
+
+COMPOUND_OFFSET = {
+    Compound.SOFT: -0.45,
+    Compound.MEDIUM: 0.0,
+    Compound.HARD: 0.35,
+}
+COMPOUND_DEG = {           # seconds/lap added per lap of tyre age
+    Compound.SOFT: 0.075,
+    Compound.MEDIUM: 0.044,
+    Compound.HARD: 0.027,
+}
+
+
+def _c(s: str) -> Compound:
+    return Compound(s)
+
+
+# Scripted field. Stints are (compound, pit-in lap). The final tuple's lap is the
+# flag lap (TOTAL_LAPS). Pit laps chosen to produce the story described above.
+PLANS: list[Plan] = [
+    Plan("1", "VER", "Max Verstappen", "Red Bull Racing", 1, 65.30,
+         [("MEDIUM", 25), ("HARD", 49), ("HARD", TOTAL_LAPS)], "Netherlands"),
+    Plan("16", "LEC", "Charles Leclerc", "Ferrari", 2, 65.42,
+         # 3-stop: strong pace wasted; his lap-50 green stop is the expensive one.
+         [("SOFT", 16), ("MEDIUM", 32), ("HARD", 50), ("MEDIUM", TOTAL_LAPS)], "Monaco"),
+    Plan("4", "NOR", "Lando Norris", "McLaren", 3, 65.40,
+         [("MEDIUM", 23), ("HARD", 49), ("SOFT", TOTAL_LAPS)], "United Kingdom"),
+    Plan("81", "PIA", "Oscar Piastri", "McLaren", 4, 65.53,
+         # pits under the VSC window (lap 35) -> cheap stop, big net gain.
+         [("SOFT", 15), ("MEDIUM", 35), ("HARD", TOTAL_LAPS)], "Australia"),
+    Plan("63", "RUS", "George Russell", "Mercedes", 5, 65.70,
+         # also converts the VSC window (lap 35).
+         [("MEDIUM", 18), ("HARD", 35), ("MEDIUM", TOTAL_LAPS)], "United Kingdom"),
+    Plan("44", "HAM", "Lewis Hamilton", "Ferrari", 6, 65.62,
+         # short middle stint (soft, only 12 laps) forces a 41-lap final hard run.
+         [("MEDIUM", 18), ("SOFT", 30), ("HARD", TOTAL_LAPS)], "United Kingdom"),
+    Plan("12", "ANT", "Andrea Kimi Antonelli", "Mercedes", 7, 65.98,
+         [("MEDIUM", 22), ("HARD", 48), ("MEDIUM", TOTAL_LAPS)], "Italy"),
+    Plan("55", "SAI", "Carlos Sainz", "Williams", 8, 66.10,
+         # aggressive 1-stop overcut play: long medium then hard to the flag.
+         [("MEDIUM", 33), ("HARD", TOTAL_LAPS)], "Spain"),
+    Plan("14", "ALO", "Fernando Alonso", "Aston Martin", 9, 66.16,
+         [("MEDIUM", 20), ("HARD", 46), ("MEDIUM", TOTAL_LAPS)], "Spain"),
+    Plan("10", "GAS", "Pierre Gasly", "Alpine", 10, 66.42,
+         [("SOFT", 17), ("MEDIUM", 40), ("HARD", TOTAL_LAPS)], "France"),
+    Plan("23", "ALB", "Alexander Albon", "Williams", 11, 66.34,
+         [("MEDIUM", 24), ("HARD", TOTAL_LAPS)], "Thailand"),
+    Plan("27", "HUL", "Nico Hulkenberg", "Kick Sauber", 12, 66.55,
+         [("HARD", 30), ("MEDIUM", TOTAL_LAPS)], "Germany"),
+    Plan("31", "OCO", "Esteban Ocon", "Haas F1 Team", 13, 66.60,
+         [("MEDIUM", 26), ("HARD", TOTAL_LAPS)], "France"),
+    Plan("30", "LAW", "Liam Lawson", "Racing Bulls", 14, 66.70,
+         [("SOFT", 19), ("MEDIUM", 44), ("HARD", TOTAL_LAPS)], "New Zealand"),
+    Plan("6", "HAD", "Isack Hadjar", "Racing Bulls", 15, 66.76,
+         [("MEDIUM", 28), ("HARD", TOTAL_LAPS)], "France"),
+    Plan("18", "STR", "Lance Stroll", "Aston Martin", 16, 66.85,
+         [("MEDIUM", TOTAL_LAPS)], "Canada", dnf_lap=41, dnf_reason="Power unit"),
+]
+
+
+def _stint_at(plan: Plan, lap: int) -> tuple[int, Compound, int, bool]:
+    """Return (stint_index, compound, tyre_age, is_out_lap) for a given lap."""
+    start = 1
+    for idx, (comp, pit_lap) in enumerate(plan.stints, start=1):
+        end = pit_lap
+        if lap <= end:
+            age = lap - start + 1
+            return idx, _c(comp), age, (lap == start and idx > 1)
+        start = end + 1
+    # Past the final flag lap — clamp to last stint.
+    comp = plan.stints[-1][0]
+    return len(plan.stints), _c(comp), lap, False
+
+
+def _pit_laps(plan: Plan) -> list[int]:
+    return [pl for (_, pl) in plan.stints[:-1]]
+
+
+def simulate() -> RaceSession:
+    rng = random.Random(2026_07_04)
+
+    circuit = Circuit(
+        id="red_bull_ring", name="Red Bull Ring", locality="Spielberg",
+        country="Austria", length_km=4.318, laps=TOTAL_LAPS,
+    )
+
+    drivers: list[Driver] = []
+    for p in PLANS:
+        drivers.append(Driver(
+            number=p.number, code=p.code, name=p.name, team=p.team,
+            team_color=TEAM_COLORS.get(p.team, "#888888"), grid=p.grid, country=p.country,
+        ))
+
+    # --- 1. lap times & cumulative race time -------------------------------- #
+    # cum[code][lap] = total elapsed race time after completing `lap`.
+    cum: dict[str, dict[int, float]] = {p.code: {} for p in PLANS}
+    laptime: dict[str, dict[int, float]] = {p.code: {} for p in PLANS}
+    retired_after: dict[str, int] = {}
+
+    for p in PLANS:
+        t = 0.0
+        # Grid drag: cars further back lose a little at the start and in traffic.
+        grid_penalty = (p.grid - 1) * 0.35
+        for lap in range(1, TOTAL_LAPS + 1):
+            if p.dnf_lap and lap > p.dnf_lap:
+                break
+            _, compound, age, is_out = _stint_at(p, lap)
+            lt = p.base_pace
+            lt += COMPOUND_OFFSET[compound]
+            lt += COMPOUND_DEG[compound] * (age - 1)
+            lt -= FUEL_GAIN * (lap - 1)               # burns fuel, gets faster
+            if lap == 1:
+                lt += 2.2 + grid_penalty              # standing start + first-lap scrap
+            if is_out:
+                lt += 1.6                             # cold-tyre out-lap
+            # per-lap noise (seeded, small)
+            lt += rng.uniform(-0.12, 0.18)
+
+            under_vsc = VSC_START <= lap <= VSC_END
+            if under_vsc:
+                lt += VSC_LAP_PENALTY
+
+            # Pit-in this lap?
+            if lap in _pit_laps(p):
+                lt += PIT_LOSS_VSC if under_vsc else PIT_LOSS_GREEN
+
+            t += lt
+            laptime[p.code][lap] = round(lt, 3)
+            cum[p.code][lap] = t
+        if p.dnf_lap:
+            retired_after[p.code] = p.dnf_lap
+
+    # --- 2. positions & gaps per lap ---------------------------------------- #
+    positions: list[PositionPoint] = []
+    # position_by_lap[lap] -> ordered list of codes
+    pos_by_lap: dict[int, list[str]] = {}
+    for lap in range(1, TOTAL_LAPS + 1):
+        running = [(cum[p.code][lap], p.code) for p in PLANS if lap in cum[p.code]]
+        running.sort()
+        order = [code for _, code in running]
+        pos_by_lap[lap] = order
+        for i, code in enumerate(order, start=1):
+            positions.append(PositionPoint(driver=code, lap=lap, position=i))
+
+    def _position(code: str, lap: int) -> int | None:
+        order = pos_by_lap.get(lap, [])
+        return order.index(code) + 1 if code in order else None
+
+    # --- 3. per-lap normalized records -------------------------------------- #
+    laps: list[Lap] = []
+    for p in PLANS:
+        pit_laps = set(_pit_laps(p))
+        for lap in range(1, TOTAL_LAPS + 1):
+            if lap not in cum[p.code]:
+                break
+            stint_idx, compound, age, is_out = _stint_at(p, lap)
+            order = pos_by_lap[lap]
+            pos = order.index(p.code) + 1
+            leader = order[0]
+            gap = round(cum[p.code][lap] - cum[leader][lap], 2) if pos > 1 else 0.0
+            interval = None
+            if pos > 1:
+                ahead = order[pos - 2]
+                interval = round(cum[p.code][lap] - cum[ahead][lap], 2)
+            under_vsc = VSC_START <= lap <= VSC_END
+            status = TrackStatus.VSC if under_vsc else TrackStatus.GREEN
+            is_pit_in = lap in pit_laps
+            # Outliers excluded from clean pace: lap 1, in-laps, out-laps, VSC laps.
+            outlier = lap == 1 or is_pit_in or is_out or under_vsc
+            laps.append(Lap(
+                driver=p.code, lap=lap, lap_time=laptime[p.code][lap], position=pos,
+                compound=compound, tyre_age=age, stint=stint_idx,
+                pit_in=is_pit_in, pit_out=is_out, gap_to_leader=gap, interval=interval,
+                track_status=status, is_outlier=outlier,
+            ))
+
+    # --- 4. stints ---------------------------------------------------------- #
+    stints: list[Stint] = []
+    for p in PLANS:
+        start = 1
+        for idx, (comp, pit_lap) in enumerate(p.stints, start=1):
+            end = min(pit_lap, retired_after.get(p.code, TOTAL_LAPS))
+            if start > end:
+                break
+            stint_laps = [l for l in laps
+                          if l.driver == p.code and start <= l.lap <= end and not l.is_outlier]
+            times = sorted(l.lap_time for l in stint_laps if l.lap_time)
+            avg = round(sum(times) / len(times), 3) if times else None
+            med = round(times[len(times) // 2], 3) if times else None
+            best = round(min(times), 3) if times else None
+            deg = None
+            if len(times) >= 4:
+                # crude linear degradation: slope across the stint (fuel-corrected-ish)
+                first = sum(times[: max(1, len(times) // 3)]) / max(1, len(times) // 3)
+                last = sum(times[-max(1, len(times) // 3):]) / max(1, len(times) // 3)
+                deg = round((last - first) / max(1, (end - start)), 3)
+            stints.append(Stint(
+                driver=p.code, stint=idx, compound=_c(comp), start_lap=start,
+                end_lap=end, laps=end - start + 1, is_new_tyre=(idx > 1 or comp != "MEDIUM"),
+                avg_lap=avg, median_lap=med, best_lap=best, degradation=deg,
+            ))
+            start = end + 1
+            if p.code in retired_after and end >= retired_after[p.code]:
+                break
+
+    # --- 5. pit stops ------------------------------------------------------- #
+    pit_stops: list[PitStop] = []
+    for p in PLANS:
+        for pl in _pit_laps(p):
+            if p.code in retired_after and pl > retired_after[p.code]:
+                continue
+            under_vsc = VSC_START <= pl <= VSC_END
+            stationary = round(rng.uniform(2.2, 3.1), 2)
+            pit_stops.append(PitStop(
+                driver=p.code, lap=pl, stationary_time=stationary,
+                pit_lane_time=round(PIT_LOSS_VSC if under_vsc else PIT_LOSS_GREEN, 1),
+                under_vsc=under_vsc,
+            ))
+
+    # --- 6. race control ---------------------------------------------------- #
+    rc: list[RaceControlEvent] = [
+        RaceControlEvent(lap=1, category="Flag", flag="GREEN", scope="Track",
+                         status=TrackStatus.GREEN, message="GREEN LIGHT - PIT EXIT OPEN"),
+        RaceControlEvent(lap=3, category="Drs", message="DRS ENABLED"),
+        RaceControlEvent(lap=VSC_START, category="SafetyCar", flag="YELLOW", scope="Track",
+                         status=TrackStatus.VSC,
+                         message="VIRTUAL SAFETY CAR DEPLOYED — CAR STOPPED AT TURN 4"),
+        RaceControlEvent(lap=VSC_END, category="SafetyCar", flag="GREEN", scope="Track",
+                         status=TrackStatus.GREEN, message="VIRTUAL SAFETY CAR ENDING"),
+        RaceControlEvent(lap=52, category="Other", message="TURN 6 INCIDENT NOTED — LEC / SAI"),
+        RaceControlEvent(lap=54, category="Flag", flag="BLACK AND WHITE", scope="Driver",
+                         message="CAR 16 (LEC) TRACK LIMITS WARNING"),
+        RaceControlEvent(lap=TOTAL_LAPS, category="Flag", flag="CHEQUERED", scope="Track",
+                         message="CHEQUERED FLAG"),
+    ]
+    if any(p.dnf_lap for p in PLANS):
+        dnf = next(p for p in PLANS if p.dnf_lap)
+        rc.insert(3, RaceControlEvent(
+            lap=dnf.dnf_lap, category="CarEvent",
+            message=f"CAR {dnf.number} ({dnf.code}) STOPPED — {dnf.dnf_reason.upper()}"))
+
+    windows = [TrackStatusWindow(status=TrackStatus.VSC, start_lap=VSC_START,
+                                 end_lap=VSC_END, label="Virtual Safety Car")]
+
+    # --- 7. weather (drifts over the race) ---------------------------------- #
+    weather: list[WeatherPoint] = []
+    for lap in range(1, TOTAL_LAPS + 1, 4):
+        frac = lap / TOTAL_LAPS
+        weather.append(WeatherPoint(
+            lap=lap, time_min=round(lap * 1.12, 1),
+            air_temp=round(27.5 - 2.0 * frac + rng.uniform(-0.3, 0.3), 1),
+            track_temp=round(46.0 - 7.0 * frac + rng.uniform(-0.6, 0.6), 1),
+            humidity=round(38 + 6 * frac + rng.uniform(-1, 1), 1),
+            rainfall=False, wind_speed=round(rng.uniform(2.5, 4.5), 1),
+            wind_direction=round(rng.uniform(180, 240)),
+        ))
+
+    # --- 8. classification -------------------------------------------------- #
+    points_map = {1: 25, 2: 18, 3: 15, 4: 12, 5: 10, 6: 8, 7: 6, 8: 4, 9: 2, 10: 1}
+    final_order = pos_by_lap[TOTAL_LAPS]
+    # Retired drivers are classified last, ordered by laps completed.
+    classified_codes = list(final_order)
+    retired_codes = sorted(retired_after, key=lambda c: -retired_after[c])
+    for c in retired_codes:
+        if c not in classified_codes:
+            classified_codes.append(c)
+
+    classification: list[ClassificationRow] = []
+    for pos, code in enumerate(classified_codes, start=1):
+        p = next(pp for pp in PLANS if pp.code == code)
+        retired = code in retired_after
+        laps_done = retired_after[code] if retired else TOTAL_LAPS
+        best = min((l.lap_time for l in laps
+                    if l.driver == code and l.lap_time and not l.pit_in and l.lap > 1),
+                   default=None)
+        n_pits = len([ps for ps in pit_stops if ps.driver == code])
+        if retired:
+            status = f"DNF — {p.dnf_reason}"
+            gap = None
+            display_pos = None
+        else:
+            status = "Finished"
+            gap = "LEADER" if pos == 1 else f"+{cum[code][TOTAL_LAPS] - cum[final_order[0]][TOTAL_LAPS]:.1f}s"
+            display_pos = pos
+        classification.append(ClassificationRow(
+            position=display_pos, driver=code, name=p.name, team=p.team,
+            team_color=TEAM_COLORS.get(p.team, "#888888"), grid=p.grid,
+            laps_completed=laps_done, status=status, gap=gap,
+            best_lap=round(best, 3) if best else None, pit_stops=n_pits,
+            points=points_map.get(pos) if not retired else None, retired=retired,
+        ))
+
+    constructors = []
+    seen = set()
+    for p in PLANS:
+        if p.team not in seen:
+            seen.add(p.team)
+            constructors.append(Constructor(id=p.team.lower().replace(" ", "_"),
+                                            name=p.team, color=TEAM_COLORS.get(p.team, "#888888")))
+
+    return RaceSession(
+        year=2026, grand_prix="Austrian Grand Prix",
+        official_name="FORMULA 1 AUSTRIAN GRAND PRIX 2026",
+        session_type="Race", circuit=circuit, total_laps=TOTAL_LAPS,
+        data_source=DataSource.MOCK,
+        notes=["Simulated demo race — realistic model, not an official result."],
+        drivers=drivers, constructors=constructors, classification=classification,
+        laps=laps, stints=stints, pit_stops=pit_stops, race_control=rc,
+        weather=weather, positions=positions, track_status_windows=windows,
+    )
