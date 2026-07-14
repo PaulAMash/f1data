@@ -81,6 +81,9 @@ def list_grands_prix(year: int) -> list[GrandPrix]:
         by_meeting.setdefault(s.get("meeting_key"), []).append(s.get("session_name", "?"))
     out: list[GrandPrix] = []
     for m in sorted(meetings, key=lambda x: x.get("date_start", "")):
+        # Pre-season testing isn't a Grand Prix — keep it out of the calendar.
+        if is_testing_event(m.get("meeting_name", "")):
+            continue
         out.append(GrandPrix(
             round=m.get("meeting_key"), name=m.get("meeting_name", "?"),
             official_name=m.get("meeting_official_name"), location=m.get("location"),
@@ -106,19 +109,38 @@ def list_seasons() -> list[Season]:
 # --------------------------------------------------------------------------- #
 # session resolution
 # --------------------------------------------------------------------------- #
+_GENERIC_TOKENS = {"grand", "prix", "gp", "the", "formula", "1", "f1"}
+
+
+def _name_tokens(text: str) -> set[str]:
+    import re
+    return {t for t in re.sub(r"[^a-z0-9 ]", " ", (text or "").lower()).split()
+            if t and t not in _GENERIC_TOKENS}
+
+
+def is_testing_event(name: str) -> bool:
+    import re
+    return bool(re.search(r"\btest(ing)?\b|pre-?season", name or "", re.I))
+
+
 def _resolve_session(year: int, gp: str, session_type: str) -> dict | None:
     sessions = _get("sessions", year=year)
-    gp_l = gp.lower()
     st_l = session_type.lower()
+    want = _name_tokens(gp)
 
-    def gp_match(s: dict) -> bool:
-        blob = " ".join(str(s.get(k, "")) for k in
-                        ("meeting_name", "location", "country_name", "circuit_short_name")).lower()
-        return any(tok in blob for tok in gp_l.replace("grand prix", "").split()) or gp_l in blob
+    def blob_tokens(s: dict) -> set[str]:
+        return _name_tokens(" ".join(str(s.get(k, "")) for k in
+                            ("meeting_name", "location", "country_name", "circuit_short_name")))
 
-    cands = [s for s in sessions if gp_match(s)]
+    # Exact meeting-name match first, then a strict whole-token subset match
+    # ("austrian" can never match "Australian Grand Prix"). Crucially, if the
+    # Grand Prix doesn't match any meeting we return None so the source chain
+    # moves on — we NEVER fall back to an unrelated meeting's sessions (that
+    # bug used to serve Melbourne data under an "Austrian Grand Prix" title).
+    exact = [s for s in sessions if str(s.get("meeting_name", "")).lower() == gp.lower()]
+    cands = exact or [s for s in sessions if want and want <= blob_tokens(s)]
     if not cands:
-        cands = sessions
+        return None
     # exact session-name match first, then type, then contains
     for pred in (
         lambda s: s.get("session_name", "").lower() == st_l,

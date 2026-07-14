@@ -147,6 +147,15 @@ def fetch_classification(year: int, gp: str) -> tuple[list[Driver], list[Classif
     return drivers, rows, meta or races[0]
 
 
+def fetch_laps(year: int, gp: str) -> tuple[list, list]:
+    """Public wrapper: per-lap times + positions for facet-level fallback when
+    the primary source returned a session without laps."""
+    rnd, _ = _resolve_round(year, gp)
+    if not rnd:
+        return [], []
+    return _fetch_laps(year, rnd, _driver_id_map(year, rnd))
+
+
 def fetch_pitstops(year: int, gp: str) -> list[PitStop]:
     rnd, _ = _resolve_round(year, gp)
     if not rnd:

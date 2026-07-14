@@ -31,8 +31,10 @@ async function handle<T>(res: Response, path: string): Promise<T> {
   if (res.ok) return res.json();
   let body: any = null;
   try { body = await res.json(); } catch { /* non-JSON error */ }
-  if (body && body.message) {
-    throw new ApiError(body.message, res.status, !!body.retryable, body.attempts ?? [], body.reason ?? "");
+  // Our structured errors use `message`; FastAPI HTTPExceptions use `detail`.
+  const msg = body?.message ?? (typeof body?.detail === "string" ? body.detail : null);
+  if (msg) {
+    throw new ApiError(msg, res.status, !!body.retryable, body.attempts ?? [], body.reason ?? "");
   }
   throw new ApiError(`API error ${res.status} on ${path}`, res.status, res.status >= 500);
 }

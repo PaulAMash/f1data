@@ -28,7 +28,7 @@ from ..models import (
     SourceReport,
     session_category,
 )
-from . import jolpica_adapter, mock_adapter, openf1_adapter, pitstop_service
+from . import headshots, jolpica_adapter, mock_adapter, openf1_adapter, pitstop_service
 from . import pitwall_adapter as fastf1
 
 log = logging.getLogger("pitwall_iq.dsm")
@@ -135,6 +135,14 @@ def load_session(year: int, gp: str, session_type: str,
         if cached is not None:
             if cached.source_report:
                 cached.source_report.data_source = DataSource.CACHE
+            # Fill portraits that were missing when this session was cached —
+            # and persist, so it's a one-time cost per session.
+            if settings.enable_live_fetch:
+                try:
+                    if headshots.enrich(cached):
+                        cache.save(cached)
+                except Exception as exc:  # noqa: BLE001
+                    log.info("cached headshot enrich failed: %s", exc)
             return cached
 
     attempts: list[dict] = []
@@ -162,9 +170,63 @@ def load_session(year: int, gp: str, session_type: str,
     raise DataUnavailableError(year, gp, session_type, attempts)
 
 
+def _set_facet(session: RaceSession, name: str, source: str,
+               confidence: str = "high", detail: str | None = None) -> None:
+    """Record where a facet came from — REPLACING any existing row for that
+    facet (no duplicate 'Results & classification' entries) and clearing it
+    from the missing list."""
+    if not session.source_report:
+        return
+    session.source_report.facets = (
+        [f for f in session.source_report.facets if f.facet != name]
+        + [FacetSource(facet=name, source=source, confidence=confidence, detail=detail)])
+    session.source_report.missing = [m for m in session.source_report.missing if m != name]
+
+
+def _merge_missing_facets(session: RaceSession, primary: str) -> None:
+    """Facet-level multi-source fallback. A primary source can return a session
+    that exists but is hollow (no laps / results / pit stops); rather than
+    accepting a 'partial' shell, pull those facets from Jolpica."""
+    if primary == "jolpica" or session.category not in ("race", "sprint"):
+        return
+    if not session.laps:
+        try:
+            laps, positions = jolpica_adapter.fetch_laps(session.year, session.grand_prix)
+            if laps:
+                session.laps = laps
+                _set_facet(session, "laps", "jolpica", "medium",
+                           "Lap times from the historical archive (no outlier/sector detail).")
+                if not session.positions and positions:
+                    session.positions = positions
+                    _set_facet(session, "positions", "jolpica", "medium")
+        except Exception as exc:  # noqa: BLE001
+            log.info("jolpica laps merge failed: %s", exc)
+    if not session.pit_stops:
+        try:
+            stops = jolpica_adapter.fetch_pitstops(session.year, session.grand_prix)
+            if stops:
+                session.pit_stops = stops
+                _set_facet(session, "pit_stops", "jolpica", "high")
+        except Exception as exc:  # noqa: BLE001
+            log.info("jolpica pit merge failed: %s", exc)
+    if not session.classification:
+        try:
+            _drivers, rows, _meta = jolpica_adapter.fetch_classification(session.year, session.grand_prix)
+            if rows:
+                session.classification = rows
+                if not session.drivers:
+                    session.drivers = _drivers
+                _set_facet(session, "results", "jolpica", "high")
+        except Exception as exc:  # noqa: BLE001
+            log.info("jolpica classification merge failed: %s", exc)
+
+
 def _post_process(session: RaceSession, primary: str) -> None:
     """Enrich a freshly-fetched real session and finalize its source report."""
     session.category = session.category or session_category(session.session_type)
+
+    # fill hollow facets from other sources before any analysis-dependent steps
+    _merge_missing_facets(session, primary)
 
     # pit-stop timing (may pull durations from Jolpica)
     try:
@@ -175,23 +237,14 @@ def _post_process(session: RaceSession, primary: str) -> None:
     # overtakes: infer if the source didn't supply them (races/sprints only)
     if not session.overtakes and session.category in ("race", "sprint") and session.positions:
         session.overtakes = infer_overtakes(session)
-        if session.source_report:
-            session.source_report.facets.append(
-                FacetSource(facet="overtakes", source="inferred", confidence="medium",
-                            detail="Derived from the lap-by-lap position trace."))
+        _set_facet(session, "overtakes", "inferred", "medium",
+                   "Derived from the lap-by-lap position trace.")
 
-    # classification fallback from Jolpica if the primary lacked it
-    if not session.classification and primary != "jolpica":
-        try:
-            _drivers, rows, _meta = jolpica_adapter.fetch_classification(session.year, session.grand_prix)
-            session.classification = rows
-            if not session.drivers:
-                session.drivers = _drivers
-            if session.source_report:
-                session.source_report.facets.append(
-                    FacetSource(facet="results", source="jolpica", confidence="high"))
-        except Exception:  # noqa: BLE001
-            pass
+    # driver portraits: season-wide map fills what the session record lacked
+    try:
+        headshots.enrich(session)
+    except Exception as exc:  # noqa: BLE001
+        log.info("headshot enrich failed: %s", exc)
 
     if session.source_report:
         session.source_report.partial = bool(session.source_report.missing)

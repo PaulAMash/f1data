@@ -82,6 +82,45 @@ def test_no_zero_stop_claim_without_pit_data():
     assert not any("-stop race" in line for line in strategy.story)
 
 
+def test_austrian_never_matches_australian():
+    """Strict meeting matching: 'Austrian' must not resolve to the Australian GP."""
+    from app.adapters.openf1_adapter import _name_tokens, is_testing_event
+    want = _name_tokens("Austrian Grand Prix")
+    australian_blob = _name_tokens("Australian Grand Prix Melbourne Australia Albert Park")
+    austrian_blob = _name_tokens("Austrian Grand Prix Spielberg Austria Red Bull Ring")
+    assert not (want <= australian_blob)     # the old fuzzy bug
+    assert want <= austrian_blob
+    # testing meetings are filtered from the calendar
+    assert is_testing_event("Pre-Season Testing")
+    assert is_testing_event("Pre Season Test")
+    assert not is_testing_event("British Grand Prix")
+
+
+def test_source_report_facets_never_duplicate():
+    """Facet fallback replaces the row instead of appending a duplicate."""
+    from app.adapters.data_source_manager import _set_facet
+    from app.adapters.mock_adapter import get_mock_session
+    s = get_mock_session(2026, "Austrian Grand Prix", "Race")
+    assert s.source_report is not None
+    s.source_report.missing = ["results"]
+    _set_facet(s, "results", "none", "low")
+    _set_facet(s, "results", "jolpica", "high")   # fallback filled it
+    rows = [f for f in s.source_report.facets if f.facet == "results"]
+    assert len(rows) == 1 and rows[0].source == "jolpica"
+    assert "results" not in s.source_report.missing
+
+
+def test_headshot_enrich_fills_missing(monkeypatch):
+    from app.adapters import headshots
+    from app.adapters.mock_adapter import get_mock_session
+    s = get_mock_session(2026, "Austrian Grand Prix", "Race")
+    assert all(not d.headshot_url for d in s.drivers)
+    monkeypatch.setattr(headshots, "year_map",
+                        lambda year: {d.code: f"https://img/{d.code}.png" for d in s.drivers})
+    assert headshots.enrich(s) is True
+    assert all(d.headshot_url for d in s.drivers)
+
+
 def test_ask_why_lost_is_not_circular():
     r = client.post("/api/ask", json={"year": 2026, "gp": "Austrian Grand Prix", "session": "Race",
                                       "question": "why did charles lose so many positions?", "mock": True}).json()

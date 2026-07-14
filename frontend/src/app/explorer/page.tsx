@@ -153,6 +153,19 @@ export default function ExplorerPage() {
           </p>
         ) : null}
 
+        {/* tell the user exactly what's missing instead of a bare "Partial data" */}
+        {bundle?.source !== "mock" && session?.partial &&
+          (session.source_report?.missing?.length ?? 0) > 0 && !loading && (
+          <p className="mb-4 rounded-lg border border-sky-400/15 bg-sky-400/[0.04] px-3 py-1.5 text-xs text-sky-300/90">
+            The sources couldn&apos;t provide{" "}
+            {session.source_report!.missing.slice(0, 6).map(humanFacet).join(", ")} for this
+            session — the tabs that need them will be limited.{" "}
+            <button onClick={() => setTab("data")} className="underline decoration-dotted">
+              See exactly what&apos;s available
+            </button>
+          </p>
+        )}
+
         {(bundle || loading) && <Tabs items={tabs} active={tab} onChange={setTab} className="mb-5" />}
 
         {loading && <LoadingDashboard />}
@@ -301,6 +314,15 @@ function DataUnavailable({ error, onRetry, onPick, onOpenData }: {
       </CardBody>
     </Card>
   );
+}
+
+const FACET_HUMAN: Record<string, string> = {
+  laps: "lap times", positions: "position history", pit_stops: "pit stops",
+  stints: "tyre stints", weather: "weather", race_control: "race control",
+  results: "results", overtakes: "overtakes", drivers: "the driver list",
+};
+function humanFacet(key: string) {
+  return FACET_HUMAN[key] ?? key.replace(/_/g, " ");
 }
 
 function DemoChip() {
