@@ -23,20 +23,32 @@ export function RaceSelector({
     api.races(value.year).then((r) => setRaces(r.races)).catch(() => setRaces([]));
   }, [value.year]);
 
-  const currentRace = races.find((r) => r.name === value.gp);
+  // Only offer races that have already happened — future rounds appear in the
+  // list automatically once their date passes. Undated events are kept.
+  const completedRaces = races.filter(
+    (r) => !r.date || new Date(r.date).getTime() <= Date.now(),
+  );
+
+  const currentRace = completedRaces.find((r) => r.name === value.gp);
   const sessions = currentRace?.sessions?.length ? currentRace.sessions : SESSION_TYPES;
 
   return (
     <div className="grid grid-cols-2 items-end gap-2.5 sm:flex sm:flex-wrap">
-      <Field label="Season">
-        <span className="inline-flex h-[38px] items-center gap-1.5 rounded-lg border border-white/10 bg-base-850/60 px-3 text-sm text-ink">
-          <Calendar size={13} className="text-ink-faint" /> {value.year}
+      {/* The season is fixed — plain text on purpose, so it can't be mistaken
+          for a dropdown like the selectors next to it. */}
+      <div className="flex min-w-0 flex-col gap-1">
+        <span className="label flex items-center gap-1"><Calendar size={13} /> Season</span>
+        <span className="flex h-[38px] items-center text-lg font-semibold tabular-nums tracking-tight text-ink">
+          {value.year}
+          <span className="ml-2 rounded-md bg-white/[0.05] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-faint">
+            current
+          </span>
         </span>
-      </Field>
+      </div>
 
       <Field label="Grand Prix" className="col-span-2">
         <Select value={value.gp} onChange={(v) => onChange({ ...value, gp: v })} wide
-          options={(races.length ? races : [{ name: value.gp } as GrandPrix]).map((r) => ({ value: r.name, label: r.name }))} />
+          options={(completedRaces.length ? completedRaces : [{ name: value.gp } as GrandPrix]).map((r) => ({ value: r.name, label: r.name }))} />
       </Field>
 
       <Field label="Session">

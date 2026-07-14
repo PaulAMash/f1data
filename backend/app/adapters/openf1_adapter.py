@@ -84,7 +84,8 @@ def list_grands_prix(year: int) -> list[GrandPrix]:
         out.append(GrandPrix(
             round=m.get("meeting_key"), name=m.get("meeting_name", "?"),
             official_name=m.get("meeting_official_name"), location=m.get("location"),
-            country=m.get("country_name"), sessions=by_meeting.get(m.get("meeting_key"), []),
+            country=m.get("country_name"), date=m.get("date_start"),
+            sessions=by_meeting.get(m.get("meeting_key"), []),
         ))
     return out
 
@@ -147,17 +148,18 @@ def fetch_session(year: int, gp: str, session_type: str) -> RaceSession:
         if not ok:
             missing.append(name)
 
-    drivers_raw = _safe(lambda: _get("drivers", session_key=sk), [])
-    laps_raw = _safe(lambda: _get("laps", session_key=sk), [])
-    stints_raw = _safe(lambda: _get("stints", session_key=sk), [])
-    pit_raw = _safe(lambda: _get("pit", session_key=sk), [])
-    pos_raw = _safe(lambda: _get("position", session_key=sk), [])
-    interval_raw = _safe(lambda: _get("intervals", session_key=sk), [])
-    weather_raw = _safe(lambda: _get("weather", session_key=sk), [])
-    rc_raw = _safe(lambda: _get("race_control", session_key=sk), [])
-    overtake_raw = _safe(lambda: _get("overtakes", session_key=sk), [])
-    grid_raw = _safe(lambda: _get("starting_grid", session_key=sk), [])
-    result_raw = _safe(lambda: _get("session_result", session_key=sk), [])
+    # Fetch all endpoints concurrently — this is the dominant cost of a first
+    # load, so parallelizing cuts it from ~11 round-trips to ~2.
+    from concurrent.futures import ThreadPoolExecutor
+    endpoints = ["drivers", "laps", "stints", "pit", "position", "intervals",
+                 "weather", "race_control", "overtakes", "starting_grid", "session_result"]
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures = {ep: pool.submit(lambda e=ep: _get(e, session_key=sk)) for ep in endpoints}
+        raw = {ep: _safe(f.result, []) for ep, f in futures.items()}
+    drivers_raw, laps_raw, stints_raw = raw["drivers"], raw["laps"], raw["stints"]
+    pit_raw, pos_raw, interval_raw = raw["pit"], raw["position"], raw["intervals"]
+    weather_raw, rc_raw, overtake_raw = raw["weather"], raw["race_control"], raw["overtakes"]
+    grid_raw, result_raw = raw["starting_grid"], raw["session_result"]
 
     # --- drivers ---
     dmap: dict[int, dict] = {}

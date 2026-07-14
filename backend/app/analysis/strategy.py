@@ -170,18 +170,22 @@ def compute_strategy(session: RaceSession, pace: list[DriverPaceSummary]) -> Str
         best_strategy = {
             "driver": helped.driver, "team": helped.team, "finish": helped.position,
             "pace_rank": pace_by_driver[helped.driver].pace_rank,
-            "detail": (f"{helped.driver} finished P{helped.position} from "
+            "detail": (f"{helped.name} finished P{helped.position} from "
                        f"P{pace_by_driver[helped.driver].pace_rank} on raw pace — a "
                        f"{strat_gain(helped)}-place strategy gain."),
         }
     if hurt and (strat_gain(hurt) or 0) <= -1:
         hidden_pace_driver = hurt.driver
+        # Only mention the stop count when pit data is trustworthy and non-zero —
+        # "running 0 stops" from a source with no pit records is misleading.
+        stops_txt = (f", running {hurt.pit_stops} stops"
+                     if session.pit_data_reliable and hurt.pit_stops > 0 else "")
         worst_strategy = {
             "driver": hurt.driver, "team": hurt.team, "finish": hurt.position,
             "pace_rank": pace_by_driver[hurt.driver].pace_rank, "stops": hurt.pit_stops,
-            "detail": (f"{hurt.driver} had P{pace_by_driver[hurt.driver].pace_rank} pace but "
-                       f"finished P{hurt.position} — {abs(strat_gain(hurt))} places lost, "
-                       f"running {hurt.pit_stops} stops."),
+            "detail": (f"{hurt.name} had P{pace_by_driver[hurt.driver].pace_rank} pace but "
+                       f"finished P{hurt.position} — {abs(strat_gain(hurt))} places lost"
+                       f"{stops_txt}."),
         }
 
     # best pit timing: prefer the biggest cheap-stop under VSC/SC, else fastest stop
@@ -239,7 +243,8 @@ def _story(session, classified, winner, gainers, losers, best_strategy, worst_st
         s.append(f"{hidden_pace_driver} had strong underlying pace that their result didn't show.")
     if gainers:
         g = gainers[0]
-        s.append(f"{g['driver']} was the day's biggest mover, up {g['net']} places to P{g['finish']}.")
+        s.append(f"{g.get('name', g['driver'])} was the day's biggest mover, "
+                 f"up {g['net']} place{'s' if g['net'] != 1 else ''} to P{g['finish']}.")
     if best_pit_timing and "VSC" in best_pit_timing.get("kind", ""):
         s.append(best_pit_timing["detail"])
     if weather_summary:
@@ -259,10 +264,11 @@ def _best_pit_timing(session: RaceSession) -> dict | None:
             return round(PIT_LOSS_GREEN_EST - paid, 1)
         best = max(cheap, key=saving)
         window = "VSC" if best.under_vsc else "safety car"
+        name = next((d.name for d in session.drivers if d.code == best.driver), best.driver)
         return {
             "driver": best.driver, "lap": best.lap, "kind": f"{window} stop",
             "saved_s": saving(best),
-            "detail": (f"{best.driver} pitted on lap {best.lap} under {window}, saving "
+            "detail": (f"{name} pitted on lap {best.lap} under {window}, saving "
                        f"~{saving(best)}s versus a green-flag stop."),
         }
     with_time = [ps for ps in session.pit_stops if ps.stationary_time]
@@ -434,8 +440,8 @@ def _weather_summary(session: RaceSession) -> str | None:
 
 
 def _mv(c, net: int) -> dict:
-    return {"driver": c.driver, "team": c.team, "grid": c.grid, "finish": c.position,
-            "net": net, "team_color": c.team_color}
+    return {"driver": c.driver, "name": c.name, "team": c.team, "grid": c.grid,
+            "finish": c.position, "net": net, "team_color": c.team_color}
 
 
 def _ordinal(n: int | None) -> str:

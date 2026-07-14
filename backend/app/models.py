@@ -71,6 +71,7 @@ class GrandPrix(BaseModel):
     location: Optional[str] = None
     country: Optional[str] = None
     circuit: Optional[Circuit] = None
+    date: Optional[str] = None        # event (start) date, ISO — used to hide future races
     sessions: list[str] = Field(default_factory=list)  # available session names
 
 

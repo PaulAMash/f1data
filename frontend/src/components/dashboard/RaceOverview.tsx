@@ -1,5 +1,5 @@
 "use client";
-import { Award, Crown, Timer, TrendingDown, TrendingUp } from "lucide-react";
+import { Award, Timer, TrendingDown, TrendingUp } from "lucide-react";
 import type { RaceBundle } from "@/lib/types";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge, TeamDot } from "@/components/ui/Badge";
@@ -9,18 +9,14 @@ import { fmtGap, fmtLap, fmtSec, netBadge, ordinal } from "@/lib/format";
 
 export function RaceOverview({ bundle }: { bundle: RaceBundle }) {
   const { session, strategy } = bundle;
-  const winner = session.classification.find((c) => c.driver === strategy.winner);
   const dotd = session.classification.find((c) => c.driver === strategy.driver_of_the_day);
 
   return (
     <div className="space-y-4">
-      {/* headline tiles */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile label="Winner" tone="accent"
-          value={<span className="flex items-center gap-2"><Crown size={18} /> {winner?.driver ?? "—"}</span>}
-          sub={winner?.name} />
+      {/* headline tiles (Winner already appears in the key cards above — not repeated) */}
+      <div className="grid gap-3 sm:grid-cols-3">
         <StatTile label="Driver of the day" tone="speed"
-          value={dotd?.driver ?? strategy.driver_of_the_day ?? "—"}
+          value={dotd?.name ?? strategy.driver_of_the_day ?? "—"}
           sub={strategy.dotd_reason ?? undefined}
           info="Analytical pick: gained positions, weighted by race pace and a win-from-behind bonus." />
         {strategy.avg_pit_loss != null ? (

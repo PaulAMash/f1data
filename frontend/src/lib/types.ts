@@ -153,7 +153,8 @@ export interface SimulationResult {
 export interface Season { year: number; events: number; }
 export interface GrandPrix {
   round?: number | null; name: string; official_name?: string | null;
-  location?: string | null; country?: string | null; circuit?: Circuit | null; sessions: string[];
+  location?: string | null; country?: string | null; circuit?: Circuit | null;
+  date?: string | null; sessions: string[];
 }
 export interface Meta {
   app: string; mock_mode: boolean; live_fetch_enabled: boolean; llm_available: boolean;

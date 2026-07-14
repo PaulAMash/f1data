@@ -4,7 +4,7 @@ import type { RaceBundle } from "@/lib/types";
 import { useIsSimple } from "@/lib/mode";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Term } from "@/components/ui/Term";
-import { DriverBadge } from "@/components/ui/DriverBadge";
+import { DriverAvatar, DriverBadge } from "@/components/ui/DriverBadge";
 import { RaceOverview } from "./RaceOverview";
 import { fmtGap, pitLabel } from "@/lib/format";
 
@@ -44,10 +44,12 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KeyCard icon={<Crown size={15} />} tone="accent" label="Winner"
           value={winner?.name ?? winner?.driver ?? "—"} sub={winner?.team}
+          avatar={<DriverAvatar driver={driverOf(winner?.driver)} size={34} />}
           why="Took the chequered flag first." onClick={() => onJump?.("charts")} />
         <KeyCard icon={<TrendingUp size={15} />} tone="speed" label="Best race pace"
           value={driverOf(topPace?.driver)?.name ?? topPace?.driver ?? "—"}
           sub={<>fastest <Term>clean-air pace</Term></>}
+          avatar={<DriverAvatar driver={driverOf(topPace?.driver)} size={34} />}
           why="Quickest once fuel and tyres are accounted for. Tap to open Pace."
           onClick={() => onJump?.("pace")} />
         <KeyCard icon={<Flag size={15} />} tone="amber" label="Turning point"
@@ -57,6 +59,7 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
         <KeyCard icon={<TrendingDown size={15} />} tone="default" label="Biggest loss"
           value={driverOf(loser?.driver)?.name ?? loser?.driver ?? "—"}
           sub={loser ? `P${loser.grid}→P${loser.finish}` : undefined}
+          avatar={<DriverAvatar driver={driverOf(loser?.driver)} size={34} />}
           why="Lost the most places. Tap to ask why." onClick={() => onJump?.("ask")} />
       </div>
 
@@ -89,10 +92,11 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
 }
 
 function KeyCard({
-  icon, label, value, sub, why, tone, onClick,
+  icon, label, value, sub, why, tone, onClick, avatar,
 }: {
   icon: React.ReactNode; label: string; value: React.ReactNode; sub?: React.ReactNode;
   why: string; tone: "accent" | "speed" | "amber" | "default"; onClick?: () => void;
+  avatar?: React.ReactNode;
 }) {
   const toneClass = { accent: "text-accent-soft", speed: "text-speed", amber: "text-amber", default: "text-ink" }[tone];
   return (
@@ -102,8 +106,13 @@ function KeyCard({
         <span className={toneClass}>{icon}</span>
         <span className="label">{label}</span>
       </div>
-      <div className={`mt-1 text-2xl font-semibold tracking-tight ${toneClass}`}>{value}</div>
-      {sub && <div className="text-xs text-ink-muted">{sub}</div>}
+      <div className="mt-1.5 flex items-center gap-2.5">
+        {avatar}
+        <div className="min-w-0">
+          <div className={`truncate text-xl font-semibold tracking-tight ${toneClass}`}>{value}</div>
+          {sub && <div className="text-xs text-ink-muted">{sub}</div>}
+        </div>
+      </div>
       <div className="mt-2 text-[11px] leading-snug text-ink-faint">{why}</div>
     </button>
   );

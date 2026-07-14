@@ -19,8 +19,13 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
+# Bump when the normalized schema changes meaningfully (e.g. driver headshots,
+# gap normalization) so stale caches refetch instead of serving old shapes.
+CACHE_VERSION = "v2"
+
+
 def cache_key(year: int, gp: str, session_type: str) -> str:
-    return f"{year}__{_slug(gp)}__{_slug(session_type)}"
+    return f"{CACHE_VERSION}__{year}__{_slug(gp)}__{_slug(session_type)}"
 
 
 def _path(year: int, gp: str, session_type: str) -> Path:

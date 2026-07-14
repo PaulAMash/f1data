@@ -89,6 +89,7 @@ def list_grands_prix(year: int) -> list[GrandPrix]:
             location=loc.get("locality"), country=loc.get("country"),
             circuit=Circuit(id=c.get("circuitId", ""), name=c.get("circuitName", ""),
                             locality=loc.get("locality"), country=loc.get("country")),
+            date=r.get("date"),
             sessions=["Race", "Qualifying"] + (["Sprint"] if r.get("Sprint") else []),
         ))
     return out

@@ -56,19 +56,22 @@ export default function ExplorerPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [currentSeason, setCurrentSeason] = useState<number | null>(null);
+  // No session is fetched until /api/current resolves the real default — this
+  // prevents the season label flashing and prevents fetching a race that hasn't
+  // happened yet (the backend now picks the latest *completed* Grand Prix).
+  const [booted, setBooted] = useState(false);
 
   useEffect(() => {
     api.meta().then(setMeta).catch(() => setMeta(null));
     const q = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
     const qYear = q?.get("year"); const qGp = q?.get("gp"); const qSession = q?.get("session");
-    // Default Race Explorer to the current season's latest race; honor a deep-link if present.
     api.current().then((cur) => {
       setCurrentSeason(cur.year);
       if (qGp) setSel({ year: qYear ? Number(qYear) : cur.year, gp: qGp, session: qSession || "Race" });
       else if (cur.gp) setSel({ year: cur.year, gp: cur.gp, session: "Race" });
     }).catch(() => {
       if (qGp) setSel({ year: qYear ? Number(qYear) : 2025, gp: qGp, session: qSession || "Race" });
-    });
+    }).finally(() => setBooted(true));
   }, []);
 
   const load = useCallback((refresh: boolean) => {
@@ -80,9 +83,10 @@ export default function ExplorerPage() {
   }, [sel.year, sel.gp, sel.session]);
 
   useEffect(() => {
+    if (!booted) return;
     load(refreshKey > 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sel.year, sel.gp, sel.session, refreshKey]);
+  }, [booted, sel.year, sel.gp, sel.session, refreshKey]);
 
   const session = bundle?.session;
   const category = bundle?.category ?? "race";
@@ -334,6 +338,10 @@ function LoadingDashboard() {
         {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
       </div>
       <Skeleton className="h-56" />
+      <p className="text-center text-xs text-ink-faint">
+        First load of a session fetches lap-by-lap data from live timing sources — it can
+        take a little while. Once loaded, it&apos;s cached and instant.
+      </p>
     </div>
   );
 }
