@@ -65,6 +65,8 @@ export default function ExplorerPage() {
     api.meta().then(setMeta).catch(() => setMeta(null));
     const q = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
     const qYear = q?.get("year"); const qGp = q?.get("gp"); const qSession = q?.get("session");
+    const qTab = q?.get("tab");
+    if (qTab) setTab(qTab);
     api.current().then((cur) => {
       setCurrentSeason(cur.year);
       if (qGp) setSel({ year: qYear ? Number(qYear) : cur.year, gp: qGp, session: qSession || "Race" });
@@ -111,17 +113,17 @@ export default function ExplorerPage() {
     <div className="min-h-screen">
       <NavBar active="explorer" />
       <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-6">
-        {/* clean header */}
-        <div className="mb-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
+        {/* clean header — the race is the hero */}
+        <div className="mb-5">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
               {session ? session.grand_prix : loading ? "Loading…" : "Race Explorer"}
             </h1>
             {bundle?.source === "mock" && <DemoChip />}
             {bundle?.source !== "mock" && session?.partial && <PartialChip onClick={() => setTab("data")} />}
           </div>
           {(session || loading) && (
-            <p className="mt-0.5 text-sm text-ink-muted">
+            <p className="mt-1 text-sm text-ink-muted">
               {subtitle}
               {bundle && (
                 <button onClick={() => setTab("data")}
@@ -133,8 +135,8 @@ export default function ExplorerPage() {
           )}
         </div>
 
-        {/* compact controls */}
-        <div className="mb-4">
+        {/* compact controls, grouped so they read as one unit */}
+        <div className="mb-4 rounded-xl border border-white/[0.05] bg-base-850/40 p-3">
           <RaceSelector value={sel} onChange={setSel} loading={loading}
             onRefresh={() => setRefreshKey((k) => k + 1)} />
         </div>

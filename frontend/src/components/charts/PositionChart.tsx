@@ -6,7 +6,15 @@ import {
 } from "recharts";
 import type { RaceSession } from "@/lib/types";
 import { COMPOUND_COLOR, COMPOUND_SHORT } from "@/lib/compounds";
+import { useIsSimple } from "@/lib/mode";
 import { cx, fmtSec } from "@/lib/format";
+
+type Preset = "top5" | "podium" | "all";
+const PRESETS: { id: Preset; label: string }[] = [
+  { id: "top5", label: "Top 5" },
+  { id: "podium", label: "Podium battle" },
+  { id: "all", label: "Everyone" },
+];
 
 const WINDOW_FILL: Record<string, string> = {
   VSC: "rgba(255,176,32,0.10)",
@@ -35,6 +43,8 @@ export function PositionChart({
     [session],
   );
 
+  const simple = useIsSimple();
+  const [preset, setPreset] = useState<Preset>("top5");
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [hover, setHover] = useState<string | null>(null);
   const [zoom, setZoom] = useState<[number, number] | null>(null);
@@ -69,7 +79,16 @@ export function PositionChart({
     return map;
   }, [drivers]);
 
-  const visible = drivers.filter((d) => !hidden.has(d.code));
+  // Simple mode swaps the 20-chip toggle cloud for three presets; highlighted
+  // drivers are always kept visible. Advanced keeps full per-driver control.
+  const visible = useMemo(() => {
+    if (!simple) return drivers.filter((d) => !hidden.has(d.code));
+    if (preset === "all") return drivers;
+    const keep = new Set(
+      finishOrder.slice(0, preset === "podium" ? 3 : 5).map((c) => c.driver));
+    for (const s of selected) keep.add(s);
+    return drivers.filter((d) => keep.has(d.code));
+  }, [simple, preset, drivers, hidden, finishOrder, selected]);
   const nSel = selected.length;
 
   function toggle(code: string) {
@@ -92,7 +111,25 @@ export function PositionChart({
 
   return (
     <div>
-      {/* driver toggles */}
+      {/* simple: presets · advanced: per-driver toggles */}
+      {simple ? (
+        <div className="mb-3 flex flex-wrap items-center gap-1.5">
+          {PRESETS.map((p) => (
+            <button key={p.id} onClick={() => setPreset(p.id)}
+              className={cx("chip transition-colors",
+                preset === p.id ? "border-accent/40 bg-accent/10 text-accent-soft" : "hover:text-ink")}>
+              {p.label}
+            </button>
+          ))}
+          <span className="ml-1 hidden text-[11px] text-ink-faint sm:inline">
+            Click a line&apos;s label to highlight · drag to zoom
+          </span>
+          <div className="ml-auto flex items-center gap-2">
+            {zoom && <button className="chip hover:text-ink" onClick={() => setZoom(null)}>Reset view</button>}
+            {nSel > 0 && <button className="chip hover:text-ink" onClick={() => onSelect([])}>Clear highlight</button>}
+          </div>
+        </div>
+      ) : (
       <div className="mb-3 flex flex-wrap gap-1.5">
         {finishOrder.map((c) => {
           const d = drivers.find((x) => x.code === c.driver)!;
@@ -127,6 +164,7 @@ export function PositionChart({
           )}
         </div>
       </div>
+      )}
 
       <div className="h-[420px] w-full select-none">
         <ResponsiveContainer>
@@ -195,8 +233,9 @@ export function PositionChart({
         </ResponsiveContainer>
       </div>
       <p className="mt-2 text-xs text-ink-faint">
-        Click a driver to show/hide · double-click to highlight · drag across the chart to zoom.
-        Shaded bands are VSC / safety-car windows.
+        {simple
+          ? "Drag across the chart to zoom. Shaded bands are VSC / safety-car windows."
+          : "Click a driver to show/hide · double-click to highlight · drag across the chart to zoom. Shaded bands are VSC / safety-car windows."}
       </p>
     </div>
   );

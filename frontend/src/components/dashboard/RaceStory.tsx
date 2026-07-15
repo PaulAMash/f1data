@@ -6,6 +6,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Term } from "@/components/ui/Term";
 import { DriverAvatar, DriverBadge } from "@/components/ui/DriverBadge";
 import { RaceOverview } from "./RaceOverview";
+import { RaceTimeline } from "./RaceTimeline";
 import { fmtGap, pitLabel } from "@/lib/format";
 
 /**
@@ -25,18 +26,26 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
 
   return (
     <div className="space-y-4">
-      {/* narrative */}
+      {/* narrative — reads like a short race report: lede, then supporting lines */}
       <Card>
         <CardHeader title={<span className="flex items-center gap-2"><Sparkles size={15} className="text-accent-soft" /> The story of the race</span>}
           subtitle={simple ? "A plain-English recap — no jargon required." : undefined} />
         <CardBody>
-          <div className="space-y-2.5">
-            {strategy.story.length ? strategy.story.map((s, i) => (
-              <p key={i} className="text-[15px] leading-relaxed text-ink">
-                <span className="mr-2 text-accent-soft">•</span>{s}
-              </p>
-            )) : <p className="text-sm text-ink-muted">Load a race to see its story.</p>}
-          </div>
+          {strategy.story.length ? (
+            <div>
+              <p className="text-[17px] font-medium leading-relaxed text-ink">{strategy.story[0]}</p>
+              {strategy.story.length > 1 && (
+                <div className="mt-3 space-y-2 border-l-2 border-white/[0.07] pl-4">
+                  {strategy.story.slice(1).map((s, i) => (
+                    <p key={i} className="text-sm leading-relaxed text-ink-muted">{s}</p>
+                  ))}
+                </div>
+              )}
+              <div className="mt-5">
+                <RaceTimeline bundle={bundle} />
+              </div>
+            </div>
+          ) : <p className="text-sm text-ink-muted">Load a race to see its story.</p>}
         </CardBody>
       </Card>
 

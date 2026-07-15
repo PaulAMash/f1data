@@ -5,10 +5,14 @@ import {
 import { NavBar } from "@/components/layout/NavBar";
 
 const FEATURES = [
-  { icon: BookOpen, title: "Race Story", body: "Who won, why, the turning point, and who gained or lost — the whole race in a plain-English recap." },
-  { icon: Timer, title: "Strategy timeline", body: "Tyre stints, pit windows and undercuts laid out visually, with the decisive calls explained." },
-  { icon: MessageSquareText, title: "Ask the race", body: "“Why did Leclerc lose places?” “What could Max have done better?” Answered from the real data." },
-  { icon: Trophy, title: "Historical archive", body: "Look up official results, qualifying and championship standings from 1950 to today." },
+  { icon: BookOpen, title: "Race Story", href: "/explorer",
+    body: "Who won, why, the turning point, and who gained or lost — the whole race in a plain-English recap." },
+  { icon: Timer, title: "Strategy timeline", href: "/explorer?tab=strategy",
+    body: "Tyre stints, pit windows and undercuts laid out visually, with the decisive calls explained." },
+  { icon: MessageSquareText, title: "Ask the race", href: "/explorer?tab=ask",
+    body: "“Why did Leclerc lose places?” “What could Max have done better?” Answered from the real data." },
+  { icon: Trophy, title: "Historical archive", href: "/history",
+    body: "Look up official results, qualifying and championship standings from 1950 to today." },
 ];
 
 // Curated example sessions — link straight into the Explorer.
@@ -71,13 +75,16 @@ export default function Landing() {
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {FEATURES.map((f) => (
-            <div key={f.title} className="card card-hover p-5">
+            <Link key={f.title} href={f.href} className="card card-hover group p-5">
               <div className="mb-3 grid h-9 w-9 place-items-center rounded-lg bg-white/[0.04] ring-1 ring-white/10">
                 <f.icon size={17} className="text-accent-soft" />
               </div>
-              <h3 className="text-sm font-semibold text-ink">{f.title}</h3>
+              <h3 className="flex items-center gap-1 text-sm font-semibold text-ink">
+                {f.title}
+                <ArrowRight size={13} className="opacity-0 transition-opacity group-hover:opacity-70" />
+              </h3>
               <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">{f.body}</p>
-            </div>
+            </Link>
           ))}
         </div>
         <div className="mt-6 flex items-center gap-2 text-xs text-ink-faint">
