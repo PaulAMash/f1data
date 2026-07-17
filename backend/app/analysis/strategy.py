@@ -271,15 +271,34 @@ def _best_pit_timing(session: RaceSession) -> dict | None:
             "detail": (f"{name} pitted on lap {best.lap} under {window}, saving "
                        f"~{saving(best)}s versus a green-flag stop."),
         }
-    with_time = [ps for ps in session.pit_stops if ps.stationary_time]
+    # fall back to whichever stop-duration measure the source provides
+    def dur(ps):
+        return ps.stationary_time or ps.stop_duration or ps.pit_lane_time
+    with_time = [ps for ps in session.pit_stops if dur(ps)]
     if with_time:
-        best = min(with_time, key=lambda ps: ps.stationary_time)
+        best = min(with_time, key=dur)
+        name = next((d.name for d in session.drivers if d.code == best.driver), best.driver)
+        kind_txt = "stationary" if best.stationary_time else "in the pit lane"
         return {
             "driver": best.driver, "lap": best.lap, "kind": "fastest stop",
-            "stationary_s": best.stationary_time,
-            "detail": f"{best.driver} had the fastest stop: {best.stationary_time:.2f}s stationary on lap {best.lap}.",
+            "stationary_s": dur(best),
+            "detail": f"{name} had the fastest stop: {dur(best):.2f}s {kind_txt} on lap {best.lap}.",
         }
     return None
+
+
+def _window_trigger(session: RaceSession, w) -> str | None:
+    """The official race-control message closest to the window start — the cause."""
+    import re as _re
+    cands = [m for m in session.race_control
+             if m.lap is not None and w.start_lap - 1 <= m.lap <= w.start_lap + 1
+             and m.message
+             and not _re.search(r"(?i)\b(clear|ending|will end|in this lap)\b", m.message)]
+    for m in cands:  # prefer messages naming the incident / car
+        if _re.search(r"(?i)incident|car \d+|debris|crash|stopped|collision|spun|puncture", m.message):
+            return m.message
+    dep = [m for m in cands if _re.search(r"(?i)deployed|virtual safety car|safety car", m.message)]
+    return (dep[0].message if dep else cands[0].message) if cands else None
 
 
 def _turning_points(session: RaceSession, pace_by_driver) -> list[RaceInsight]:
@@ -292,9 +311,16 @@ def _turning_points(session: RaceSession, pace_by_driver) -> list[RaceInsight]:
         detail = (f"{w.label} from lap {w.start_lap} to {w.end_lap}. "
                   + (f"Cheap-stop window taken by {', '.join(pitted)}." if pitted
                      else "No cars converted a stop here."))
+        trigger = _window_trigger(session, w)
+        explanation = (
+            "While the field circulates slowly, a pit stop costs roughly 10 seconds less than at "
+            "racing speed — so anyone due a stop who pitted here effectively jumped the cars that "
+            "had already paid full price for theirs."
+            + (f" Official trigger: “{trigger.strip()}”." if trigger else ""))
         out.append(RaceInsight(
             kind="turning_point", title=f"{w.label} (laps {w.start_lap}-{w.end_lap})",
-            detail=detail, drivers=pitted, lap_range=[w.start_lap, w.end_lap],
+            detail=detail, explanation=explanation,
+            drivers=pitted, lap_range=[w.start_lap, w.end_lap],
             severity="key", confidence="high",
         ))
 
@@ -327,16 +353,34 @@ def _all_insights(session, pace_by_driver, undercuts, best_strategy, worst_strat
         insights.append(RaceInsight(
             kind="best_strategy", title=f"Best strategy: {best_strategy['driver']}",
             detail=best_strategy["detail"], drivers=[best_strategy["driver"]],
+            explanation=(f"Their car was only the {_ordinal(best_strategy['pace_rank'])}-fastest on "
+                         f"corrected pace, so finishing P{best_strategy['finish']} means the gain came "
+                         f"from the pit wall, not the engine — stopping at the cheapest moments (or one "
+                         f"time fewer) and using clear air to bank time while rivals were stuck."),
             severity="good", confidence="high"))
     if worst_strategy:
+        stops = worst_strategy.get("stops") or 0
+        why_bad = (f"Each green-flag stop costs ~{PIT_LOSS_GREEN_EST:.0f}s of race time. Running "
+                   f"{stops} stops meant paying that price more often than the cars around them, and "
+                   f"every rejoin dropped them into traffic they then had to clear on track. "
+                   if stops >= 3 else
+                   "The car had the speed for a better result, so the deficit came from when they "
+                   "stopped — rejoining into traffic and losing the free time rivals gained by pitting "
+                   "under a neutralization. ")
         insights.append(RaceInsight(
             kind="worst_strategy", title=f"Costliest strategy: {worst_strategy['driver']}",
             detail=worst_strategy["detail"], drivers=[worst_strategy["driver"]],
+            explanation=(why_bad + f"That's why P{worst_strategy['pace_rank']} pace only converted "
+                         f"into P{worst_strategy['finish']} at the flag."),
             severity="bad", confidence="high"))
     if best_pit_timing:
         insights.append(RaceInsight(
             kind="pit_timing", title=f"Best pit timing: {best_pit_timing['driver']}",
             detail=best_pit_timing["detail"], drivers=[best_pit_timing["driver"]],
+            explanation=("Stopping while the field runs to a slow delta (VSC/SC) costs about 10s less "
+                         "than a normal stop — the field can't pull away at racing speed while you're "
+                         "in the pit lane. Timing a stop into that window is effectively free track "
+                         "position."),
             severity="good", confidence="medium"))
 
     for u in undercuts[:3]:
@@ -344,6 +388,10 @@ def _all_insights(session, pace_by_driver, undercuts, best_strategy, worst_strat
             kind=u.kind, title=f"{u.attacker} {u.kind} on {u.victim}",
             detail=(f"{u.attacker} pitted lap {u.pit_lap} and emerged ahead of {u.victim}, "
                     f"gaining {u.positions_gained} place(s) through the pit cycle."),
+            explanation=(f"Fresh tyres are worth a second or more per lap at first. By stopping before "
+                         f"{u.victim}, {u.attacker} used that extra grip while {u.victim} was still on "
+                         f"worn rubber — so when {u.victim} finally stopped, they rejoined behind. "
+                         f"That's the classic undercut: winning a position in the pits, not on track."),
             drivers=[u.attacker, u.victim], lap_range=[u.pit_lap], severity="info",
             confidence="medium"))
 
@@ -389,6 +437,10 @@ def _all_insights(session, pace_by_driver, undercuts, best_strategy, worst_strat
             kind="hidden_pace", title=f"{p.driver}: pace hidden by track position",
             detail=(f"{p.driver} had the {_ordinal(p.pace_rank)}-fastest clean-air pace but finished "
                     f"P{p.finish}. Their result under-represents how quick the car actually was."),
+            explanation=("Overtaking costs far more time than raw pace suggests — dirty air, DRS trains "
+                         "and pit rejoins can trap a fast car behind slower ones for entire stints. "
+                         "Watch their clean-air laps on the Pace tab: the speed was real, the track "
+                         "position wasn't."),
             drivers=[p.driver], severity="info", confidence="medium"))
 
     return insights

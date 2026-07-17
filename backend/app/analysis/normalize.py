@@ -48,13 +48,34 @@ def pit_data_reliable(session: RaceSession) -> bool:
 
 
 def normalize_session(session: RaceSession) -> None:
-    """In-place: fix gaps and flag pit-data reliability so downstream analysis
-    and the UI never fabricate '0-stop race' claims or absurd gaps."""
+    """In-place: fix gaps, fill derivable per-driver stats, and flag pit-data
+    reliability so the UI never fabricates '0-stop race' claims or absurd gaps."""
     fix_classification(session)
     reliable = pit_data_reliable(session)
     session.pit_data_reliable = reliable
-    if not reliable and session.category in ("race", "sprint"):
+
+    if reliable:
+        # Sources often deliver pit stops as a list but leave the per-driver
+        # count on the classification at 0 — derive it so 'Pits' is never blank.
+        counts: dict[str, int] = {}
+        for ps in session.pit_stops:
+            counts[ps.driver] = counts.get(ps.driver, 0) + 1
+        for c in session.classification:
+            if not c.pit_stops:
+                c.pit_stops = counts.get(c.driver, 0)
+    elif session.category in ("race", "sprint"):
         # Without pit data we can't trust per-driver stop counts — zero them out
         # so no "0-stop race" story is generated; the UI shows "pit data unavailable".
         for c in session.classification:
             c.pit_stops = 0
+
+    # best race lap per driver, derived from the lap sheet when the result lacks it
+    if session.laps:
+        best: dict[str, float] = {}
+        for lp in session.laps:
+            if lp.lap_time and not lp.pit_in and not lp.pit_out:
+                if lp.driver not in best or lp.lap_time < best[lp.driver]:
+                    best[lp.driver] = lp.lap_time
+        for c in session.classification:
+            if c.best_lap is None:
+                c.best_lap = best.get(c.driver)

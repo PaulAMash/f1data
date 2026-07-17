@@ -32,14 +32,20 @@ export function RaceOverview({ bundle }: { bundle: RaceBundle }) {
           sub={session.circuit?.name ?? session.grand_prix} />
       </div>
 
-      {/* strategy verdicts */}
+      {/* strategy verdicts — cards with no data are hidden, never shown empty */}
       <div className="grid gap-3 md:grid-cols-3">
-        <VerdictCard tone="good" icon={<Award size={15} />} title="Best strategy"
-          driver={strategy.best_strategy?.driver} detail={strategy.best_strategy?.detail} />
-        <VerdictCard tone="bad" icon={<TrendingDown size={15} />} title="Costliest strategy"
-          driver={strategy.worst_strategy?.driver} detail={strategy.worst_strategy?.detail} />
-        <VerdictCard tone="key" icon={<Timer size={15} />} title="Best pit timing"
-          driver={strategy.best_pit_timing?.driver} detail={strategy.best_pit_timing?.detail} />
+        {strategy.best_strategy && (
+          <VerdictCard tone="good" icon={<Award size={15} />} title="Best strategy"
+            driver={strategy.best_strategy.driver} detail={strategy.best_strategy.detail} />
+        )}
+        {strategy.worst_strategy && (
+          <VerdictCard tone="bad" icon={<TrendingDown size={15} />} title="Costliest strategy"
+            driver={strategy.worst_strategy.driver} detail={strategy.worst_strategy.detail} />
+        )}
+        {strategy.best_pit_timing && (
+          <VerdictCard tone="key" icon={<Timer size={15} />} title="Best pit timing"
+            driver={strategy.best_pit_timing.driver} detail={strategy.best_pit_timing.detail} />
+        )}
       </div>
 
       {/* classification + movers */}

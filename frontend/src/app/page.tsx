@@ -1,3 +1,5 @@
+"use client";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight, BookOpen, Database, MessageSquareText, Timer, Trophy,
@@ -60,9 +62,18 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Example preview */}
+      {/* Self-demonstrating Ask card + honest coverage strip */}
       <section className="mx-auto max-w-7xl px-4 pb-4 sm:px-6">
-        <ExamplePreview />
+        <AskDemo />
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-xs text-ink-faint">
+          <span>Coverage 1950 – today</span>
+          <span className="hidden sm:inline text-white/10">·</span>
+          <span>1,100+ Grands Prix</span>
+          <span className="hidden sm:inline text-white/10">·</span>
+          <span>Lap-by-lap detail for recent seasons</span>
+          <span className="hidden sm:inline text-white/10">·</span>
+          <span>8 analysis modules</span>
+        </div>
       </section>
 
       {/* Features */}
@@ -102,51 +113,81 @@ export default function Landing() {
   );
 }
 
-/** A styled, non-interactive snapshot of the product (clearly an example). */
-function ExamplePreview() {
-  const rows = [
-    { d: "VER", strat: [34, 33, 33] },
-    { d: "NOR", strat: [30, 40, 30] },
-    { d: "PIA", strat: [22, 40, 38] },
-    { d: "LEC", strat: [20, 30, 25, 25] },
-  ];
-  const colors = ["#ffcf3f", "#e7ecf3", "#ff3b3b", "#e7ecf3"];
+// The homepage silently demonstrates the product: a question types itself, the
+// data-backed answer fades in, and it cycles. No clicks required.
+const DEMO_QA = [
+  {
+    q: "Why did Leclerc finish P4?",
+    a: "He had the second-fastest true pace, but a third stop cost ~20s of pit-lane time and dropped him behind the two-stoppers. The VSC on lap 34 sealed it.",
+    tags: ["P2 pace, P4 result", "3 stops vs 2", "VSC lap 34–37"],
+  },
+  {
+    q: "Who had the best race pace?",
+    a: "Verstappen — quickest once fuel and tyres are corrected, about 0.16s per lap faster than Leclerc, and he converted it into the win.",
+    tags: ["Clean-air pace", "+0.16s/lap margin", "Pole → win"],
+  },
+  {
+    q: "How did the top 2 compare?",
+    a: "Verstappen beat Norris by 2.0s on track with a 0.3s/lap edge in underlying pace. Norris matched him on strategy — the difference was pure speed.",
+    tags: ["Final gap 2.0s", "Same 2-stop strategy", "Pace decided it"],
+  },
+  {
+    q: "What could Antonelli have done better?",
+    a: "Cover the undercut. He had podium pace, but staying out through the cheap-stop window dropped him into traffic he never cleared.",
+    tags: ["P3 pace, P15 result", "Missed VSC window", "Traffic after rejoin"],
+  },
+];
+
+function AskDemo() {
+  const [idx, setIdx] = useState(0);
+  const [typed, setTyped] = useState(0);
+  const [showAnswer, setShowAnswer] = useState(false);
+  const item = DEMO_QA[idx];
+
+  useEffect(() => {
+    setTyped(0); setShowAnswer(false);
+    const typeTimer = setInterval(() => {
+      setTyped((t) => {
+        if (t >= DEMO_QA[idx].q.length) { clearInterval(typeTimer); setShowAnswer(true); return t; }
+        return t + 1;
+      });
+    }, 34);
+    const nextTimer = setTimeout(() => setIdx((i) => (i + 1) % DEMO_QA.length), 7000);
+    return () => { clearInterval(typeTimer); clearTimeout(nextTimer); };
+  }, [idx]);
+
   return (
     <div className="card overflow-hidden p-1.5">
-      <div className="rounded-xl bg-base-950/60 p-5">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <div className="label">Race Story preview</div>
-            <div className="text-sm font-semibold">Austrian Grand Prix · Race</div>
-          </div>
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-ink-muted">
-            Example preview
+      <div className="rounded-xl bg-base-950/60 p-5 sm:p-6">
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <span className="label">Ask the race</span>
+          <span className="flex gap-1.5">
+            {DEMO_QA.map((_, i) => (
+              <button key={i} onClick={() => setIdx(i)} aria-label={`Example ${i + 1}`}
+                className={`h-1.5 rounded-full transition-all ${i === idx ? "w-5 bg-accent-soft" : "w-1.5 bg-white/15 hover:bg-white/30"}`} />
+            ))}
           </span>
         </div>
-        <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
-          <div className="rounded-lg border border-white/[0.06] bg-base-850/60 p-4">
-            <div className="label mb-3">Tyre strategy</div>
-            <div className="space-y-2.5">
-              {rows.map((r) => (
-                <div key={r.d} className="flex items-center gap-3">
-                  <span className="w-8 text-xs font-semibold text-ink-muted">{r.d}</span>
-                  <div className="flex h-4 flex-1 overflow-hidden rounded">
-                    {r.strat.map((w, i) => (
-                      <div key={i} style={{ width: `${w}%`, background: colors[i % colors.length] }} />
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+
+        {/* the "input" with a typing question */}
+        <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-base-850/80 px-3.5 py-2.5">
+          <MessageSquareText size={15} className="shrink-0 text-ink-faint" />
+          <span className="min-h-[1.25rem] text-sm text-ink">
+            {item.q.slice(0, typed)}
+            <span className="ml-0.5 inline-block h-3.5 w-[2px] animate-pulse bg-accent-soft align-middle" />
+          </span>
+        </div>
+
+        {/* the answer */}
+        <div className={`mt-4 transition-all duration-500 ${showAnswer ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0"}`}>
+          <p className="max-w-3xl text-[15px] leading-relaxed text-ink">{item.a}</p>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {item.tags.map((t) => <span key={t} className="chip">{t}</span>)}
           </div>
-          <div className="rounded-lg border border-white/[0.06] bg-base-850/60 p-4">
-            <div className="label mb-3">Why it happened</div>
-            <p className="text-sm leading-relaxed text-ink-muted">
-              <span className="text-ink">LEC</span> had the 2nd-fastest true pace but finished P4 — a{" "}
-              <span className="text-accent-soft">third stop</span> dropped him behind two-stoppers.
-              The turning point was the <span className="text-amber">VSC on laps 34–37</span>.
-            </p>
-          </div>
+        </div>
+
+        <div className="mt-5 border-t border-white/[0.05] pt-3 text-xs text-ink-faint">
+          Every answer is computed from real timing data — try your own on any race.
         </div>
       </div>
     </div>

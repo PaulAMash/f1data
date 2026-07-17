@@ -9,15 +9,29 @@ import { AnalysisProgress } from "./AnalysisProgress";
 
 const MIN_THINK_MS = 1500; // makes the analysis feel considered, not instant
 
+// Module-level store: answers survive tab switches (component unmounts) for the
+// life of the page and are wiped on refresh. Keyed per session so each race
+// keeps its own thread.
+const askHistoryStore = new Map<string, QuestionAnswer[]>();
+
 export function QuestionBox({
   year, gp, session, llmAvailable, category,
 }: {
   year: number; gp: string; session: string; llmAvailable: boolean; category: SessionCategory;
 }) {
   const simple = useIsSimple();
+  const storeKey = `${year}|${gp}|${session}`;
   const [q, setQ] = useState("");
   const [thinking, setThinking] = useState(false);
-  const [history, setHistory] = useState<QuestionAnswer[]>([]);
+  const [history, setHistoryState] = useState<QuestionAnswer[]>(
+    () => askHistoryStore.get(storeKey) ?? []);
+  const setHistory = (fn: (h: QuestionAnswer[]) => QuestionAnswer[]) => {
+    setHistoryState((h) => {
+      const next = fn(h);
+      askHistoryStore.set(storeKey, next);
+      return next;
+    });
+  };
 
   async function ask(question: string, forceSimple = false) {
     const text = question.trim();

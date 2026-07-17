@@ -22,6 +22,7 @@ import { QuestionBox } from "@/components/strategy/QuestionBox";
 import { DriverComparison } from "@/components/driver-comparison/DriverComparison";
 import { useMode } from "@/lib/mode";
 import { api, ApiError } from "@/lib/api";
+import { cx } from "@/lib/format";
 import type { Meta, RaceBundle } from "@/lib/types";
 
 const RACE_TABS = [
@@ -31,7 +32,6 @@ const RACE_TABS = [
   { id: "pace", label: "Pace", icon: <Gauge size={14} /> },
   { id: "compare", label: "Compare", icon: <GitCompareArrows size={14} /> },
   { id: "ask", label: "Ask", icon: <MessageSquareText size={14} /> },
-  { id: "data", label: "Data", icon: <Database size={14} /> },
 ];
 const PRACTICE_TABS = [
   { id: "story", label: "Session Story", icon: <BookOpen size={14} /> },
@@ -39,8 +39,9 @@ const PRACTICE_TABS = [
   { id: "runs", label: "Runs & Tyres", icon: <Layers size={14} /> },
   { id: "compare", label: "Compare", icon: <GitCompareArrows size={14} /> },
   { id: "ask", label: "Ask", icon: <MessageSquareText size={14} /> },
-  { id: "data", label: "Data", icon: <Database size={14} /> },
 ];
+// Tabs where Simple/Advanced actually changes the content — the toggle hides elsewhere.
+const MODE_AWARE_TABS = new Set(["story", "charts", "strategy", "pace", "runs", "ask", "data"]);
 
 export default function ExplorerPage() {
   const { mode } = useMode();
@@ -91,15 +92,11 @@ export default function ExplorerPage() {
 
   const session = bundle?.session;
   const category = bundle?.category ?? "race";
-  const baseTabs = category === "practice" ? PRACTICE_TABS : RACE_TABS;
-  // In Simple mode the Data tab is tucked away unless data is partial or advanced.
-  const tabs = useMemo(
-    () => baseTabs.filter((t) => t.id !== "data" || isAdvanced || !!session?.partial),
-    [baseTabs, isAdvanced, session?.partial],
-  );
+  const tabs = category === "practice" ? PRACTICE_TABS : RACE_TABS;
 
   useEffect(() => {
-    if (!tabs.some((t) => t.id === tab)) setTab(tabs[0].id);
+    // "data" is a valid view reached via the Sources button, not a tab
+    if (tab !== "data" && !tabs.some((t) => t.id === tab)) setTab(tabs[0].id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, isAdvanced]);
 
@@ -114,30 +111,23 @@ export default function ExplorerPage() {
       <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-6">
         {/* clean header — the race is the hero */}
         <div className="mb-5">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="bg-gradient-to-br from-white to-ink-muted bg-clip-text text-3xl font-bold tracking-tight text-transparent sm:text-4xl">
               {session ? session.grand_prix : loading ? "Loading…" : "Race Explorer"}
             </h1>
             {bundle?.source === "mock" && <DemoChip />}
             {bundle?.source !== "mock" && session?.partial && <PartialChip onClick={() => setTab("data")} />}
           </div>
           {(session || loading) && (
-            <p className="mt-1 text-sm text-ink-muted">
-              {subtitle}
-              {bundle && (
-                <button onClick={() => setTab("data")}
-                  className="ml-2 text-xs text-ink-faint underline decoration-dotted underline-offset-2 hover:text-ink-muted">
-                  data sources
-                </button>
-              )}
-            </p>
+            <p className="mt-1 text-sm text-ink-muted">{subtitle}</p>
           )}
         </div>
 
         {/* compact controls, grouped so they read as one unit */}
         <div className="mb-4 rounded-xl border border-white/[0.05] bg-base-850/40 p-3">
           <RaceSelector value={sel} onChange={setSel} loading={loading}
-            onRefresh={() => setRefreshKey((k) => k + 1)} />
+            onRefresh={() => setRefreshKey((k) => k + 1)}
+            showModeToggle={MODE_AWARE_TABS.has(tab)} />
         </div>
 
         {currentSeason && sel.year < currentSeason && (
@@ -167,7 +157,20 @@ export default function ExplorerPage() {
           </p>
         )}
 
-        {(bundle || loading) && <Tabs items={tabs} active={tab} onChange={setTab} className="mb-5" />}
+        {(bundle || loading) && (
+          <div className="mb-5 flex items-center gap-2">
+            <Tabs items={tabs} active={tab} onChange={setTab} className="min-w-0 flex-1" />
+            {/* Data provenance lives apart from the analysis tabs on purpose */}
+            <button onClick={() => setTab(tab === "data" ? tabs[0].id : "data")}
+              title="Where this session's data comes from"
+              className={cx("inline-flex h-[42px] shrink-0 items-center gap-1.5 rounded-xl border px-3 text-sm transition-colors",
+                tab === "data"
+                  ? "border-accent/30 bg-accent/10 text-accent-soft"
+                  : "border-white/[0.06] bg-base-850/60 text-ink-muted hover:text-ink")}>
+              <Database size={14} /> <span className="hidden sm:inline">Sources</span>
+            </button>
+          </div>
+        )}
 
         {loading && <LoadingDashboard />}
         {error && !loading && (
@@ -210,7 +213,8 @@ export default function ExplorerPage() {
             )}
             {category !== "practice" && tab === "pace" && (
               <Section title="Pace analysis" info="Separates real speed from track position using fuel- and tyre-corrected clean-air pace.">
-                <PaceAnalysis session={session} pace={bundle.pace} selected={selected} />
+                {/* focus highlights only affect the Charts tab — Pace always shows the field */}
+                <PaceAnalysis session={session} pace={bundle.pace} selected={[]} />
               </Section>
             )}
 

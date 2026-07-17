@@ -25,6 +25,7 @@ export const GLOSSARY: Record<string, string> = {
   compound: "The tyre type — Soft (fastest, wears quickest), Medium, or Hard (slowest, most durable).",
   "long run": "A longer practice stint used to gauge race pace rather than one-lap speed.",
   grid: "The starting order, set by qualifying.",
+  "tyre-limited": "Lap times fell away noticeably through their stints — pace was capped by tyre wear rather than outright car speed.",
 };
 
 export function Term({ children, term }: { children: React.ReactNode; term?: string }) {

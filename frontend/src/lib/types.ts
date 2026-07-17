@@ -90,7 +90,7 @@ export interface DriverPaceSummary {
   tyre_limited: boolean; stints: StintPace[]; pace_rank?: number | null; verdict?: string | null;
 }
 export interface RaceInsight {
-  kind: string; title: string; detail: string; drivers: string[];
+  kind: string; title: string; detail: string; explanation?: string | null; drivers: string[];
   lap_range?: number[] | null; severity: "info" | "good" | "bad" | "key"; confidence: string;
 }
 export interface UndercutEvent {

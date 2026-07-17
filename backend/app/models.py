@@ -332,6 +332,7 @@ class RaceInsight(BaseModel):
     kind: str            # turning_point | best_strategy | worst_strategy | undercut | vsc_stop | pace | ...
     title: str
     detail: str
+    explanation: Optional[str] = None   # the WHY, shown when the card is expanded
     drivers: list[str] = Field(default_factory=list)
     lap_range: Optional[list[int]] = None
     severity: str = "info"   # info | good | bad | key

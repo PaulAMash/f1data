@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Trophy, Users } from "lucide-react";
-import { NavBar } from "@/components/layout/NavBar";
+import { ModeToggle, NavBar } from "@/components/layout/NavBar";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Tabs } from "@/components/ui/Tabs";
 import { Skeleton, EmptyState } from "@/components/ui/misc";
@@ -43,12 +43,15 @@ export default function History() {
     <div className="min-h-screen">
       <NavBar active="history" />
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-        <div className="mb-5">
-          <div className="label">Historical</div>
-          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Explore F1 history</h1>
-          <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-            Real results, qualifying and standings from 1950 to today, via Jolpica/Ergast.
-          </p>
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="label">Historical</div>
+            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Explore F1 history</h1>
+            <p className="mt-1 max-w-2xl text-sm text-ink-muted">
+              Real results, qualifying and standings from 1950 to today, via Jolpica/Ergast.
+            </p>
+          </div>
+          <ModeToggle />
         </div>
 
         {/* Functional data explorer: year → Grand Prix → session → results */}

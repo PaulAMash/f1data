@@ -158,7 +158,9 @@ export function PaceAnalysis({
                   <span className="inline-flex items-center gap-2">
                     <span className="h-2 w-2 rounded-full" style={{ background: p.team_color }} />
                     <span className="font-semibold">{p.driver}</span>
-                    {p.tyre_limited && <Badge tone="bad">tyre-limited</Badge>}
+                    {p.tyre_limited && (
+                      <Term term="tyre-limited"><Badge tone="bad">tyre-limited</Badge></Term>
+                    )}
                   </span>
                 </td>
                 <td className="py-2 pr-2 tabular-nums text-speed">{fmtLap(p.clean_air_pace)}</td>

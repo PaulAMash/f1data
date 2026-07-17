@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import {
-  Award, Flag, GitBranch, TrendingDown, TriangleAlert, Zap,
+  Award, ChevronDown, Flag, GitBranch, TrendingDown, Zap,
 } from "lucide-react";
 import type { RaceInsight, StrategySummary } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
@@ -30,7 +30,8 @@ export function StrategyExplainer({
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-end">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <span className="text-xs text-ink-faint">Tap a card for the full explanation</span>
         <div className="flex gap-1 rounded-lg border border-white/[0.06] bg-base-850/60 p-1 text-xs">
           {(["all", "key"] as const).map((f) => (
             <button key={f} onClick={() => setFilter(f)}
@@ -52,30 +53,53 @@ export function StrategyExplainer({
   );
 }
 
+/**
+ * Collapsed by default: title + tag + a clear chevron affordance. Clicking
+ * expands to the what (detail), the WHY (explanation), and the focus actions —
+ * so the page scans clean but the depth is one click away.
+ */
 function InsightCard({ ins, onFocus }: { ins: RaceInsight; onFocus?: (c: string[]) => void }) {
+  const [open, setOpen] = useState(false);
   const style = SEV_STYLE[ins.severity] ?? SEV_STYLE.info;
   return (
-    <div className={cx("rounded-xl border bg-base-850/50 p-4 transition-colors hover:bg-base-800/60", style.border)}>
-      <div className="mb-1.5 flex items-center justify-between gap-2">
-        <span className="flex items-center gap-2 text-sm font-semibold text-ink">
-          {style.icon}{ins.title}
+    <div className={cx("self-start rounded-xl border bg-base-850/50 transition-colors", style.border,
+      open && "bg-base-800/60")}>
+      <button onClick={() => setOpen((o) => !o)} aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 p-4 text-left transition-colors hover:bg-white/[0.02]">
+        <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-ink">
+          {style.icon}<span className="truncate">{ins.title}</span>
         </span>
-        <Badge tone={style.badge}>{KIND_LABEL[ins.kind] ?? ins.kind}</Badge>
-      </div>
-      <p className="text-sm leading-relaxed text-ink-muted">{ins.detail}</p>
-      <div className="mt-2 flex items-center gap-2">
-        {ins.lap_range && ins.lap_range.length > 0 && (
-          <span className="chip"><Flag size={11} /> Lap {ins.lap_range.join("–")}</span>
-        )}
-        {ins.drivers.length > 0 && onFocus && (
-          <button className="chip hover:text-ink" onClick={() => onFocus(ins.drivers)}>
-            Focus {ins.drivers.join(", ")}
-          </button>
-        )}
-        <span className="ml-auto text-[10px] uppercase tracking-wider text-ink-faint">
-          {ins.confidence} confidence
+        <span className="flex shrink-0 items-center gap-2">
+          <Badge tone={style.badge}>{KIND_LABEL[ins.kind] ?? ins.kind}</Badge>
+          <ChevronDown size={15}
+            className={cx("text-ink-faint transition-transform", open && "rotate-180")} />
         </span>
-      </div>
+      </button>
+
+      {open && (
+        <div className="animate-fade-in border-t border-white/[0.05] p-4 pt-3">
+          <p className="text-sm leading-relaxed text-ink-muted">{ins.detail}</p>
+          {ins.explanation && (
+            <div className="mt-2.5 rounded-lg border border-white/[0.05] bg-base-900/40 p-3">
+              <div className="label mb-1">Why it mattered</div>
+              <p className="text-sm leading-relaxed text-ink-muted">{ins.explanation}</p>
+            </div>
+          )}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {ins.lap_range && ins.lap_range.length > 0 && (
+              <span className="chip"><Flag size={11} /> Lap {ins.lap_range.join("–")}</span>
+            )}
+            {ins.drivers.length > 0 && onFocus && (
+              <button className="chip hover:text-ink" onClick={() => onFocus(ins.drivers.slice(0, 6))}>
+                Show on position chart
+              </button>
+            )}
+            <span className="ml-auto text-[10px] uppercase tracking-wider text-ink-faint">
+              {ins.confidence} confidence
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
