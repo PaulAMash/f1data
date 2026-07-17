@@ -41,11 +41,11 @@ const PRACTICE_TABS = [
   { id: "ask", label: "Ask", icon: <MessageSquareText size={14} /> },
 ];
 // Tabs where Simple/Advanced actually changes the content — the toggle hides
-// elsewhere. The Race/Session Story is deliberately identical in both modes
-// (one summary for everyone), Strategy/Compare/Sources render one view, and
-// Ask carries its own per-answer simple/deep toggle. Practice sessions are
-// fully mode-free.
-const MODE_AWARE_TABS = new Set(["charts", "pace"]);
+// elsewhere. Race Story switches between the plain recap (top-10, podium
+// timeline) and the analyst view (full field, verdicts, DOTD); Strategy/
+// Compare/Sources render one view; Ask carries its own per-answer toggle.
+// Practice sessions are fully mode-free.
+const MODE_AWARE_TABS = new Set(["story", "charts", "pace"]);
 
 export default function ExplorerPage() {
   const { mode } = useMode();

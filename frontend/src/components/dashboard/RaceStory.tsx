@@ -1,6 +1,7 @@
 "use client";
 import { Crown, Flag, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 import type { RaceBundle } from "@/lib/types";
+import { useIsSimple } from "@/lib/mode";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Term } from "@/components/ui/Term";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
@@ -8,12 +9,16 @@ import { RaceOverview } from "./RaceOverview";
 import { RaceTimeline } from "./RaceTimeline";
 
 /**
- * The race overview. One rendition for everyone — the summary, key cards and
- * classification never change with Simple/Advanced (the toggle only affects
- * analytical views like Charts and Pace), and it mirrors the practice-session
- * story layout: summary bullets → identity stat cards → classification.
+ * The race overview, in two depths that share one design language:
+ *  - Simple: plain-English summary, podium-level timeline, the four key
+ *    cards, and a points-scorers classification with movers + weather.
+ *  - Advanced: the analyst summary (margins, pace deltas, pit economics),
+ *    top-10 timeline, Driver of the Day / pit-loss / laps tiles, strategy
+ *    verdicts, and the full-field classification with DNF detail.
+ * Identity (portraits + full names) is identical in both.
  */
 export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (tab: string) => void }) {
+  const simple = useIsSimple();
   const { session, strategy } = bundle;
   const cls = session.classification;
   const driverOf = (code?: string | null) => session.drivers.find((d) => d.code === code) ?? null;
@@ -21,6 +26,8 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
   const topPace = [...bundle.pace].sort((a, b) => (a.pace_rank ?? 99) - (b.pace_rank ?? 99))[0];
   const loser = strategy.biggest_losers[0];
   const turningPoint = strategy.turning_points[0] ?? strategy.insights.find((i) => i.severity === "key");
+  const story = (!simple && strategy.story_advanced?.length)
+    ? strategy.story_advanced : strategy.story;
 
   return (
     <div className="space-y-4">
@@ -28,12 +35,12 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
       <Card>
         <CardHeader title={<span className="flex items-center gap-2"><Sparkles size={15} className="text-accent-soft" /> The story of the race</span>} />
         <CardBody>
-          {strategy.story.length ? (
+          {story.length ? (
             <div>
-              <p className="text-[17px] font-medium leading-relaxed text-ink">{strategy.story[0]}</p>
-              {strategy.story.length > 1 && (
+              <p className="text-[17px] font-medium leading-relaxed text-ink">{story[0]}</p>
+              {story.length > 1 && (
                 <div className="mt-3 space-y-2 border-l-2 border-white/[0.07] pl-4">
-                  {strategy.story.slice(1).map((s, i) => (
+                  {story.slice(1).map((s, i) => (
                     <p key={i} className="text-sm leading-relaxed text-ink-muted">{s}</p>
                   ))}
                 </div>
@@ -69,8 +76,9 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
           why="Lost the most places. Tap to ask why." onClick={() => onJump?.("ask")} />
       </div>
 
-      {/* full classification + movers — the same for every reader */}
-      <RaceOverview bundle={bundle} />
+      {/* classification + movers + weather — points scorers in Simple,
+          the full field with strategy verdicts in Advanced */}
+      <RaceOverview bundle={bundle} simple={simple} />
     </div>
   );
 }

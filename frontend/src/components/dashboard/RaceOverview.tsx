@@ -9,58 +9,69 @@ import { StatTile } from "@/components/ui/StatTile";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { fmtGap, fmtLap, fmtSec, netBadge, ordinal } from "@/lib/format";
 
-export function RaceOverview({ bundle }: { bundle: RaceBundle }) {
+export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; simple?: boolean }) {
   const { session, strategy } = bundle;
   const dotd = session.classification.find((c) => c.driver === strategy.driver_of_the_day);
+  // Simple readers get the points scorers; Advanced gets the whole field + DNFs.
+  const rows = simple
+    ? session.classification.filter((c) => c.position && c.position <= 10)
+    : session.classification;
 
   return (
     <div className="space-y-4">
-      {/* headline tiles (Winner already appears in the key cards above — not repeated) */}
-      <div className="grid gap-3 sm:grid-cols-3">
-        <StatTile label="Driver of the day"
-          value={
-            <span className="flex items-center gap-2.5">
-              <DriverAvatar size={34}
-                driver={session.drivers.find((d) => d.code === strategy.driver_of_the_day) ?? null} />
-              <span className="truncate">{dotd?.name ?? strategy.driver_of_the_day ?? "—"}</span>
-            </span>
-          }
-          sub={strategy.dotd_reason ?? undefined}
-          info="Analytical pick: gained positions, weighted by race pace and a win-from-behind bonus." />
-        {strategy.avg_pit_loss != null ? (
-          <StatTile label="Avg pit loss" value={fmtSec(strategy.avg_pit_loss)}
-            sub={strategy.avg_pit_loss_kind === "estimated" ? "estimated" : "pit-lane time"}
-            info="Average pit-lane time lost per stop across the field — the cost of a green-flag stop." />
-        ) : (
-          <StatTile label="Avg pit loss" value="Unavailable"
-            sub="not provided by source"
-            info="This session's source doesn't include pit-lane timing. OpenF1/Jolpica provide it where available." />
-        )}
-        <StatTile label="Race" value={`${session.total_laps} laps`}
-          sub={session.circuit?.name ?? session.grand_prix} />
-      </div>
+      {/* headline tiles + strategy verdicts are analyst material — Advanced only
+          (Winner already appears in the key cards above and is never repeated) */}
+      {!simple && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <StatTile label="Driver of the day"
+            value={
+              <span className="flex items-center gap-2.5">
+                <DriverAvatar size={34}
+                  driver={session.drivers.find((d) => d.code === strategy.driver_of_the_day) ?? null} />
+                <span className="truncate">{dotd?.name ?? strategy.driver_of_the_day ?? "—"}</span>
+              </span>
+            }
+            sub={strategy.dotd_reason ?? undefined}
+            info="Analytical pick: gained positions, weighted by race pace and a win-from-behind bonus." />
+          {strategy.avg_pit_loss != null ? (
+            <StatTile label="Avg pit loss" value={fmtSec(strategy.avg_pit_loss)}
+              sub={strategy.avg_pit_loss_kind === "estimated" ? "estimated" : "pit-lane time"}
+              info="Average pit-lane time lost per stop across the field — the cost of a green-flag stop." />
+          ) : (
+            <StatTile label="Avg pit loss" value="Unavailable"
+              sub="not provided by source"
+              info="This session's source doesn't include pit-lane timing. OpenF1/Jolpica provide it where available." />
+          )}
+          <StatTile label="Race" value={`${session.total_laps} laps`}
+            sub={session.circuit?.name ?? session.grand_prix} />
+        </div>
+      )}
 
       {/* strategy verdicts — cards with no data are hidden, never shown empty */}
-      <div className="grid gap-3 md:grid-cols-3">
-        {strategy.best_strategy && (
-          <VerdictCard tone="good" icon={<Award size={15} />} title="Best strategy"
-            driver={strategy.best_strategy.driver} detail={strategy.best_strategy.detail} />
-        )}
-        {strategy.worst_strategy && (
-          <VerdictCard tone="bad" icon={<TrendingDown size={15} />} title="Costliest strategy"
-            driver={strategy.worst_strategy.driver} detail={strategy.worst_strategy.detail} />
-        )}
-        {strategy.best_pit_timing && (
-          <VerdictCard tone="key" icon={<Timer size={15} />} title="Best pit timing"
-            driver={strategy.best_pit_timing.driver} detail={strategy.best_pit_timing.detail} />
-        )}
-      </div>
+      {!simple && (
+        <div className="grid gap-3 md:grid-cols-3">
+          {strategy.best_strategy && (
+            <VerdictCard tone="good" icon={<Award size={15} />} title="Best strategy"
+              driver={strategy.best_strategy.driver} detail={strategy.best_strategy.detail} />
+          )}
+          {strategy.worst_strategy && (
+            <VerdictCard tone="bad" icon={<TrendingDown size={15} />} title="Costliest strategy"
+              driver={strategy.worst_strategy.driver} detail={strategy.worst_strategy.detail} />
+          )}
+          {strategy.best_pit_timing && (
+            <VerdictCard tone="key" icon={<Timer size={15} />} title="Best pit timing"
+              driver={strategy.best_pit_timing.driver} detail={strategy.best_pit_timing.detail} />
+          )}
+        </div>
+      )}
 
       {/* classification + movers */}
       <div className="grid gap-4 lg:grid-cols-[1.7fr_1fr]">
         <Card>
-          <CardHeader title="Final classification"
-            info={<InfoTip label="Grid → Finish" text="The ▲/▼ badge is net positions gained or lost versus the starting grid." />} />
+          <CardHeader title={simple ? "Final classification · top 10" : "Final classification"}
+            info={<InfoTip label="Grid → Finish" text={simple
+              ? "The points scorers. The ▲/▼ badge is net positions gained or lost versus the starting grid — switch to Advanced for the full field."
+              : "The ▲/▼ badge is net positions gained or lost versus the starting grid."} />} />
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
               <thead>
@@ -72,7 +83,7 @@ export function RaceOverview({ bundle }: { bundle: RaceBundle }) {
                 </tr>
               </thead>
               <tbody>
-                {session.classification.map((c) => {
+                {rows.map((c) => {
                   const nb = netBadge(c.grid && c.position ? c.grid - c.position : null);
                   return (
                     <tr key={c.driver} className="border-b border-white/[0.04]">

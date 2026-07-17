@@ -3,27 +3,30 @@ import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { MousePointerClick } from "lucide-react";
 import type { RaceBundle } from "@/lib/types";
+import { useIsAdvanced } from "@/lib/mode";
 
 interface Tip { x: number; y: number; title: string; lines: string[] }
 
 /**
  * Key moments at a glance: one horizontal lap strip with neutralization
- * windows (VSC / Safety Car), the turning point, and the top ten's pit stops.
- * Identical in Simple and Advanced — hover anything for the detail; deep
- * analysis lives in the Charts tab.
+ * windows (VSC / Safety Car), the turning point, and pit stops — the podium's
+ * in Simple, the whole points-scoring top 10 in Advanced. Hover anything for
+ * the detail; deep analysis lives in the Charts tab.
  */
 export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
   const { session, strategy } = bundle;
+  const advanced = useIsAdvanced();
   const [tip, setTip] = useState<Tip | null>(null);
   const total = Math.max(1, session.total_laps);
   const W = 1000, H = 64, PAD = 18, Y = 34;
   const x = (lap: number) => PAD + ((lap - 1) / Math.max(1, total - 1)) * (W - 2 * PAD);
 
+  const maxPos = advanced ? 10 : 3;
   const podium = useMemo(
     () => [...session.classification]
-      .filter((c) => c.position && c.position <= 10)
+      .filter((c) => c.position && c.position <= maxPos)
       .sort((a, b) => (a.position ?? 99) - (b.position ?? 99)),
-    [session],
+    [session, maxPos],
   );
   const pits = useMemo(
     () => session.pit_stops.filter((p) => podium.some((c) => c.driver === p.driver)),
@@ -75,7 +78,7 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
         </span>
         <span className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
           <span><span className="mr-1.5 inline-block h-2.5 w-4 rounded-[3px] bg-amber/30 ring-1 ring-amber/50 align-middle" />VSC / Safety Car</span>
-          {pitsReliable && <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full bg-ink-muted align-middle" />Top-10 pit stop</span>}
+          {pitsReliable && <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full bg-ink-muted align-middle" />{advanced ? "Top-10 pit stop" : "Podium pit stop"}</span>}
           {tpLap && <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rotate-45 bg-accent-soft align-middle" />Turning point</span>}
         </span>
       </div>
