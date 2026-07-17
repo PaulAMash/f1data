@@ -4,7 +4,7 @@ import { Award, Timer, TrendingDown, TrendingUp } from "lucide-react";
 import type { ClassificationRow, RaceBundle } from "@/lib/types";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge, TeamDot } from "@/components/ui/Badge";
-import { DriverAvatar } from "@/components/ui/DriverBadge";
+import { DriverAvatar, DriverBadge } from "@/components/ui/DriverBadge";
 import { StatTile } from "@/components/ui/StatTile";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { fmtGap, fmtLap, fmtSec, netBadge, ordinal } from "@/lib/format";
@@ -81,9 +81,9 @@ export function RaceOverview({ bundle }: { bundle: RaceBundle }) {
                       </td>
                       <td className="py-2 pr-2">
                         <span className="flex items-center gap-2">
-                          <TeamDot color={c.team_color} />
-                          <span className="font-semibold">{c.driver}</span>
-                          <span className="hidden text-xs text-ink-faint sm:inline">{c.team}</span>
+                          <DriverBadge driver={session.drivers.find((d) => d.code === c.driver)}
+                            code={c.driver} name={c.name} team={c.team} teamColor={c.team_color}
+                            size={26} />
                           {c.retired && <DnfBadge row={c} />}
                         </span>
                       </td>
@@ -183,9 +183,9 @@ function MoverList({
         {rows.length ? rows.map((r) => (
           <div key={r.driver} className="flex items-center gap-2 text-sm">
             <TeamDot color={r.team_color} />
-            <span className="font-semibold">{r.driver}</span>
-            <span className="text-xs text-ink-faint">P{r.grid}→P{r.finish}</span>
-            <span className={`ml-auto tabular-nums text-xs ${tone === "up" ? "text-emerald-300" : "text-rose-300"}`}>
+            <span className="min-w-0 truncate font-semibold">{r.name ?? r.driver}</span>
+            <span className="shrink-0 text-xs text-ink-faint">P{r.grid}→P{r.finish}</span>
+            <span className={`ml-auto shrink-0 tabular-nums text-xs ${tone === "up" ? "text-emerald-300" : "text-rose-300"}`}>
               {tone === "up" ? "▲" : "▼"} {Math.abs(r.net)}
             </span>
           </div>

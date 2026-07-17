@@ -1,7 +1,6 @@
 "use client";
 import { Clock, Gauge, Repeat, Sparkles, TrendingUp } from "lucide-react";
 import type { Driver, PracticeSummary, RaceSession } from "@/lib/types";
-import { useIsSimple } from "@/lib/mode";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge, TeamDot } from "@/components/ui/Badge";
 import { DriverAvatar, DriverBadge } from "@/components/ui/DriverBadge";

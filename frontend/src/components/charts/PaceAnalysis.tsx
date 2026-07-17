@@ -208,8 +208,9 @@ export function PaceAnalysis({
                     <td className="py-2 pr-2 tabular-nums text-ink-faint">{p.pace_rank ?? "—"}</td>
                     <td className="py-2 pr-2">
                       <span className="inline-flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full" style={{ background: p.team_color }} />
-                        <span className="font-semibold">{p.driver}</span>
+                        <DriverBadge driver={session.drivers.find((d) => d.code === p.driver)}
+                          code={p.driver} name={p.name} team={p.team} teamColor={p.team_color}
+                          size={26} />
                         {p.tyre_limited && (
                           <Term term="tyre-limited"><Badge tone="bad">tyre-limited</Badge></Term>
                         )}

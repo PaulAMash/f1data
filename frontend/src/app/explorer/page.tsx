@@ -41,9 +41,11 @@ const PRACTICE_TABS = [
   { id: "ask", label: "Ask", icon: <MessageSquareText size={14} /> },
 ];
 // Tabs where Simple/Advanced actually changes the content — the toggle hides
-// elsewhere. Strategy/Compare render identically in both modes; Ask carries its
-// own per-answer simple/deep toggle; Sources always shows the one full view.
-const MODE_AWARE_TABS = new Set(["story", "charts", "pace", "runs"]);
+// elsewhere. The Race/Session Story is deliberately identical in both modes
+// (one summary for everyone), Strategy/Compare/Sources render one view, and
+// Ask carries its own per-answer simple/deep toggle. Practice sessions are
+// fully mode-free.
+const MODE_AWARE_TABS = new Set(["charts", "pace"]);
 
 export default function ExplorerPage() {
   const { mode } = useMode();
@@ -130,7 +132,8 @@ export default function ExplorerPage() {
           <RaceSelector value={sel} onChange={setSel} loading={loading}
             onRefresh={() => setRefreshKey((k) => k + 1)}
             // within Charts, only the Position chart responds to the mode
-            showModeToggle={MODE_AWARE_TABS.has(tab) && (tab !== "charts" || chartTab === "position")} />
+            showModeToggle={category !== "practice" && MODE_AWARE_TABS.has(tab)
+              && (tab !== "charts" || chartTab === "position")} />
         </div>
 
         {currentSeason && sel.year < currentSeason && (
