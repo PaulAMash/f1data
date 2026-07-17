@@ -118,10 +118,12 @@ function KeyCard({
         <span className={toneClass}>{icon}</span>
         <span className="label">{label}</span>
       </div>
+      {/* value text is always white — tone colour lives in the icon/label only,
+          so a driver's name never changes colour from card to card */}
       <div className="mt-1.5 flex items-center gap-2.5">
         {avatar}
         <div className="min-w-0">
-          <div className={`truncate text-xl font-semibold tracking-tight ${toneClass}`}>{value}</div>
+          <div className="truncate text-xl font-semibold tracking-tight text-ink">{value}</div>
           {sub && <div className="text-xs text-ink-muted">{sub}</div>}
         </div>
       </div>

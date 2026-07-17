@@ -17,7 +17,7 @@ export function RaceOverview({ bundle }: { bundle: RaceBundle }) {
     <div className="space-y-4">
       {/* headline tiles (Winner already appears in the key cards above — not repeated) */}
       <div className="grid gap-3 sm:grid-cols-3">
-        <StatTile label="Driver of the day" tone="speed"
+        <StatTile label="Driver of the day"
           value={
             <span className="flex items-center gap-2.5">
               <DriverAvatar size={34}
@@ -133,8 +133,10 @@ export function RaceOverview({ bundle }: { bundle: RaceBundle }) {
  */
 function DnfBadge({ row }: { row: ClassificationRow }) {
   const [open, setOpen] = useState(false);
-  const reason = row.retirement_reason
-    ?? (row.status && !/^(dnf|dns|dsq|retired)$/i.test(row.status) ? row.status : null);
+  // a reason only counts if it says something ("Hydraulics"), never the
+  // generic "Retired"/"DNF" — that would just repeat the badge
+  const raw = row.retirement_reason ?? row.status;
+  const reason = raw && !/^\s*(dnf|dns|dsq|retired)\s*$/i.test(raw) ? raw : null;
   return (
     <span className="relative inline-flex"
       onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>

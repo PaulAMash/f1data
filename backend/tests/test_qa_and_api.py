@@ -102,3 +102,26 @@ def test_api_simulate_and_compare():
                                              "a": "VER", "b": "LEC", "mock": True})
     assert cmp.status_code == 200
     assert "verdict" in cmp.json()
+
+
+def test_qa_answers_everyday_questions():
+    """Podium / top-N / position / biggest-loss questions get direct answers."""
+    ctx = _ctx()
+    a = answer_question("who was on the podium?", ctx)
+    assert a.kind == "results" and a.confidence == "high"
+    assert "P1" in a.answer and "P3" in a.answer
+
+    a = answer_question("who was top 5?", ctx)
+    assert a.kind == "results" and "P5" in a.answer
+
+    a = answer_question("who came 4th?", ctx)
+    assert a.kind == "results" and "P4" in a.answer
+
+    a = answer_question("what were the results?", ctx)
+    assert a.kind == "results"
+
+    # "had" must not resolve to a driver code (HAD = Hadjar-style collisions)
+    a = answer_question("who had the biggest loss?", ctx)
+    assert a.kind == "loser"
+    # and no fallback should ever demand "a more specific question"
+    assert "more specific question" not in " ".join(a.missing_data)

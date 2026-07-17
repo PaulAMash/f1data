@@ -77,6 +77,12 @@ class QAContext:
 # --------------------------------------------------------------------------- #
 # entity extraction
 # --------------------------------------------------------------------------- #
+# Driver codes that are also everyday English words ("who HAD the biggest
+# loss", "0.2s PER lap", "neither…NOR…"). These only count as a driver when
+# typed in UPPERCASE — surnames and nicknames still match them normally.
+_AMBIGUOUS_CODES = {"HAD", "PER", "LAW", "GAS", "NOR", "COL", "BOT", "ANT"}
+
+
 def _resolve_drivers(q: str, session: RaceSession) -> list[str]:
     ql = f" {q.lower()} "
     codes = {d.code for d in session.drivers}
@@ -92,7 +98,10 @@ def _resolve_drivers(q: str, session: RaceSession) -> list[str]:
         parts = d.name.lower().split()
         surname = parts[-1] if parts else ""
         first = parts[0] if parts else ""
-        for token in filter(None, [d.code.lower(), surname, (first if len(first) > 3 else "")]):
+        code_token = d.code.lower()
+        if d.code in _AMBIGUOUS_CODES and not re.search(rf"\b{d.code}\b", q):
+            code_token = ""          # lowercase "had"/"per"/… is English, not a TLA
+        for token in filter(None, [code_token, surname, (first if len(first) > 3 else "")]):
             m = re.search(rf"\b{re.escape(token)}\b", ql)
             if m:
                 hits.append((m.start(), d.code))
@@ -246,6 +255,84 @@ def _overtake_single(q, ctx, code, ents):
            + (f"Lost a place to {lost[-1].overtaker} on lap {lost[-1].lap}." if lost else ""))
     return _qa(q, ans, "overtake", "medium", ctx, [code],
                follow_ups=["Show the position chart", "What happened to " + code + "?"])
+
+
+_ORDINAL_WORDS = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
+                  "sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10}
+_COUNT_WORDS = {"three": 3, "four": 4, "five": 5, "six": 6, "eight": 8, "ten": 10}
+
+
+def _row_line(ctx, c, with_gap: bool = True) -> str:
+    gap = f" ({c.gap})" if with_gap and c.gap else ""
+    return f"P{c.position} {c.name} ({c.team}){gap}"
+
+
+def _h_results(q, ctx, ents):
+    """Basic questions everyone asks: 'who was on the podium', 'top 5',
+    'finishing order', 'who came 4th' — answered directly, high confidence."""
+    ql = q.lower()
+
+    if ctx.is_practice:
+        pr = ctx.practice
+        if not pr or not pr.rows:
+            return None
+        m = re.search(r"\btop\s*(\d+)\b", ql)
+        n = int(m.group(1)) if m else next(
+            (v for w, v in _COUNT_WORDS.items() if re.search(rf"\btop\s+{w}\b", ql)), None)
+        if n is None and re.search(r"\b(timesheet|classification|order|results?)\b", ql):
+            n = 5
+        if n is None:
+            return None
+        rows = pr.rows[:min(n, len(pr.rows))]
+        lines = [f"P{i + 1} {r.name} ({_fmt_time(r.best_lap)})" for i, r in enumerate(rows)]
+        return _qa(q, f"Top {len(rows)} in {ctx.session.session_type}: " + "; ".join(lines) + ".",
+                   "results", "high", ctx, [r.driver for r in rows],
+                   follow_ups=["Who had the best long run?", "Compare two drivers"])
+
+    rows = sorted((c for c in ctx.session.classification if c.position),
+                  key=lambda c: c.position)
+    if not rows:
+        return None
+
+    # "who came 4th / finished second / was P3"
+    m_pos = re.search(r"\bwho\s+(?:was|came|finished|ended\s+up|got|placed)\s*(?:in\s*)?"
+                      r"(?:p\s*(\d+)|(\d+)\s*(?:st|nd|rd|th)|"
+                      r"(second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth))\b", ql)
+    if m_pos:
+        n = int(m_pos.group(1) or m_pos.group(2) or _ORDINAL_WORDS[m_pos.group(3)])
+        c = next((r for r in rows if r.position == n), None)
+        if not c:
+            return _qa(q, f"Nobody was classified P{n} in this race.", "results", "high", ctx, [])
+        extra = (f", from P{c.grid} on the grid" if c.grid else "")
+        return _qa(q, f"P{n}: {c.name} ({c.team}){extra}"
+                   + (f", {c.gap} behind the winner" if c.gap else "") + ".",
+                   "results", "high", ctx, [c.driver],
+                   follow_ups=[f"What happened to {c.driver}?", "Show the full top 10"])
+
+    # "podium", "top 5", "finishing order / results"
+    n = 3 if re.search(r"\bpodium\b", ql) else None
+    if n is None:
+        m = re.search(r"\btop\s*(\d+)\b", ql)
+        if m:
+            n = int(m.group(1))
+        else:
+            n = next((v for w, v in _COUNT_WORDS.items() if re.search(rf"\btop\s+{w}\b", ql)), None)
+    if n is None and (
+        re.search(r"\b(finishing\s+order|final\s+(order|result|positions?)|classification|"
+                  r"full\s+results?|how did it (end|finish)|who finished where)\b", ql)
+        or re.search(r"\bresults?\s*[?!.]*\s*$", ql)
+    ):
+        n = 10
+    if n is None:
+        return None
+    n = max(1, min(n, len(rows)))
+    top = rows[:n]
+    label = "Podium" if n == 3 and "podium" in ql else f"Top {n}"
+    ans = f"{label}: " + "; ".join(_row_line(ctx, c) for c in top) + "."
+    if top and top[0].grid and top[0].grid > 1:
+        ans += f" {top[0].name} won it from P{top[0].grid} on the grid."
+    return _qa(q, ans, "results", "high", ctx, [c.driver for c in top[:6]],
+               follow_ups=["Who had the best race pace?", "What was the turning point?"])
 
 
 def _h_why_retired(q, ctx, ents):
@@ -751,7 +838,9 @@ def _h_weather(q, ctx, ents):
 
 
 def _h_gainer_loser(q, ctx, ents):
-    if ctx.is_practice or not re.search(r"\b(gain|gained|climb|most places|biggest mover|loser|biggest los)\b", q, re.I):
+    if ctx.is_practice or not re.search(
+            r"\b(gain|gained|climb|most places|biggest mover|loser|biggest\s+los\w*|"
+            r"lost\s+the\s+most|most\s+(places|positions)\s+lost)\b", q, re.I):
         return None
     if re.search(r"\blos", q, re.I) and ctx.strategy.biggest_losers:
         g = ctx.strategy.biggest_losers[0]
@@ -765,7 +854,8 @@ def _h_gainer_loser(q, ctx, ents):
 
 
 HANDLERS = [
-    _h_could_do_better, _h_why_retired, _h_overtake, _h_what_happened, _h_explain_race,
+    _h_could_do_better, _h_why_retired, _h_results, _h_overtake, _h_what_happened,
+    _h_explain_race,
     _h_practice_longrun, _h_practice_laps, _h_practice_fastest,
     _h_why_lost, _h_undercut, _h_vsc, _h_pit_loss, _h_compare, _h_alt_strategy, _h_worst_team,
     _h_best_pace, _h_winner, _h_tyre, _h_weather, _h_gainer_loser,
@@ -785,8 +875,7 @@ def _best_effort(q, ctx, ents) -> QuestionAnswer:
         res = _h_what_happened(f"what happened to {drivers[0]}", ctx, ents)
         if res:
             res.question = q
-            res.confidence = "low"
-            res.answer = "I'm not certain what you're asking, but here's what the data shows: " + res.answer
+            res.confidence = "medium"
             return res
     if teams:
         c = _compare_teams(q, ctx, teams[0], teams[1]) if len(teams) >= 2 else None
@@ -803,12 +892,12 @@ def _generic(q, ctx, ents) -> QuestionAnswer:
     else:
         w = ctx.strategy.winner
         ans = f"{w} led the way." if w else "Here is what the loaded session shows."
-    ans = ("I couldn't pin down the exact question, so here's the headline from the loaded "
-           f"{ctx.session.session_type}: " + ans)
-    return _qa(q, ans, "overview", "low", ctx, [],
-               follow_ups=["Who was fastest?" if ctx.is_practice else "Who had the best race pace?",
-                           "What happened to a specific driver?", "Explain simply"],
-               missing=["a more specific question"])
+    ans = (f"Here's the headline from this {ctx.session.session_type}: " + ans
+           + " Ask about any driver, lap or moment and I'll dig into it.")
+    return _qa(q, ans, "overview", "medium", ctx, [],
+               follow_ups=["Who was on the podium?",
+                           "Who was fastest?" if ctx.is_practice else "Who had the best race pace?",
+                           "Explain simply"])
 
 
 # --------------------------------------------------------------------------- #
@@ -854,7 +943,7 @@ _TITLES = {
     "could_better": "What could have gone better", "gainer": "Biggest mover",
     "loser": "Biggest loss", "alt_strategy": "Was there a better call?",
     "worst_team": "Who lost most vs pace", "overview": "Session overview",
-    "retirement": "Why they retired",
+    "retirement": "Why they retired", "results": "Final order",
 }
 
 _STEPS = {

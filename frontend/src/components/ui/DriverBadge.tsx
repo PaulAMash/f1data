@@ -16,8 +16,12 @@ export function DriverAvatar({ driver, size = 28 }: { driver?: Driver | null; si
     <span className="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full"
       style={{ width: size, height: size, background: `${color}22`, boxShadow: `inset 0 0 0 1.5px ${color}` }}>
       {showImg ? (
+        // no-referrer: the F1 media CDN rejects hotlinked requests that carry a
+        // referrer, which silently broke every portrait — without it onError
+        // fires and we fall back to initials everywhere.
         // eslint-disable-next-line @next/next/no-img-element
         <img src={driver!.headshot_url!} alt={driver!.name} onError={() => setBroken(true)}
+          referrerPolicy="no-referrer" loading="lazy"
           className="h-full w-full object-cover" />
       ) : (
         <span className="font-semibold text-ink" style={{ fontSize: size * 0.38 }}>{initials}</span>

@@ -59,17 +59,24 @@ def year_map(year: int) -> dict[str, str]:
 
 
 def enrich(session: RaceSession) -> bool:
-    """Fill missing driver portraits from the season map. Returns True if any
-    driver was updated (so the caller can refresh the session cache)."""
+    """Fill missing driver portraits from the season map — falling back to the
+    previous season's map for drivers OpenF1 hasn't photographed yet (early in
+    a new season most of the grid carries over). Returns True if any driver was
+    updated (so the caller can refresh the session cache)."""
     if session.year < 2023:  # OpenF1 coverage starts 2023
         return False
     missing = [d for d in session.drivers if not d.headshot_url]
     if not missing:
         return False
     mapping = year_map(session.year)
+    prev: dict[str, str] | None = None
     changed = False
     for d in missing:
         url = mapping.get(d.code)
+        if not url and session.year - 1 >= 2023:
+            if prev is None:
+                prev = year_map(session.year - 1)
+            url = prev.get(d.code)
         if url:
             d.headshot_url = url
             changed = True

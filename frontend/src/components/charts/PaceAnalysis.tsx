@@ -99,9 +99,9 @@ export function PaceAnalysis({
           {fastest && (
             <div className="rounded-xl border border-white/[0.06] bg-base-800/50 p-4">
               <div className="label text-speed">Fastest car</div>
-              <div className="mt-0.5 flex items-center gap-2 text-2xl font-semibold text-speed">
+              <div className="mt-0.5 flex items-center gap-2 text-2xl font-semibold text-ink">
                 <span className="h-3 w-3 rounded-full" style={{ background: fastest.team_color }} />
-                {fastest.driver}
+                {fastest.name ?? fastest.driver}
               </div>
               <p className="mt-1 text-sm text-ink-muted">
                 {fastest.name} had the quickest <Term>clean-air pace</Term> — the truest measure of speed

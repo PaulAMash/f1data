@@ -157,16 +157,20 @@ def _track_evolving(session: RaceSession) -> bool:
 
 
 def _story(session, rows, fastest, best_long, most_improved) -> list[str]:
+    # full names, matching how race stories read ("Lewis Hamilton", never "HAM")
+    def name_of(code):
+        return next((r.name for r in rows if r.driver == code and r.name), code)
+
     s = []
     if fastest and rows:
         top = rows[0]
-        s.append(f"{fastest} set the pace in {session.session_type}, a "
+        s.append(f"{name_of(fastest)} set the pace in {session.session_type}, a "
                  f"{_fmt(top.best_lap)} best lap on the {(top.compounds or ['?'])[-1].lower()}.")
     if best_long:
-        s.append(f"On race-simulation running, {best_long.driver} looked strongest with a "
+        s.append(f"On race-simulation running, {name_of(best_long.driver)} looked strongest with a "
                  f"{_fmt(best_long.long_run_pace)} long-run pace over {best_long.long_run_laps} laps.")
     if most_improved and most_improved.improvement:
-        s.append(f"{most_improved.driver} improved the most as the track rubbered in "
+        s.append(f"{name_of(most_improved.driver)} improved the most as the track rubbered in "
                  f"(about {most_improved.improvement:.1f}s quicker than their early laps).")
     s.append("Practice times mix fuel loads and engine modes, so treat outright pace as indicative, "
              "not a true grid order.")
