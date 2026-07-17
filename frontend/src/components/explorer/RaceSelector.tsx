@@ -62,9 +62,9 @@ export function RaceSelector({
       </button>
 
       <Link href="/history"
-        className="inline-flex h-[38px] items-center gap-1.5 self-end rounded-lg px-2.5 text-xs text-ink-faint hover:text-ink-muted"
+        className="pill-btn h-[38px] self-end text-ink-muted hover:text-ink sm:ml-auto"
         title="Browse previous seasons in Historical">
-        <History size={13} /> Previous seasons? <span className="underline decoration-dotted">Explore F1 History</span>
+        <History size={14} /> Previous seasons <span className="text-ink-faint">→</span>
       </Link>
     </div>
   );

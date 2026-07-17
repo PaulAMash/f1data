@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import {
-  Award, Flag, GitBranch, Sparkles, TrendingDown, TriangleAlert, Zap,
+  Award, Flag, GitBranch, TrendingDown, TriangleAlert, Zap,
 } from "lucide-react";
 import type { RaceInsight, StrategySummary } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
@@ -30,12 +30,7 @@ export function StrategyExplainer({
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between">
-        <p className="max-w-2xl text-sm text-ink-muted">
-          <Sparkles size={13} className="mr-1 inline text-accent-soft" />
-          Generated from the data with deterministic rules — no AI guesswork. Each card is backed by
-          the computed pace, pit and position numbers.
-        </p>
+      <div className="mb-3 flex items-center justify-end">
         <div className="flex gap-1 rounded-lg border border-white/[0.06] bg-base-850/60 p-1 text-xs">
           {(["all", "key"] as const).map((f) => (
             <button key={f} onClick={() => setFilter(f)}

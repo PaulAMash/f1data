@@ -20,7 +20,6 @@ import { RaceControlWeather } from "@/components/charts/RaceControlWeather";
 import { StrategyExplainer } from "@/components/strategy/StrategyExplainer";
 import { QuestionBox } from "@/components/strategy/QuestionBox";
 import { DriverComparison } from "@/components/driver-comparison/DriverComparison";
-import { SimulatorLite } from "@/components/strategy/SimulatorLite";
 import { useMode } from "@/lib/mode";
 import { api, ApiError } from "@/lib/api";
 import type { Meta, RaceBundle } from "@/lib/types";
@@ -204,17 +203,10 @@ export default function ExplorerPage() {
               </div>
             )}
             {category !== "practice" && tab === "strategy" && (
-              <div className="space-y-4">
-                <Section title="Explain the race">
-                  <StrategyExplainer strategy={bundle.strategy}
-                    onFocusDrivers={(d) => { setSelected(d); setChartTab("position"); setTab("charts"); }} />
-                </Section>
-                {isAdvanced && (
-                  <Section title="Strategy simulator (lite)" info="A directional what-if estimate grounded in the real race — clearly not an exact result.">
-                    <SimulatorLite bundle={bundle} year={sel.year} gp={session.grand_prix} session={sel.session} />
-                  </Section>
-                )}
-              </div>
+              <Section title="Explain the race">
+                <StrategyExplainer strategy={bundle.strategy}
+                  onFocusDrivers={(d) => { setSelected(d); setChartTab("position"); setTab("charts"); }} />
+              </Section>
             )}
             {category !== "practice" && tab === "pace" && (
               <Section title="Pace analysis" info="Separates real speed from track position using fuel- and tyre-corrected clean-air pace.">
@@ -234,7 +226,7 @@ export default function ExplorerPage() {
               </Section>
             )}
             {tab === "ask" && (
-              <Section title="Ask about this session" info="Answered from the loaded data. Works with no API key. Try messy, plain-English questions.">
+              <Section title="Ask about this session">
                 <QuestionBox year={sel.year} gp={session.grand_prix} session={sel.session}
                   llmAvailable={meta?.llm_available ?? false} category={category} />
               </Section>

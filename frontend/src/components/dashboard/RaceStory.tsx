@@ -28,8 +28,7 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
     <div className="space-y-4">
       {/* narrative — reads like a short race report: lede, then supporting lines */}
       <Card>
-        <CardHeader title={<span className="flex items-center gap-2"><Sparkles size={15} className="text-accent-soft" /> The story of the race</span>}
-          subtitle={simple ? "A plain-English recap — no jargon required." : undefined} />
+        <CardHeader title={<span className="flex items-center gap-2"><Sparkles size={15} className="text-accent-soft" /> The story of the race</span>} />
         <CardBody>
           {strategy.story.length ? (
             <div>

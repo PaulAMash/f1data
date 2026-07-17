@@ -553,12 +553,18 @@ def _h_vsc(q, ctx, ents):
 
 
 def _h_compare(q, ctx, ents):
-    if not re.search(r"\b(compare|vs\.?|versus|against|difference|better)\b", q, re.I):
+    if not re.search(r"\b(compare|vs\.?|versus|against|difference|better|head.?to.?head)\b", q, re.I):
         return None
     if len(ents["teams"]) >= 2:
         return _compare_teams(q, ctx, ents["teams"][0], ents["teams"][1])
     if len(ents["drivers"]) >= 2:
         return _compare_drivers(q, ctx, ents["drivers"][0], ents["drivers"][1])
+    # "the top 2" / "the leaders" / "first two" → P1 vs P2
+    if not ctx.is_practice and re.search(r"\btop\s*(2|two)\b|\bleaders\b|\bfirst\s+two\b|\bpodium\s+fight\b", q, re.I):
+        front = sorted((c for c in ctx.session.classification if c.position),
+                       key=lambda c: c.position)[:2]
+        if len(front) == 2:
+            return _compare_drivers(q, ctx, front[0].driver, front[1].driver)
     return None
 
 
@@ -594,7 +600,9 @@ def _compare_drivers(q, ctx, a, b):
     cmp = compare_drivers(ctx.session, a, b)
     if "error" in cmp:
         return _missing(q, [cmp["error"]], ctx)
-    return _qa(q, cmp["verdict"], "compare_drivers", "high", ctx, [a, b],
+    # full statistics-backed breakdown, not just the one-line verdict
+    answer = " ".join(cmp.get("verdict_points") or [cmp["verdict"]])
+    return _qa(q, answer, "compare_drivers", "high", ctx, [a, b],
                follow_ups=["Compare their tyres", "Show the position chart", "Explain simply"],
                supporting={"compound_sequence": cmp["compound_sequence"], "pit_loss": cmp["pit_loss"]})
 

@@ -25,8 +25,7 @@ function Story({ practice, session }: { practice: PracticeSummary; session: Race
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader title={<span className="flex items-center gap-2"><Sparkles size={15} className="text-accent-soft" /> {session.session_type} summary</span>}
-          subtitle="Practice isn't a race — here's what actually matters." />
+        <CardHeader title={<span className="flex items-center gap-2"><Sparkles size={15} className="text-accent-soft" /> {session.session_type} summary</span>} />
         <CardBody className="space-y-2.5">
           {p.story.map((s, i) => (
             <p key={i} className="text-[15px] leading-relaxed text-ink"><span className="mr-2 text-accent-soft">•</span>{s}</p>

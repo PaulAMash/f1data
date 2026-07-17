@@ -117,7 +117,24 @@ export function DriverComparison({
             <CompareTable data={data} a={a} b={b} bundle={bundle} />
             <div className="rounded-xl border border-accent/20 bg-accent/[0.05] p-4">
               <div className="label mb-2">Final verdict</div>
-              <p className="text-sm leading-relaxed text-ink">{data.verdict}</p>
+              {data.verdict_points?.length ? (
+                <ul className="space-y-2">
+                  {data.verdict_points.map((p: string, i: number) => (
+                    <li key={i} className={
+                      i === data.verdict_points.length - 1
+                        ? "border-t border-white/[0.08] pt-2 text-sm font-medium leading-relaxed text-ink"
+                        : "flex gap-2 text-sm leading-relaxed text-ink"
+                    }>
+                      {i !== data.verdict_points.length - 1 && (
+                        <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-accent-soft/70" />
+                      )}
+                      {p}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm leading-relaxed text-ink">{data.verdict}</p>
+              )}
             </div>
           </div>
         </>

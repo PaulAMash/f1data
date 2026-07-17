@@ -18,7 +18,7 @@ export function Badge({
 }: { tone?: Tone; children: React.ReactNode; className?: string }) {
   return (
     <span className={cx(
-      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+      "inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold",
       TONES[tone], className,
     )}>
       {children}

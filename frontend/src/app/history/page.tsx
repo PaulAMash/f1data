@@ -21,7 +21,6 @@ function SourceTag({ source }: { source: DataSource }) {
 }
 
 const YEARS = Array.from({ length: 9 }, (_, i) => 2026 - i);
-const CIRCUITS = ["austria", "monza", "monaco", "silverstone", "spa", "suzuka", "bahrain", "brazil"];
 
 export default function History() {
   const [year, setYear] = useState(2025);
@@ -30,10 +29,6 @@ export default function History() {
   const [source, setSource] = useState<DataSource>("mock");
   const [loading, setLoading] = useState(true);
 
-  const [circuit, setCircuit] = useState("austria");
-  const [winners, setWinners] = useState<any[]>([]);
-  const [winSource, setWinSource] = useState<DataSource>("mock");
-
   useEffect(() => {
     setLoading(true);
     api.historyStandings(year, type)
@@ -41,12 +36,6 @@ export default function History() {
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
   }, [year, type]);
-
-  useEffect(() => {
-    api.circuitWinners(circuit)
-      .then((r) => { setWinners(r.winners); setWinSource(r.source as DataSource); })
-      .catch(() => setWinners([]));
-  }, [circuit]);
 
   const maxPts = Math.max(1, ...rows.map((r) => r.points ?? 0));
 
@@ -67,7 +56,7 @@ export default function History() {
           <HistoricalExplorer />
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
+        <div>
           {/* standings */}
           <Card>
             <CardHeader
@@ -115,35 +104,6 @@ export default function History() {
                   ))}
                 </div>
               ) : <EmptyState title="No standings available" />}
-            </CardBody>
-          </Card>
-
-          {/* circuit winners */}
-          <Card>
-            <CardHeader
-              title="Past winners at circuit"
-              right={
-                <div className="flex items-center gap-2">
-                  <SourceTag source={winSource} />
-                  <select value={circuit} onChange={(e) => setCircuit(e.target.value)}
-                    className="rounded-lg border border-white/10 bg-base-800 px-2.5 py-1.5 text-sm capitalize outline-none">
-                    {CIRCUITS.map((c) => <option key={c} value={c} className="bg-base-800">{c}</option>)}
-                  </select>
-                </div>
-              }
-            />
-            <CardBody>
-              {winners.length ? (
-                <div className="space-y-1.5">
-                  {winners.map((w, i) => (
-                    <div key={i} className="flex items-center gap-3 rounded-lg border border-white/[0.05] bg-base-800/40 px-3 py-2">
-                      <span className="w-10 tabular-nums text-sm text-ink-faint">{w.season}</span>
-                      <span className="flex-1 text-sm font-medium">{w.winner}</span>
-                      <span className="text-xs text-ink-muted">{w.team}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : <EmptyState title="No winners data" />}
             </CardBody>
           </Card>
         </div>

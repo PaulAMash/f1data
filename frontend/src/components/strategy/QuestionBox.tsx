@@ -7,23 +7,6 @@ import { useIsSimple } from "@/lib/mode";
 import { Badge } from "@/components/ui/Badge";
 import { AnalysisProgress } from "./AnalysisProgress";
 
-const RACE_SUGGESTIONS = [
-  "Explain the race simply",
-  "How did the top 2 compare?",
-  "Why did LEC lose so many places?",
-  "Who had the best race pace?",
-  "Who benefited most from the VSC?",
-  "Which driver lost the most time in the pits?",
-];
-const PRACTICE_SUGGESTIONS = [
-  "Who was fastest?",
-  "Who had the best long run?",
-  "Who did the most laps?",
-  "Was Ferrari quick?",
-  "Compare McLaren and Red Bull",
-  "Explain this session simply",
-];
-
 const MIN_THINK_MS = 1500; // makes the analysis feel considered, not instant
 
 export function QuestionBox({
@@ -35,7 +18,6 @@ export function QuestionBox({
   const [q, setQ] = useState("");
   const [thinking, setThinking] = useState(false);
   const [history, setHistory] = useState<QuestionAnswer[]>([]);
-  const suggestions = category === "practice" ? PRACTICE_SUGGESTIONS : RACE_SUGGESTIONS;
 
   async function ask(question: string, forceSimple = false) {
     const text = question.trim();
@@ -61,11 +43,6 @@ export function QuestionBox({
     }
   }
 
-  function onFollow(fu: string, prev: QuestionAnswer) {
-    if (/simpl|explain simply|eli5|new to f1/i.test(fu)) ask(prev.question, true);
-    else ask(fu);
-  }
-
   return (
     <div>
       <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-base-850/80 p-2 focus-within:border-accent/40">
@@ -75,7 +52,7 @@ export function QuestionBox({
           onKeyDown={(e) => e.key === "Enter" && ask(q)}
           placeholder={category === "practice"
             ? "Ask about this session… e.g. who had the best long run?"
-            : "Ask about this race… e.g. how did George overtake Max?"}
+            : "Ask about this race… e.g. why did Leclerc lose places?"}
           className="min-w-0 flex-1 bg-transparent py-1.5 text-sm text-ink outline-none placeholder:text-ink-faint"
         />
         <button onClick={() => ask(q)} disabled={thinking || !q.trim()}
@@ -84,32 +61,18 @@ export function QuestionBox({
         </button>
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {suggestions.map((s) => (
-          <button key={s} onClick={() => ask(s)} disabled={thinking}
-            className="chip hover:border-white/20 hover:text-ink disabled:opacity-40">{s}</button>
-        ))}
-      </div>
-
-      <p className="mt-2 text-xs text-ink-faint">
-        Answers are computed from the loaded session data.{" "}
-        {llmAvailable ? "An LLM may polish the wording — the facts stay computed."
-          : "No API key needed."}
-      </p>
-
       <div className="mt-4 space-y-3">
         {thinking && <AnalysisProgress />}
         {history.map((a, i) => (
-          <AnswerCard key={i} a={a} simple={simple} onFollow={(fu) => onFollow(fu, a)}
-            onSimplify={() => ask(a.question, true)} />
+          <AnswerCard key={i} a={a} simple={simple} onSimplify={() => ask(a.question, true)} />
         ))}
       </div>
     </div>
   );
 }
 
-function AnswerCard({ a, simple, onFollow, onSimplify }: {
-  a: QuestionAnswer; simple: boolean; onFollow: (fu: string) => void; onSimplify: () => void;
+function AnswerCard({ a, simple, onSimplify }: {
+  a: QuestionAnswer; simple: boolean; onSimplify: () => void;
 }) {
   const short = (simple && a.beginner_summary) ? a.beginner_summary : (a.short_answer || a.answer);
   const paras = a.detailed_answer?.length ? a.detailed_answer : (a.answer ? [a.answer] : []);
@@ -138,7 +101,7 @@ function AnswerCard({ a, simple, onFollow, onSimplify }: {
 
       {a.evidence?.length > 0 && (
         <ul className="mt-2.5 space-y-1">
-          {a.evidence.slice(0, simple ? 3 : 5).map((e, i) => (
+          {a.evidence.slice(0, simple ? 3 : 6).map((e, i) => (
             <li key={i} className="flex gap-2 text-xs text-ink-muted">
               <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-accent-soft/70" />{e}
             </li>
@@ -159,16 +122,13 @@ function AnswerCard({ a, simple, onFollow, onSimplify }: {
         <p className="mt-1.5 text-xs text-amber">What&apos;s missing: {a.missing_data.join(", ")}</p>
       )}
 
-      <div className="mt-3 flex flex-wrap items-center gap-1.5">
-        {!a.simple && (
+      {!a.simple && (
+        <div className="mt-3">
           <button onClick={onSimplify} className="chip border-speed/30 text-speed hover:bg-speed/10">
             <Wand2 size={11} /> Simplify
           </button>
-        )}
-        {a.follow_ups?.filter((f) => !/simpl/i.test(f)).slice(0, 3).map((fu) => (
-          <button key={fu} onClick={() => onFollow(fu)} className="chip hover:border-white/20 hover:text-ink">{fu}</button>
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

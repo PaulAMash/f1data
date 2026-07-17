@@ -45,19 +45,74 @@ def compare_drivers(session: RaceSession, a: str, b: str) -> dict:
         vals = [ps.pit_lane_time for ps in stops if ps.pit_lane_time]
         return round(sum(vals), 1) if vals else None
 
-    # verdict
+    def fmt(t):
+        if t is None:
+            return "—"
+        m, s = int(t // 60), t % 60
+        return f"{m}:{s:06.3f}" if m else f"{s:.3f}s"
+
+    # ---- detailed, statistics-backed verdict --------------------------------
     faster = a if (pa.pace_rank or 99) < (pb.pace_rank or 99) else b
+    slower = b if faster == a else a
     finished_ahead = a if ((ca.position or 99) < (cb.position or 99)) else b
-    verdict_bits = [
-        f"{faster} was quicker on raw pace (P{pace[faster].pace_rank} vs "
-        f"P{pace[b if faster==a else a].pace_rank}).",
-        f"{finished_ahead} finished ahead (P{class_by[finished_ahead].position}).",
-    ]
+    behind = b if finished_ahead == a else a
+    points: list[str] = []
+
+    points.append(f"{finished_ahead} finished ahead: P{class_by[finished_ahead].position} vs "
+                  f"P{class_by[behind].position}"
+                  + (f", with a final margin of {abs(lap_delta[-1]['delta']):.1f}s on track"
+                     if lap_delta and abs(lap_delta[-1]["delta"]) < 300 else "") + ".")
+
+    if pa.clean_air_pace and pb.clean_air_pace:
+        d = abs(pa.clean_air_pace - pb.clean_air_pace)
+        points.append(f"True pace: {faster} was quicker once fuel and tyres are corrected — "
+                      f"{fmt(pace[faster].clean_air_pace)} vs {fmt(pace[slower].clean_air_pace)} "
+                      f"({d:.3f}s/lap, pace rank P{pace[faster].pace_rank} vs P{pace[slower].pace_rank}).")
+    if pa.best_lap and pb.best_lap:
+        bl = a if pa.best_lap <= pb.best_lap else b
+        points.append(f"Best lap: {bl} — {fmt(pace[bl].best_lap)} against "
+                      f"{fmt(pace[b if bl == a else a].best_lap)}.")
+    if pa.consistency_score is not None and pb.consistency_score is not None:
+        cs = a if pa.consistency_score >= pb.consistency_score else b
+        points.append(f"Consistency: {cs} was steadier ({pace[cs].consistency_score:.0f}/100 vs "
+                      f"{pace[b if cs == a else a].consistency_score:.0f}/100 on clean laps).")
+
+    stops_a = len([p for p in session.pit_stops if p.driver == a])
+    stops_b = len([p for p in session.pit_stops if p.driver == b])
+    pl_a, pl_b = pit_loss(a), pit_loss(b)
+    if session.pit_data_reliable and (stops_a or stops_b):
+        pit_bit = f"Pit strategy: {a} stopped {stops_a}× vs {b} {stops_b}×"
+        if pl_a is not None and pl_b is not None:
+            cheaper = a if pl_a <= pl_b else b
+            pit_bit += (f"; total pit-lane time {pl_a:.1f}s vs {pl_b:.1f}s — "
+                        f"{cheaper} paid less for their stops")
+        points.append(pit_bit + ".")
+
+    seq_a = [s.compound.value[0] for s in pa.stints]
+    seq_b = [s.compound.value[0] for s in pb.stints]
+    if seq_a and seq_b and seq_a != seq_b:
+        points.append(f"Tyres: {a} ran {'→'.join(seq_a)} against {b}'s {'→'.join(seq_b)}.")
+
     if pa.traffic_laps != pb.traffic_laps:
         stuck = a if pa.traffic_laps > pb.traffic_laps else b
-        verdict_bits.append(f"{stuck} spent more laps in traffic ({max(pa.traffic_laps, pb.traffic_laps)}).")
+        points.append(f"Traffic: {stuck} spent more green laps in dirty air "
+                      f"({max(pa.traffic_laps, pb.traffic_laps)} vs {min(pa.traffic_laps, pb.traffic_laps)}).")
+
+    # biggest swing between them (largest single-lap delta change)
+    if len(lap_delta) > 2:
+        swings = [(abs(lap_delta[i]["delta"] - lap_delta[i - 1]["delta"]), lap_delta[i]["lap"])
+                  for i in range(1, len(lap_delta))]
+        mag, lap = max(swings)
+        if mag >= 2.5:
+            points.append(f"The biggest single swing came on lap {lap} (~{mag:.1f}s), "
+                          f"most likely a pit stop or on-track incident — check the delta trace there.")
+
     if faster != finished_ahead:
-        verdict_bits.append(f"{faster} had the pace but {finished_ahead} executed the better race.")
+        points.append(f"Bottom line: {faster} had the outright speed, but {finished_ahead} "
+                      f"converted the race — execution and track position decided it.")
+    else:
+        points.append(f"Bottom line: {finished_ahead} was both the quicker and the better-executed "
+                      f"race — a deserved result on the data.")
 
     return {
         "a": pa.model_dump(), "b": pb.model_dump(),
@@ -69,5 +124,6 @@ def compare_drivers(session: RaceSession, a: str, b: str) -> dict:
             a: [s.compound.value for s in pa.stints],
             b: [s.compound.value for s in pb.stints],
         },
-        "verdict": " ".join(verdict_bits),
+        "verdict": " ".join(points[:3] + points[-1:]),
+        "verdict_points": points,
     }

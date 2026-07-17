@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import type { RaceSession, Stint, UndercutEvent } from "@/lib/types";
 import { COMPOUND_COLOR, COMPOUND_LABEL, COMPOUND_SHORT } from "@/lib/compounds";
 import { cx, fmtLap, fmtSec } from "@/lib/format";
@@ -120,10 +121,16 @@ export function TyreStrategyChart({
 }
 
 function StintTooltip({ s, x, y }: { s: Stint; x: number; y: number }) {
-  return (
+  if (typeof document === "undefined") return null;
+  // Portal to <body>: ancestors use backdrop-blur, which hijacks position:fixed
+  // and made the tooltip float away from the cursor.
+  return createPortal(
     <div
       className="pointer-events-none fixed z-50 w-56 rounded-xl border border-white/10 bg-base-900/95 p-3 text-xs shadow-glow"
-      style={{ left: Math.min(x + 12, (typeof window !== "undefined" ? window.innerWidth : 9999) - 240), top: y + 12 }}
+      style={{
+        left: Math.min(x + 14, (typeof window !== "undefined" ? window.innerWidth : 9999) - 240),
+        top: Math.min(y + 14, (typeof window !== "undefined" ? window.innerHeight : 9999) - 180),
+      }}
     >
       <div className="mb-1.5 flex items-center gap-2">
         <span className="rounded px-1.5 py-0.5 text-[10px] font-bold"
@@ -137,7 +144,8 @@ function StintTooltip({ s, x, y }: { s: Stint; x: number; y: number }) {
       <Row k="Median lap" v={fmtLap(s.median_lap)} />
       <Row k="Best lap" v={fmtLap(s.best_lap)} />
       <Row k="Degradation" v={s.degradation != null ? `${s.degradation >= 0 ? "+" : ""}${s.degradation.toFixed(3)}s/lap` : "—"} />
-    </div>
+    </div>,
+    document.body,
   );
 }
 
