@@ -221,12 +221,41 @@ def _merge_missing_facets(session: RaceSession, primary: str) -> None:
             log.info("jolpica classification merge failed: %s", exc)
 
 
+def _enrich_retirements(session: RaceSession, primary: str) -> None:
+    """OpenF1/FastF1 report *that* a car retired but not *why*. Jolpica carries
+    the official reason ("Hydraulics", "Collision", ...) — copy it across so
+    the UI's DNF badge can explain the retirement. Races only: the Jolpica
+    results endpoint describes the Grand Prix, not sprints."""
+    if primary == "jolpica" or session.category != "race":
+        return
+    retired = [c for c in session.classification if c.retired]
+    if not retired or all(c.retirement_reason for c in retired):
+        return
+    try:
+        _drivers, rows, _meta = jolpica_adapter.fetch_classification(
+            session.year, session.grand_prix)
+    except Exception as exc:  # noqa: BLE001
+        log.info("retirement enrich failed: %s", exc)
+        return
+    by_code = {r.driver: r for r in rows}
+    for c in retired:
+        src = by_code.get(c.driver)
+        if src and src.retirement_reason and not c.retirement_reason:
+            c.retirement_reason = src.retirement_reason
+            c.retirement_source = "jolpica"
+            if c.laps_completed is None:
+                c.laps_completed = src.laps_completed
+
+
 def _post_process(session: RaceSession, primary: str) -> None:
     """Enrich a freshly-fetched real session and finalize its source report."""
     session.category = session.category or session_category(session.session_type)
 
     # fill hollow facets from other sources before any analysis-dependent steps
     _merge_missing_facets(session, primary)
+
+    # retirement reasons for the DNF badge (jolpica has them, live timing doesn't)
+    _enrich_retirements(session, primary)
 
     # pit-stop timing (may pull durations from Jolpica)
     try:

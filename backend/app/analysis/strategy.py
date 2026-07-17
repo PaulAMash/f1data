@@ -265,11 +265,14 @@ def _best_pit_timing(session: RaceSession) -> dict | None:
         best = max(cheap, key=saving)
         window = "VSC" if best.under_vsc else "safety car"
         name = next((d.name for d in session.drivers if d.code == best.driver), best.driver)
+        win = next((w for w in session.track_status_windows
+                    if w.start_lap <= best.lap <= w.end_lap), None)
+        cause_txt = f" The {window} came out when {win.cause}." if win and win.cause else ""
         return {
             "driver": best.driver, "lap": best.lap, "kind": f"{window} stop",
             "saved_s": saving(best),
             "detail": (f"{name} pitted on lap {best.lap} under {window}, saving "
-                       f"~{saving(best)}s versus a green-flag stop."),
+                       f"~{saving(best)}s versus a green-flag stop.{cause_txt}"),
         }
     # fall back to whichever stop-duration measure the source provides
     def dur(ps):
@@ -308,7 +311,8 @@ def _turning_points(session: RaceSession, pace_by_driver) -> list[RaceInsight]:
     for w in session.track_status_windows:
         pitted = sorted({ps.driver for ps in session.pit_stops
                          if w.start_lap <= ps.lap <= w.end_lap})
-        detail = (f"{w.label} from lap {w.start_lap} to {w.end_lap}. "
+        cause_txt = f" Brought out when {w.cause}." if w.cause else ""
+        detail = (f"{w.label} from lap {w.start_lap} to {w.end_lap}.{cause_txt} "
                   + (f"Cheap-stop window taken by {', '.join(pitted)}." if pitted
                      else "No cars converted a stop here."))
         trigger = _window_trigger(session, w)

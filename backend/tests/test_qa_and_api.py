@@ -1,5 +1,6 @@
 """Natural-language Q&A + API surface (all in mock mode, no network)."""
 import os
+import re
 
 os.environ["PITWALL_IQ_MOCK_MODE"] = "true"
 
@@ -68,7 +69,13 @@ def test_qa_overtake_and_practice():
 def test_qa_simple_mode():
     ctx = _ctx()
     a = answer_question("why did leclerc lose places?", ctx, simple=True)
-    assert a.simple and a.answer.lower().startswith("in simple terms")
+    assert a.simple
+    # a genuine rewrite: full name instead of the TLA, no "P4"-style notation,
+    # and short (understanding over completeness)
+    assert "Leclerc" in a.answer and "LEC" not in a.answer
+    assert not re.search(r"\bP\d+\b", a.answer)
+    assert len(re.split(r"(?<=[.!?])\s+", a.answer.strip())) <= 3
+    assert a.beginner_summary
 
 
 def test_api_session_and_ask():

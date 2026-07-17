@@ -37,10 +37,13 @@ const config: Config = {
       keyframes: {
         "fade-in": { from: { opacity: "0", transform: "translateY(6px)" }, to: { opacity: "1", transform: "translateY(0)" } },
         shimmer: { "100%": { transform: "translateX(100%)" } },
+        "grow-x": { from: { transform: "scaleX(0)" }, to: { transform: "scaleX(1)" } },
+        progress: { from: { width: "0%" }, to: { width: "100%" } },
       },
       animation: {
         "fade-in": "fade-in 0.4s ease-out both",
         shimmer: "shimmer 1.6s infinite",
+        "grow-x": "grow-x 0.8s cubic-bezier(0.22,1,0.36,1) both",
       },
     },
   },

@@ -15,6 +15,113 @@ from ..models import RaceSession
 # cumulative time, not a gap — so we drop it rather than display nonsense.
 MAX_PLAUSIBLE_GAP_S = 300.0
 
+# Official broadcast colours by team-name token, used to replace the generic
+# grey when a source (mostly the historical archive) has no colour of its own.
+# Ordered: more specific tokens first so "red bull" wins before "racing bulls".
+TEAM_COLOR_TOKENS: list[tuple[str, str]] = [
+    ("red bull", "#3671C6"), ("racing bulls", "#6692FF"), ("rb f1", "#6692FF"),
+    ("alphatauri", "#5E8FAA"), ("toro rosso", "#469BFF"),
+    ("ferrari", "#E8002D"), ("mclaren", "#FF8000"), ("mercedes", "#27F4D2"),
+    ("aston martin", "#229971"), ("williams", "#64C4FF"), ("alpine", "#FF87BC"),
+    ("haas", "#B6BABD"), ("sauber", "#52E252"), ("alfa romeo", "#C92D4B"),
+    ("racing point", "#F596C8"), ("force india", "#F596C8"),
+    ("renault", "#FFF500"), ("lotus", "#FFB800"), ("caterham", "#048646"),
+    ("jordan", "#FFC700"), ("benetton", "#00A550"), ("brawn", "#B8FD6E"),
+    ("toyota", "#CC0000"), ("bmw", "#0066B2"), ("jaguar", "#2C7A4B"),
+    ("brabham", "#00665E"), ("tyrrell", "#0044AA"), ("cooper", "#004225"),
+    ("minardi", "#DFBB00"), ("arrows", "#FF8749"), ("ligier", "#0066CC"),
+    ("marussia", "#B22222"), ("manor", "#B22222"), ("hrt", "#8B7355"),
+]
+_GENERIC_COLORS = {"", "#888888", "#888", None}
+
+
+def team_color_for(team: str | None) -> str | None:
+    """Official colour for a team name, or None if unknown."""
+    t = (team or "").lower()
+    if not t:
+        return None
+    if t == "rb":  # OpenF1's short name for Racing Bulls
+        return "#6692FF"
+    for token, color in TEAM_COLOR_TOKENS:
+        if token in t:
+            return color
+    return None
+
+
+def fill_team_colors(session: RaceSession) -> None:
+    """Replace generic grey team colours with official ones wherever the team
+    name is recognisable — drivers, classification and constructors alike."""
+    for d in session.drivers:
+        if d.team_color in _GENERIC_COLORS:
+            d.team_color = team_color_for(d.team) or "#888888"
+    for c in session.classification:
+        if c.team_color in _GENERIC_COLORS:
+            c.team_color = team_color_for(c.team) or "#888888"
+    for con in session.constructors:
+        if con.color in _GENERIC_COLORS:
+            con.color = team_color_for(con.name) or "#888888"
+
+
+# --------------------------------------------------------------------------- #
+# VSC / Safety-Car cause attribution
+# --------------------------------------------------------------------------- #
+_CAR_RE = re.compile(r"CARS?\s+(\d+)\s*\(([A-Z]{3})\)", re.I)
+
+
+def _incident_verb(message: str) -> str:
+    m = message.lower()
+    if "crash" in m or "accident" in m or "barrier" in m or "wall" in m:
+        return "crashed"
+    if "collision" in m:
+        return "was involved in a collision"
+    if "spun" in m or "spin" in m:
+        return "spun"
+    if "stopped" in m:
+        return "stopped on track"
+    if "puncture" in m:
+        return "had a puncture"
+    if "debris" in m:
+        return "left debris on track"
+    return "had an incident"
+
+
+def attach_window_causes(session: RaceSession) -> None:
+    """Work out who brought out each VSC / Safety Car, from the official
+    race-control messages first, then from retirements at the window start."""
+    by_num = {str(d.number): d for d in session.drivers}
+    by_code = {d.code: d for d in session.drivers}
+
+    for w in session.track_status_windows:
+        if w.cause:
+            continue
+        cause: str | None = None
+
+        # 1) an official message naming the car, right around the window start
+        msgs = [m for m in session.race_control
+                if m.lap is not None and w.start_lap - 1 <= m.lap <= w.start_lap + 1
+                and m.message]
+        for m in msgs:
+            hit = _CAR_RE.search(m.message)
+            if not hit:
+                continue
+            drv = by_code.get(hit.group(2).upper()) or by_num.get(hit.group(1))
+            name = drv.name if drv else hit.group(2).upper()
+            cause = f"{name} {_incident_verb(m.message)}"
+            break
+
+        # 2) fall back to a retirement at (or just before) the window start
+        if not cause:
+            candidates = [c for c in session.classification
+                          if c.retired and c.laps_completed is not None
+                          and w.start_lap - 2 <= c.laps_completed <= w.end_lap]
+            if candidates:
+                c = min(candidates, key=lambda r: abs((r.laps_completed or 0) - w.start_lap))
+                reason = (c.retirement_reason or "").strip()
+                cause = f"{c.name} retired" + (
+                    f" ({reason.lower()})" if reason and reason.lower() not in ("retired", "dnf") else "")
+
+        w.cause = cause
+
 
 def _parse_gap_seconds(gap: str | None) -> float | None:
     if not gap:
@@ -51,6 +158,8 @@ def normalize_session(session: RaceSession) -> None:
     """In-place: fix gaps, fill derivable per-driver stats, and flag pit-data
     reliability so the UI never fabricates '0-stop race' claims or absurd gaps."""
     fix_classification(session)
+    fill_team_colors(session)
+    attach_window_causes(session)
     reliable = pit_data_reliable(session)
     session.pit_data_reliable = reliable
 

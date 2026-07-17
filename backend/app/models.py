@@ -199,6 +199,9 @@ class TrackStatusWindow(BaseModel):
     start_lap: int
     end_lap: int
     label: str = ""
+    # Who/what brought it out, e.g. "Kimi Antonelli stopped on track" — derived
+    # from race-control messages and retirements (see normalize.attach_window_causes).
+    cause: Optional[str] = None
 
 
 class ClassificationRow(BaseModel):
@@ -215,6 +218,10 @@ class ClassificationRow(BaseModel):
     pit_stops: int = 0
     points: Optional[float] = None
     retired: bool = False
+    # Why they retired ("Hydraulics", "Collision", ...) and where the reason
+    # came from — surfaced by the DNF badge tooltip in the UI.
+    retirement_reason: Optional[str] = None
+    retirement_source: Optional[str] = None
 
 
 # --------------------------------------------------------------------------- #

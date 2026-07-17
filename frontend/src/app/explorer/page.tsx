@@ -40,8 +40,10 @@ const PRACTICE_TABS = [
   { id: "compare", label: "Compare", icon: <GitCompareArrows size={14} /> },
   { id: "ask", label: "Ask", icon: <MessageSquareText size={14} /> },
 ];
-// Tabs where Simple/Advanced actually changes the content — the toggle hides elsewhere.
-const MODE_AWARE_TABS = new Set(["story", "charts", "strategy", "pace", "runs", "ask", "data"]);
+// Tabs where Simple/Advanced actually changes the content — the toggle hides
+// elsewhere (Strategy and Compare render identically in both modes, so showing
+// a toggle there would just make users wonder why nothing changes).
+const MODE_AWARE_TABS = new Set(["story", "charts", "pace", "runs", "ask", "data"]);
 
 export default function ExplorerPage() {
   const { mode } = useMode();
@@ -127,7 +129,8 @@ export default function ExplorerPage() {
         <div className="mb-4 rounded-xl border border-white/[0.05] bg-base-850/40 p-3">
           <RaceSelector value={sel} onChange={setSel} loading={loading}
             onRefresh={() => setRefreshKey((k) => k + 1)}
-            showModeToggle={MODE_AWARE_TABS.has(tab)} />
+            // within Charts, only the Position chart responds to the mode
+            showModeToggle={MODE_AWARE_TABS.has(tab) && (tab !== "charts" || chartTab === "position")} />
         </div>
 
         {currentSeason && sel.year < currentSeason && (

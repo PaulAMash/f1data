@@ -548,8 +548,10 @@ def _h_vsc(q, ctx, ents):
     if not ctx.session.track_status_windows:
         return _qa(q, "There were no safety-car or VSC periods in this race, so nobody gained a cheap stop.",
                    "vsc", "high", ctx, [])
-    return _qa(q, "There were neutralizations but no driver clearly converted a cheap stop from them.",
-               "vsc", "medium", ctx, [])
+    causes = "; ".join(f"{w.label} on lap {w.start_lap}" + (f" ({w.cause})" if w.cause else "")
+                       for w in ctx.session.track_status_windows[:3])
+    return _qa(q, f"There were neutralizations — {causes} — but no driver clearly converted "
+               f"a cheap stop from them.", "vsc", "medium", ctx, [])
 
 
 def _h_compare(q, ctx, ents):
@@ -780,7 +782,7 @@ def answer_question(question: str, ctx: QAContext, simple: bool = False) -> Ques
     result.entities = {"drivers": ents["drivers"], "teams": ents["teams"]}
     _enrich_structure(result, ctx, ents, simple)
     if simple:
-        result = _make_simple(result)
+        result = _make_simple(result, ctx)
     return _maybe_polish(result, ctx)
 
 
@@ -841,11 +843,9 @@ def _enrich_structure(qa: QuestionAnswer, ctx: QAContext, ents: dict, simple: bo
         ev.append(f"Overtake data source: {sup['source']}.")
     qa.evidence = ev
 
-    # beginner summary (plain-English, jargon-stripped short answer)
-    beginner = qa.short_answer
-    for pat, repl in _JARGON:
-        beginner = re.sub(pat, repl, beginner, flags=re.I)
-    qa.beginner_summary = beginner
+    # beginner summary: a genuine plain-English rewrite of the core answer —
+    # full names, no jargon, positions as words, at most three short sentences.
+    qa.beginner_summary = _plain_language(" ".join(sents[:3]), ctx)
 
     # advanced notes: confidence, method, gaps, assumptions
     notes = [f"Confidence: {qa.confidence}."]
@@ -883,28 +883,58 @@ def _missing(q, what, ctx) -> QuestionAnswer:
 
 # ---- simple mode ---- #
 _JARGON = [
-    (r"\bclean-air pace\b", "true one-lap speed"),
+    (r"\bclean-air pace\b", "true speed"),
+    (r"\bfuel(-| )and(-| )tyre(-| )corrected\b", "adjusted for fuel load and tyres"),
     (r"\bclean air\b", "clear track"),
-    (r"\bundercut(ting|s)?\b", "pitting earlier to jump a rival"),
-    (r"\bovercut(ting|s)?\b", "staying out longer to jump a rival"),
+    (r"\bundercut(ting|s)?\b", "pitting earlier than a rival to jump ahead of them"),
+    (r"\bovercut(ting|s)?\b", "staying out longer than a rival to jump ahead of them"),
     (r"\bdegradation\b", "tyre wear"),
+    (r"\bdirty air\b", "the turbulent air behind another car, which slows you down"),
     (r"\bdelta\b", "time difference"),
-    (r"\bpit loss\b", "time lost in the pit lane"),
+    (r"\bpit(-| )loss\b", "time lost in the pit lane"),
+    (r"\bpit cycle\b", "round of pit stops"),
     (r"\bstint\b", "run on one set of tyres"),
     (r"\bout-?lap\b", "first lap on new tyres"),
     (r"\bin-?lap\b", "lap into the pits"),
-    (r"\bVSC\b", "virtual safety car (everyone slows)"),
+    (r"\bVSC\b", "virtual safety car (everyone has to slow down)"),
+    (r"\bneutrali[sz]ations?\b", "slow-down periods (safety car or virtual safety car)"),
+    (r"\bneutrali[sz]ation window\b", "slow-down period"),
     (r"\binterval\b", "gap to the car ahead"),
     (r"\btyre age\b", "how many laps the tyres had done"),
-    (r"\bgrid\b", "starting position"),
+    (r"\bthe grid\b", "the starting order"),
+    (r"\bDRS train\b", "queue of cars stuck behind each other"),
+    (r"\btrack position\b", "position on the road"),
 ]
 
 
-def _make_simple(qa: QuestionAnswer) -> QuestionAnswer:
-    text = qa.answer
+def _ordinal_txt(n: int) -> str:
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+
+
+def _plain_language(text: str, ctx: QAContext, max_sentences: int = 3) -> str:
+    """A genuine beginner rewrite: driver codes become full names, jargon becomes
+    everyday words, positions read as '4th', and the answer is kept short. This
+    intentionally trades completeness for understanding."""
+    # driver codes -> full names ("VER" -> "Max Verstappen")
+    for d in ctx.session.drivers:
+        if d.name and d.name != d.code:
+            text = re.sub(rf"\b{re.escape(d.code)}\b", d.name, text)
+    # jargon -> plain english
     for pat, repl in _JARGON:
         text = re.sub(pat, repl, text, flags=re.I)
-    qa.answer = "In simple terms: " + text
+    # notation cleanups: "P4" -> "4th", "~20s" -> "about 20s"
+    text = re.sub(r"\bP(\d+)\b", lambda m: _ordinal_txt(int(m.group(1))), text)
+    text = text.replace("~", "about ").replace("×", " times")
+    sents = _sentences(text)
+    return " ".join(sents[:max_sentences])
+
+
+def _make_simple(qa: QuestionAnswer, ctx: QAContext) -> QuestionAnswer:
+    qa.answer = _plain_language(qa.answer, ctx)
+    sents = _sentences(qa.answer)
+    qa.short_answer = sents[0] if sents else qa.answer
+    qa.detailed_answer = _paragraphs(sents)
+    qa.beginner_summary = qa.answer
     qa.simple = True
     return qa
 
@@ -916,7 +946,9 @@ def _maybe_polish(qa: QuestionAnswer, ctx: QAContext) -> QuestionAnswer:
     try:
         import anthropic
         client = anthropic.Anthropic(api_key=settings.llm_api_key)
-        style = "for someone brand new to F1, avoiding jargon" if qa.simple else "concisely for a fan"
+        style = ("for someone who has never watched Formula 1: at most three short sentences, "
+                 "no jargon, and explain any technical idea in everyday words"
+                 if qa.simple else "concisely for a fan")
         msg = client.messages.create(
             model=settings.llm_model, max_tokens=300,
             messages=[{"role": "user", "content":

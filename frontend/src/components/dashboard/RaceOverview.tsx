@@ -1,6 +1,7 @@
 "use client";
+import { useState } from "react";
 import { Award, Timer, TrendingDown, TrendingUp } from "lucide-react";
-import type { RaceBundle } from "@/lib/types";
+import type { ClassificationRow, RaceBundle } from "@/lib/types";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge, TeamDot } from "@/components/ui/Badge";
 import { StatTile } from "@/components/ui/StatTile";
@@ -76,7 +77,7 @@ export function RaceOverview({ bundle }: { bundle: RaceBundle }) {
                           <TeamDot color={c.team_color} />
                           <span className="font-semibold">{c.driver}</span>
                           <span className="hidden text-xs text-ink-faint sm:inline">{c.team}</span>
-                          {c.retired && <Badge tone="down">DNF</Badge>}
+                          {c.retired && <DnfBadge row={c} />}
                         </span>
                       </td>
                       <td className="py-2 pr-2">
@@ -91,7 +92,7 @@ export function RaceOverview({ bundle }: { bundle: RaceBundle }) {
                       </td>
                       <td className="py-2 pr-2 tabular-nums text-ink-muted">{c.pit_stops}</td>
                       <td className="py-2 pr-2 tabular-nums text-ink-muted">{fmtLap(c.best_lap)}</td>
-                      <td className="py-2 pr-2 tabular-nums text-ink-faint">{c.retired ? c.status : fmtGap(c.position, c.gap)}</td>
+                      <td className="py-2 pr-2 tabular-nums text-ink-faint">{c.retired ? (c.retirement_reason ?? c.status) : fmtGap(c.position, c.gap)}</td>
                       <td className="py-2 pr-5 text-right tabular-nums">{c.points ?? "—"}</td>
                     </tr>
                   );
@@ -115,6 +116,43 @@ export function RaceOverview({ bundle }: { bundle: RaceBundle }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Interactive DNF badge: hover (desktop) or tap (mobile) explains the
+ * retirement — official reason, the lap they stopped, and where the reason
+ * came from — without sending the user off to search elsewhere.
+ */
+function DnfBadge({ row }: { row: ClassificationRow }) {
+  const [open, setOpen] = useState(false);
+  const reason = row.retirement_reason
+    ?? (row.status && !/^(dnf|dns|dsq|retired)$/i.test(row.status) ? row.status : null);
+  return (
+    <span className="relative inline-flex"
+      onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
+        aria-label={`Retired${reason ? `: ${reason}` : ""}`}
+        className="inline-flex cursor-help items-center gap-1 whitespace-nowrap rounded-full border border-rose-400/30 bg-rose-400/10 px-2 py-0.5 text-[11px] font-semibold text-rose-300 underline decoration-rose-300/40 decoration-dotted underline-offset-2">
+        DNF
+      </button>
+      {open && (
+        <span className="absolute bottom-full left-1/2 z-50 mb-1.5 w-44 -translate-x-1/2 rounded-lg border border-white/10 bg-base-900 p-2.5 text-left text-xs shadow-glow">
+          <span className="block font-semibold text-ink">{reason ?? "Retired"}</span>
+          {row.laps_completed != null && row.laps_completed > 0 && (
+            <span className="mt-0.5 block text-ink-muted">Retired after lap {row.laps_completed}</span>
+          )}
+          {!reason && (
+            <span className="mt-0.5 block text-ink-muted">No official reason in this session&apos;s data.</span>
+          )}
+          {row.retirement_source && (
+            <span className="mt-1 block text-[10px] uppercase tracking-wide text-ink-faint">
+              Source: {row.retirement_source}
+            </span>
+          )}
+        </span>
+      )}
+    </span>
   );
 }
 

@@ -1,10 +1,13 @@
 "use client";
 import { useState } from "react";
-import { CornerDownLeft, MessageSquareText, Sparkles, Wand2 } from "lucide-react";
+import {
+  ChevronDown, CornerDownLeft, MessageSquareText, Sparkles, Wand2,
+} from "lucide-react";
 import { api } from "@/lib/api";
 import type { QuestionAnswer, SessionCategory } from "@/lib/types";
 import { useIsSimple } from "@/lib/mode";
 import { Badge } from "@/components/ui/Badge";
+import { cx } from "@/lib/format";
 import { AnalysisProgress } from "./AnalysisProgress";
 
 const MIN_THINK_MS = 1500; // makes the analysis feel considered, not instant
@@ -33,14 +36,14 @@ export function QuestionBox({
     });
   };
 
-  async function ask(question: string, forceSimple = false) {
+  async function ask(question: string) {
     const text = question.trim();
     if (!text || thinking) return;
     setThinking(true);
     setQ("");
     const started = Date.now();
     try {
-      const res = await api.ask({ year, gp, session, question: text, simple: forceSimple || undefined });
+      const res = await api.ask({ year, gp, session, question: text });
       const elapsed = Date.now() - started;
       if (elapsed < MIN_THINK_MS) await new Promise((r) => setTimeout(r, MIN_THINK_MS - elapsed));
       setHistory((h) => [res, ...h]);
@@ -78,19 +81,34 @@ export function QuestionBox({
       <div className="mt-4 space-y-3">
         {thinking && <AnalysisProgress />}
         {history.map((a, i) => (
-          <AnswerCard key={i} a={a} simple={simple} onSimplify={() => ask(a.question, true)} />
+          <AnswerCard key={i} a={a} simple={simple} />
         ))}
       </div>
     </div>
   );
 }
 
-function AnswerCard({ a, simple, onSimplify }: {
-  a: QuestionAnswer; simple: boolean; onSimplify: () => void;
-}) {
-  const short = (simple && a.beginner_summary) ? a.beginner_summary : (a.short_answer || a.answer);
+/**
+ * One answer, two renditions — no refetch, no hidden content:
+ *  - Simple mode leads with the plain-English rewrite and offers
+ *    "Show deeper analysis" so beginners know more exists.
+ *  - Advanced mode leads with the full analysis and offers "Simplify",
+ *    an instant plain-English rewrite (names, no jargon, 3 sentences).
+ */
+function AnswerCard({ a, simple }: { a: QuestionAnswer; simple: boolean }) {
+  // what the user is *currently* reading: plain or full analysis
+  const [showPlain, setShowPlain] = useState(simple);
+
+  const plain = a.beginner_summary || a.short_answer || a.answer;
   const paras = a.detailed_answer?.length ? a.detailed_answer : (a.answer ? [a.answer] : []);
-  const showDetail = !simple && paras.length > 0 && paras.join(" ") !== short;
+  const showingPlain = showPlain && !!plain;
+  const paraText = paras.join(" ");
+  // plain view: only short factual bullets add value (long analytical ones would
+  // just repeat the answer with jargon back in); full view: skip bullets that
+  // merely echo sentences already shown in the paragraphs above
+  const bullets = showingPlain
+    ? (a.evidence ?? []).filter((e) => e.length <= 90).slice(0, 2)
+    : (a.evidence ?? []).filter((e) => !paraText.includes(e.slice(0, 40))).slice(0, 6);
 
   return (
     <div className="animate-fade-in rounded-xl border border-white/[0.06] bg-base-850/50 p-4">
@@ -105,17 +123,28 @@ function AnswerCard({ a, simple, onSimplify }: {
       </div>
 
       {a.answer_title && <div className="text-[11px] font-semibold uppercase tracking-wide text-accent-soft/80">{a.answer_title}</div>}
-      <p className="mt-0.5 text-sm leading-relaxed text-ink">{short}</p>
 
-      {showDetail && (
-        <div className="mt-2 space-y-1.5">
-          {paras.map((p, i) => <p key={i} className="text-sm leading-relaxed text-ink-muted">{p}</p>)}
+      {showingPlain ? (
+        <>
+          <p className="mt-0.5 text-sm leading-relaxed text-ink">{plain}</p>
+          {!simple && (
+            <p className="mt-1 text-[11px] text-speed/80">
+              <Wand2 size={10} className="mr-1 inline align-[-1px]" />
+              Plain-English version — numbers unchanged.
+            </p>
+          )}
+        </>
+      ) : (
+        <div className="mt-0.5 space-y-1.5">
+          {paras.map((p, i) => (
+            <p key={i} className={cx("text-sm leading-relaxed", i === 0 ? "text-ink" : "text-ink-muted")}>{p}</p>
+          ))}
         </div>
       )}
 
-      {a.evidence?.length > 0 && (
+      {bullets.length > 0 && (
         <ul className="mt-2.5 space-y-1">
-          {a.evidence.slice(0, simple ? 3 : 6).map((e, i) => (
+          {bullets.map((e, i) => (
             <li key={i} className="flex gap-2 text-xs text-ink-muted">
               <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-accent-soft/70" />{e}
             </li>
@@ -123,7 +152,7 @@ function AnswerCard({ a, simple, onSimplify }: {
         </ul>
       )}
 
-      {!simple && a.advanced_notes?.length > 0 && (
+      {!showingPlain && a.advanced_notes?.length > 0 && (
         <div className="mt-2.5 rounded-lg border border-white/[0.05] bg-base-900/40 p-2">
           <div className="label mb-1">Analyst notes</div>
           <ul className="space-y-0.5">
@@ -136,11 +165,19 @@ function AnswerCard({ a, simple, onSimplify }: {
         <p className="mt-1.5 text-xs text-amber">What&apos;s missing: {a.missing_data.join(", ")}</p>
       )}
 
-      {!a.simple && (
-        <div className="mt-3">
-          <button onClick={onSimplify} className="chip border-speed/30 text-speed hover:bg-speed/10">
-            <Wand2 size={11} /> Simplify
-          </button>
+      {!!plain && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {showingPlain ? (
+            <button onClick={() => setShowPlain(false)}
+              className="chip border-accent/30 text-accent-soft hover:bg-accent/10">
+              <ChevronDown size={11} /> {simple ? "Show deeper analysis" : "Show full analysis"}
+            </button>
+          ) : (
+            <button onClick={() => setShowPlain(true)}
+              className="chip border-speed/30 text-speed hover:bg-speed/10">
+              <Wand2 size={11} /> {simple ? "Back to the simple answer" : "Simplify"}
+            </button>
+          )}
         </div>
       )}
     </div>

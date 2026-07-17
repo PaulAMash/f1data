@@ -55,6 +55,7 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
       session.pit_stops.filter((p) => p.lap >= w.start_lap && p.lap <= w.end_lap).map((p) => p.driver)));
     return [
       `Laps ${w.start_lap}–${w.end_lap}`,
+      ...(w.cause ? [`Brought out when ${w.cause}`] : []),
       inWindow.length
         ? `Pitted cheap in this window: ${inWindow.slice(0, 8).join(", ")}`
         : "No cars pitted in this window",

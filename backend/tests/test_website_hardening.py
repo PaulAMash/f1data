@@ -127,3 +127,46 @@ def test_ask_why_lost_is_not_circular():
     a = (r["short_answer"] or "") + " ".join(r.get("evidence", []))
     # must explain a mechanism / evidence, not just restate the position drop
     assert any(k in a.lower() for k in ("pit", "traffic", "pace", "undercut", "neutral", "strategy"))
+
+
+def test_team_colors_filled_from_official_map():
+    """Generic grey team colours are replaced with official ones by name."""
+    from app.adapters.mock_adapter import get_mock_session
+    from app.analysis.normalize import fill_team_colors
+    s = get_mock_session(2026, "Austrian Grand Prix", "Race")
+    fer = next(d for d in s.drivers if "ferrari" in d.team.lower())
+    fer.team_color = "#888888"
+    row = next(c for c in s.classification if "mclaren" in c.team.lower())
+    row.team_color = "#888888"
+    fill_team_colors(s)
+    assert fer.team_color == "#E8002D"          # Ferrari red
+    assert row.team_color == "#FF8000"          # McLaren papaya
+
+
+def test_window_cause_attribution():
+    """A VSC window is attributed to the driver named by race control, or to a
+    retirement at the window start."""
+    from app.adapters.mock_adapter import get_mock_session
+    from app.analysis.normalize import attach_window_causes
+    from app.models import RaceControlEvent
+
+    s = get_mock_session(2026, "Austrian Grand Prix", "Race")
+    assert s.track_status_windows, "mock race should have a VSC window"
+    w = s.track_status_windows[0]
+    victim = s.drivers[5]
+    s.race_control.append(RaceControlEvent(
+        lap=w.start_lap, category="Flag",
+        message=f"FIA STEWARDS: CAR {victim.number} ({victim.code}) STOPPED ON TRACK"))
+    attach_window_causes(s)
+    assert w.cause and victim.name in w.cause and "stopped" in w.cause
+
+    # fallback path: no message naming a car, but a retirement at the start
+    s2 = get_mock_session(2026, "Austrian Grand Prix", "Race")
+    w2 = s2.track_status_windows[0]
+    s2.race_control = []
+    ret = s2.classification[-1]
+    ret.retired = True
+    ret.retirement_reason = "Hydraulics"
+    ret.laps_completed = w2.start_lap
+    attach_window_causes(s2)
+    assert w2.cause and ret.name in w2.cause and "hydraulics" in w2.cause

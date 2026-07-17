@@ -59,11 +59,13 @@ export interface WeatherPoint {
 export interface PositionPoint { driver: string; lap: number; position: number; }
 export interface TrackStatusWindow {
   status: TrackStatusKind; start_lap: number; end_lap: number; label: string;
+  cause?: string | null;   // "Kimi Antonelli stopped on track" — who brought it out
 }
 export interface ClassificationRow {
   position?: number | null; driver: string; name: string; team: string; team_color: string;
   grid?: number | null; laps_completed?: number | null; status: string; gap?: string | null;
   best_lap?: number | null; pit_stops: number; points?: number | null; retired: boolean;
+  retirement_reason?: string | null; retirement_source?: string | null;
 }
 export type SessionCategory = "race" | "qualifying" | "sprint" | "practice";
 export interface RaceSession {

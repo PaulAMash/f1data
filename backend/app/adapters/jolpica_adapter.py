@@ -128,7 +128,10 @@ def _driver_from(res: dict) -> tuple[Driver, ClassificationRow]:
         position=(None if retired else pos), driver=code, name=driver.name, team=team,
         team_color=color, grid=grid, laps_completed=_int(res.get("laps")),
         status=("DNF" if retired else status), gap=None,
-        best_lap=_time_to_sec(fl), points=_num(res.get("points")), retired=retired)
+        best_lap=_time_to_sec(fl), points=_num(res.get("points")), retired=retired,
+        # keep the official reason ("Hydraulics", "Collision", ...) for the DNF tooltip
+        retirement_reason=(status if retired else None),
+        retirement_source=("jolpica" if retired else None))
     return driver, row
 
 
