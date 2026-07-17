@@ -1,27 +1,32 @@
 "use client";
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { MousePointerClick } from "lucide-react";
 import type { RaceBundle } from "@/lib/types";
+import { useIsAdvanced } from "@/lib/mode";
 
 interface Tip { x: number; y: number; title: string; lines: string[] }
 
 /**
  * Key moments at a glance: one horizontal lap strip with neutralization
- * windows (VSC / Safety Car), the turning point, and the podium's pit stops.
- * Hover anything for the detail; deep analysis lives in the Charts tab.
+ * windows (VSC / Safety Car), the turning point, and pit stops — the podium's
+ * in Simple mode, the whole points-scoring top 10 in Advanced. Hover anything
+ * for the detail; deep analysis lives in the Charts tab.
  */
 export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
   const { session, strategy } = bundle;
+  const advanced = useIsAdvanced();
   const [tip, setTip] = useState<Tip | null>(null);
   const total = Math.max(1, session.total_laps);
   const W = 1000, H = 64, PAD = 18, Y = 34;
   const x = (lap: number) => PAD + ((lap - 1) / Math.max(1, total - 1)) * (W - 2 * PAD);
 
+  const maxPos = advanced ? 10 : 3;
   const podium = useMemo(
     () => [...session.classification]
-      .filter((c) => c.position && c.position <= 3)
-      .sort((a, b) => (a.position ?? 9) - (b.position ?? 9)),
-    [session],
+      .filter((c) => c.position && c.position <= maxPos)
+      .sort((a, b) => (a.position ?? 99) - (b.position ?? 99)),
+    [session, maxPos],
   );
   const pits = useMemo(
     () => session.pit_stops.filter((p) => podium.some((c) => c.driver === p.driver)),
@@ -65,12 +70,16 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
   return (
     <div>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <span className="label">Key moments</span>
-        <span className="flex flex-wrap gap-3 text-[11px] text-ink-faint">
-          <span><span className="mr-1.5 inline-block h-2 w-3.5 rounded-[2px] bg-amber/30 ring-1 ring-amber/40 align-middle" />VSC / Safety Car</span>
-          {pitsReliable && <span><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-ink-faint align-middle" />Podium pit stop</span>}
-          {tpLap && <span><span className="mr-1.5 inline-block h-2 w-2 rotate-45 bg-accent-soft align-middle" />Turning point</span>}
-          <span className="text-ink-faint/70">hover for detail</span>
+        <span className="flex items-center gap-2.5">
+          <span className="label">Key moments</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/25 bg-accent/[0.08] px-2.5 py-1 text-[11px] font-medium text-accent-soft">
+            <MousePointerClick size={12} /> Hover the timeline for details
+          </span>
+        </span>
+        <span className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
+          <span><span className="mr-1.5 inline-block h-2.5 w-4 rounded-[3px] bg-amber/30 ring-1 ring-amber/50 align-middle" />VSC / Safety Car</span>
+          {pitsReliable && <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full bg-ink-muted align-middle" />{advanced ? "Top-10 pit stop" : "Podium pit stop"}</span>}
+          {tpLap && <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rotate-45 bg-accent-soft align-middle" />Turning point</span>}
         </span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img"

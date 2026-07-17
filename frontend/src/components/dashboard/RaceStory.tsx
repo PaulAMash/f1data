@@ -23,6 +23,10 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
   const loser = strategy.biggest_losers[0];
   const gainer = strategy.biggest_gainers[0];
   const turningPoint = strategy.turning_points[0] ?? strategy.insights.find((i) => i.severity === "key");
+  // Advanced readers get the analyst's telling — margins, corrected-pace
+  // deltas, pit economics — while Simple keeps the plain-English recap.
+  const story = (!simple && strategy.story_advanced?.length)
+    ? strategy.story_advanced : strategy.story;
 
   return (
     <div className="space-y-4">
@@ -30,12 +34,12 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
       <Card>
         <CardHeader title={<span className="flex items-center gap-2"><Sparkles size={15} className="text-accent-soft" /> The story of the race</span>} />
         <CardBody>
-          {strategy.story.length ? (
+          {story.length ? (
             <div>
-              <p className="text-[17px] font-medium leading-relaxed text-ink">{strategy.story[0]}</p>
-              {strategy.story.length > 1 && (
+              <p className="text-[17px] font-medium leading-relaxed text-ink">{story[0]}</p>
+              {story.length > 1 && (
                 <div className="mt-3 space-y-2 border-l-2 border-white/[0.07] pl-4">
-                  {strategy.story.slice(1).map((s, i) => (
+                  {story.slice(1).map((s, i) => (
                     <p key={i} className="text-sm leading-relaxed text-ink-muted">{s}</p>
                   ))}
                 </div>

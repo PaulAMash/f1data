@@ -248,6 +248,59 @@ def _overtake_single(q, ctx, code, ents):
                follow_ups=["Show the position chart", "What happened to " + code + "?"])
 
 
+def _h_why_retired(q, ctx, ents):
+    """'why did max dnf?' — retirement reason, lap, and what it triggered."""
+    if ctx.is_practice:
+        return None
+    if not re.search(r"\b(dnf\w*|retire\w*|drop(ped)?\s+out|not\s+finish|didn'?t\s+finish|"
+                     r"stopp?e?d?\s+(racing|running)|out\s+of\s+the\s+race)\b", q, re.I):
+        return None
+    drivers = ents["drivers"]
+    if not drivers:
+        retired = [c for c in ctx.session.classification if c.retired]
+        if not retired:
+            return _qa(q, "Nobody retired from this race — every car was classified at the flag.",
+                       "retirement", "high", ctx, [])
+        names = "; ".join(
+            f"{c.name} ({(c.retirement_reason or 'reason not given').lower()}"
+            + (f", after lap {c.laps_completed}" if c.laps_completed else "") + ")"
+            for c in retired[:6])
+        return _qa(q, f"{len(retired)} car(s) retired: {names}.", "retirement", "high", ctx,
+                   [c.driver for c in retired])
+    code = drivers[0]
+    c = ctx.class_by_driver.get(code)
+    if not c:
+        return _missing(q, [f"race data for {code}"], ctx)
+    if not c.retired:
+        return _qa(q, f"{c.name} didn't retire — they finished P{c.position or '?'}"
+                   + (f" from P{c.grid} on the grid" if c.grid else "") + ".",
+                   "retirement", "high", ctx, [code])
+
+    reason = (c.retirement_reason or "").strip()
+    if not reason and c.status and not re.fullmatch(r"(?i)\s*(dnf|dns|dsq|retired)\s*", c.status):
+        reason = re.sub(r"(?i)^\s*dnf\s*[—–-]\s*", "", c.status).strip()
+    bits = [f"{c.name} retired"
+            + (f" with {reason.lower()}" if reason and reason.lower() not in ("retired", "dnf") else "")
+            + (f" after {c.laps_completed} laps" if c.laps_completed else "") + "."]
+    win = next((w for w in ctx.session.track_status_windows
+                if w.cause and (c.name in w.cause or code in w.cause)), None)
+    if win:
+        bits.append(f"Their stoppage brought out the {win.label} on lap {win.start_lap} — "
+                    f"the cheap-stop window that reshaped the race behind them.")
+    surname = c.name.split()[-1].upper() if c.name else code
+    rc = [m for m in ctx.session.race_control
+          if m.message and (surname in m.message.upper() or f"({code})" in m.message.upper())]
+    if rc:
+        bits.append(f"Race control logged: “{rc[-1].message[:90].strip()}”.")
+    p = ctx.pace_by_driver.get(code)
+    if p and p.pace_rank:
+        bits.append(f"Until then their corrected pace was P{p.pace_rank} of the field.")
+    if not reason:
+        bits.append("The data sources don't give an official cause for this retirement.")
+    return _qa(q, " ".join(bits), "retirement", "high" if reason else "medium", ctx, [code],
+               follow_ups=["Show the position chart", "Who gained from it?"])
+
+
 def _h_what_happened(q, ctx, ents):
     if not re.search(r"\bwhat happened|how did .*(race|day|go|do)|tell me about|summar(y|ise|ize)\b", q, re.I):
         return None
@@ -712,7 +765,7 @@ def _h_gainer_loser(q, ctx, ents):
 
 
 HANDLERS = [
-    _h_could_do_better, _h_overtake, _h_what_happened, _h_explain_race,
+    _h_could_do_better, _h_why_retired, _h_overtake, _h_what_happened, _h_explain_race,
     _h_practice_longrun, _h_practice_laps, _h_practice_fastest,
     _h_why_lost, _h_undercut, _h_vsc, _h_pit_loss, _h_compare, _h_alt_strategy, _h_worst_team,
     _h_best_pace, _h_winner, _h_tyre, _h_weather, _h_gainer_loser,
@@ -801,6 +854,7 @@ _TITLES = {
     "could_better": "What could have gone better", "gainer": "Biggest mover",
     "loser": "Biggest loss", "alt_strategy": "Was there a better call?",
     "worst_team": "Who lost most vs pace", "overview": "Session overview",
+    "retirement": "Why they retired",
 }
 
 _STEPS = {
@@ -825,6 +879,54 @@ def _sentences(text: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
+def _analyst_deep_dive(ctx: QAContext, codes: list[str]) -> list[str]:
+    """Dense per-driver appendix for the deep-analysis view: pace profile,
+    stint-by-stint medians with degradation, and every stop with its cost.
+    This is the 'you work on an F1 pit wall' rendition of the answer."""
+    out: list[str] = []
+    for code in codes[:2]:
+        c = ctx.class_by_driver.get(code)
+        if not c:
+            continue
+        p = ctx.pace_by_driver.get(code)
+        bits: list[str] = []
+        if p:
+            pace_bits = []
+            if p.clean_air_pace:
+                pace_bits.append(f"clean-air {_fmt_time(p.clean_air_pace)}"
+                                 + (f" (P{p.pace_rank} of field)" if p.pace_rank else ""))
+            if p.best_lap:
+                pace_bits.append(f"best {_fmt_time(p.best_lap)}")
+            if p.median_lap:
+                pace_bits.append(f"median {_fmt_time(p.median_lap)}")
+            if p.consistency_score is not None:
+                pace_bits.append(f"consistency {p.consistency_score:.0f}/100")
+            if p.traffic_laps:
+                pace_bits.append(f"{p.traffic_laps} laps in traffic")
+            if pace_bits:
+                bits.append(f"{code} pace profile: " + ", ".join(pace_bits) + ".")
+        sts = sorted((s for s in ctx.session.stints if s.driver == code), key=lambda s: s.stint)
+        if sts:
+            seq = " → ".join(
+                f"{s.compound.value.title()} L{s.start_lap}-{s.end_lap}"
+                + ((f" (median {_fmt_time(s.median_lap)}"
+                    + (f", deg {s.degradation:+.3f}s/lap" if s.degradation is not None else "")
+                    + ")") if s.median_lap else "")
+                for s in sts)
+            bits.append(f"Stints: {seq}.")
+        stops = [ps for ps in ctx.session.pit_stops if ps.driver == code]
+        if stops and ctx.session.pit_data_reliable:
+            stxt = ", ".join(
+                f"L{ps.lap}"
+                + (f" ({ps.best_stationary:.1f}s stationary)" if ps.best_stationary else "")
+                + (" under VSC" if ps.under_vsc else " under SC" if ps.under_safety_car else "")
+                for ps in stops)
+            bits.append(f"Stops: {stxt}.")
+        if bits:
+            out.append(" ".join(bits))
+    return out
+
+
 def _enrich_structure(qa: QuestionAnswer, ctx: QAContext, ents: dict, simple: bool) -> None:
     sents = _sentences(qa.answer)
     qa.answer_title = _TITLES.get(qa.kind, "Analysis")
@@ -832,6 +934,10 @@ def _enrich_structure(qa: QuestionAnswer, ctx: QAContext, ents: dict, simple: bo
     qa.detailed_answer = _paragraphs(sents)
     qa.related_drivers = ents.get("drivers", [])
     qa.analysis_steps = _STEPS.get(qa.kind, _DEFAULT_STEPS)
+
+    # the deep-analysis appendix: hard numbers for the drivers in question
+    if qa.kind not in ("missing", "empty"):
+        qa.detailed_answer = qa.detailed_answer + _analyst_deep_dive(ctx, qa.related_drivers)
 
     # evidence bullets from remaining sentences + structured supporting data
     ev: list[str] = [s for s in sents[1:] if len(s) > 3][:4]
@@ -844,17 +950,22 @@ def _enrich_structure(qa: QuestionAnswer, ctx: QAContext, ents: dict, simple: bo
     qa.evidence = ev
 
     # beginner summary: a genuine plain-English rewrite of the core answer —
-    # full names, no jargon, positions as words, at most three short sentences.
-    qa.beginner_summary = _plain_language(" ".join(sents[:3]), ctx)
+    # full names, no jargon, positions as words, and just two short sentences
+    # (understanding beats completeness; the deep view carries the rest).
+    qa.beginner_summary = _plain_language(" ".join(sents[:3]), ctx, max_sentences=2)
 
     # advanced notes: confidence, method, gaps, assumptions
     notes = [f"Confidence: {qa.confidence}."]
     if qa.missing_data:
         notes.append("Missing data: " + ", ".join(qa.missing_data) + ".")
     if qa.kind in ("best_pace", "why_lost"):
-        notes.append("Pace figures are fuel- and tyre-corrected clean-air estimates.")
+        notes.append("Pace figures are fuel- and tyre-corrected clean-air estimates; "
+                     "stint medians exclude in/out, neutralized and outlier laps.")
     if qa.kind == "overtake" and sup.get("source") == "inferred":
         notes.append("Overtake inferred from the lap-by-lap position trace, not an explicit feed.")
+    if ctx.session.pit_data_reliable and ctx.session.pit_stops:
+        notes.append("Stationary times are wheels-stopped measurements where the source "
+                     "provides them, otherwise derived estimates.")
     qa.advanced_notes = notes
 
 

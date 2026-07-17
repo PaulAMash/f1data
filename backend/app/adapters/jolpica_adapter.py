@@ -78,19 +78,59 @@ def list_seasons() -> list[Season]:
         raise JolpicaError(str(exc)) from exc
 
 
+def _session_schedule(r: dict, year: int) -> tuple[list[str], dict[str, str]]:
+    """Session names + ISO start times from the race's schedule sub-objects.
+    Practices are only offered where a live-timing source can serve them (2023+)."""
+    def iso(block: dict | None) -> str | None:
+        if not block or not block.get("date"):
+            return None
+        return f"{block['date']}T{block.get('time', '00:00:00Z')}"
+
+    names: list[str] = []
+    times: dict[str, str] = {}
+
+    def add(name: str, when: str | None):
+        names.append(name)
+        if when:
+            times[name] = when
+
+    if year >= 2023:
+        for key, label in (("FirstPractice", "Practice 1"), ("SecondPractice", "Practice 2"),
+                           ("ThirdPractice", "Practice 3")):
+            if r.get(key):
+                add(label, iso(r[key]))
+    if r.get("SprintQualifying") or r.get("SprintShootout"):
+        add("Sprint Qualifying", iso(r.get("SprintQualifying") or r.get("SprintShootout")))
+    if r.get("Sprint"):
+        add("Sprint", iso(r["Sprint"]))
+    # Qualifying: use the published time, else assume the day before the race
+    q_when = iso(r.get("Qualifying"))
+    if not q_when and r.get("date"):
+        try:
+            from datetime import date as _date, timedelta
+            q_when = (_date.fromisoformat(r["date"]) - timedelta(days=1)).isoformat()
+        except ValueError:
+            q_when = None
+    add("Qualifying", q_when)
+    add("Race", iso({"date": r.get("date"), "time": r.get("time", "00:00:00Z")})
+        if r.get("date") else None)
+    return names, times
+
+
 def list_grands_prix(year: int) -> list[GrandPrix]:
     races = _races(f"{year}.json", limit=40)
     out: list[GrandPrix] = []
     for r in races:
         c = r.get("Circuit", {})
         loc = c.get("Location", {})
+        sessions, session_times = _session_schedule(r, year)
         out.append(GrandPrix(
             round=int(r.get("round", 0)), name=r.get("raceName", "?"),
             location=loc.get("locality"), country=loc.get("country"),
             circuit=Circuit(id=c.get("circuitId", ""), name=c.get("circuitName", ""),
                             locality=loc.get("locality"), country=loc.get("country")),
             date=r.get("date"),
-            sessions=["Race", "Qualifying"] + (["Sprint"] if r.get("Sprint") else []),
+            sessions=sessions, session_times=session_times,
         ))
     return out
 

@@ -2,7 +2,6 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, CircleHelp, Database, RefreshCw, Trash2, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
-import { useIsSimple } from "@/lib/mode";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/misc";
@@ -22,7 +21,6 @@ const FACET_LABEL: Record<string, string> = {
 export function DataSourcesPanel({
   year, gp, session, onRefetch,
 }: { year: number; gp: string; session: string; onRefetch: () => void }) {
-  const simple = useIsSimple();
   const [report, setReport] = useState<any>(null);
   const [probes, setProbes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,7 +50,8 @@ export function DataSourcesPanel({
     <div className="grid gap-4 lg:grid-cols-2">
       <Card>
         <CardHeader title="Where this data came from"
-          subtitle={simple ? "Which service provided each part of this session." : report?.report?.fetched_at} />
+          subtitle={"Which service provided each part of this session."
+            + (report?.report?.fetched_at ? ` Fetched ${report.report.fetched_at}.` : "")} />
         <CardBody className="space-y-2">
           {loading && <div className="py-6 text-center"><Spinner /></div>}
           {!loading && facets.length === 0 && <p className="text-sm text-ink-faint">No source report available.</p>}

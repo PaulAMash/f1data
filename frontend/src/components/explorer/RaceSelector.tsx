@@ -25,14 +25,36 @@ export function RaceSelector({
     api.races(value.year).then((r) => setRaces(r.races)).catch(() => setRaces([]));
   }, [value.year]);
 
-  // Only offer races that have already happened — future rounds appear in the
-  // list automatically once their date passes. Undated events are kept.
-  const completedRaces = races.filter(
-    (r) => !r.date || new Date(r.date).getTime() <= Date.now(),
-  );
+  // A session is offered only once it has actually started — so an in-progress
+  // weekend shows Practice 1 as soon as it runs, and the race appears on race
+  // day, never before. Without per-session times we fall back to the event date.
+  const now = Date.now();
+  const startedSessions = (r: GrandPrix): string[] => {
+    const names = r.sessions?.length ? r.sessions : SESSION_TYPES;
+    const times = r.session_times ?? {};
+    return names.filter((s) => {
+      const t = times[s];
+      if (t) return new Date(t).getTime() <= now;
+      return !r.date || new Date(r.date).getTime() <= now;
+    });
+  };
 
-  const currentRace = completedRaces.find((r) => r.name === value.gp);
-  const sessions = currentRace?.sessions?.length ? currentRace.sessions : SESSION_TYPES;
+  // A Grand Prix appears as soon as its first session has run (fixes ongoing
+  // weekends being hidden until race day). Undated events are kept.
+  const availableRaces = races.filter((r) => startedSessions(r).length > 0);
+
+  const currentRace = availableRaces.find((r) => r.name === value.gp);
+  const sessions = currentRace ? startedSessions(currentRace)
+    : races.length ? [] : SESSION_TYPES;
+
+  // If the selected session hasn't happened for this event (e.g. picking an
+  // in-progress weekend while "Race" is selected), snap to the latest one that has.
+  useEffect(() => {
+    if (currentRace && sessions.length && !sessions.includes(value.session)) {
+      onChange({ ...value, session: sessions[sessions.length - 1] });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value.gp, races]);
 
   return (
     <div className="grid grid-cols-2 items-end gap-2.5 sm:flex sm:flex-wrap">
@@ -50,12 +72,12 @@ export function RaceSelector({
 
       <Field label="Grand Prix" className="col-span-2">
         <Select value={value.gp} onChange={(v) => onChange({ ...value, gp: v })} wide
-          options={(completedRaces.length ? completedRaces : [{ name: value.gp } as GrandPrix]).map((r) => ({ value: r.name, label: r.name }))} />
+          options={(availableRaces.length ? availableRaces : [{ name: value.gp } as GrandPrix]).map((r) => ({ value: r.name, label: r.name }))} />
       </Field>
 
       <Field label="Session">
         <Select value={value.session} onChange={(v) => onChange({ ...value, session: v })}
-          options={sessions.map((s) => ({ value: s, label: s }))} />
+          options={(sessions.length ? sessions : [value.session]).map((s) => ({ value: s, label: s }))} />
       </Field>
 
       <button onClick={onRefresh} disabled={loading}

@@ -77,18 +77,25 @@ def list_grands_prix(year: int) -> list[GrandPrix]:
     meetings = _get("meetings", year=year)
     sessions = _get("sessions", year=year)
     by_meeting: dict[int, list[str]] = {}
-    for s in sessions:
-        by_meeting.setdefault(s.get("meeting_key"), []).append(s.get("session_name", "?"))
+    times: dict[int, dict[str, str]] = {}
+    for s in sorted(sessions, key=lambda x: x.get("date_start", "")):
+        mk = s.get("meeting_key")
+        name = s.get("session_name", "?")
+        by_meeting.setdefault(mk, []).append(name)
+        if s.get("date_start"):
+            times.setdefault(mk, {})[name] = str(s["date_start"])
     out: list[GrandPrix] = []
     for m in sorted(meetings, key=lambda x: x.get("date_start", "")):
         # Pre-season testing isn't a Grand Prix — keep it out of the calendar.
         if is_testing_event(m.get("meeting_name", "")):
             continue
+        mk = m.get("meeting_key")
         out.append(GrandPrix(
-            round=m.get("meeting_key"), name=m.get("meeting_name", "?"),
+            round=mk, name=m.get("meeting_name", "?"),
             official_name=m.get("meeting_official_name"), location=m.get("location"),
             country=m.get("country_name"), date=m.get("date_start"),
-            sessions=by_meeting.get(m.get("meeting_key"), []),
+            sessions=by_meeting.get(mk, []),
+            session_times=times.get(mk, {}),
         ))
     return out
 

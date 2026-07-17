@@ -4,6 +4,7 @@ import { Award, Timer, TrendingDown, TrendingUp } from "lucide-react";
 import type { ClassificationRow, RaceBundle } from "@/lib/types";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge, TeamDot } from "@/components/ui/Badge";
+import { DriverAvatar } from "@/components/ui/DriverBadge";
 import { StatTile } from "@/components/ui/StatTile";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { fmtGap, fmtLap, fmtSec, netBadge, ordinal } from "@/lib/format";
@@ -17,7 +18,13 @@ export function RaceOverview({ bundle }: { bundle: RaceBundle }) {
       {/* headline tiles (Winner already appears in the key cards above — not repeated) */}
       <div className="grid gap-3 sm:grid-cols-3">
         <StatTile label="Driver of the day" tone="speed"
-          value={dotd?.name ?? strategy.driver_of_the_day ?? "—"}
+          value={
+            <span className="flex items-center gap-2.5">
+              <DriverAvatar size={34}
+                driver={session.drivers.find((d) => d.code === strategy.driver_of_the_day) ?? null} />
+              <span className="truncate">{dotd?.name ?? strategy.driver_of_the_day ?? "—"}</span>
+            </span>
+          }
           sub={strategy.dotd_reason ?? undefined}
           info="Analytical pick: gained positions, weighted by race pace and a win-from-behind bonus." />
         {strategy.avg_pit_loss != null ? (
@@ -138,18 +145,12 @@ function DnfBadge({ row }: { row: ClassificationRow }) {
       </button>
       {open && (
         <span className="absolute bottom-full left-1/2 z-50 mb-1.5 w-44 -translate-x-1/2 rounded-lg border border-white/10 bg-base-900 p-2.5 text-left text-xs shadow-glow">
-          <span className="block font-semibold text-ink">{reason ?? "Retired"}</span>
-          {row.laps_completed != null && row.laps_completed > 0 && (
+          {reason && <span className="block font-semibold text-ink">{reason}</span>}
+          {row.laps_completed != null && row.laps_completed > 0 ? (
             <span className="mt-0.5 block text-ink-muted">Retired after lap {row.laps_completed}</span>
-          )}
-          {!reason && (
-            <span className="mt-0.5 block text-ink-muted">No official reason in this session&apos;s data.</span>
-          )}
-          {row.retirement_source && (
-            <span className="mt-1 block text-[10px] uppercase tracking-wide text-ink-faint">
-              Source: {row.retirement_source}
-            </span>
-          )}
+          ) : !reason ? (
+            <span className="block text-ink-muted">Retired — no official reason in this session&apos;s data.</span>
+          ) : null}
         </span>
       )}
     </span>

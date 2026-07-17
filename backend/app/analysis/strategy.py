@@ -208,6 +208,8 @@ def compute_strategy(session: RaceSession, pace: list[DriverPaceSummary]) -> Str
     winner = classified[0].driver if classified else None
     story = _story(session, classified, winner, gainers, losers, best_strategy,
                    worst_strategy, hidden_pace_driver, best_pit_timing, weather_summary)
+    story_advanced = _story_advanced(session, classified, pace, avg_pit_loss,
+                                     avg_pit_loss_kind, undercuts, best_pit_timing)
 
     return StrategySummary(
         winner=winner,
@@ -220,6 +222,7 @@ def compute_strategy(session: RaceSession, pace: list[DriverPaceSummary]) -> Str
         turning_points=turning_points, undercuts=undercuts,
         hidden_pace_driver=hidden_pace_driver, strategy_helped_driver=strategy_helped_driver,
         weather_summary=weather_summary, insights=insights, story=story,
+        story_advanced=story_advanced,
     )
 
 
@@ -249,6 +252,61 @@ def _story(session, classified, winner, gainers, losers, best_strategy, worst_st
         s.append(best_pit_timing["detail"])
     if weather_summary:
         s.append(f"Conditions: {weather_summary}.")
+    return s[:5]
+
+
+def _fmt_laptime(sec: float | None) -> str:
+    if sec is None:
+        return "n/a"
+    m, s = divmod(sec, 60)
+    return f"{int(m)}:{s:06.3f}" if m else f"{s:.3f}s"
+
+
+def _story_advanced(session, classified, pace, avg_pit_loss, avg_pit_loss_kind,
+                    undercuts, best_pit_timing) -> list[str]:
+    """The same race, told for an analyst: margins, corrected-pace deltas,
+    pit-lane economics and neutralization detail with hard numbers."""
+    s: list[str] = []
+    win = classified[0] if classified else None
+    if win:
+        p2 = next((c for c in classified if c.position == 2), None)
+        margin = f" by {p2.gap}" if p2 and p2.gap else ""
+        stops = (f", {win.pit_stops} stops" if session.pit_data_reliable and win.pit_stops else "")
+        best = f", best lap {_fmt_laptime(win.best_lap)}" if win.best_lap else ""
+        s.append(f"{win.name} won from P{win.grid or '?'}{margin}{stops}{best}.")
+
+    ranked = sorted((p for p in pace if p.pace_rank and p.clean_air_pace),
+                    key=lambda p: p.pace_rank)[:3]
+    if ranked:
+        ref = ranked[0].clean_air_pace
+        bits = ", ".join(
+            f"{p.driver} {_fmt_laptime(p.clean_air_pace)}"
+            + (f" (+{p.clean_air_pace - ref:.2f}s)" if p is not ranked[0] else "")
+            for p in ranked)
+        div = max((p for p in pace if p.pace_rank and p.finish),
+                  key=lambda p: p.finish - p.pace_rank, default=None)
+        div_txt = (f" Largest pace-vs-result divergence: {div.driver} "
+                   f"(P{div.pace_rank} pace → P{div.finish})."
+                   if div and div.finish - div.pace_rank >= 2 else "")
+        s.append(f"Corrected clean-air pace: {bits}.{div_txt}")
+
+    if session.pit_data_reliable and session.pit_stops:
+        loss = (f", avg loss {avg_pit_loss:.1f}s ({avg_pit_loss_kind})"
+                if avg_pit_loss else "")
+        s.append(f"{len(session.pit_stops)} pit stops across the field{loss}.")
+
+    if session.track_status_windows:
+        wtxt = "; ".join(
+            f"{w.label} L{w.start_lap}-{w.end_lap}" + (f" ({w.cause})" if w.cause else "")
+            for w in session.track_status_windows[:3])
+        cheap = (f" Best conversion: {best_pit_timing['driver']} saved "
+                 f"~{best_pit_timing['saved_s']}s."
+                 if best_pit_timing and best_pit_timing.get("saved_s") else "")
+        s.append(f"Neutralizations: {wtxt}.{cheap}")
+    if undercuts:
+        u = undercuts[0]
+        s.append(f"{len(undercuts)} undercut/overcut swing(s) detected; biggest: "
+                 f"{u.attacker} on {u.victim} at L{u.pit_lap} (+{u.positions_gained}).")
     return s[:5]
 
 

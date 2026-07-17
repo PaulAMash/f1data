@@ -73,6 +73,9 @@ class GrandPrix(BaseModel):
     circuit: Optional[Circuit] = None
     date: Optional[str] = None        # event (start) date, ISO — used to hide future races
     sessions: list[str] = Field(default_factory=list)  # available session names
+    # session name -> ISO start time, so the UI can offer a session only once it
+    # has actually begun (an in-progress weekend shows P1 but not yet the race)
+    session_times: dict[str, str] = Field(default_factory=dict)
 
 
 class Season(BaseModel):
@@ -376,6 +379,9 @@ class StrategySummary(BaseModel):
     insights: list[RaceInsight] = Field(default_factory=list)
     # 3-5 plain-English sentences for the Race Story overview.
     story: list[str] = Field(default_factory=list)
+    # The analyst's version of the same story: margins, corrected-pace numbers,
+    # pit economics — shown when the user is in Advanced mode.
+    story_advanced: list[str] = Field(default_factory=list)
 
 
 class QuestionAnswer(BaseModel):

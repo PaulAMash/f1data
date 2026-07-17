@@ -2,8 +2,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowRight, BookOpen, CalendarRange, Database, Flag, Gauge, Layers,
-  MessageSquareText, Timer, Trophy,
+  ArrowRight, BookOpen, CalendarRange, Database, Flag, FlaskConical, Gauge,
+  Layers, MessageSquareText, Pause, Play, Timer, Trophy,
 } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
 import { COMPOUND_COLOR } from "@/lib/compounds";
@@ -142,7 +142,9 @@ const SCENES = [
 
 function ProductShowcase() {
   const [idx, setIdx] = useState(0);
-  const [paused, setPaused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [userPaused, setUserPaused] = useState(false);
+  const paused = hovered || userPaused;
   const scene = SCENES[idx];
 
   useEffect(() => {
@@ -153,7 +155,7 @@ function ProductShowcase() {
 
   return (
     <div className="card overflow-hidden p-1.5"
-      onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
+      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
       <div className="rounded-xl bg-base-950/60 p-4 sm:p-6">
         {/* scene tabs — every module of the product, one click (or wait) away */}
         <div className="flex flex-wrap items-center gap-1" role="tablist" aria-label="Product tour">
@@ -170,6 +172,20 @@ function ProductShowcase() {
               )}
             </button>
           ))}
+          {/* make the auto-rotation explicit — nobody should have to guess */}
+          <span className="ml-auto flex items-center gap-1.5">
+            <span className="hidden items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[11px] font-medium text-ink-faint sm:inline-flex"
+              title="This preview uses illustrative sample data — the product runs on real timing data.">
+              <FlaskConical size={11} /> Sample data
+            </span>
+            <button onClick={() => setUserPaused((p) => !p)}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                paused ? "border-white/15 bg-white/[0.04] text-ink-muted"
+                       : "border-accent/30 bg-accent/[0.08] text-accent-soft"}`}
+              title={paused ? "Resume the tour" : "The tour advances automatically — click to pause"}>
+              {paused ? <><Pause size={11} /> Paused</> : <><Play size={11} /> Auto-playing</>}
+            </button>
+          </span>
         </div>
 
         {/* the scene itself — fixed height so rotation never shifts the page */}
@@ -183,10 +199,7 @@ function ProductShowcase() {
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.05] pt-3">
-          <span className="text-xs text-ink-faint">
-            Preview with sample data — every module runs on real timing data.
-          </span>
+        <div className="mt-4 flex items-center justify-end border-t border-white/[0.05] pt-3">
           <Link href={scene.href}
             className="inline-flex items-center gap-1.5 text-sm font-medium text-accent-soft hover:text-accent">
             {scene.cta} <ArrowRight size={14} />
@@ -312,28 +325,35 @@ function StrategyScene() {
   return (
     <div>
       <div className="label mb-2 text-accent-soft">Strategy · tyre stints & pit windows</div>
-      <div className="max-w-2xl space-y-2">
-        {STRAT_DEMO.map((d) => (
-          <div key={d.code} className="flex items-center gap-3">
-            <span className="w-9 shrink-0 text-xs font-semibold text-ink">{d.code}</span>
-            <span className="relative flex h-4 flex-1 gap-[3px]">
-              {d.stints.map((s, i) => (
-                <span key={i} className="h-full rounded-[4px]"
-                  style={{ width: `${(s.laps / STRAT_TOTAL) * 100}%`, background: COMPOUND_COLOR[s.c],
-                           opacity: 0.85 }} />
-              ))}
-              {/* the VSC window overlay */}
-              <span className="pointer-events-none absolute inset-y-[-3px] rounded-sm bg-amber/20 ring-1 ring-amber/40"
-                style={{ left: "57%", width: "6%" }} />
-            </span>
-          </div>
-        ))}
+      {/* one overlay spans all three cars, so the VSC reads as a moment in the
+          race — dashed white outline + label so it can't be mistaken for a stint */}
+      <div className="relative max-w-2xl pt-4">
+        <div className="space-y-2">
+          {STRAT_DEMO.map((d) => (
+            <div key={d.code} className="flex items-center gap-3">
+              <span className="w-9 shrink-0 text-xs font-semibold text-ink">{d.code}</span>
+              <span className="flex h-4 flex-1 gap-[3px]">
+                {d.stints.map((s, i) => (
+                  <span key={i} className="h-full rounded-[4px]"
+                    style={{ width: `${(s.laps / STRAT_TOTAL) * 100}%`, background: COMPOUND_COLOR[s.c],
+                             opacity: 0.85 }} />
+                ))}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="pointer-events-none absolute bottom-[-4px] top-0 rounded-md border-2 border-dashed border-amber bg-amber/[0.07]"
+          style={{ left: `calc(3rem + (100% - 3rem) * 0.585)`, width: "calc((100% - 3rem) * 0.06)" }}>
+          <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 rounded-sm bg-base-950 px-1 text-[9px] font-bold tracking-wider text-amber">
+            VSC
+          </span>
+        </div>
       </div>
-      <div className="mt-2.5 flex max-w-2xl flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-ink-faint">
+      <div className="mt-3 flex max-w-2xl flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-ink-faint">
         <span><i className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ background: COMPOUND_COLOR.SOFT }} />Soft</span>
         <span><i className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ background: COMPOUND_COLOR.MEDIUM }} />Medium</span>
         <span><i className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ background: COMPOUND_COLOR.HARD }} />Hard</span>
-        <span><i className="mr-1.5 inline-block h-2 w-3.5 rounded-[2px] bg-amber/25 align-middle ring-1 ring-amber/40" />VSC window</span>
+        <span><i className="mr-1.5 inline-block h-2 w-3.5 rounded-[2px] border border-dashed border-amber bg-amber/[0.07] align-middle" />VSC window</span>
       </div>
       <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink-muted">
         Every stint, stop and undercut mapped out — with the decisive calls explained

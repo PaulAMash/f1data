@@ -107,6 +107,7 @@ export interface StrategySummary {
   turning_points: RaceInsight[]; undercuts: UndercutEvent[];
   hidden_pace_driver?: string | null; strategy_helped_driver?: string | null;
   weather_summary?: string | null; insights: RaceInsight[]; story: string[];
+  story_advanced?: string[];
   avg_pit_loss_kind?: string | null;
 }
 
@@ -157,6 +158,7 @@ export interface GrandPrix {
   round?: number | null; name: string; official_name?: string | null;
   location?: string | null; country?: string | null; circuit?: Circuit | null;
   date?: string | null; sessions: string[];
+  session_times?: Record<string, string>;   // session name -> ISO start time
 }
 export interface Meta {
   app: string; mock_mode: boolean; live_fetch_enabled: boolean; llm_available: boolean;

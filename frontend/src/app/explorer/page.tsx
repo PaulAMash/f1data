@@ -41,9 +41,9 @@ const PRACTICE_TABS = [
   { id: "ask", label: "Ask", icon: <MessageSquareText size={14} /> },
 ];
 // Tabs where Simple/Advanced actually changes the content — the toggle hides
-// elsewhere (Strategy and Compare render identically in both modes, so showing
-// a toggle there would just make users wonder why nothing changes).
-const MODE_AWARE_TABS = new Set(["story", "charts", "pace", "runs", "ask", "data"]);
+// elsewhere. Strategy/Compare render identically in both modes; Ask carries its
+// own per-answer simple/deep toggle; Sources always shows the one full view.
+const MODE_AWARE_TABS = new Set(["story", "charts", "pace", "runs"]);
 
 export default function ExplorerPage() {
   const { mode } = useMode();

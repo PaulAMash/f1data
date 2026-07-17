@@ -151,7 +151,10 @@ export function PaceAnalysis({
       <div className="flex justify-end">{viewSwitch}</div>
 
       {view === "teams" ? (
-        <TeamTable rows={teams} />
+        <>
+          <TeamTrend session={session} pace={pace} teams={teams} />
+          <TeamTable rows={teams} />
+        </>
       ) : (
         <>
           {/* lap-time trend */}
@@ -283,10 +286,78 @@ function TeamBars({ rows }: { rows: TeamPace[] }) {
   );
 }
 
-/* ---- advanced-mode team view: same switching, more numbers ---- */
+/* ---- advanced-mode team view: the same lap-trend chart, per team ---- */
+function TeamTrend({ session, pace, teams }: {
+  session: RaceSession; pace: DriverPaceSummary[]; teams: TeamPace[];
+}) {
+  // plot the 5 quickest teams: per lap, the mean of that team's clean lap times
+  const plotTeams = teams.slice(0, 5);
+  const { data, yDomain } = useMemo(() => {
+    const teamOf = new Map(pace.map((p) => [p.driver, p.team]));
+    const plotted = new Set(plotTeams.map((t) => t.team));
+    const byLap = new Map<number, Map<string, { sum: number; n: number }>>();
+    let lo = Infinity, hi = -Infinity;
+    for (const lp of session.laps) {
+      const team = teamOf.get(lp.driver);
+      if (!team || !plotted.has(team) || !lp.lap_time || lp.is_outlier) continue;
+      if (!byLap.has(lp.lap)) byLap.set(lp.lap, new Map());
+      const cell = byLap.get(lp.lap)!.get(team) ?? { sum: 0, n: 0 };
+      cell.sum += lp.lap_time; cell.n += 1;
+      byLap.get(lp.lap)!.set(team, cell);
+    }
+    const arr = [...byLap.entries()]
+      .map(([lap, cells]) => {
+        const row: any = { lap };
+        for (const [team, { sum, n }] of cells) {
+          const avg = sum / n;
+          row[team] = avg;
+          lo = Math.min(lo, avg); hi = Math.max(hi, avg);
+        }
+        return row;
+      })
+      .sort((a, b) => a.lap - b.lap);
+    const pad = (hi - lo) * 0.1 || 1;
+    return { data: arr, yDomain: [lo - pad, hi + pad] as [number, number] };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, pace, plotTeams.map((t) => t.team).join(",")]);
+
+  if (!plotTeams.length || !data.length) return null;
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-2 text-xs text-ink-muted">
+        Team lap-time trend — average of each team&apos;s cars (top 5 teams; outliers, in/out &amp; neutralized laps excluded)
+        <InfoTip label="Reading team pace" text="Each line averages a team's drivers lap by lap. Lower is faster; diverging lines show one team's tyres holding on longer than another's." />
+      </div>
+      <div className="h-[300px] w-full">
+        <ResponsiveContainer>
+          <LineChart data={data} margin={{ top: 6, right: 16, bottom: 4, left: 8 }}>
+            <CartesianGrid strokeDasharray="2 4" />
+            {session.track_status_windows.map((w, i) => (
+              <ReferenceArea key={i} x1={w.start_lap} x2={w.end_lap} fill="rgba(255,176,32,0.08)" />
+            ))}
+            <XAxis dataKey="lap" type="number" domain={[1, session.total_laps]}
+              tick={{ fill: "#5f6b84", fontSize: 11 }} tickLine={false}
+              axisLine={{ stroke: "rgba(255,255,255,0.08)" }} />
+            <YAxis domain={yDomain} tickFormatter={(v) => fmtLap(v)}
+              tick={{ fill: "#5f6b84", fontSize: 10 }} width={58} tickLine={false}
+              axisLine={{ stroke: "rgba(255,255,255,0.08)" }} />
+            <Tooltip isAnimationActive={false}
+              contentStyle={{ background: "#0f131d", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, fontSize: 12 }}
+              labelFormatter={(l) => `Lap ${l}`} formatter={(v: any, k: any) => [fmtLap(v), k]} />
+            {plotTeams.map((t) => (
+              <Line key={t.team} dataKey={t.team} stroke={t.color} strokeWidth={1.8}
+                dot={false} connectNulls isAnimationActive={false} />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+/* ---- advanced-mode team table: the numbers under the chart ---- */
 function TeamTable({ rows }: { rows: TeamPace[] }) {
   if (!rows.length) return <p className="text-sm text-ink-faint">No team pace data for this session.</p>;
-  const maxGap = Math.max(0.001, ...rows.map((t) => t.gap));
   return (
     <div className="space-y-4">
       <div className="overflow-x-auto">
@@ -331,28 +402,6 @@ function TeamTable({ rows }: { rows: TeamPace[] }) {
             ))}
           </tbody>
         </table>
-      </div>
-
-      {/* the same ranking, visually */}
-      <div>
-        <div className="label mb-2 flex items-center gap-1.5">
-          Gap to the fastest team
-          <InfoTip text="Average corrected pace deficit per lap versus the quickest team." />
-        </div>
-        <div className="space-y-2">
-          {rows.map((t) => (
-            <div key={t.team} className="flex items-center gap-2">
-              <span className="w-32 shrink-0 truncate text-xs text-ink-muted">{t.team}</span>
-              <span className="h-2 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
-                <span className="block h-full rounded-full"
-                  style={{ width: `${100 - (t.gap / maxGap) * 80}%`, background: t.color }} />
-              </span>
-              <span className="w-20 text-right text-xs tabular-nums text-ink-muted">
-                {t.gap === 0 ? "fastest" : `+${t.gap.toFixed(2)}s`}
-              </span>
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   );
