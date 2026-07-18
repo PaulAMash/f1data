@@ -74,6 +74,22 @@ def health_data_sources():
     return {"probes": [p.model_dump() for p in probes]}
 
 
+@app.get("/api/debug/headshots")
+def debug_headshots(year: int = Query(...), gp: str = Query(...),
+                    session: str = Query("Race"), mock: bool = Query(False)):
+    """Per-driver portrait resolution trace: which identity key (acronym, car
+    number, surname, previous season, curated override) produced each URL, and
+    who stayed unresolved. Open this when a portrait shows initials."""
+    from .adapters import headshots
+    s = service.get_session(year, gp, session, force_mock=mock)
+    rows = headshots.resolve(s)
+    return {
+        "year": year, "gp": s.grand_prix, "session": s.session_type,
+        "unresolved": [r["code"] for r in rows if r["resolved_via"] == "unresolved"],
+        "drivers": rows,
+    }
+
+
 # --------------------------------------------------------------------------- #
 # calendar
 # --------------------------------------------------------------------------- #

@@ -140,6 +140,7 @@ export interface QualifyingSummary {
   pole_driver?: string | null; pole_lap?: number | null; pole_margin?: number | null;
   closest_pair?: { a: string; b: string; delta: number; positions: string } | null;
   biggest_surprise?: { driver: string; reason: string } | null;
+  biggest_disappointment?: { driver: string; reason: string } | null;
   biggest_improvement_driver?: string | null;
   fastest_sector_driver?: string | null;
   most_consistent_driver?: string | null;
@@ -149,7 +150,10 @@ export interface QualifyingSummary {
   pole_sector_breakdown?: { pole: (number | null)[]; session_best: (number | null)[] } | null;
   segment_bests: Record<string, number>;
   rows: QualiDriverRow[]; team_ranking: { team: string; color: string; best: number; gap: number }[];
-  story: string[]; notes: string[];
+  team_progression: { team: string; color: string; q1: number; final: number; gain: number }[];
+  avg_final_run_gain?: number | null;
+  conditions?: string | null;
+  story: string[]; story_advanced: string[]; notes: string[];
 }
 
 export interface RaceBundle {

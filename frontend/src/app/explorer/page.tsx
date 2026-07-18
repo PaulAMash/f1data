@@ -143,10 +143,12 @@ export default function ExplorerPage() {
         <div className="mb-4 rounded-xl border border-white/[0.05] bg-base-850/40 p-3">
           <RaceSelector value={sel} onChange={setSel} loading={loading}
             onRefresh={() => setRefreshKey((k) => k + 1)}
-            // within Charts, only the Position chart responds to the mode;
-            // practice and qualifying are single-view experiences
-            showModeToggle={isRaceLike && MODE_AWARE_TABS.has(tab)
-              && (tab !== "charts" || chartTab === "position")} />
+            // Races: Story/Charts(Position)/Pace respond to the mode.
+            // Qualifying: Story and Lap Analysis have full Simple/Advanced
+            // renditions. Practice stays single-view.
+            showModeToggle={(isRaceLike && MODE_AWARE_TABS.has(tab)
+              && (tab !== "charts" || chartTab === "position"))
+              || (isQuali && (tab === "story" || tab === "laps"))} />
         </div>
 
         {currentSeason && sel.year < currentSeason && (

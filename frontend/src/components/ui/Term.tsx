@@ -27,6 +27,24 @@ export const GLOSSARY: Record<string, string> = {
   "long run": "A longer practice stint used to gauge race pace rather than one-lap speed.",
   grid: "The starting order, set by qualifying.",
   "tyre-limited": "Lap times fell away noticeably through their stints — pace was capped by tyre wear rather than outright car speed.",
+  // qualifying glossary
+  "track evolution": "As more cars run, rubber builds up on the racing line and increases grip. This usually makes the circuit faster later in the session.",
+  "pole margin": "How much faster the pole lap was than the second-quickest car's best lap.",
+  "theoretical lap": "The lap you'd get by adding a driver's (or the session's) best individual sectors together — the perfect lap nobody quite drove.",
+  "deleted lap": "A lap time removed by race control, usually for running beyond track limits. A deleted lap can knock a driver out of a segment.",
+  sector: "Circuits are split into three timed chunks (Sectors 1, 2, 3). Comparing sectors shows exactly where a lap was won or lost.",
+  q1: "The first knockout segment of qualifying — every car runs, and the slowest five are eliminated.",
+  q2: "The middle knockout segment — the next five slowest are eliminated, leaving ten to fight for pole.",
+  q3: "The final top-ten shootout that decides pole position and the front of the grid.",
+  "out in q1": "Eliminated in the first qualifying segment — they'll start near the back.",
+  "out in q2": "Eliminated in the middle qualifying segment — they'll start between P11 and P15.",
+  "push lap": "A flat-out timed lap, as opposed to warming up or cooling the tyres.",
+  "flying lap": "A lap started at full speed (not from the pits) — the laps that actually count in qualifying.",
+  "cool-down lap": "A slow lap between push laps to bring tyre temperatures back into their ideal window.",
+  "track limits": "The white lines defining the edge of the circuit. Put all four wheels beyond them and the lap time is deleted.",
+  "representative lap": "A lap time that reflects genuine pace — not spoiled by traffic, weather or a mistake.",
+  "teammate delta": "The gap between two drivers in identical cars — the cleanest measure of driver performance.",
+  "session progression": "How the benchmark time falls from Q1 to Q3 as fuel comes down, softer tyres go on and the track gains grip.",
 };
 
 export function Term({ children, term }: { children: React.ReactNode; term?: string }) {

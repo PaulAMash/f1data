@@ -474,6 +474,7 @@ class QualifyingSummary(BaseModel):
     pole_margin: Optional[float] = None         # P1 -> P2 on best laps
     closest_pair: Optional[dict] = None         # {a, b, delta} tightest gap in the top 10
     biggest_surprise: Optional[dict] = None     # {driver, reason}
+    biggest_disappointment: Optional[dict] = None  # {driver, reason}
     biggest_improvement_driver: Optional[str] = None
     fastest_sector_driver: Optional[str] = None # most session-best sectors
     most_consistent_driver: Optional[str] = None
@@ -485,7 +486,13 @@ class QualifyingSummary(BaseModel):
     segment_bests: dict = Field(default_factory=dict)  # {"Q1": s, "Q2": s, "Q3": s} where known
     rows: list[QualiDriverRow] = Field(default_factory=list)
     team_ranking: list[dict] = Field(default_factory=list)
+    # which teams gained most from Q1 to their final segment (analyst view)
+    team_progression: list[dict] = Field(default_factory=list)
+    avg_final_run_gain: Optional[float] = None  # mean in-session improvement (s)
+    conditions: Optional[str] = None            # "Dry · track 41–46°C"
+    # two tellings of the same Saturday: plain-English recap vs analyst report
     story: list[str] = Field(default_factory=list)
+    story_advanced: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
 
 

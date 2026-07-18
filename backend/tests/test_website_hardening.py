@@ -188,8 +188,13 @@ def test_qualifying_summary():
     field = len(q.rows)
     q1_out = [r for r in q.rows if r.knocked_out_in == "Q1"]
     assert len(q1_out) == 5 and all(r.position > field - 5 for r in q1_out)
-    # the story is about Saturday, never a finished Grand Prix
-    text = " ".join(q.story).lower()
-    assert "pole" in text
-    assert "won the race" not in text and "chequered flag" not in text
-    assert any("nothing is won yet" in line.lower() for line in q.story)
+    # two renditions of Saturday, and neither implies a finished Grand Prix
+    simple = " ".join(q.story).lower()
+    advanced = " ".join(q.story_advanced).lower()
+    assert "starts first" in simple
+    assert "is still to come" in simple
+    assert "pole" in advanced and "track evolution" in advanced
+    for text in (simple, advanced):
+        assert "won the race" not in text and "chequered flag" not in text
+    # analyst extras exist
+    assert q.biggest_disappointment and q.team_progression and q.conditions
