@@ -77,9 +77,10 @@ def health_data_sources():
 @app.get("/api/debug/headshots")
 def debug_headshots(year: int = Query(...), gp: str = Query(...),
                     session: str = Query("Race"), mock: bool = Query(False)):
-    """Per-driver portrait resolution trace: which identity key (acronym, car
-    number, surname, previous season, curated override) produced each URL, and
-    who stayed unresolved. Open this when a portrait shows initials."""
+    """Per-driver portrait resolution trace: which stage produced each URL,
+    whether it passed the liveness check, and every candidate that was
+    rejected as dead (stage + URL). Open this when a portrait shows initials —
+    it shows the first failing stage instead of leaving you to guess."""
     from .adapters import headshots
     s = service.get_session(year, gp, session, force_mock=mock)
     rows = headshots.resolve(s)
@@ -88,6 +89,20 @@ def debug_headshots(year: int = Query(...), gp: str = Query(...),
         "unresolved": [r["code"] for r in rows if r["resolved_via"] == "unresolved"],
         "drivers": rows,
     }
+
+
+class PortraitFailure(BaseModel):
+    url: str
+
+
+@app.post("/api/debug/portrait-failure")
+def portrait_failure(body: PortraitFailure):
+    """The frontend reports a portrait URL that failed to load in the browser.
+    The URL is marked dead so the next session load re-resolves past it — this
+    closes the loop that used to end in a silent initials fallback."""
+    from .adapters import headshots
+    headshots.mark_dead(body.url)
+    return {"ok": True}
 
 
 # --------------------------------------------------------------------------- #

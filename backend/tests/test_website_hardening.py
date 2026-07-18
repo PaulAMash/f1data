@@ -198,3 +198,76 @@ def test_qualifying_summary():
         assert "won the race" not in text and "chequered flag" not in text
     # analyst extras exist
     assert q.biggest_disappointment and q.team_progression and q.conditions
+
+
+def test_portrait_pipeline_rejects_and_heals_dead_urls(tmp_path, monkeypatch):
+    """Root-cause regression: a driver whose record carries a URL that 404s
+    must NOT short-circuit resolution — the dead URL is rejected with an
+    evidence trail, the next live stage wins, and enrich() heals the record."""
+    import http.server
+    import json
+    import threading
+    import time as _time
+
+    from app.adapters import headshots
+    from app.adapters.mock_adapter import get_mock_session
+    from app.config import get_settings
+
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
+    monkeypatch.setattr(get_settings(), "cache_dir", tmp_path, raising=False)
+
+    png = (b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def _serve(self, send_body: bool):
+            if self.path.startswith("/good"):
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(png)))
+                self.end_headers()
+                if send_body:
+                    self.wfile.write(png)
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def do_GET(self):
+            self._serve(True)
+
+        def do_HEAD(self):
+            self._serve(False)
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        # wikipedia stage seeded with a live URL (the sandbox can't reach the real API)
+        (tmp_path / "portraits_wiki.json").write_text(json.dumps(
+            {"arvid lindblad": {"url": f"{base}/good-wiki.png", "ts": _time.time()}}))
+
+        s = get_mock_session(2026, "British Grand Prix", "Race")
+        for d in s.drivers:
+            d.headshot_url = f"{base}/good/{d.code}.png"
+        lin = s.drivers[1]
+        lin.name, lin.code = "Arvid Lindblad", "LIN"
+        lin.headshot_url = f"{base}/dead/LIN.png"
+
+        trace = {r["code"]: r for r in headshots.resolve(s)}
+        assert trace["LIN"]["resolved_via"] == "wikipedia"
+        assert trace["LIN"]["rejected"] == [
+            {"stage": "session", "url": f"{base}/dead/LIN.png", "reason": "dead-url"}]
+        # a working driver's record passes the liveness check untouched
+        other = next(c for c in trace.values() if c["code"] != "LIN")
+        assert other["resolved_via"] == "session" and not other["rejected"]
+
+        assert headshots.enrich(s) is True
+        assert lin.headshot_url == f"{base}/good-wiki.png"
+
+        # browser feedback loop: a client-reported death revokes trust immediately
+        headshots.mark_dead(f"{base}/good-wiki.png")
+        assert headshots.url_alive(f"{base}/good-wiki.png") is False
+    finally:
+        srv.shutdown()

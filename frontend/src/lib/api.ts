@@ -69,6 +69,22 @@ async function post<T>(path: string, body: any): Promise<T> {
   return handle<T>(res, path);
 }
 
+/**
+ * Fire-and-forget: tell the backend a portrait URL failed to load so it gets
+ * marked dead and re-resolved on the next session load. Never throws — a
+ * failed report must not break rendering.
+ */
+export function reportPortraitFailure(url: string) {
+  try {
+    fetch(API_BASE + "/api/debug/portrait-failure", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch { /* ignore */ }
+}
+
 export const api = {
   meta: () => get<Meta>("/api/meta"),
   seasons: () => get<{ source: string; seasons: Season[] }>("/api/seasons"),
