@@ -73,6 +73,10 @@ class QAContext:
             self._practice = compute_practice(self.session)
         return self._practice
 
+    @property
+    def is_quali(self) -> bool:
+        return self.session.category in ("qualifying", "sprint_qualifying")
+
 
 # --------------------------------------------------------------------------- #
 # entity extraction
@@ -328,11 +332,14 @@ def _h_results(q, ctx, ents):
     n = max(1, min(n, len(rows)))
     top = rows[:n]
     label = "Podium" if n == 3 and "podium" in ql else f"Top {n}"
+    if ctx.is_quali:
+        label += " in qualifying"
     ans = f"{label}: " + "; ".join(_row_line(ctx, c) for c in top) + "."
-    if top and top[0].grid and top[0].grid > 1:
+    if not ctx.is_quali and top and top[0].grid and top[0].grid > 1:
         ans += f" {top[0].name} won it from P{top[0].grid} on the grid."
-    return _qa(q, ans, "results", "high", ctx, [c.driver for c in top[:6]],
-               follow_ups=["Who had the best race pace?", "What was the turning point?"])
+    fups = (["Who took pole?", "Who went out in Q1?"] if ctx.is_quali
+            else ["Who had the best race pace?", "What was the turning point?"])
+    return _qa(q, ans, "results", "high", ctx, [c.driver for c in top[:6]], follow_ups=fups)
 
 
 def _h_why_retired(q, ctx, ents):
@@ -794,6 +801,52 @@ def _h_undercut(q, ctx, ents):
                [u.attacker, u.victim])
 
 
+def _h_pole(q, ctx, ents):
+    """'who got pole?' — works in qualifying (the headline) and races (the grid)."""
+    if not re.search(r"\bpole\b|\bstarts?\s+(first|p1|1st)\b|\bfront\s+row\b", q, re.I):
+        return None
+    if ctx.is_quali:
+        p1 = next((c for c in ctx.session.classification if c.position == 1), None)
+        if not p1:
+            return _missing(q, ["qualifying classification"], ctx)
+        p2 = next((c for c in ctx.session.classification if c.position == 2), None)
+        margin = (f", {p2.best_lap - p1.best_lap:.3f}s clear of {p2.name}"
+                  if p2 and p1.best_lap and p2.best_lap else "")
+        return _qa(q, f"{p1.name} ({p1.team}) took pole with a {_fmt_time(p1.best_lap)}{margin}. "
+                   f"That earns the first grid slot — the race itself is still to come.",
+                   "pole", "high", ctx, [p1.driver],
+                   follow_ups=["Who was the biggest surprise?", "How close was the top 10?"])
+    polesitter = next((c for c in ctx.session.classification if c.grid == 1), None)
+    if not polesitter:
+        return None
+    return _qa(q, f"{polesitter.name} started from pole"
+               + (f" and finished P{polesitter.position}" if polesitter.position else "") + ".",
+               "pole", "high", ctx, [polesitter.driver])
+
+
+def _h_knocked_out(q, ctx, ents):
+    """Qualifying: 'who went out in Q1?' / 'who didn't make Q3?'"""
+    if not ctx.is_quali:
+        return None
+    m = re.search(r"\b(?:out|eliminated|knocked\s*out|dropped)\b.*\bq([12])\b|"
+                  r"\bq([12])\b.*\b(?:elimination|exits?|casualt)", q, re.I)
+    miss_q3 = re.search(r"\b(didn'?t|not)\s+(make|reach)\s+q3\b", q, re.I)
+    if not m and not miss_q3:
+        return None
+    seg = f"Q{m.group(1) or m.group(2)}" if m else "Q2"
+    field = len(ctx.session.classification)
+    lo = field - 5 if seg == "Q1" else field - 10
+    hi = field if seg == "Q1" else field - 5
+    out = [c for c in ctx.session.classification
+           if c.position and lo < c.position <= hi]
+    if not out:
+        return _missing(q, ["qualifying classification"], ctx)
+    names = "; ".join(f"P{c.position} {c.name} ({c.team})" for c in out)
+    return _qa(q, f"Eliminated in {seg}: {names}.", "results", "high", ctx,
+               [c.driver for c in out],
+               follow_ups=["Who took pole?", "Who was the biggest surprise?"])
+
+
 def _h_winner(q, ctx, ents):
     if not re.search(r"\bwho won|winner|win the race|fastest overall|p1\b", q, re.I):
         return None
@@ -802,6 +855,8 @@ def _h_winner(q, ctx, ents):
         if top:
             return _qa(q, f"{top.name} topped {ctx.session.session_type} with a {_fmt_time(top.best_lap)}.",
                        "fastest", "high", ctx, [top.driver])
+    if ctx.is_quali:
+        return _h_pole("who got pole", ctx, ents) or _missing(q, ["qualifying classification"], ctx)
     w = ctx.strategy.winner
     c = ctx.class_by_driver.get(w) if w else None
     if not c:
@@ -854,7 +909,8 @@ def _h_gainer_loser(q, ctx, ents):
 
 
 HANDLERS = [
-    _h_could_do_better, _h_why_retired, _h_results, _h_overtake, _h_what_happened,
+    _h_could_do_better, _h_why_retired, _h_pole, _h_knocked_out, _h_results,
+    _h_overtake, _h_what_happened,
     _h_explain_race,
     _h_practice_longrun, _h_practice_laps, _h_practice_fastest,
     _h_why_lost, _h_undercut, _h_vsc, _h_pit_loss, _h_compare, _h_alt_strategy, _h_worst_team,
@@ -944,6 +1000,7 @@ _TITLES = {
     "loser": "Biggest loss", "alt_strategy": "Was there a better call?",
     "worst_team": "Who lost most vs pace", "overview": "Session overview",
     "retirement": "Why they retired", "results": "Final order",
+    "pole": "Pole position",
 }
 
 _STEPS = {

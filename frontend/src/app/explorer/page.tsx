@@ -12,6 +12,7 @@ import { InfoTip } from "@/components/ui/InfoTip";
 import { Skeleton, EmptyState } from "@/components/ui/misc";
 import { RaceStory } from "@/components/dashboard/RaceStory";
 import { PracticeView } from "@/components/dashboard/PracticeView";
+import { QualifyingView } from "@/components/dashboard/QualifyingView";
 import { DataSourcesPanel } from "@/components/dashboard/DataSourcesPanel";
 import { PositionChart } from "@/components/charts/PositionChart";
 import { TyreStrategyChart } from "@/components/charts/TyreStrategyChart";
@@ -25,10 +26,19 @@ import { api, ApiError } from "@/lib/api";
 import { cx } from "@/lib/format";
 import type { Meta, RaceBundle } from "@/lib/types";
 
+// Three purpose-built experiences: a race asks "why did it unfold this way?",
+// qualifying asks "who earned the grid?", practice asks "what did we learn?".
 const RACE_TABS = [
   { id: "story", label: "Race Story", icon: <BookOpen size={14} /> },
   { id: "charts", label: "Charts", icon: <LineChart size={14} /> },
   { id: "strategy", label: "Strategy", icon: <Braces size={14} /> },
+  { id: "pace", label: "Pace", icon: <Gauge size={14} /> },
+  { id: "compare", label: "Compare", icon: <GitCompareArrows size={14} /> },
+  { id: "ask", label: "Ask", icon: <MessageSquareText size={14} /> },
+];
+const QUALI_TABS = [
+  { id: "story", label: "Qualifying Story", icon: <BookOpen size={14} /> },
+  { id: "laps", label: "Lap Analysis", icon: <LineChart size={14} /> },
   { id: "pace", label: "Pace", icon: <Gauge size={14} /> },
   { id: "compare", label: "Compare", icon: <GitCompareArrows size={14} /> },
   { id: "ask", label: "Ask", icon: <MessageSquareText size={14} /> },
@@ -96,20 +106,13 @@ export default function ExplorerPage() {
 
   const session = bundle?.session;
   const category = bundle?.category ?? "race";
-  const tabs = category === "practice" ? PRACTICE_TABS : RACE_TABS;
-  // Qualifying has no running order, so a Position chart would just be an
-  // empty grid — the sub-tab is hidden rather than shown broken.
   const isQuali = category === "qualifying" || category === "sprint_qualifying";
-  const chartTabs = useMemo(() => [
-    ...(!isQuali ? [{ id: "position", label: "Position", icon: <Activity size={14} /> }] : []),
-    { id: "tyres", label: "Tyres", icon: <Timer size={14} /> },
-    { id: "control", label: "Race control & weather", icon: <Wind size={14} /> },
-  ], [isQuali]);
+  const isRaceLike = category === "race" || category === "sprint";
+  const tabs = category === "practice" ? PRACTICE_TABS : isQuali ? QUALI_TABS : RACE_TABS;
 
   useEffect(() => {
     // "data" is a valid view reached via the Sources button, not a tab
     if (tab !== "data" && !tabs.some((t) => t.id === tab)) setTab(tabs[0].id);
-    if (!chartTabs.some((t) => t.id === chartTab)) setChartTab(chartTabs[0].id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, isAdvanced]);
 
@@ -140,8 +143,9 @@ export default function ExplorerPage() {
         <div className="mb-4 rounded-xl border border-white/[0.05] bg-base-850/40 p-3">
           <RaceSelector value={sel} onChange={setSel} loading={loading}
             onRefresh={() => setRefreshKey((k) => k + 1)}
-            // within Charts, only the Position chart responds to the mode
-            showModeToggle={category !== "practice" && MODE_AWARE_TABS.has(tab)
+            // within Charts, only the Position chart responds to the mode;
+            // practice and qualifying are single-view experiences
+            showModeToggle={isRaceLike && MODE_AWARE_TABS.has(tab)
               && (tab !== "charts" || chartTab === "position")} />
         </div>
 
@@ -195,17 +199,15 @@ export default function ExplorerPage() {
 
         {bundle && session && !loading && !error && (
           <div className="animate-fade-in">
-            {category !== "practice" && tab === "story" && <RaceStory bundle={bundle} onJump={setTab} />}
-            {category !== "practice" && tab === "charts" && (
+            {isRaceLike && tab === "story" && <RaceStory bundle={bundle} onJump={setTab} />}
+            {isRaceLike && tab === "charts" && (
               <div className="space-y-4">
-                <Tabs items={chartTabs} active={chartTab} onChange={setChartTab} />
-                {isQuali && (
-                  <p className="rounded-lg border border-white/[0.05] bg-base-850/40 px-3 py-1.5 text-xs text-ink-faint">
-                    Position tracking isn&apos;t shown for qualifying — cars run against the clock,
-                    not each other, so there&apos;s no running order to chart.
-                  </p>
-                )}
-                {chartTab === "position" && !isQuali && (
+                <Tabs items={[
+                  { id: "position", label: "Position", icon: <Activity size={14} /> },
+                  { id: "tyres", label: "Tyres", icon: <Timer size={14} /> },
+                  { id: "control", label: "Race control & weather", icon: <Wind size={14} /> },
+                ]} active={chartTab} onChange={setChartTab} />
+                {chartTab === "position" && (
                   <Section title="Track position" info="One line per driver, P1 at the top. Shaded bands are safety-car / VSC windows; hover any lap for tyre, gap and pit detail.">
                     <PositionChart session={session} selected={selected} onSelect={setSelected} />
                   </Section>
@@ -222,17 +224,22 @@ export default function ExplorerPage() {
                 )}
               </div>
             )}
-            {category !== "practice" && tab === "strategy" && (
+            {isRaceLike && tab === "strategy" && (
               <Section title="Explain the race">
                 <StrategyExplainer strategy={bundle.strategy}
                   onFocusDrivers={(d) => { setSelected(d); setChartTab("position"); setTab("charts"); }} />
               </Section>
             )}
-            {category !== "practice" && tab === "pace" && (
+            {isRaceLike && tab === "pace" && (
               <Section title="Pace analysis" info="Separates real speed from track position using fuel- and tyre-corrected clean-air pace.">
                 {/* focus highlights only affect the Charts tab — Pace always shows the field */}
                 <PaceAnalysis session={session} pace={bundle.pace} selected={[]} />
               </Section>
+            )}
+
+            {isQuali && bundle.qualifying && ["story", "laps", "pace"].includes(tab) && (
+              <QualifyingView qualifying={bundle.qualifying} session={session}
+                section={tab as "story" | "laps" | "pace"} />
             )}
 
             {category === "practice" && bundle.practice && ["story", "pace", "runs"].includes(tab) && (

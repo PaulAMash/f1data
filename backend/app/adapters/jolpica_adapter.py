@@ -231,6 +231,24 @@ def _driver_id_map(year: int, rnd: int) -> dict:
 # --------------------------------------------------------------------------- #
 # full session (fallback primary)
 # --------------------------------------------------------------------------- #
+def fetch_quali_segments(year: int, gp: str) -> dict[str, dict]:
+    """code -> {q1, q2, q3 (seconds), position} from the archive's qualifying
+    results — used to enrich sessions served by sources without segment times."""
+    rnd, _meta = _resolve_round(year, gp)
+    if not rnd:
+        return {}
+    races = _races(f"{year}/{rnd}/qualifying.json", limit=40)
+    out: dict[str, dict] = {}
+    for r in (races[0].get("QualifyingResults", []) if races else []):
+        d = r.get("Driver", {})
+        code = (d.get("code") or d.get("familyName", "")[:3]).upper()
+        out[code] = {
+            "q1": _time_to_sec(r.get("Q1")), "q2": _time_to_sec(r.get("Q2")),
+            "q3": _time_to_sec(r.get("Q3")), "position": _int(r.get("position")),
+        }
+    return out
+
+
 def fetch_session(year: int, gp: str, session_type: str) -> RaceSession:
     cat = session_category(session_type)
     drivers, classification, meta = fetch_classification(year, gp)

@@ -126,10 +126,37 @@ export interface PracticeSummary {
   story: string[]; notes: string[];
 }
 
+export interface QualiDriverRow {
+  driver: string; name: string; team: string; team_color: string;
+  position?: number | null; best_lap?: number | null; gap_to_pole?: number | null;
+  laps_completed: number; q1?: number | null; q2?: number | null; q3?: number | null;
+  knocked_out_in?: string | null; improvement?: number | null;
+  consistency_score?: number | null; best_sectors: (number | null)[];
+  vs_teammate?: number | null;
+}
+
+export interface QualifyingSummary {
+  session_type: string;
+  pole_driver?: string | null; pole_lap?: number | null; pole_margin?: number | null;
+  closest_pair?: { a: string; b: string; delta: number; positions: string } | null;
+  biggest_surprise?: { driver: string; reason: string } | null;
+  biggest_improvement_driver?: string | null;
+  fastest_sector_driver?: string | null;
+  most_consistent_driver?: string | null;
+  early_elimination?: { driver: string; reason: string } | null;
+  track_evolving: boolean;
+  red_flags: string[]; deleted_laps: string[];
+  pole_sector_breakdown?: { pole: (number | null)[]; session_best: (number | null)[] } | null;
+  segment_bests: Record<string, number>;
+  rows: QualiDriverRow[]; team_ranking: { team: string; color: string; best: number; gap: number }[];
+  story: string[]; notes: string[];
+}
+
 export interface RaceBundle {
   source: DataSource; source_label: string; category: SessionCategory;
   session: RaceSession; strategy: StrategySummary; pace: DriverPaceSummary[];
   practice?: PracticeSummary | null;
+  qualifying?: QualifyingSummary | null;
 }
 
 export interface QuestionAnswer {

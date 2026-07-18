@@ -157,6 +157,8 @@ def _track_evolving(session: RaceSession) -> bool:
 
 
 def _story(session, rows, fastest, best_long, most_improved) -> list[str]:
+    """What we LEARNED — not just who topped the sheet: one-lap picture,
+    race-sim picture, who prioritized what, and what it hints for the weekend."""
     # full names, matching how race stories read ("Lewis Hamilton", never "HAM")
     def name_of(code):
         return next((r.name for r in rows if r.driver == code and r.name), code)
@@ -172,6 +174,26 @@ def _story(session, rows, fastest, best_long, most_improved) -> list[str]:
     if most_improved and most_improved.improvement:
         s.append(f"{name_of(most_improved.driver)} improved the most as the track rubbered in "
                  f"(about {most_improved.improvement:.1f}s quicker than their early laps).")
+
+    # which teams ran a race-pace-first programme (most long-run mileage)
+    team_lr: dict[str, int] = defaultdict(int)
+    for r in rows:
+        team_lr[r.team] += r.long_run_laps
+    focused = [t for t, n in sorted(team_lr.items(), key=lambda kv: -kv[1]) if n >= 16][:2]
+    if focused:
+        s.append(f"{' and '.join(focused)} banked the most race-simulation laps — "
+                 "a race-pace-first programme.")
+
+    # what it suggests for the rest of the weekend
+    one_lap = [r for r in rows if r.best_lap][:3]
+    if len(one_lap) >= 2:
+        s.append("Qualifying outlook: " + ", ".join(name_of(r.driver) for r in one_lap)
+                 + " head the one-lap order so far.")
+    longs = sorted((r for r in rows if r.long_run_pace), key=lambda r: r.long_run_pace)[:3]
+    if len(longs) >= 2:
+        s.append("Race outlook: " + ", ".join(name_of(r.driver) for r in longs)
+                 + " look strongest over a stint.")
+
     s.append("Practice times mix fuel loads and engine modes, so treat outright pace as indicative, "
              "not a true grid order.")
     return s

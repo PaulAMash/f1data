@@ -20,6 +20,7 @@ from .adapters import history_adapter, historical, pitstop_service
 from .adapters.data_source_manager import DataUnavailableError
 from .analysis.engine import analyze, compare_drivers
 from .analysis.practice import compute_practice
+from .analysis.qualifying import compute_qualifying
 from .analysis.qa import QAContext, answer_question
 from .analysis.whatif import simulate_whatif
 from .config import get_settings
@@ -111,7 +112,9 @@ def _bundle(year, gp, session_type, mock, refresh):
     s = service.get_session(year, gp, session_type, force_mock=mock, refresh=refresh)
     strategy, pace = analyze(s)
     practice = compute_practice(s) if s.category == "practice" else None
-    return s, strategy, pace, practice
+    qualifying = (compute_qualifying(s)
+                  if s.category in ("qualifying", "sprint_qualifying") else None)
+    return s, strategy, pace, practice, qualifying
 
 
 @app.get("/api/session")
@@ -119,7 +122,7 @@ def session_bundle(
     year: int = Query(...), gp: str = Query(...), session: str = Query("Race"),
     mock: bool = Query(False), refresh: bool = Query(False),
 ):
-    s, strategy, pace, practice = _bundle(year, gp, session, mock, refresh)
+    s, strategy, pace, practice, qualifying = _bundle(year, gp, session, mock, refresh)
     return {
         "source": s.data_source.value,
         "source_label": service.source_label(s.data_source),
@@ -128,6 +131,7 @@ def session_bundle(
         "strategy": strategy.model_dump(),
         "pace": [p.model_dump() for p in pace],
         "practice": practice.model_dump() if practice else None,
+        "qualifying": qualifying.model_dump() if qualifying else None,
     }
 
 
@@ -204,7 +208,7 @@ class AskBody(BaseModel):
 
 @app.post("/api/ask")
 def ask(body: AskBody):
-    s, strategy, pace, _practice = _bundle(body.year, body.gp, body.session, body.mock, False)
+    s, strategy, pace, _practice, _qualifying = _bundle(body.year, body.gp, body.session, body.mock, False)
     ctx = QAContext(session=s, strategy=strategy, pace=pace)
     qa = answer_question(body.question, ctx, simple=body.simple)
     return {"source": s.data_source.value, "category": s.category, **qa.model_dump()}

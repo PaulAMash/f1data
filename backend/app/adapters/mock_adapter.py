@@ -9,7 +9,7 @@ report, so the UI can always label it honestly as demo data.
 from __future__ import annotations
 
 from ..analysis.events import infer_overtakes
-from ..mock.simulator import simulate, simulate_practice
+from ..mock.simulator import simulate, simulate_practice, simulate_qualifying
 from ..models import (
     DataSource,
     FacetSource,
@@ -56,6 +56,16 @@ def _base_practice() -> RaceSession:
     return _BASE_PRACTICE
 
 
+_BASE_QUALI: RaceSession | None = None
+
+
+def _base_quali() -> RaceSession:
+    global _BASE_QUALI
+    if _BASE_QUALI is None:
+        _BASE_QUALI = simulate_qualifying()
+    return _BASE_QUALI
+
+
 def mock_seasons() -> list[Season]:
     return [Season(year=y, events=len(_CALENDAR)) for y in _MOCK_YEARS]
 
@@ -76,7 +86,9 @@ def get_mock_session(year: int = 2026, gp: str = "Austrian Grand Prix",
                      session_type: str = "Race") -> RaceSession:
     """Return the appropriate simulated demo session, relabelled to the selection."""
     cat = session_category(session_type)
-    base = _base_practice() if cat == "practice" else _base_race()
+    base = (_base_practice() if cat == "practice"
+            else _base_quali() if cat in ("qualifying", "sprint_qualifying")
+            else _base_race())
     session = base.model_copy(deep=True)
     session.data_source = DataSource.MOCK
     session.year = year

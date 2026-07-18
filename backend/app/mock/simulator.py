@@ -38,6 +38,7 @@ from ..models import (
     TrackStatus,
     TrackStatusWindow,
     WeatherPoint,
+    session_category,
 )
 
 # --------------------------------------------------------------------------- #
@@ -397,6 +398,105 @@ def simulate() -> RaceSession:
 # =========================================================================== #
 # Practice session simulator
 # =========================================================================== #
+def simulate_qualifying(session_name: str = "Qualifying") -> RaceSession:
+    """A realistic knockout qualifying: three segments, improving track, one
+    red flag, a couple of deleted laps, per-segment bests on the classification."""
+    rng = random.Random(2026_06_28)
+    circuit = Circuit(id="red_bull_ring", name="Red Bull Ring", locality="Spielberg",
+                      country="Austria", length_km=4.318, laps=TOTAL_LAPS)
+    drivers = [Driver(number=p.number, code=p.code, name=p.name, team=p.team,
+                      team_color=TEAM_COLORS.get(p.team, "#888888"), country=p.country)
+               for p in PLANS]
+    field = len(PLANS)
+
+    # true one-lap order: base pace + a per-driver quali swing (some over-deliver)
+    swing = {p.code: rng.uniform(-0.35, 0.35) for p in PLANS}
+    swing[PLANS[6].code] -= 0.45          # the weekend's surprise performer
+    order = sorted(PLANS, key=lambda p: p.base_pace + swing[p.code])
+
+    laps: list[Lap] = []
+    stints: list[Stint] = []
+    seg_best: dict[str, dict[str, float]] = {p.code: {} for p in PLANS}
+    rc: list[RaceControlEvent] = []
+    EVO = 0.9                              # track gain per segment (s)
+
+    def runs_in_segment(seg: int, rank: int) -> int:
+        if seg == 1:
+            return 2 if rank > field - 8 else 1   # cars in danger take two runs
+        return 2
+
+    lapno = {p.code: 0 for p in PLANS}
+    for seg in (1, 2, 3):
+        cutoff = field - 5 * seg if seg < 3 else 10
+        runners = order if seg == 1 else order[: field - 5 * (seg - 1)]
+        for rank, p in enumerate(runners):
+            for run in range(runs_in_segment(seg, rank)):
+                for k in range(3):                 # out, push, in
+                    lapno[p.code] += 1
+                    push = k == 1
+                    lt = (p.base_pace - 2.2        # low fuel
+                          + swing[p.code]
+                          - EVO * (seg - 1) - (0.25 * run)
+                          + rng.uniform(-0.05, 0.12))
+                    if not push:
+                        lt += rng.uniform(3.0, 4.5)
+                    laps.append(Lap(driver=p.code, lap=lapno[p.code],
+                                    lap_time=round(lt, 3), compound=Compound.SOFT,
+                                    tyre_age=k + 1, stint=seg * 10 + run,
+                                    sector1=round(lt * 0.28, 3) if push else None,
+                                    sector2=round(lt * 0.41, 3) if push else None,
+                                    sector3=round(lt * 0.31, 3) if push else None,
+                                    pit_out=k == 0, is_outlier=not push))
+                    if push:
+                        cur = seg_best[p.code].get(f"q{seg}")
+                        if cur is None or lt < cur:
+                            seg_best[p.code][f"q{seg}"] = round(lt, 3)
+        _ = cutoff
+
+    # a mid-Q2 red flag and two deleted laps for track limits
+    rc.append(RaceControlEvent(lap=None, category="Flag", flag="RED",
+                               message="RED FLAG — CAR 22 (BEA) STOPPED AT TURN 6"))
+    for code in (order[4].code, order[12].code):
+        rc.append(RaceControlEvent(lap=None, category="Other",
+                                   message=f"CAR {next(pp.number for pp in PLANS if pp.code == code)} "
+                                           f"({code}) LAP DELETED — TRACK LIMITS AT TURN 10"))
+
+    classification = []
+    for pos, p in enumerate(order, start=1):
+        sb = seg_best[p.code]
+        best = min(sb.values()) if sb else None
+        classification.append(ClassificationRow(
+            position=pos, driver=p.code, name=p.name, team=p.team,
+            team_color=TEAM_COLORS.get(p.team, "#888888"),
+            laps_completed=lapno[p.code], status="Ran",
+            best_lap=best, pit_stops=0, retired=False,
+            q1=sb.get("q1"), q2=sb.get("q2") if pos <= field - 5 else None,
+            q3=sb.get("q3") if pos <= 10 else None))
+
+    weather = [WeatherPoint(lap=None, time_min=float(m), air_temp=round(25 + m / 30, 1),
+                            track_temp=round(41 + m / 12, 1), humidity=38.0, rainfall=False,
+                            wind_speed=round(rng.uniform(1.5, 3.5), 1))
+               for m in range(0, 61, 10)]
+    constructors = []
+    seen: set[str] = set()
+    for p in PLANS:
+        if p.team not in seen:
+            seen.add(p.team)
+            constructors.append(Constructor(id=p.team.lower().replace(" ", "_"), name=p.team,
+                                            color=TEAM_COLORS.get(p.team, "#888888")))
+
+    return RaceSession(
+        year=2026, grand_prix="Austrian Grand Prix",
+        official_name="FORMULA 1 AUSTRIAN GRAND PRIX 2026",
+        session_type=session_name, category=session_category(session_name),
+        circuit=circuit, total_laps=max(lapno.values(), default=0),
+        data_source=DataSource.MOCK,
+        notes=["Simulated demo qualifying session — realistic model, not official."],
+        drivers=drivers, constructors=constructors, classification=classification,
+        laps=laps, stints=stints, weather=weather, race_control=rc,
+    )
+
+
 def simulate_practice(session_name: str = "Practice 2") -> RaceSession:
     """A realistic FP session: short push runs + long runs, track evolution.
 

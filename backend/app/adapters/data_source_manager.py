@@ -247,6 +247,26 @@ def _enrich_retirements(session: RaceSession, primary: str) -> None:
                 c.laps_completed = src.laps_completed
 
 
+def _enrich_quali_segments(session: RaceSession, primary: str) -> None:
+    """Merge official Q1/Q2/Q3 bests into a qualifying classification. Plain
+    qualifying only — the archive has no per-segment data for sprint shootouts."""
+    if session.category != "qualifying" or primary == "jolpica":
+        return
+    if any(c.q1 or c.q2 or c.q3 for c in session.classification):
+        return
+    try:
+        segs = jolpica_adapter.fetch_quali_segments(session.year, session.grand_prix)
+    except Exception as exc:  # noqa: BLE001
+        log.info("quali segment enrich failed: %s", exc)
+        return
+    for c in session.classification:
+        s = segs.get(c.driver)
+        if s:
+            c.q1, c.q2, c.q3 = s.get("q1"), s.get("q2"), s.get("q3")
+            if c.position is None:
+                c.position = s.get("position")
+
+
 def _post_process(session: RaceSession, primary: str) -> None:
     """Enrich a freshly-fetched real session and finalize its source report."""
     session.category = session.category or session_category(session.session_type)
@@ -256,6 +276,10 @@ def _post_process(session: RaceSession, primary: str) -> None:
 
     # retirement reasons for the DNF badge (jolpica has them, live timing doesn't)
     _enrich_retirements(session, primary)
+
+    # qualifying: per-segment Q1/Q2/Q3 bests from the archive (live timing
+    # exposes laps but not which knockout segment they belonged to)
+    _enrich_quali_segments(session, primary)
 
     # pit-stop timing (may pull durations from Jolpica)
     try:

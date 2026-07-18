@@ -20,13 +20,16 @@ from .openf1_adapter import _get  # reuse the shared HTTP helper
 log = logging.getLogger("pitwall_iq")
 
 _TTL_S = 7 * 24 * 3600
-_MAX_MEETINGS = 3       # walk back at most this many meetings per season
-_FULL_GRID = 18         # stop early once we have most of the field
+_MAX_MEETINGS = 8       # walk back at most this many meetings per season
+# A modern grid can be 22 cars — stopping at 18 used to leave the last driver
+# or two (rookies whose photo only appears in some meetings) permanently blank.
+_FULL_GRID = 22
 
 
 def year_map(year: int) -> dict[str, str]:
     """code -> headshot URL for a season, disk-cached."""
-    path = get_settings().cache_dir / f"headshots_{year}.json"
+    # v2: the old cache files could hold an 18-entry map that never refreshed
+    path = get_settings().cache_dir / f"headshots_v2_{year}.json"
     try:
         if path.exists() and time.time() - path.stat().st_mtime < _TTL_S:
             data = json.loads(path.read_text())

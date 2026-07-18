@@ -170,3 +170,26 @@ def test_window_cause_attribution():
     ret.laps_completed = w2.start_lap
     attach_window_causes(s2)
     assert w2.cause and ret.name in w2.cause and "hydraulics" in w2.cause
+
+
+def test_qualifying_summary():
+    """The Saturday experience: pole, margins, segments, and no race language."""
+    from app.adapters.mock_adapter import get_mock_session
+    from app.analysis.qualifying import compute_qualifying
+
+    s = get_mock_session(2026, "Austrian Grand Prix", "Qualifying")
+    assert s.category == "qualifying"
+    q = compute_qualifying(s)
+
+    assert q.pole_driver and q.pole_lap and q.pole_margin is not None
+    assert q.closest_pair and q.closest_pair["delta"] >= 0
+    assert q.segment_bests.get("Q1") and q.segment_bests.get("Q3")
+    # knockout mapping: the last five classified went out in Q1
+    field = len(q.rows)
+    q1_out = [r for r in q.rows if r.knocked_out_in == "Q1"]
+    assert len(q1_out) == 5 and all(r.position > field - 5 for r in q1_out)
+    # the story is about Saturday, never a finished Grand Prix
+    text = " ".join(q.story).lower()
+    assert "pole" in text
+    assert "won the race" not in text and "chequered flag" not in text
+    assert any("nothing is won yet" in line.lower() for line in q.story)

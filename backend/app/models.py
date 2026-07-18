@@ -225,6 +225,11 @@ class ClassificationRow(BaseModel):
     # came from — surfaced by the DNF badge tooltip in the UI.
     retirement_reason: Optional[str] = None
     retirement_source: Optional[str] = None
+    # Qualifying only: per-segment bests (seconds), merged from the official
+    # archive when the primary source doesn't provide them.
+    q1: Optional[float] = None
+    q2: Optional[float] = None
+    q3: Optional[float] = None
 
 
 # --------------------------------------------------------------------------- #
@@ -438,6 +443,47 @@ class PracticeSummary(BaseModel):
     most_consistent_driver: Optional[str] = None
     track_evolving: bool = False
     rows: list[PracticeDriverRow] = Field(default_factory=list)
+    team_ranking: list[dict] = Field(default_factory=list)
+    story: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class QualiDriverRow(BaseModel):
+    driver: str
+    name: str
+    team: str
+    team_color: str = "#888888"
+    position: Optional[int] = None              # final qualifying classification
+    best_lap: Optional[float] = None
+    gap_to_pole: Optional[float] = None
+    laps_completed: int = 0
+    q1: Optional[float] = None                  # per-segment best, where known
+    q2: Optional[float] = None
+    q3: Optional[float] = None
+    knocked_out_in: Optional[str] = None        # "Q1" | "Q2" | None (reached Q3)
+    improvement: Optional[float] = None         # first-run best vs final best (s)
+    consistency_score: Optional[float] = None
+    best_sectors: list[Optional[float]] = Field(default_factory=list)
+    vs_teammate: Optional[float] = None         # best-lap delta to teammate (negative = quicker)
+
+
+class QualifyingSummary(BaseModel):
+    session_type: str
+    pole_driver: Optional[str] = None
+    pole_lap: Optional[float] = None
+    pole_margin: Optional[float] = None         # P1 -> P2 on best laps
+    closest_pair: Optional[dict] = None         # {a, b, delta} tightest gap in the top 10
+    biggest_surprise: Optional[dict] = None     # {driver, reason}
+    biggest_improvement_driver: Optional[str] = None
+    fastest_sector_driver: Optional[str] = None # most session-best sectors
+    most_consistent_driver: Optional[str] = None
+    early_elimination: Optional[dict] = None    # {driver, reason} notable Q1 exit
+    track_evolving: bool = False
+    red_flags: list[str] = Field(default_factory=list)
+    deleted_laps: list[str] = Field(default_factory=list)
+    pole_sector_breakdown: Optional[dict] = None  # pole's sectors vs session-best sectors
+    segment_bests: dict = Field(default_factory=dict)  # {"Q1": s, "Q2": s, "Q3": s} where known
+    rows: list[QualiDriverRow] = Field(default_factory=list)
     team_ranking: list[dict] = Field(default_factory=list)
     story: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
