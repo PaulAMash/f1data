@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { cx } from "@/lib/format";
 
 // Plain-English glossary for F1 jargon. A <Term> renders the word with a dotted
@@ -31,19 +32,31 @@ export const GLOSSARY: Record<string, string> = {
 export function Term({ children, term }: { children: React.ReactNode; term?: string }) {
   const key = (term ?? String(children)).toLowerCase();
   const def = GLOSSARY[key];
-  const [open, setOpen] = useState(false);
+  // rendered via a body portal at a fixed position — an absolutely positioned
+  // popup gets clipped invisible inside any overflow-hidden card
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   if (!def) return <>{children}</>;
   return (
     <span className="relative inline"
-      onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      onMouseEnter={(e) => {
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        setPos({ x: r.left, y: r.top });
+      }}
+      onMouseLeave={() => setPos(null)}>
       <span className={cx("cursor-help underline decoration-dotted decoration-ink-faint underline-offset-2")}>
         {children}
       </span>
-      {open && (
-        <span className="absolute bottom-5 left-0 z-50 w-60 rounded-lg border border-white/10 bg-base-900 p-2.5 text-xs font-normal leading-relaxed text-ink-muted shadow-glow">
+      {pos && typeof document !== "undefined" && createPortal(
+        <span className="pointer-events-none fixed z-[70] block w-60 rounded-lg border border-white/10 bg-base-900 p-2.5 text-xs font-normal leading-relaxed text-ink-muted shadow-glow"
+          style={{
+            left: Math.min(pos.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 260),
+            top: Math.max(8, pos.y - 8),
+            transform: "translateY(-100%)",
+          }}>
           <span className="mb-0.5 block font-semibold capitalize text-ink">{key}</span>
           {def}
-        </span>
+        </span>,
+        document.body,
       )}
     </span>
   );

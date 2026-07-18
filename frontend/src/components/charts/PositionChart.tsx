@@ -109,6 +109,16 @@ export function PositionChart({
 
   const xDomain: [number, number] = zoom ?? [1, session.total_laps];
 
+  // no running order in the data (qualifying/practice, or a source gap) —
+  // say so plainly instead of rendering an empty grid
+  if (!session.positions.length) {
+    return (
+      <p className="py-8 text-center text-sm text-ink-faint">
+        Position order isn&apos;t tracked in this session (practice and qualifying have no running order).
+      </p>
+    );
+  }
+
   return (
     <div>
       {/* simple: presets · advanced: per-driver toggles */}

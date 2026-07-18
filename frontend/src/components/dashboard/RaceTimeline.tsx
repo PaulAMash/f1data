@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { MousePointerClick } from "lucide-react";
 import type { RaceBundle } from "@/lib/types";
 import { useIsAdvanced } from "@/lib/mode";
+import { fmtLap } from "@/lib/format";
 
 interface Tip { x: number; y: number; title: string; lines: string[] }
 
@@ -35,6 +36,31 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
   const tp = strategy.turning_points[0];
   const tpLap = tp?.lap_range?.[0];
 
+  // fastest lap + lead changes: guaranteed content for every race and sprint,
+  // even a clean one with no safety cars and no top-10 stops
+  const fastest = useMemo(() => {
+    let best: { driver: string; lap: number; time: number } | null = null;
+    for (const l of session.laps) {
+      if (l.lap_time && !l.is_outlier && (!best || l.lap_time < best.time)) {
+        best = { driver: l.driver, lap: l.lap, time: l.lap_time };
+      }
+    }
+    return best;
+  }, [session]);
+  const leadChanges = useMemo(() => {
+    const leaders = new Map<number, string>();
+    for (const p of session.positions) if (p.position === 1) leaders.set(p.lap, p.driver);
+    const laps = [...leaders.keys()].sort((a, b) => a - b);
+    const out: { lap: number; to: string; from: string }[] = [];
+    for (let i = 1; i < laps.length; i++) {
+      const prev = leaders.get(laps[i - 1])!, cur = leaders.get(laps[i])!;
+      if (prev !== cur) out.push({ lap: laps[i], to: cur, from: prev });
+    }
+    return out.slice(0, 8);
+  }, [session]);
+  const nameOf = (code: string) =>
+    session.drivers.find((d) => d.code === code)?.name ?? code;
+
   const ticks = useMemo(() => {
     const step = total > 50 ? 10 : 5;
     const out: number[] = [];
@@ -47,7 +73,9 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
   // Races and sprints only — qualifying/practice pit entries are runs, not
   // strategy, and used to render as a meaningless wall of dots.
   if (bundle.category !== "race" && bundle.category !== "sprint") return null;
-  if (!session.positions.length && !session.pit_stops.length) return null;
+  // render whenever there's anything at all to mark — a clean sprint with no
+  // stops or safety cars still gets its fastest lap and lead changes
+  if (!session.positions.length && !session.pit_stops.length && !session.laps.length) return null;
   // If any podium car shows an implausible stop count the pit feed is suspect.
   const pitsReliable = session.pit_data_reliable !== false &&
     podium.every((c) => pits.filter((p) => p.driver === c.driver).length <= 5);
@@ -77,8 +105,14 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
           </span>
         </span>
         <span className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
-          <span><span className="mr-1.5 inline-block h-2.5 w-4 rounded-[3px] bg-amber/30 ring-1 ring-amber/50 align-middle" />VSC / Safety Car</span>
-          {pitsReliable && <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full bg-ink-muted align-middle" />{advanced ? "Top-10 pit stop" : "Podium pit stop"}</span>}
+          {session.track_status_windows.length > 0 &&
+            <span><span className="mr-1.5 inline-block h-2.5 w-4 rounded-[3px] bg-amber/30 ring-1 ring-amber/50 align-middle" />VSC / Safety Car</span>}
+          {pitsReliable && pits.length > 0 &&
+            <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full bg-ink-muted align-middle" />{advanced ? "Top-10 pit stop" : "Podium pit stop"}</span>}
+          {leadChanges.length > 0 &&
+            <span><span className="mr-1.5 inline-block h-0 w-0 border-x-[5px] border-b-[8px] border-x-transparent border-b-emerald-400 align-middle" />Lead change</span>}
+          {fastest &&
+            <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full bg-violet-400 align-middle" />Fastest lap</span>}
           {tpLap && <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rotate-45 bg-accent-soft align-middle" />Turning point</span>}
         </span>
       </div>
@@ -120,6 +154,31 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
             </g>
           );
         })}
+
+        {/* lead changes — small green flags above the strip */}
+        {leadChanges.map((lc, i) => (
+          <g key={`lc${i}`} className="cursor-help"
+            onMouseMove={(e) => show(e, "Lead change",
+              [`Lap ${lc.lap}: ${nameOf(lc.to)} takes P1 from ${nameOf(lc.from)}`])}
+            onMouseLeave={() => setTip(null)}>
+            <rect x={x(lc.lap) - 9} y={Y - 24} width={18} height={18} fill="transparent" />
+            <polygon pointerEvents="none"
+              points={`${x(lc.lap)},${Y - 20} ${x(lc.lap) - 5},${Y - 11} ${x(lc.lap) + 5},${Y - 11}`}
+              fill="#34d399" />
+          </g>
+        ))}
+
+        {/* fastest lap of the race — the violet dot */}
+        {fastest && (
+          <g className="cursor-help"
+            onMouseMove={(e) => show(e, "Fastest lap",
+              [`${nameOf(fastest.driver)} — ${fmtLap(fastest.time)}`, `Lap ${fastest.lap}`])}
+            onMouseLeave={() => setTip(null)}>
+            <circle cx={x(fastest.lap)} cy={Y} r={11} fill="transparent" />
+            <circle cx={x(fastest.lap)} cy={Y} r={5} pointerEvents="none"
+              fill="#a78bfa" stroke="#0b0e16" strokeWidth={2} />
+          </g>
+        )}
 
         {/* turning point — hover for the story; no static label to collide with ticks */}
         {tpLap && (

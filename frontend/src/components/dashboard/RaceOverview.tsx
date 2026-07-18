@@ -12,10 +12,10 @@ import { fmtGap, fmtLap, fmtSec, netBadge, ordinal } from "@/lib/format";
 export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; simple?: boolean }) {
   const { session, strategy } = bundle;
   const dotd = session.classification.find((c) => c.driver === strategy.driver_of_the_day);
-  // Simple readers get the points scorers; Advanced gets the whole field + DNFs.
-  const rows = simple
-    ? session.classification.filter((c) => c.position && c.position <= 10)
-    : session.classification;
+  // Everyone sees the whole field, DNFs included — Simple just reads it with
+  // fewer, friendlier columns (like a TV results graphic) while Advanced keeps
+  // the full grid/pits/best-lap detail.
+  const rows = session.classification;
 
   return (
     <div className="space-y-4">
@@ -68,23 +68,33 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
       {/* classification + movers */}
       <div className="grid gap-4 lg:grid-cols-[1.7fr_1fr]">
         <Card>
-          <CardHeader title={simple ? "Final classification · top 10" : "Final classification"}
-            info={<InfoTip label="Grid → Finish" text={simple
-              ? "The points scorers. The ▲/▼ badge is net positions gained or lost versus the starting grid — switch to Advanced for the full field."
+          <CardHeader title="Final classification"
+            info={<InfoTip label={simple ? "Reading the results" : "Grid → Finish"} text={simple
+              ? "Every car, in finishing order. Time is how far behind the winner they finished; cars that retired show why (hover the DNF badge for the lap)."
               : "The ▲/▼ badge is net positions gained or lost versus the starting grid."} />} />
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-sm">
+            <table className={cxTable(simple)}>
               <thead>
                 <tr className="border-b border-white/[0.06] text-left text-[11px] uppercase tracking-wider text-ink-faint">
                   <th className="py-2 pl-5 pr-2">Pos</th><th className="py-2 pr-2">Driver</th>
-                  <th className="py-2 pr-2">Grid→Fin</th><th className="py-2 pr-2">Pits</th>
-                  <th className="py-2 pr-2">Best</th><th className="py-2 pr-2">Gap</th>
+                  {simple ? (
+                    <th className="py-2 pr-2">Time / Retired</th>
+                  ) : (
+                    <>
+                      <th className="py-2 pr-2">Grid→Fin</th><th className="py-2 pr-2">Pits</th>
+                      <th className="py-2 pr-2">Best</th><th className="py-2 pr-2">Gap</th>
+                    </>
+                  )}
                   <th className="py-2 pr-5 text-right">Pts</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((c) => {
                   const nb = netBadge(c.grid && c.position ? c.grid - c.position : null);
+                  const timeOrRetired = c.retired
+                    ? (c.retirement_reason && !/^\s*(dnf|dns|dsq|retired)\s*$/i.test(c.retirement_reason)
+                        ? c.retirement_reason : "Retired")
+                    : fmtGap(c.position, c.gap);
                   return (
                     <tr key={c.driver} className="border-b border-white/[0.04]">
                       <td className="py-2 pl-5 pr-2 tabular-nums font-semibold">
@@ -98,19 +108,25 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
                           {c.retired && <DnfBadge row={c} />}
                         </span>
                       </td>
-                      <td className="py-2 pr-2">
-                        {c.retired ? <span className="text-ink-faint">—</span> : (
-                          <span className="inline-flex items-center gap-1.5 tabular-nums text-ink-muted">
-                            P{c.grid ?? "—"}→P{c.position}
-                            <span className={nb.tone === "up" ? "text-emerald-300" : nb.tone === "down" ? "text-rose-300" : "text-ink-faint"}>
-                              {nb.text}
-                            </span>
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2 pr-2 tabular-nums text-ink-muted">{c.pit_stops}</td>
-                      <td className="py-2 pr-2 tabular-nums text-ink-muted">{fmtLap(c.best_lap)}</td>
-                      <td className="py-2 pr-2 tabular-nums text-ink-faint">{c.retired ? (c.retirement_reason ?? c.status) : fmtGap(c.position, c.gap)}</td>
+                      {simple ? (
+                        <td className="py-2 pr-2 tabular-nums text-ink-muted">{timeOrRetired}</td>
+                      ) : (
+                        <>
+                          <td className="py-2 pr-2">
+                            {c.retired ? <span className="text-ink-faint">—</span> : (
+                              <span className="inline-flex items-center gap-1.5 tabular-nums text-ink-muted">
+                                P{c.grid ?? "—"}→P{c.position}
+                                <span className={nb.tone === "up" ? "text-emerald-300" : nb.tone === "down" ? "text-rose-300" : "text-ink-faint"}>
+                                  {nb.text}
+                                </span>
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 pr-2 tabular-nums text-ink-muted">{c.pit_stops}</td>
+                          <td className="py-2 pr-2 tabular-nums text-ink-muted">{fmtLap(c.best_lap)}</td>
+                          <td className="py-2 pr-2 tabular-nums text-ink-faint">{timeOrRetired}</td>
+                        </>
+                      )}
                       <td className="py-2 pr-5 text-right tabular-nums">{c.points ?? "—"}</td>
                     </tr>
                   );
@@ -135,6 +151,11 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
       </div>
     </div>
   );
+}
+
+// the simple table has 4 columns and fits narrow screens without scrolling
+function cxTable(simple: boolean) {
+  return simple ? "w-full min-w-[420px] text-sm" : "w-full min-w-[560px] text-sm";
 }
 
 /**

@@ -12,12 +12,12 @@ import { api } from "@/lib/api";
 import type { DataSource } from "@/lib/types";
 import { cx } from "@/lib/format";
 
-/** Accurate, non-misleading source label (never "Live" for archive data). */
+/** Accurate, non-misleading source label. Only flags non-archive data (sample);
+ *  real archive results carry no badge at all. */
 function SourceTag({ source }: { source: DataSource }) {
   const advanced = useIsAdvanced();
-  if (!advanced) return null;
-  const label = source === "mock" ? "Sample data" : source === "cache" ? "Cached" : "via Jolpica";
-  return <span className="rounded-md border border-white/10 px-2 py-0.5 text-[11px] text-ink-faint">{label}</span>;
+  if (!advanced || source !== "mock") return null;
+  return <span className="rounded-md border border-white/10 px-2 py-0.5 text-[11px] text-ink-faint">Sample data</span>;
 }
 
 const YEARS = Array.from({ length: 9 }, (_, i) => 2026 - i);
@@ -48,7 +48,7 @@ export default function History() {
             <div className="label">Historical</div>
             <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Explore F1 history</h1>
             <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-              Real results, qualifying and standings from 1950 to today, via Jolpica/Ergast.
+              Real results, qualifying and standings from 1950 to today.
             </p>
           </div>
           <ModeToggle />

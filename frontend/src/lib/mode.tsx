@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useState } from "react";
 
 export type Mode = "simple" | "advanced";
 
@@ -10,20 +10,13 @@ const ModeCtx = createContext<{ mode: Mode; setMode: (m: Mode) => void }>({
 
 /**
  * Global display mode. Wraps the whole app (see app/layout.tsx) so Simple/Advanced
- * changes every tab at once, and persists across reloads via localStorage.
- * Defaults to Simple for normal fans.
+ * changes every tab at once. Deliberately in-memory only: the choice sticks
+ * while browsing (tab to tab, page to page), but a refresh or a fresh browser
+ * tab always starts back in Simple — the friendly default for normal fans.
  */
 export function ModeProvider({ children }: { children: React.ReactNode }) {
   const [mode, setMode] = useState<Mode>("simple");
-  useEffect(() => {
-    const saved = typeof window !== "undefined" ? (localStorage.getItem("pitwalliq_mode") as Mode) : null;
-    if (saved === "simple" || saved === "advanced") setMode(saved);
-  }, []);
-  const set = (m: Mode) => {
-    setMode(m);
-    try { localStorage.setItem("pitwalliq_mode", m); } catch {}
-  };
-  return <ModeCtx.Provider value={{ mode, setMode: set }}>{children}</ModeCtx.Provider>;
+  return <ModeCtx.Provider value={{ mode, setMode }}>{children}</ModeCtx.Provider>;
 }
 
 export const useDisplayMode = () => useContext(ModeCtx);

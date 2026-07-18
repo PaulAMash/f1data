@@ -97,10 +97,19 @@ export default function ExplorerPage() {
   const session = bundle?.session;
   const category = bundle?.category ?? "race";
   const tabs = category === "practice" ? PRACTICE_TABS : RACE_TABS;
+  // Qualifying has no running order, so a Position chart would just be an
+  // empty grid — the sub-tab is hidden rather than shown broken.
+  const isQuali = category === "qualifying" || category === "sprint_qualifying";
+  const chartTabs = useMemo(() => [
+    ...(!isQuali ? [{ id: "position", label: "Position", icon: <Activity size={14} /> }] : []),
+    { id: "tyres", label: "Tyres", icon: <Timer size={14} /> },
+    { id: "control", label: "Race control & weather", icon: <Wind size={14} /> },
+  ], [isQuali]);
 
   useEffect(() => {
     // "data" is a valid view reached via the Sources button, not a tab
     if (tab !== "data" && !tabs.some((t) => t.id === tab)) setTab(tabs[0].id);
+    if (!chartTabs.some((t) => t.id === chartTab)) setChartTab(chartTabs[0].id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, isAdvanced]);
 
@@ -189,12 +198,14 @@ export default function ExplorerPage() {
             {category !== "practice" && tab === "story" && <RaceStory bundle={bundle} onJump={setTab} />}
             {category !== "practice" && tab === "charts" && (
               <div className="space-y-4">
-                <Tabs items={[
-                  { id: "position", label: "Position", icon: <Activity size={14} /> },
-                  { id: "tyres", label: "Tyres", icon: <Timer size={14} /> },
-                  { id: "control", label: "Race control & weather", icon: <Wind size={14} /> },
-                ]} active={chartTab} onChange={setChartTab} />
-                {chartTab === "position" && (
+                <Tabs items={chartTabs} active={chartTab} onChange={setChartTab} />
+                {isQuali && (
+                  <p className="rounded-lg border border-white/[0.05] bg-base-850/40 px-3 py-1.5 text-xs text-ink-faint">
+                    Position tracking isn&apos;t shown for qualifying — cars run against the clock,
+                    not each other, so there&apos;s no running order to chart.
+                  </p>
+                )}
+                {chartTab === "position" && !isQuali && (
                   <Section title="Track position" info="One line per driver, P1 at the top. Shaded bands are safety-car / VSC windows; hover any lap for tyre, gap and pit detail.">
                     <PositionChart session={session} selected={selected} onSelect={setSelected} />
                   </Section>

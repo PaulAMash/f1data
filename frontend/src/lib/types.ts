@@ -67,7 +67,7 @@ export interface ClassificationRow {
   best_lap?: number | null; pit_stops: number; points?: number | null; retired: boolean;
   retirement_reason?: string | null; retirement_source?: string | null;
 }
-export type SessionCategory = "race" | "qualifying" | "sprint" | "practice";
+export type SessionCategory = "race" | "qualifying" | "sprint" | "sprint_qualifying" | "practice";
 export interface RaceSession {
   year: number; grand_prix: string; official_name?: string | null; session_type: string;
   category: SessionCategory; circuit?: Circuit | null; total_laps: number; data_source: DataSource;

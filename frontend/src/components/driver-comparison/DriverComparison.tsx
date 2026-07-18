@@ -64,7 +64,7 @@ export function DriverComparison({
             <ChartCard title="Position trace" info="Where each car ran, lap by lap. P1 at the top.">
               {positionData.length === 0 ? (
                 <div className="flex h-[240px] items-center justify-center text-center text-xs text-ink-faint">
-                  Position order isn't tracked in this session (practice has no running order).
+                  Position order isn't tracked in this session (practice and qualifying have no running order).
                 </div>
               ) : (
               <div className="h-[240px]">

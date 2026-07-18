@@ -80,7 +80,7 @@ export function HistoricalExplorer() {
     <Card>
       <CardHeader title="Historical Data Explorer"
         subtitle="Pick a season, Grand Prix and session for real results, 1950–present."
-        info={<InfoTip text="Results come from Jolpica/Ergast. Practice sessions and some older data aren't available from this source and are shown as such — never fabricated." />} />
+        info={<InfoTip text="Official archive results. Practice sessions and some older data aren't available in the archive and are shown as such — never fabricated." />} />
       <CardBody className="space-y-4">
         {/* selectors */}
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
@@ -104,7 +104,7 @@ export function HistoricalExplorer() {
         ) : results?.error ? (
           <ErrorRetry message={results.message ?? "The historical source was unreachable."} onRetry={() => setNonce((n) => n + 1)} />
         ) : results && results.available && results.rows?.length ? (
-          <ResultsTable rows={results.rows} session={session} simple={simple} source={results.source} confidence={results.confidence} />
+          <ResultsTable rows={results.rows} session={session} simple={simple} />
         ) : (
           <Unavailable note={results?.note ?? "No results found for this selection."} />
         )}
@@ -113,8 +113,8 @@ export function HistoricalExplorer() {
   );
 }
 
-function ResultsTable({ rows, session, simple, source, confidence }: {
-  rows: any[]; session: string; simple: boolean; source?: string; confidence?: string;
+function ResultsTable({ rows, session, simple }: {
+  rows: any[]; session: string; simple: boolean;
 }) {
   const isQuali = /qual/i.test(session);
   return (
@@ -166,11 +166,6 @@ function ResultsTable({ rows, session, simple, source, confidence }: {
         ))}
       </div>
 
-      {!simple && (
-        <p className="mt-3 text-[11px] text-ink-faint">
-          Source: {source ?? "jolpica"}{confidence ? ` · confidence ${confidence}` : ""} · {rows.length} entries.
-        </p>
-      )}
     </div>
   );
 }
