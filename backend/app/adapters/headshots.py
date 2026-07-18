@@ -27,15 +27,8 @@ log = logging.getLogger("pitwall_iq")
 
 _TTL_S = 7 * 24 * 3600
 _MAX_MEETINGS = 24      # a whole season if needed — never stop one driver short
-
-# Last-resort curated portraits for drivers the live sources are missing.
-# Keyed by normalized full name; the UI falls back to initials if a URL 404s,
-# so a stale entry degrades gracefully instead of breaking anything.
-_OVERRIDES: dict[str, str] = {
-    "arvid lindblad":
-        "https://media.formula1.com/content/dam/fom-website/drivers/A/"
-        "ARVLIN01_Arvid_Lindblad/arvlin01.png",
-}
+_WIKI_TTL_S = 30 * 24 * 3600
+_WIKI_MISS_TTL_S = 24 * 3600   # retry known-misses daily (pages appear mid-season)
 
 
 def _norm(text: str | None) -> str:
@@ -90,6 +83,81 @@ def year_map(year: int) -> dict[str, str]:
     return out
 
 
+def _wiki_cache_path():
+    return get_settings().cache_dir / "portraits_wiki.json"
+
+
+def _wiki_cache() -> dict:
+    try:
+        return json.loads(_wiki_cache_path().read_text())
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _wiki_save(cache: dict) -> None:
+    try:
+        _wiki_cache_path().parent.mkdir(parents=True, exist_ok=True)
+        _wiki_cache_path().write_text(json.dumps(cache))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _wiki_query(params: dict) -> dict:
+    import requests
+    r = requests.get("https://en.wikipedia.org/w/api.php",
+                     params={"format": "json", **params},
+                     headers={"User-Agent": "PitwallIQ/1.0 (F1 analysis app)"},
+                     timeout=get_settings().fetch_timeout)
+    r.raise_for_status()
+    return r.json()
+
+
+def _wiki_thumb_for_title(title: str) -> str | None:
+    data = _wiki_query({"action": "query", "titles": title, "redirects": 1,
+                        "prop": "pageimages", "pithumbsize": 512})
+    for page in data.get("query", {}).get("pages", {}).values():
+        url = page.get("thumbnail", {}).get("source")
+        if url:
+            return url
+    return None
+
+
+def wiki_portrait(full_name: str) -> str | None:
+    """Systemic last-resort portrait: Wikipedia's lead image for the driver.
+
+    This is what makes rookies, mid-season replacements and team-switchers
+    resolve automatically in future seasons without curated lists — every F1
+    race driver has a Wikipedia page, usually before their debut weekend.
+    Results (including misses) are disk-cached; misses retry daily because
+    pages and photos appear mid-season."""
+    key = _norm(full_name)
+    if not key:
+        return None
+    cache = _wiki_cache()
+    hit = cache.get(key)
+    now = time.time()
+    if hit:
+        ttl = _WIKI_TTL_S if hit.get("url") else _WIKI_MISS_TTL_S
+        if now - hit.get("ts", 0) < ttl:
+            return hit.get("url") or None
+    url = None
+    try:
+        url = _wiki_thumb_for_title(full_name)
+        if not url:
+            # disambiguation-safe retry: search restricted to racing drivers
+            data = _wiki_query({"action": "query", "list": "search", "srlimit": 1,
+                                "srsearch": f"{full_name} racing driver"})
+            results = data.get("query", {}).get("search", [])
+            if results:
+                url = _wiki_thumb_for_title(results[0]["title"])
+    except Exception as exc:  # noqa: BLE001
+        log.info("wikipedia portrait lookup failed for %s: %s", full_name, exc)
+        return (hit or {}).get("url") or None  # keep any stale value on network failure
+    cache[key] = {"url": url, "ts": now}
+    _wiki_save(cache)
+    return url
+
+
 def _lookup(mapping: dict[str, str], code: str, number: str | None, surname: str) -> tuple[str | None, str]:
     """Try every identity key in order; report which one hit."""
     if mapping.get(code):
@@ -120,9 +188,9 @@ def resolve(session: RaceSession) -> list[dict]:
             url, via = _lookup(prev, d.code, str(d.number) if d.number else None, surname)
             via = f"prev-year-{via}" if url else via
         if not url:
-            url = _OVERRIDES.get(_norm(d.name))
+            url = wiki_portrait(d.name)
             if url:
-                via = "override"
+                via = "wikipedia"
         entry.update(resolved_via=via if url else "unresolved", url=url)
         out.append(entry)
     return out

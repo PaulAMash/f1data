@@ -75,6 +75,7 @@ def compute_qualifying(session: RaceSession) -> QualifyingSummary:
         early_elimination=_early_exit(rows),
         track_evolving=_track_evolving(session),
         red_flags=_red_flags(session),
+        interruptions=_interruptions(session),
         deleted_laps=_deleted_laps(session),
         pole_sector_breakdown=_pole_sectors(pole, rows) if pole else None,
         segment_bests=_segment_bests(rows),
@@ -219,6 +220,38 @@ def _red_flags(session: RaceSession) -> list[str]:
     for m in session.race_control:
         if m.message and re.search(r"\bRED\s+FLAG\b", m.message, re.I):
             out.append(m.message.strip()[:110])
+    return out[:4]
+
+
+_CAUSE_VERBS = [
+    (r"CRASH|BARRIER|WALL", "crashed"),
+    (r"\bSPUN|SPIN\b", "spun"),
+    (r"STOPPED", "stopped on track"),
+    (r"\bFIRE\b", "stopped with a fire"),
+    (r"DEBRIS", "left debris on the circuit"),
+]
+
+
+def _interruptions(session: RaceSession) -> list[dict]:
+    """Structured parse of each red flag: who triggered it, what happened,
+    where — so the UI can explain the stoppage instead of echoing 'RED FLAG'."""
+    name_by_code = {d.code: d.name for d in session.drivers}
+    out: list[dict] = []
+    for m in session.race_control:
+        msg = (m.message or "").strip()
+        if not msg or not re.search(r"\bRED\s+FLAG\b", msg, re.I):
+            continue
+        code = (re.search(r"\(([A-Z]{2,3})\)", msg) or [None, None])[1]
+        turn_m = re.search(r"TURN\s*\d+", msg, re.I)
+        cause = next((v for pat, v in _CAUSE_VERBS if re.search(pat, msg, re.I)), None)
+        out.append({
+            "message": msg[:160],
+            "driver": code,
+            "driver_name": name_by_code.get(code) if code else None,
+            "cause": cause,
+            "turn": turn_m.group(0).title() if turn_m else None,
+            "lap": m.lap,
+        })
     return out[:4]
 
 

@@ -147,6 +147,8 @@ export interface QualifyingSummary {
   early_elimination?: { driver: string; reason: string } | null;
   track_evolving: boolean;
   red_flags: string[]; deleted_laps: string[];
+  interruptions: { message: string; driver?: string | null; driver_name?: string | null;
+    cause?: string | null; turn?: string | null; lap?: number | null }[];
   pole_sector_breakdown?: { pole: (number | null)[]; session_best: (number | null)[] } | null;
   segment_bests: Record<string, number>;
   rows: QualiDriverRow[]; team_ranking: { team: string; color: string; best: number; gap: number }[];

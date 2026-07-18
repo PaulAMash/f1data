@@ -481,6 +481,8 @@ class QualifyingSummary(BaseModel):
     early_elimination: Optional[dict] = None    # {driver, reason} notable Q1 exit
     track_evolving: bool = False
     red_flags: list[str] = Field(default_factory=list)
+    # structured red-flag parse: {message, driver, driver_name, cause, turn, lap}
+    interruptions: list[dict] = Field(default_factory=list)
     deleted_laps: list[str] = Field(default_factory=list)
     pole_sector_breakdown: Optional[dict] = None  # pole's sectors vs session-best sectors
     segment_bests: dict = Field(default_factory=dict)  # {"Q1": s, "Q2": s, "Q3": s} where known

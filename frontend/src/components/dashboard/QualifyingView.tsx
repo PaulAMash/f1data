@@ -198,12 +198,19 @@ function GridTable({ q, session, simple }: { q: QualifyingSummary; session: Race
 function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
   const simple = useIsSimple();
   const segs = ["Q1", "Q2", "Q3"].filter((s) => q.segment_bests[s]);
+  // both modes rank the same six drivers — Advanced differs in depth, not length
   const improvers = [...q.rows]
     .filter((r) => r.improvement && r.improvement > 0)
-    .sort((a, b) => (b.improvement ?? 0) - (a.improvement ?? 0)).slice(0, simple ? 4 : 6);
+    .sort((a, b) => (b.improvement ?? 0) - (a.improvement ?? 0)).slice(0, 6);
   const pb = q.pole_sector_breakdown;
   const theoretical = pb?.session_best?.every((s) => s != null)
     ? pb!.session_best.reduce((a, b) => (a ?? 0) + (b ?? 0), 0) : null;
+  // per-segment field spread (advanced): how tightly the runners were covered
+  const spreadOf = (seg: "q1" | "q2" | "q3") => {
+    const times = q.rows.map((r) => r[seg]).filter((t): t is number => t != null)
+      .sort((a, b) => a - b).slice(0, 10);
+    return times.length >= 3 ? times[times.length - 1] - times[0] : null;
+  };
 
   return (
     <div className="space-y-4">
@@ -224,7 +231,7 @@ function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSessio
                   <div className="flex-1 rounded-xl border border-white/[0.06] bg-base-800/50 p-4">
                     <div className="flex items-center justify-between">
                       <span className="label"><Term term={s.toLowerCase()}>{s}</Term></span>
-                      {i === segs.length - 1 && <Badge tone="good">decides pole</Badge>}
+                      {i === segs.length - 1 && <Badge tone="good">Decides Pole</Badge>}
                     </div>
                     <div className="mt-1 text-2xl font-semibold tabular-nums text-ink">{fmtLap(q.segment_bests[s])}</div>
                     {i > 0 && q.segment_bests[segs[i - 1]] && (
@@ -232,6 +239,14 @@ function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSessio
                         ▼ {(q.segment_bests[segs[i - 1]] - q.segment_bests[s]).toFixed(3)}s faster than {segs[i - 1]}
                       </div>
                     )}
+                    {!simple && (() => {
+                      const sp = spreadOf(s.toLowerCase() as "q1" | "q2" | "q3");
+                      return sp != null && (
+                        <div className="mt-0.5 text-[11px] tabular-nums text-ink-faint">
+                          top runners covered by {sp.toFixed(3)}s
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               ))}
@@ -299,59 +314,121 @@ function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSessio
         </Card>
       )}
 
-      {/* biggest improvements — ranked identity cards */}
+      {/* biggest improvements — the same six drivers in both modes; Advanced
+          differs in depth (segment gains, %, teammate delta), not length */}
       <Card>
         <CardHeader title="Biggest improvements"
-          info={<InfoTip text="How much each driver gained from their early runs to their final best — a read on who extracted the track's evolution." />} />
+          info={<InfoTip text={simple
+            ? "How much time each driver found between their early runs and their final best lap."
+            : "Session-long gain from first-run best to final best. Percentage is relative to their Q1 time; segment splits show where the time actually arrived; teammate delta contextualizes the machinery."} />} />
         <CardBody>
           {improvers.length ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {improvers.map((r, i) => (
-                <div key={r.driver} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-base-800/50 p-3.5">
-                  <span className="w-5 shrink-0 text-center text-sm font-bold tabular-nums text-ink-faint">{i + 1}</span>
-                  <DriverAvatar driver={driverOf(session, r.driver)} size={38} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold text-ink">{r.name}</div>
-                    <div className="truncate text-[11px] text-ink-faint">{r.team}</div>
-                    {r.q1 && (r.q3 || r.q2) && (
-                      <div className="mt-0.5 text-[11px] tabular-nums text-ink-muted">
-                        Q1 {fmtLap(r.q1)} → {r.q3 ? "Q3 " + fmtLap(r.q3) : "Q2 " + fmtLap(r.q2)}
+              {improvers.map((r, i) => {
+                const pct = r.q1 && r.improvement ? (r.improvement / r.q1) * 100 : null;
+                const gainQ12 = r.q1 && r.q2 ? r.q1 - r.q2 : null;
+                const gainQ23 = r.q2 && r.q3 ? r.q2 - r.q3 : null;
+                return (
+                  <div key={r.driver} className="rounded-xl border border-white/[0.06] bg-base-800/50 p-3.5">
+                    <div className="flex items-center gap-3">
+                      <span className="w-5 shrink-0 text-center text-sm font-bold tabular-nums text-ink-faint">{i + 1}</span>
+                      <DriverAvatar driver={driverOf(session, r.driver)} size={38} />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold text-ink">{r.name}</div>
+                        <div className="truncate text-[11px] text-ink-faint">
+                          {r.team}{r.position ? ` · qualified P${r.position}` : ""}
+                        </div>
+                      </div>
+                      <span className="shrink-0 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-emerald-300">
+                        −{r.improvement!.toFixed(2)}s
+                      </span>
+                    </div>
+                    {!simple && (
+                      <div className="mt-2.5 space-y-1 border-t border-white/[0.05] pt-2 text-[11px] tabular-nums text-ink-muted">
+                        {r.q1 && (r.q3 || r.q2) && (
+                          <div>Q1 {fmtLap(r.q1)} → {r.q3 ? "Q3 " + fmtLap(r.q3) : "Q2 " + fmtLap(r.q2)}
+                            {pct != null && <span className="text-emerald-300"> ({pct.toFixed(1)}%)</span>}
+                          </div>
+                        )}
+                        {(gainQ12 != null || gainQ23 != null) && (
+                          <div>
+                            Where it came:{" "}
+                            {gainQ12 != null && <span>Q1→Q2 <span className="text-emerald-300">−{gainQ12.toFixed(2)}s</span></span>}
+                            {gainQ12 != null && gainQ23 != null && " · "}
+                            {gainQ23 != null && <span>Q2→Q3 <span className="text-emerald-300">−{gainQ23.toFixed(2)}s</span></span>}
+                          </div>
+                        )}
+                        {r.vs_teammate != null && (
+                          <div>
+                            <Term term="teammate delta">vs teammate</Term>:{" "}
+                            <span className={r.vs_teammate < 0 ? "text-emerald-300" : "text-rose-300"}>
+                              {r.vs_teammate < 0 ? "−" : "+"}{Math.abs(r.vs_teammate).toFixed(3)}s
+                            </span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-                  <span className="shrink-0 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-emerald-300">
-                    −{r.improvement!.toFixed(2)}s
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : <p className="text-sm text-ink-faint">No meaningful in-session improvements detected.</p>}
         </CardBody>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* interruptions as event cards */}
+        {/* interruptions as explained event cards, not echoed flags */}
         <Card>
           <CardHeader title="Interruptions" />
           <CardBody className="space-y-2">
-            {q.red_flags.length ? q.red_flags.map((m, i) => (
-              <div key={i} className="flex items-start gap-3 rounded-xl border border-rose-400/20 bg-rose-400/[0.06] p-3.5">
-                <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-rose-400/15">
-                  <Flag size={15} className="text-rose-300" />
-                </span>
-                <div>
-                  <div className="text-sm font-semibold text-rose-200">Red flag</div>
-                  <div className="mt-0.5 text-xs leading-relaxed text-ink-muted">{sentence(m)}</div>
+            {q.interruptions.length ? q.interruptions.map((it, i) => {
+              const who = it.driver_name ?? it.driver;
+              const plain = who
+                ? `Session stopped after ${who} ${it.cause ?? "brought out the red flag"}${it.turn ? ` at ${it.turn}` : ""}.`
+                : `Session stopped${it.turn ? ` after an incident at ${it.turn}` : ""}.`;
+              return (
+                <div key={i} className="rounded-xl border border-rose-400/20 bg-rose-400/[0.06] p-3.5">
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-rose-400/15">
+                      <Flag size={15} className="text-rose-300" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-sm font-semibold text-rose-200">Red flag</span>
+                        {it.lap != null && <Badge tone="neutral">Lap {it.lap}</Badge>}
+                        {it.turn && <Badge tone="neutral">{it.turn}</Badge>}
+                      </div>
+                      <div className="mt-0.5 text-xs leading-relaxed text-ink-muted">{plain}</div>
+                      {it.driver && (
+                        <div className="mt-1.5">
+                          <DriverBadge driver={driverOf(session, it.driver)} code={it.driver} size={22} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {!simple && (
+                    <div className="mt-2.5 space-y-1.5 border-t border-white/[0.06] pt-2">
+                      <p className="rounded-md bg-base-900/60 px-2 py-1 font-mono text-[11px] text-ink-muted">{it.message}</p>
+                      <p className="text-[11px] leading-relaxed text-ink-faint">
+                        Impact: everyone&apos;s remaining runs were compressed into less track time, and
+                        the first <Term term="flying lap">flying laps</Term> after the restart came on
+                        cooler tyres and a cooler track — drivers still without a banker lap at the
+                        stoppage carried the elimination risk.
+                      </p>
+                    </div>
+                  )}
                 </div>
-              </div>
-            )) : (
+              );
+            }) : (
               <div className="flex items-center gap-3 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.05] p-3.5">
                 <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-emerald-400/15">
                   <Flag size={15} className="text-emerald-300" />
                 </span>
                 <div>
                   <div className="text-sm font-semibold text-emerald-200">Clean session</div>
-                  <div className="text-xs text-ink-muted">No red flags — every driver got their runs in.</div>
+                  <div className="text-xs text-ink-muted">
+                    No red flags — every driver got their runs in{!simple ? ", so the timesheet reflects pure pace rather than timing luck" : ""}.
+                  </div>
                 </div>
               </div>
             )}
@@ -375,6 +452,19 @@ function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSessio
                       {d.lap && <Badge tone="neutral">Lap {d.lap}</Badge>}
                     </span>
                   </div>
+                  {!simple && d.code && (() => {
+                    const row = q.rows.find((r) => r.driver === d.code);
+                    return row?.knocked_out_in ? (
+                      <p className="mt-1.5 text-[11px] leading-snug text-amber/90">
+                        Eliminated in {row.knocked_out_in} (P{row.position}) — a deletion in the
+                        danger zone can be the difference at the cut.
+                      </p>
+                    ) : row?.position ? (
+                      <p className="mt-1.5 text-[11px] leading-snug text-ink-faint">
+                        Still qualified P{row.position} — the deletion didn&apos;t prove costly.
+                      </p>
+                    ) : null;
+                  })()}
                   <details className="mt-1.5">
                     <summary className="cursor-pointer text-[11px] text-ink-faint hover:text-ink-muted">
                       Race control message
@@ -403,11 +493,6 @@ function parseDeleted(msg: string, session: RaceSession) {
     reason,
     driver: driverOf(session, code),
   };
-}
-
-function sentence(raw: string) {
-  const t = raw.toLowerCase();
-  return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
 /* ------------------------------- pace ---------------------------------- */
