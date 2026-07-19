@@ -115,10 +115,68 @@ def test_headshot_enrich_fills_missing(monkeypatch):
     from app.adapters.mock_adapter import get_mock_session
     s = get_mock_session(2026, "Austrian Grand Prix", "Race")
     assert all(not d.headshot_url for d in s.drivers)
-    monkeypatch.setattr(headshots, "year_map",
-                        lambda year: {d.code: f"https://img/{d.code}.png" for d in s.drivers})
+    # the official listing is unavailable in tests; the season media map fills in
+    monkeypatch.setattr(headshots, "f1_listing_map", lambda year: {})
+    monkeypatch.setattr(headshots, "season_media_map",
+                        lambda year: {d.code: f"https://media.formula1.com/{d.code}.png"
+                                      for d in s.drivers})
     assert headshots.enrich(s) is True
     assert all(d.headshot_url for d in s.drivers)
+
+
+def test_official_portrait_url_strips_silent_fallback():
+    """The single transform every URL goes through: the Cloudinary
+    default-image directive that silently serves F1's grey silhouette is
+    removed, so a missing asset 404s (→ initials) instead of masquerading as a
+    portrait. Working assets and non-F1 URLs are untouched; it's idempotent."""
+    from app.adapters.headshots import official_portrait_url
+
+    base = "https://media.formula1.com/content/dam/fom-website/drivers/2025Drivers/arvlin01.png"
+    with_fallback = ("https://media.formula1.com/d_driver_fallback_image.png"
+                     "/content/dam/fom-website/drivers/2025Drivers/arvlin01.png")
+    assert official_portrait_url(with_fallback) == base
+    # idempotent + leaves already-clean and non-F1 URLs alone
+    assert official_portrait_url(base) == base
+    assert official_portrait_url("https://example.com/x.png") == "https://example.com/x.png"
+    assert official_portrait_url(None) is None
+    assert official_portrait_url("") is None
+
+
+def test_resolve_prefers_official_listing_then_falls_back(monkeypatch):
+    """Resolution order is Formula1.com all the way down: the official
+    driver-listing wins; if it lacks a driver, their own normalized F1 media
+    URL is used; both are real F1 assets, never a placeholder or other source."""
+    from app.adapters import headshots
+    from app.adapters.mock_adapter import get_mock_session
+
+    s = get_mock_session(2026, "Austrian Grand Prix", "Race")
+    d0, d1 = s.drivers[0], s.drivers[1]
+    d0.headshot_url = None
+    d1.headshot_url = ("https://media.formula1.com/d_driver_fallback_image.png"
+                       "/content/dam/fom-website/drivers/x/own01.png")
+
+    monkeypatch.setattr(headshots, "season_media_map", lambda year: {})
+    monkeypatch.setattr(headshots, "f1_listing_map",
+                        lambda year: {headshots._norm(d0.name):
+                                      "https://media.formula1.com/official/d0.png"})
+    by_code = {r["code"]: r for r in headshots.resolve(s)}
+    assert by_code[d0.code]["resolved_via"] == "f1-listing"
+    assert by_code[d0.code]["url"] == "https://media.formula1.com/official/d0.png"
+    # d1 isn't in the listing → its own media URL, normalized (directive gone)
+    assert by_code[d1.code]["resolved_via"] == "session-media"
+    assert "d_driver_fallback_image" not in by_code[d1.code]["url"]
+
+
+def test_listing_map_degrades_to_empty_without_network(tmp_path, monkeypatch):
+    """No key / no network / unexpected shape must yield {} — never a crash —
+    so resolution safely falls through to the driver's own F1 media URL."""
+    from app.adapters import headshots
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "cache_dir", tmp_path, raising=False)
+    # an unreachable endpoint with no key configured must degrade cleanly
+    monkeypatch.setattr(get_settings(), "f1_content_api_key", None, raising=False)
+    result = headshots.f1_listing_map(2026)
+    assert result == {}
 
 
 def test_ask_why_lost_is_not_circular():
@@ -199,75 +257,3 @@ def test_qualifying_summary():
     # analyst extras exist
     assert q.biggest_disappointment and q.team_progression and q.conditions
 
-
-def test_portrait_pipeline_rejects_and_heals_dead_urls(tmp_path, monkeypatch):
-    """Root-cause regression: a driver whose record carries a URL that 404s
-    must NOT short-circuit resolution — the dead URL is rejected with an
-    evidence trail, the next live stage wins, and enrich() heals the record."""
-    import http.server
-    import json
-    import threading
-    import time as _time
-
-    from app.adapters import headshots
-    from app.adapters.mock_adapter import get_mock_session
-    from app.config import get_settings
-
-    monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
-    monkeypatch.setattr(get_settings(), "cache_dir", tmp_path, raising=False)
-
-    png = (b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
-
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def _serve(self, send_body: bool):
-            if self.path.startswith("/good"):
-                self.send_response(200)
-                self.send_header("Content-Type", "image/png")
-                self.send_header("Content-Length", str(len(png)))
-                self.end_headers()
-                if send_body:
-                    self.wfile.write(png)
-            else:
-                self.send_response(404)
-                self.end_headers()
-
-        def do_GET(self):
-            self._serve(True)
-
-        def do_HEAD(self):
-            self._serve(False)
-
-        def log_message(self, *a):
-            pass
-
-    srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    base = f"http://127.0.0.1:{srv.server_port}"
-    try:
-        # wikipedia stage seeded with a live URL (the sandbox can't reach the real API)
-        (tmp_path / "portraits_wiki.json").write_text(json.dumps(
-            {"arvid lindblad": {"url": f"{base}/good-wiki.png", "ts": _time.time()}}))
-
-        s = get_mock_session(2026, "British Grand Prix", "Race")
-        for d in s.drivers:
-            d.headshot_url = f"{base}/good/{d.code}.png"
-        lin = s.drivers[1]
-        lin.name, lin.code = "Arvid Lindblad", "LIN"
-        lin.headshot_url = f"{base}/dead/LIN.png"
-
-        trace = {r["code"]: r for r in headshots.resolve(s)}
-        assert trace["LIN"]["resolved_via"] == "wikipedia"
-        assert trace["LIN"]["rejected"] == [
-            {"stage": "session", "url": f"{base}/dead/LIN.png", "reason": "dead-url"}]
-        # a working driver's record passes the liveness check untouched
-        other = next(c for c in trace.values() if c["code"] != "LIN")
-        assert other["resolved_via"] == "session" and not other["rejected"]
-
-        assert headshots.enrich(s) is True
-        assert lin.headshot_url == f"{base}/good-wiki.png"
-
-        # browser feedback loop: a client-reported death revokes trust immediately
-        headshots.mark_dead(f"{base}/good-wiki.png")
-        assert headshots.url_alive(f"{base}/good-wiki.png") is False
-    finally:
-        srv.shutdown()

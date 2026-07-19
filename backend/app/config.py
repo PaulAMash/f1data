@@ -34,6 +34,19 @@ class Settings(BaseSettings):
     cache_dir: Path = Path(os.getenv("PITWALL_IQ_CACHE_DIR", str(_BACKEND_DIR / "data" / "cache")))
     cache_ttl_hours: int = int(os.getenv("PITWALL_IQ_CACHE_TTL_HOURS", "720"))  # 30 days
 
+    # --- portraits -------------------------------------------------------- #
+    # Formula1.com's official driver-listing content API — the same source the
+    # public Drivers page renders — used as the authoritative portrait for
+    # every driver (rookies and replacements included). The key below is F1's
+    # public site key, shipped to every visitor's browser; it is not a user
+    # secret. Both are env-overridable, and any failure degrades gracefully to
+    # the driver's own relayed F1 media URL (never a hard break).
+    f1_content_api_base: str = os.getenv(
+        "PITWALL_IQ_F1_LISTING_URL",
+        "https://api.formula1.com/v1/editorial-driverlisting/listing")
+    f1_content_api_key: str | None = os.getenv(
+        "PITWALL_IQ_F1_API_KEY", "qPgPPRJyGCIPxFT3el4MF7thXHyJCzAP") or None
+
     # --- optional secrets (never sent to the frontend) -------------------- #
     f1tv_token: str | None = os.getenv("F1TV_TOKEN") or None
     llm_api_key: str | None = os.getenv("ANTHROPIC_API_KEY") or os.getenv("PITWALL_IQ_LLM_KEY") or None

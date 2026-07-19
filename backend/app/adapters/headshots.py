@@ -1,36 +1,64 @@
 """
-Season-level driver portrait map, so photos show up consistently everywhere.
+Driver portraits — one provider, one source: Formula1.com.
 
-OpenF1's per-session driver records sometimes omit headshot_url, and the other
-sources (FastF1, Jolpica) never provide portraits at all. This service builds
-one identity→URL map per season from that season's meetings, caches it on disk
-for a week, and fills the gaps on any loaded session — regardless of which
-source served it.
+WHERE PORTRAIT URLs COME FROM (traced end to end):
 
-Identity matching is deliberately redundant: a driver is looked up by TLA
-acronym, by car number, and by surname, because the sources don't always agree
-on acronyms for rookies (the exact failure that left one driver permanently on
-the initials fallback while the rest of the field loaded fine).
+  * OpenF1's per-session driver record carries a ``headshot_url`` and that URL
+    is ALREADY a Formula1.com media URL — OpenF1 relays F1's own CDN link, it
+    does not host portraits itself. So "OpenF1 vs Formula1.com" was never two
+    different portraits; it is F1's asset either way.
+
+  * That relayed URL is a Cloudinary link of the shape
+        https://media.formula1.com/d_driver_fallback_image.png/content/dam/
+        fom-website/drivers/2025Drivers/<slug>.png
+    The leading ``d_driver_fallback_image.png`` segment is a Cloudinary
+    *default-image* directive: "if <slug>.png is missing, serve the generic
+    grey silhouette instead — with a normal HTTP 200". That directive is the
+    entire reason a driver whose asset F1 hasn't published at that exact slug
+    (a rookie like Arvid Lindblad) renders the silhouette rather than initials
+    or a real photo: the URL is alive and image-typed, it just isn't him.
+
+THIS PROVIDER, top to bottom, uses only Formula1.com:
+
+  1. Formula1.com's official driver-listing content API — the exact data the
+     public Drivers page renders — mapped by normalized full name. This is the
+     authoritative portrait for every driver F1 publishes, rookies and
+     mid-season replacements included, and it needs no per-driver code: when
+     F1 adds a driver, they appear here automatically; a team change never
+     matters because the portrait is keyed to the person, not the car.
+
+  2. If (1) is unavailable, the driver's own relayed F1 media URL, normalized:
+     the silent ``d_..._fallback_..._image.png`` directive is stripped so a
+     genuinely-missing asset returns a real 404 and the UI shows a clean
+     team-coloured initials avatar — never a silhouette masquerading as a
+     portrait. When F1 later publishes the asset it appears automatically.
+
+There is no Wikipedia, no image hashing, no placeholder detection, no liveness
+probing, no per-driver override, and no hardcoded portrait URL anywhere. The
+only constants are Formula1.com's own API endpoint and its public site key
+(shipped to every visitor's browser), both env-overridable.
 """
 from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import unicodedata
 
 from ..config import get_settings
 from ..models import RaceSession
-from .openf1_adapter import _get  # reuse the shared HTTP helper
+from .openf1_adapter import _get  # reuse the shared OpenF1 HTTP helper
 
 log = logging.getLogger("pitwall_iq")
 
-_TTL_S = 7 * 24 * 3600
-_MAX_MEETINGS = 24      # a whole season if needed — never stop one driver short
-_WIKI_TTL_S = 30 * 24 * 3600
-_WIKI_MISS_TTL_S = 24 * 3600   # retry known-misses daily (pages appear mid-season)
-_ALIVE_TTL_S = 14 * 24 * 3600  # a URL that served an image is trusted for two weeks
-_DEAD_TTL_S = 6 * 3600         # a dead URL is re-checked every few hours
+_SEASON_TTL_S = 7 * 24 * 3600
+_MAX_MEETINGS = 24   # walk a whole season of OpenF1 meetings if needed
+
+# Cloudinary "default image" directive that silently swaps in F1's grey
+# silhouette for any unpublished asset. Matched generically (any d_… segment
+# that names a fallback), never a specific driver or filename.
+_FALLBACK_DIRECTIVE = re.compile(r"/d_[^/]*fallback[^/]*", re.IGNORECASE)
 
 
 def _norm(text: str | None) -> str:
@@ -45,14 +73,132 @@ def _surname(full_name: str | None) -> str:
     return parts[-1] if parts else ""
 
 
-def year_map(year: int) -> dict[str, str]:
-    """identity-key -> headshot URL for a season, disk-cached.
+# --------------------------------------------------------------------------- #
+# The one transform every candidate URL goes through.
+# --------------------------------------------------------------------------- #
+def official_portrait_url(raw: str | None) -> str | None:
+    """Normalize a Formula1.com media URL to its direct-asset form.
 
-    Keys per driver: the TLA acronym ("LIN"), the car number ("#41"), and the
-    normalized surname ("lindblad")."""
-    path = get_settings().cache_dir / f"headshots_v3_{year}.json"
+    Removes the Cloudinary silent-fallback directive so a missing asset 404s
+    (→ clean initials avatar) instead of returning F1's silhouette with a 200.
+    Non-F1 URLs pass through unchanged; empty input yields None. Idempotent."""
+    if not raw:
+        return None
+    url = raw.strip()
+    if not url:
+        return None
+    if "formula1.com" in url.lower():
+        url = _FALLBACK_DIRECTIVE.sub("", url, count=1)
+    return url or None
+
+
+# --------------------------------------------------------------------------- #
+# Source 1 — Formula1.com's official driver-listing (the Drivers page data).
+# --------------------------------------------------------------------------- #
+def _listing_cache_path(year: int):
+    return get_settings().cache_dir / f"portraits_f1_listing_{year}.json"
+
+
+def _iter_driver_records(node):
+    """Walk arbitrary JSON, yielding dicts that look like a driver entry: a
+    name plus a formula1.com image URL somewhere inside. Deliberately schema-
+    tolerant so a change to F1's response shape degrades to 'no match' rather
+    than a crash."""
+    if isinstance(node, dict):
+        blob = " ".join(str(k).lower() for k in node.keys())
+        has_name = any(k in blob for k in ("firstname", "lastname", "name", "driver"))
+        img = _find_f1_image(node)
+        name = _find_name(node)
+        if has_name and img and name:
+            yield name, img
+        for v in node.values():
+            yield from _iter_driver_records(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _iter_driver_records(v)
+
+
+def _find_f1_image(d: dict) -> str | None:
+    for k, v in d.items():
+        if isinstance(v, str) and "formula1.com" in v.lower() and v.lower().endswith(
+                (".png", ".jpg", ".jpeg", ".webp")):
+            if any(t in k.lower() for t in ("image", "headshot", "photo", "portrait", "url")):
+                return v
+    # some payloads nest the URL one level down under an image object
+    for v in d.values():
+        if isinstance(v, dict):
+            u = _find_f1_image(v)
+            if u:
+                return u
+    return None
+
+
+def _find_name(d: dict) -> str | None:
+    first = next((str(v) for k, v in d.items()
+                  if "firstname" in k.lower().replace("_", "") and isinstance(v, str)), None)
+    last = next((str(v) for k, v in d.items()
+                 if "lastname" in k.lower().replace("_", "") and isinstance(v, str)), None)
+    if first and last:
+        return f"{first} {last}"
+    return next((str(v) for k, v in d.items()
+                 if k.lower() in ("name", "drivername", "fullname") and isinstance(v, str)), None)
+
+
+def f1_listing_map(year: int) -> dict[str, str]:
+    """normalized full name → official portrait URL, from Formula1.com's own
+    driver-listing API. Disk-cached per season. Any failure (offline, non-200,
+    unexpected shape, no key) returns {} so resolution safely falls through."""
+    path = _listing_cache_path(year)
     try:
-        if path.exists() and time.time() - path.stat().st_mtime < _TTL_S:
+        if path.exists() and time.time() - path.stat().st_mtime < _SEASON_TTL_S:
+            data = json.loads(path.read_text())
+            if data:
+                return data
+    except Exception:  # noqa: BLE001
+        pass
+
+    settings = get_settings()
+    base = settings.f1_content_api_base
+    key = settings.f1_content_api_key
+    if not base or not key:
+        return {}
+
+    out: dict[str, str] = {}
+    try:
+        import requests
+        resp = requests.get(base, params={"year": year},
+                            headers={"apikey": key, "locale": "en",
+                                     "User-Agent": "PitwallIQ/1.0 (F1 analysis app)"},
+                            timeout=settings.fetch_timeout)
+        resp.raise_for_status()
+        for name, img in _iter_driver_records(resp.json()):
+            k = _norm(name)
+            url = official_portrait_url(img)
+            if k and url and k not in out:
+                out[k] = url
+    except Exception as exc:  # noqa: BLE001
+        log.info("F1 driver-listing fetch failed for %s: %s", year, exc)
+        return {}
+
+    if out:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(out))
+        except Exception:  # noqa: BLE001
+            pass
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Source 2 — the driver's own relayed F1 media URL, gathered across the season
+# from OpenF1 (still Formula1.com assets), used only to fill gaps.
+# --------------------------------------------------------------------------- #
+def season_media_map(year: int) -> dict[str, str]:
+    """identity key (acronym / #number / surname) → normalized F1 media URL,
+    built from OpenF1's season meetings. Disk-cached; empty on any failure."""
+    path = get_settings().cache_dir / f"portraits_media_{year}.json"
+    try:
+        if path.exists() and time.time() - path.stat().st_mtime < _SEASON_TTL_S:
             data = json.loads(path.read_text())
             if data:
                 return data
@@ -65,16 +211,16 @@ def year_map(year: int) -> dict[str, str]:
                           key=lambda m: m.get("date_start", ""), reverse=True)
         for m in meetings[:_MAX_MEETINGS]:
             for d in _get("drivers", meeting_key=m.get("meeting_key")):
-                url = d.get("headshot_url")
+                url = official_portrait_url(d.get("headshot_url"))
                 if not url:
                     continue
-                for key in (d.get("name_acronym"),
-                            f"#{d.get('driver_number')}" if d.get("driver_number") else None,
-                            _surname(d.get("full_name")) or None):
-                    if key and key not in out:
-                        out[key] = url
+                for k in (d.get("name_acronym"),
+                          f"#{d.get('driver_number')}" if d.get("driver_number") else None,
+                          _surname(d.get("full_name")) or None):
+                    if k and k not in out:
+                        out[k] = url
     except Exception as exc:  # noqa: BLE001
-        log.info("headshot map fetch failed for %s: %s", year, exc)
+        log.info("season media map fetch failed for %s: %s", year, exc)
 
     if out:
         try:
@@ -86,227 +232,57 @@ def year_map(year: int) -> dict[str, str]:
 
 
 # --------------------------------------------------------------------------- #
-# URL liveness — the missing half of the pipeline.
-#
-# Root cause of the "one driver never gets a photo" class of bug: sources can
-# hand us a URL that 404s, and until now nothing anywhere distinguished
-# "has a URL" from "has a URL that actually serves an image". A dead string in
-# the session record short-circuited every later resolution stage, and the
-# browser (the only component that ever saw the 404) threw that knowledge away.
-# Every candidate URL is now health-checked before it is trusted, verdicts are
-# cached on disk, and the frontend reports load failures back so a URL that
-# dies later is invalidated and re-resolved on the next load.
+# Resolution + enrichment
 # --------------------------------------------------------------------------- #
-def _health_cache_path():
-    return get_settings().cache_dir / "portrait_url_health.json"
-
-
-def _health_cache() -> dict:
-    try:
-        return json.loads(_health_cache_path().read_text())
-    except Exception:  # noqa: BLE001
-        return {}
-
-
-def _health_save(cache: dict) -> None:
-    try:
-        _health_cache_path().parent.mkdir(parents=True, exist_ok=True)
-        _health_cache_path().write_text(json.dumps(cache))
-    except Exception:  # noqa: BLE001
-        pass
-
-
-def url_alive(url: str | None) -> bool:
-    """Does this URL actually serve an image right now? Disk-cached verdict.
-
-    Fail-open: if the check itself can't run (backend offline, source briefly
-    unreachable) we keep the last verdict, or assume alive without caching —
-    a flaky network must never mass-invalidate working portraits."""
-    if not url or not url.startswith(("http://", "https://")):
-        return False
-    cache = _health_cache()
-    hit = cache.get(url)
-    now = time.time()
-    if hit is not None:
-        ttl = _ALIVE_TTL_S if hit.get("ok") else _DEAD_TTL_S
-        if now - hit.get("ts", 0) < ttl:
-            return bool(hit.get("ok"))
-    try:
-        import requests
-        headers = {"User-Agent": "PitwallIQ/1.0 (F1 analysis app)"}
-        resp = requests.head(url, headers=headers, timeout=6, allow_redirects=True)
-        if resp.status_code in (403, 405, 501):  # some CDNs refuse HEAD
-            resp = requests.get(url, headers=headers, timeout=6, stream=True,
-                                allow_redirects=True)
-            resp.close()
-        ctype = resp.headers.get("content-type", "")
-        ok = resp.status_code == 200 and (not ctype or ctype.startswith("image/"))
-    except Exception as exc:  # noqa: BLE001
-        log.info("portrait health check inconclusive for %s: %s", url, exc)
-        return bool(hit.get("ok")) if hit is not None else True  # fail-open, uncached
-    cache[url] = {"ok": ok, "ts": now}
-    _health_save(cache)
-    return ok
-
-
-def mark_dead(url: str) -> None:
-    """The browser failed to load this URL — record it so the next session load
-    re-resolves past it instead of trusting it for another two weeks."""
-    if not url:
-        return
-    cache = _health_cache()
-    cache[url] = {"ok": False, "ts": time.time()}
-    _health_save(cache)
-    log.info("portrait URL reported dead by client: %s", url)
-
-
-def _wiki_cache_path():
-    return get_settings().cache_dir / "portraits_wiki.json"
-
-
-def _wiki_cache() -> dict:
-    try:
-        return json.loads(_wiki_cache_path().read_text())
-    except Exception:  # noqa: BLE001
-        return {}
-
-
-def _wiki_save(cache: dict) -> None:
-    try:
-        _wiki_cache_path().parent.mkdir(parents=True, exist_ok=True)
-        _wiki_cache_path().write_text(json.dumps(cache))
-    except Exception:  # noqa: BLE001
-        pass
-
-
-def _wiki_query(params: dict) -> dict:
-    import requests
-    r = requests.get("https://en.wikipedia.org/w/api.php",
-                     params={"format": "json", **params},
-                     headers={"User-Agent": "PitwallIQ/1.0 (F1 analysis app)"},
-                     timeout=get_settings().fetch_timeout)
-    r.raise_for_status()
-    return r.json()
-
-
-def _wiki_thumb_for_title(title: str) -> str | None:
-    data = _wiki_query({"action": "query", "titles": title, "redirects": 1,
-                        "prop": "pageimages", "pithumbsize": 512})
-    for page in data.get("query", {}).get("pages", {}).values():
-        url = page.get("thumbnail", {}).get("source")
-        if url:
-            return url
-    return None
-
-
-def wiki_portrait(full_name: str) -> str | None:
-    """Systemic last-resort portrait: Wikipedia's lead image for the driver.
-
-    This is what makes rookies, mid-season replacements and team-switchers
-    resolve automatically in future seasons without curated lists — every F1
-    race driver has a Wikipedia page, usually before their debut weekend.
-    Results (including misses) are disk-cached; misses retry daily because
-    pages and photos appear mid-season."""
-    key = _norm(full_name)
-    if not key:
-        return None
-    cache = _wiki_cache()
-    hit = cache.get(key)
-    now = time.time()
-    if hit:
-        ttl = _WIKI_TTL_S if hit.get("url") else _WIKI_MISS_TTL_S
-        if now - hit.get("ts", 0) < ttl:
-            return hit.get("url") or None
-    url = None
-    try:
-        url = _wiki_thumb_for_title(full_name)
-        if not url:
-            # disambiguation-safe retry: search restricted to racing drivers
-            data = _wiki_query({"action": "query", "list": "search", "srlimit": 1,
-                                "srsearch": f"{full_name} racing driver"})
-            results = data.get("query", {}).get("search", [])
-            if results:
-                url = _wiki_thumb_for_title(results[0]["title"])
-    except Exception as exc:  # noqa: BLE001
-        log.info("wikipedia portrait lookup failed for %s: %s", full_name, exc)
-        return (hit or {}).get("url") or None  # keep any stale value on network failure
-    cache[key] = {"url": url, "ts": now}
-    _wiki_save(cache)
-    return url
-
-
-def _lookup(mapping: dict[str, str], code: str, number: str | None, surname: str) -> tuple[str | None, str]:
-    """Try every identity key in order; report which one hit."""
-    if mapping.get(code):
-        return mapping[code], "acronym"
-    if number and mapping.get(f"#{number}"):
-        return mapping[f"#{number}"], "car-number"
-    if surname and mapping.get(surname):
-        return mapping[surname], "surname"
-    return None, "none"
-
-
-def _candidates(d, mapping: dict, prev: dict):
-    """Every URL the pipeline could use for this driver, in trust order."""
-    surname = _surname(d.name)
-    number = str(d.number) if d.number else None
-    yield "session", d.headshot_url
-    url, via = _lookup(mapping, d.code, number, surname)
-    yield f"map-{via}", url
-    if prev:
-        url, via = _lookup(prev, d.code, number, surname)
-        yield f"prev-year-{via}", url
-    yield "wikipedia", wiki_portrait(d.name)
-
-
 def resolve(session: RaceSession) -> list[dict]:
-    """Full per-driver resolution trace — what /api/debug/headshots serves, and
-    the exact logic enrich() applies. One place, so the debug view can't lie.
-
-    Every candidate — including the URL already in the session record — must
-    pass a liveness check before it's trusted. Dead candidates are recorded in
-    `rejected` so the first failing stage is visible, not guessed."""
-    mapping = year_map(session.year)
-    prev = (year_map(session.year - 1) if session.year - 1 >= 2023 else {})
+    """Per-driver portrait trace (what /api/debug/headshots serves and what
+    enrich() applies). Order, all Formula1.com: official listing by name →
+    the driver's own normalized media URL → season media map."""
+    listing = f1_listing_map(session.year)
+    media = season_media_map(session.year)
     out = []
     for d in session.drivers:
-        entry = {"code": d.code, "number": d.number, "name": d.name,
-                 "in_session_record": bool(d.headshot_url)}
-        rejected: list[dict] = []
+        number = str(d.number) if d.number else None
+        surname = _surname(d.name)
         url, via = None, "unresolved"
-        for stage, candidate in _candidates(d, mapping, prev):
-            if not candidate:
-                continue
-            if url_alive(candidate):
-                url, via = candidate, stage
-                break
-            rejected.append({"stage": stage, "url": candidate, "reason": "dead-url"})
-        entry.update(resolved_via=via, url=url, rejected=rejected)
-        out.append(entry)
+
+        cand = listing.get(_norm(d.name))
+        if cand:
+            url, via = cand, "f1-listing"
+        if not url:
+            cand = official_portrait_url(d.headshot_url)
+            if cand:
+                url, via = cand, "session-media"
+        if not url:
+            cand = (media.get(d.code) or (media.get(f"#{number}") if number else None)
+                    or (media.get(surname) if surname else None))
+            if cand:
+                url, via = cand, "season-media"
+
+        out.append({"code": d.code, "number": d.number, "name": d.name,
+                    "resolved_via": via, "url": url})
     return out
 
 
 def enrich(session: RaceSession) -> bool:
-    """Heal every driver's portrait using resolve(): fill the missing AND
-    replace URLs that no longer load (sources ship dead links; earlier builds
-    persisted them into the session cache). Returns True if anything changed,
-    so the caller refreshes the cached session."""
+    """Set every driver's headshot_url from resolve(). Returns True if anything
+    changed, so the caller can refresh the cached session."""
     if session.year < 2023:  # OpenF1 coverage starts 2023
-        return False
+        # still normalize any URL the session already carries
+        changed = False
+        for d in session.drivers:
+            norm = official_portrait_url(d.headshot_url)
+            if norm != d.headshot_url:
+                d.headshot_url = norm
+                changed = True
+        return changed
+
     changed = False
     by_code = {r["code"]: r for r in resolve(session)}
-    unresolved = []
     for d in session.drivers:
         r = by_code.get(d.code)
-        if not r:
-            continue
-        url = r.get("url")
+        url = r.get("url") if r else None
         if url != d.headshot_url:
-            d.headshot_url = url  # may be None: a dead URL is cleared, not kept
+            d.headshot_url = url
             changed = True
-        if not url:
-            unresolved.append(d.code)
-    if unresolved:
-        log.info("headshots unresolved for %s %s: %s — check /api/debug/headshots",
-                 session.year, session.session_type, ", ".join(unresolved))
     return changed

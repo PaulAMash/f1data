@@ -1,12 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
 import type { Driver } from "@/lib/types";
-import { reportPortraitFailure } from "@/lib/api";
 import { cx } from "@/lib/format";
 
-// A friendly driver identity: portrait where the pipeline resolved one, else a
-// clean team-coloured initials avatar. Used across all views so casual fans
-// see names + teams, not just VER/HAM.
+// A friendly driver identity: the official Formula1.com portrait where the
+// provider resolved one, else a clean team-coloured initials avatar. Used
+// across all views so casual fans see names + teams, not just VER/HAM.
 export function DriverAvatar({ driver, size = 28 }: { driver?: Driver | null; size?: number }) {
   const url = driver?.headshot_url ?? null;
   const [broken, setBroken] = useState(false);
@@ -21,17 +20,11 @@ export function DriverAvatar({ driver, size = 28 }: { driver?: Driver | null; si
     <span className="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full"
       style={{ width: size, height: size, background: `${color}22`, boxShadow: `inset 0 0 0 1.5px ${color}` }}>
       {showImg ? (
-        // no-referrer: some image CDNs reject hotlinked requests that carry a
-        // referrer. A load failure is never swallowed silently anymore: it is
-        // reported to the backend, which marks the URL dead and re-resolves
-        // this driver's portrait from the next stage on the following load.
+        // no-referrer: F1's image CDN rejects hotlinked requests that carry a
+        // referrer. If the asset is genuinely missing the load fails and we
+        // fall back to the clean initials avatar — never a silhouette.
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt={driver!.name}
-          onError={() => {
-            setBroken(true);
-            console.warn(`[pitwall] portrait failed to load for ${driver?.code}: ${url}`);
-            reportPortraitFailure(url);
-          }}
+        <img src={url} alt={driver!.name} onError={() => setBroken(true)}
           referrerPolicy="no-referrer" loading="lazy"
           className="h-full w-full object-cover" />
       ) : (
