@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { useIsSimple } from "@/lib/mode";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { InfoTip } from "@/components/ui/InfoTip";
-import { Skeleton } from "@/components/ui/misc";
+import { LoadingState } from "@/components/ui/misc";
 import { cx } from "@/lib/format";
 
 const CURRENT = new Date().getFullYear();
@@ -98,7 +98,8 @@ export function HistoricalExplorer() {
 
         {/* body */}
         {loading ? (
-          <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-9" />)}</div>
+          <LoadingState title="Fetching results…"
+            hint="Pulling the official classification from the archive — this is usually quick." size={32} />
         ) : isUnavailableSession ? (
           <Unavailable note={sessions.note ?? `${session} isn't available from the historical source for this event.`} />
         ) : results?.error ? (

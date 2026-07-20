@@ -19,6 +19,7 @@ from ..models import (
     QualifyingSummary,
     RaceSession,
 )
+from .normalize import classify_incident_message
 
 
 def compute_qualifying(session: RaceSession) -> QualifyingSummary:
@@ -223,32 +224,45 @@ def _red_flags(session: RaceSession) -> list[str]:
     return out[:4]
 
 
-_CAUSE_VERBS = [
-    (r"CRASH|BARRIER|WALL", "crashed"),
-    (r"\bSPUN|SPIN\b", "spun"),
-    (r"STOPPED", "stopped on track"),
-    (r"\bFIRE\b", "stopped with a fire"),
-    (r"DEBRIS", "left debris on the circuit"),
-]
-
-
 def _interruptions(session: RaceSession) -> list[dict]:
     """Structured parse of each red flag: who triggered it, what happened,
-    where — so the UI can explain the stoppage instead of echoing 'RED FLAG'."""
-    name_by_code = {d.code: d.name for d in session.drivers}
+    where. Attribution uses the same accuracy-first interpreter as the race
+    engine — a red-flag line that only references a car incidentally (track
+    limits, investigation) never attributes it, and the cause is pulled from
+    the nearest genuine incident message when the red-flag line itself has none.
+    Never fabricates: no cause/driver is asserted unless the data supports it."""
+    incident_msgs = [m for m in session.race_control if m.message]
     out: list[dict] = []
-    for m in session.race_control:
+    for i, m in enumerate(session.race_control):
         msg = (m.message or "").strip()
         if not msg or not re.search(r"\bRED\s+FLAG\b", msg, re.I):
             continue
-        code = (re.search(r"\(([A-Z]{2,3})\)", msg) or [None, None])[1]
+
+        names, verb = classify_incident_message(session, msg)
+        # if the red-flag line itself names no genuine incident, borrow the
+        # nearest real incident message (by lap) around it
+        if not verb:
+            near = sorted(
+                (mm for mm in incident_msgs
+                 if mm is not m and mm.lap is not None and m.lap is not None
+                 and abs(mm.lap - m.lap) <= 1),
+                key=lambda mm: abs((mm.lap or 0) - (m.lap or 0)))
+            for mm in near:
+                nnames, nverb = classify_incident_message(session, mm.message)
+                if nverb:
+                    names, verb = nnames, nverb
+                    break
+
+        code = names_code = None
+        if names:
+            names_code = next((d.code for d in session.drivers if d.name == names[0]), None)
+            code = names_code
         turn_m = re.search(r"TURN\s*\d+", msg, re.I)
-        cause = next((v for pat, v in _CAUSE_VERBS if re.search(pat, msg, re.I)), None)
         out.append({
             "message": msg[:160],
             "driver": code,
-            "driver_name": name_by_code.get(code) if code else None,
-            "cause": cause,
+            "driver_name": names[0] if names else None,
+            "cause": verb,
             "turn": turn_m.group(0).title() if turn_m else None,
             "lap": m.lap,
         })

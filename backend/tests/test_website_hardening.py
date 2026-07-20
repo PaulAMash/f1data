@@ -257,3 +257,68 @@ def test_qualifying_summary():
     # analyst extras exist
     assert q.biggest_disappointment and q.team_progression and q.conditions
 
+
+
+def test_sc_cause_ignores_incidental_mentions_and_names_all_cars():
+    """Regression for the Belgian-GP bug: an incidental 'CAR 23 (ALB) TRACK
+    LIMITS' note near the window start must NOT be treated as the Safety Car
+    cause. The genuine collision message wins and names every car involved."""
+    from app.adapters.mock_adapter import get_mock_session
+    from app.analysis.normalize import attach_window_causes
+    from app.models import RaceControlEvent
+
+    s = get_mock_session(2026, "Belgian Grand Prix", "Race")
+    w = s.track_status_windows[0]
+    w.cause = None; w.start_lap = 1; w.end_lap = 3
+    for c in s.classification:
+        c.retired = False
+    s.race_control = [
+        RaceControlEvent(lap=1, category="Other",
+                         message="CAR 23 (ALB) NOTED - TRACK LIMITS AT TURN 9"),
+        RaceControlEvent(lap=1, category="SafetyCar",
+                         message="INCIDENT INVOLVING CARS 44 (HAM) AND 63 (RUS) - TURN 1"),
+        RaceControlEvent(lap=1, category="SafetyCar", message="SAFETY CAR DEPLOYED"),
+    ]
+    attach_window_causes(s)
+    assert w.cause == "Lewis Hamilton and George Russell collided"
+    assert "Albon" not in w.cause
+
+
+def test_sc_cause_undetermined_when_no_official_incident():
+    """When the official feed names no genuine incident and no single clear
+    retirement coincides, the cause is left undetermined — never invented."""
+    from app.adapters.mock_adapter import get_mock_session
+    from app.analysis.normalize import attach_window_causes
+    from app.models import RaceControlEvent
+
+    s = get_mock_session(2026, "Belgian Grand Prix", "Race")
+    w = s.track_status_windows[0]
+    w.cause = None; w.start_lap = 1; w.end_lap = 3
+    for c in s.classification:
+        c.retired = False
+    s.race_control = [
+        RaceControlEvent(lap=1, category="Other", message="CAR 23 (ALB) NOTED - TRACK LIMITS"),
+        RaceControlEvent(lap=1, category="Other", message="DRS DISABLED"),
+    ]
+    attach_window_causes(s)
+    assert w.cause is None
+
+
+def test_turning_point_states_undetermined_cause_explicitly():
+    """The race story must say the trigger wasn't officially recorded rather
+    than fabricating or silently omitting it."""
+    from app.adapters.mock_adapter import get_mock_session
+    from app.analysis.engine import analyze
+    from app.models import RaceControlEvent
+
+    s = get_mock_session(2026, "Belgian Grand Prix", "Race")
+    for c in s.classification:
+        c.retired = False
+    # strip any cause-bearing messages so the window is genuinely undetermined
+    s.race_control = [RaceControlEvent(lap=w.start_lap, category="Other", message="DRS DISABLED")
+                      for w in s.track_status_windows]
+    for w in s.track_status_windows:
+        w.cause = None
+    strategy, _ = analyze(s)
+    tp = " ".join(i.detail for i in strategy.turning_points)
+    assert "didn't record" in tp or "not" in tp.lower()

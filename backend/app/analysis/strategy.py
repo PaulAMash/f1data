@@ -25,6 +25,7 @@ from ..models import (
     TrackStatusWindow,
     UndercutEvent,
 )
+from .normalize import official_incident_cause
 
 PIT_LOSS_GREEN_EST = 20.5   # used to value VSC/SC cheap stops when lane time is unknown
 
@@ -348,20 +349,6 @@ def _best_pit_timing(session: RaceSession) -> dict | None:
     return None
 
 
-def _window_trigger(session: RaceSession, w) -> str | None:
-    """The official race-control message closest to the window start — the cause."""
-    import re as _re
-    cands = [m for m in session.race_control
-             if m.lap is not None and w.start_lap - 1 <= m.lap <= w.start_lap + 1
-             and m.message
-             and not _re.search(r"(?i)\b(clear|ending|will end|in this lap)\b", m.message)]
-    for m in cands:  # prefer messages naming the incident / car
-        if _re.search(r"(?i)incident|car \d+|debris|crash|stopped|collision|spun|puncture", m.message):
-            return m.message
-    dep = [m for m in cands if _re.search(r"(?i)deployed|virtual safety car|safety car", m.message)]
-    return (dep[0].message if dep else cands[0].message) if cands else None
-
-
 def _turning_points(session: RaceSession, pace_by_driver) -> list[RaceInsight]:
     out: list[RaceInsight] = []
 
@@ -369,11 +356,17 @@ def _turning_points(session: RaceSession, pace_by_driver) -> list[RaceInsight]:
     for w in session.track_status_windows:
         pitted = sorted({ps.driver for ps in session.pit_stops
                          if w.start_lap <= ps.lap <= w.end_lap})
-        cause_txt = f" Brought out when {w.cause}." if w.cause else ""
+        # cause + verbatim trigger come from the one shared, accuracy-first
+        # extractor — never a fabricated or first-car-mentioned attribution
+        cause, trigger = official_incident_cause(session, w)
+        cause = cause or w.cause
+        if cause:
+            cause_txt = f" Brought out when {cause}."
+        else:
+            cause_txt = " The official race-control feed didn't record what triggered it."
         detail = (f"{w.label} from lap {w.start_lap} to {w.end_lap}.{cause_txt} "
                   + (f"Cheap-stop window taken by {', '.join(pitted)}." if pitted
                      else "No cars converted a stop here."))
-        trigger = _window_trigger(session, w)
         explanation = (
             "While the field circulates slowly, a pit stop costs roughly 10 seconds less than at "
             "racing speed — so anyone due a stop who pitted here effectively jumped the cars that "

@@ -64,61 +64,150 @@ def fill_team_colors(session: RaceSession) -> None:
 
 # --------------------------------------------------------------------------- #
 # VSC / Safety-Car cause attribution
+#
+# Accuracy over presentation: a neutralization's cause is taken ONLY from
+# official FIA race-control messages that genuinely describe an incident, never
+# from a bare car mention. Messages that merely reference a car for an
+# unrelated reason (track limits, "noted", under investigation, penalties, blue
+# flags, false-start checks) are explicitly rejected so they can never be
+# mistaken for the trigger. When the official feed does not conclusively
+# identify a cause we say so, rather than inventing one.
 # --------------------------------------------------------------------------- #
-_CAR_RE = re.compile(r"CARS?\s+(\d+)\s*\(([A-Z]{3})\)", re.I)
+# every car cited in a message. FIA writes "CARS 44 (HAM) AND 63 (RUS)" — one
+# "CARS" for both — so we match the bare "<number> (COD)" token, which catches
+# every car whether or not it carries its own CAR/CARS prefix.
+_ALL_CARS_RE = re.compile(r"\b(\d{1,2})\s*\(([A-Z]{2,3})\)")
+
+# a car is mentioned, but NOT because it caused anything — never a trigger
+_NON_CAUSE_RE = re.compile(
+    r"(?i)\b(track\s*limits?|lap\s*deleted|deleted|noted|under\s+investigation|"
+    r"will\s+be\s+investigated|no\s+further\s+action|investigat|penal|reprimand|"
+    r"warning|black[\s-]*and[\s-]*white|blue\s+flag|false\s+start|unsafe\s+release|"
+    r"impeding|forced\s+off|left\s+the\s+track|pit\s+lane\s+speed)\b")
+
+# genuine incident descriptors, strongest first; (regex, verb, severity rank)
+_INCIDENT_PATTERNS = [
+    (re.compile(r"(?i)\b(collision|collided|contact|clash|incident\s+involving)\b"), "collided", 0),
+    (re.compile(r"(?i)\b(crash|accident|into\s+(the\s+)?(barrier|wall)|hit\s+(the\s+)?(barrier|wall))\b"), "crashed", 1),
+    (re.compile(r"(?i)\b(spun|spin)\b"), "spun", 2),
+    (re.compile(r"(?i)\b(stopped|stationary|beached|stranded|off\s+at)\b"), "stopped on track", 3),
+    (re.compile(r"(?i)\bpuncture\b"), "had a puncture", 4),
+    (re.compile(r"(?i)\bdebris\b"), "left debris on track", 5),
+    (re.compile(r"(?i)\bincident\b"), "was involved in an incident", 6),
+]
 
 
-def _incident_verb(message: str) -> str:
-    m = message.lower()
-    if "crash" in m or "accident" in m or "barrier" in m or "wall" in m:
-        return "crashed"
-    if "collision" in m:
-        return "was involved in a collision"
-    if "spun" in m or "spin" in m:
-        return "spun"
-    if "stopped" in m:
-        return "stopped on track"
-    if "puncture" in m:
-        return "had a puncture"
-    if "debris" in m:
-        return "left debris on track"
-    return "had an incident"
+def _cars_in(message: str, by_code: dict, by_num: dict) -> list[str]:
+    """Driver names for every car cited in a message, in order, de-duplicated."""
+    names: list[str] = []
+    for num, code in _ALL_CARS_RE.findall(message):
+        drv = by_code.get(code.upper()) or by_num.get(num)
+        name = drv.name if drv else code.upper()
+        if name not in names:
+            names.append(name)
+    return names
 
 
-def attach_window_causes(session: RaceSession) -> None:
-    """Work out who brought out each VSC / Safety Car, from the official
-    race-control messages first, then from retirements at the window start."""
+# neutral phrasing when an official incident is logged but names no car — still
+# accurate, just not attributed to a driver (fits "Brought out when {…}")
+_NEUTRAL = {
+    "collided": "cars collided",
+    "crashed": "a car crashed",
+    "spun": "a car spun",
+    "stopped on track": "a car stopped on track",
+    "had a puncture": "a car had a puncture",
+    "left debris on track": "debris was left on track",
+    "was involved in an incident": "an incident on track",
+}
+
+
+def _phrase(names: list[str], verb: str) -> str | None:
+    """Human cause phrase from the drivers involved and the incident verb.
+    A car-less incident message still yields a neutral but official cause."""
+    if not names:
+        return _NEUTRAL.get(verb)
+    if verb == "collided":
+        if len(names) >= 2:
+            head = " and ".join(names[:2])
+            more = f" (+{len(names) - 2} more)" if len(names) > 2 else ""
+            return f"{head} collided{more}"
+        return f"{names[0]} was involved in a collision"
+    return f"{names[0]} {verb}"
+
+
+def classify_incident_message(session: RaceSession, message: str) -> tuple[list[str], str | None]:
+    """(driver names, incident verb) if the message genuinely describes an
+    incident and is not an incidental non-cause mention (track limits, noted,
+    under investigation, penalty…); else ([], None). Used wherever a single
+    race-control line needs interpreting (e.g. qualifying red flags)."""
+    if not message or _NON_CAUSE_RE.search(message):
+        return [], None
+    by_num = {str(d.number): d for d in session.drivers}
+    by_code = {d.code: d for d in session.drivers}
+    for pat, verb, _rank in _INCIDENT_PATTERNS:
+        if pat.search(message):
+            return _cars_in(message, by_code, by_num), verb
+    return [], None
+
+
+def official_incident_cause(session: RaceSession, w) -> tuple[str | None, str | None]:
+    """(human cause, verbatim official message) for a window, or (None, None)
+    if no official race-control message conclusively identifies the cause.
+    Best genuine-incident message wins — never the first car mentioned."""
     by_num = {str(d.number): d for d in session.drivers}
     by_code = {d.code: d for d in session.drivers}
 
+    for span in (1, 2, 3):   # widen only if a tighter window found nothing
+        # rank: a car-naming message beats a car-less one, then by incident
+        # severity, then by proximity to the window start
+        best: tuple[tuple, list[str], str, str] | None = None
+        for m in session.race_control:
+            if not m.message or m.lap is None:
+                continue
+            if not (w.start_lap - span <= m.lap <= w.start_lap + 1):
+                continue
+            if _NON_CAUSE_RE.search(m.message):
+                continue   # incidental car mention — never a trigger
+            for pat, verb, rank in _INCIDENT_PATTERNS:
+                if pat.search(m.message):
+                    names = _cars_in(m.message, by_code, by_num)
+                    key = (0 if names else 1, rank, abs(m.lap - w.start_lap))
+                    if best is None or key < best[0]:
+                        best = (key, names, verb, m.message.strip())
+                    break
+        if best:
+            _, names, verb, message = best
+            phrase = _phrase(names, verb)
+            if phrase:
+                return phrase, message
+            # an official incident with no car named — neutral, still official
+            return "an unidentified incident", message
+    return None, None
+
+
+def attach_window_causes(session: RaceSession) -> None:
+    """Set each VSC / Safety-Car window's cause: official race-control incident
+    message first (authoritative), then a cautious single-retirement inference,
+    else left unset so the UI states the cause was not officially recorded."""
     for w in session.track_status_windows:
         if w.cause:
             continue
-        cause: str | None = None
 
-        # 1) an official message naming the car, right around the window start
-        msgs = [m for m in session.race_control
-                if m.lap is not None and w.start_lap - 1 <= m.lap <= w.start_lap + 1
-                and m.message]
-        for m in msgs:
-            hit = _CAR_RE.search(m.message)
-            if not hit:
-                continue
-            drv = by_code.get(hit.group(2).upper()) or by_num.get(hit.group(1))
-            name = drv.name if drv else hit.group(2).upper()
-            cause = f"{name} {_incident_verb(m.message)}"
-            break
+        cause, _msg = official_incident_cause(session, w)
 
-        # 2) fall back to a retirement at (or just before) the window start
+        # cautious inference — ONLY when the official feed named no cause AND a
+        # single car retired right at the window start (an unambiguous
+        # coincidence). Anything less is left undetermined, not guessed.
         if not cause:
-            candidates = [c for c in session.classification
-                          if c.retired and c.laps_completed is not None
-                          and w.start_lap - 2 <= c.laps_completed <= w.end_lap]
-            if candidates:
-                c = min(candidates, key=lambda r: abs((r.laps_completed or 0) - w.start_lap))
+            retirements = [c for c in session.classification
+                           if c.retired and c.laps_completed is not None
+                           and w.start_lap - 1 <= c.laps_completed <= w.start_lap + 1]
+            if len(retirements) == 1:
+                c = retirements[0]
                 reason = (c.retirement_reason or "").strip()
-                cause = f"{c.name} retired" + (
-                    f" ({reason.lower()})" if reason and reason.lower() not in ("retired", "dnf") else "")
+                extra = (f" ({reason.lower()})"
+                         if reason and reason.lower() not in ("retired", "dnf") else "")
+                cause = f"{c.name} retired{extra}"
 
         w.cause = cause
 

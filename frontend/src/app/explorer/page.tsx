@@ -9,7 +9,7 @@ import { RaceSelector, type Selection } from "@/components/explorer/RaceSelector
 import { Tabs } from "@/components/ui/Tabs";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { InfoTip } from "@/components/ui/InfoTip";
-import { Skeleton, EmptyState } from "@/components/ui/misc";
+import { Skeleton, EmptyState, LoadingState } from "@/components/ui/misc";
 import { RaceStory } from "@/components/dashboard/RaceStory";
 import { PracticeView } from "@/components/dashboard/PracticeView";
 import { QualifyingView } from "@/components/dashboard/QualifyingView";
@@ -379,15 +379,13 @@ function Section({ title, info, children }: { title: string; info?: string; chil
 function LoadingDashboard() {
   return (
     <div className="space-y-4">
-      <Skeleton className="h-40" />
+      {/* prominent, centered "we're working" state so a first load never looks
+          frozen; skeletons hint at the layout that's coming underneath */}
+      <Card><LoadingState /></Card>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
       </div>
       <Skeleton className="h-56" />
-      <p className="text-center text-xs text-ink-faint">
-        First load of a session fetches lap-by-lap data from live timing sources — it can
-        take a little while. Once loaded, it&apos;s cached and instant.
-      </p>
     </div>
   );
 }

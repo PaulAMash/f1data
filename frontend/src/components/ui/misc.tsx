@@ -19,6 +19,28 @@ export function Spinner({ size = 18 }: { size?: number }) {
   );
 }
 
+/**
+ * Centered "we're fetching data" state — the same everywhere the user waits on
+ * the backend, so a first load never looks frozen. Announces itself to screen
+ * readers and, by default, warns that the first load can take up to a minute.
+ */
+export function LoadingState({
+  title = "Fetching session data…",
+  hint = "The first load can take up to a minute while we pull and process the lap-by-lap timing data. It's cached and instant after that.",
+  size = 40,
+}: { title?: string; hint?: string; size?: number }) {
+  return (
+    <div role="status" aria-live="polite"
+      className="flex flex-col items-center justify-center gap-4 px-6 py-16 text-center">
+      <Spinner size={size} />
+      <div>
+        <p className="text-sm font-medium text-ink">{title}</p>
+        {hint && <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-ink-faint">{hint}</p>}
+      </div>
+    </div>
+  );
+}
+
 export function EmptyState({
   title, hint, icon,
 }: { title: string; hint?: string; icon?: React.ReactNode }) {

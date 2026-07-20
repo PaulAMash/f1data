@@ -171,11 +171,26 @@ def f1_listing_map(year: int) -> dict[str, str]:
                                      "User-Agent": "PitwallIQ/1.0 (F1 analysis app)"},
                             timeout=settings.fetch_timeout)
         resp.raise_for_status()
-        for name, img in _iter_driver_records(resp.json()):
+        records = list(_iter_driver_records(resp.json()))
+        for name, img in records:
             k = _norm(name)
             url = official_portrait_url(img)
             if k and url and k not in out:
                 out[k] = url
+        # Robustness: also key by surname, but ONLY for surnames unique in the
+        # listing (no collision risk). This is what lets a driver still match
+        # when the two sources spell the full name slightly differently — the
+        # realistic way a single rookie can miss the exact-name lookup while
+        # every established driver matches. Generic, no per-driver code.
+        surname_counts: dict[str, int] = {}
+        for name, _img in records:
+            surname_counts[_surname(name)] = surname_counts.get(_surname(name), 0) + 1
+        for name, img in records:
+            sn = _surname(name)
+            url = official_portrait_url(img)
+            key_sn = f"surname:{sn}"
+            if sn and url and surname_counts[sn] == 1 and key_sn not in out:
+                out[key_sn] = url
     except Exception as exc:  # noqa: BLE001
         log.info("F1 driver-listing fetch failed for %s: %s", year, exc)
         return {}
@@ -246,7 +261,7 @@ def resolve(session: RaceSession) -> list[dict]:
         surname = _surname(d.name)
         url, via = None, "unresolved"
 
-        cand = listing.get(_norm(d.name))
+        cand = listing.get(_norm(d.name)) or listing.get(f"surname:{surname}")
         if cand:
             url, via = cand, "f1-listing"
         if not url:
