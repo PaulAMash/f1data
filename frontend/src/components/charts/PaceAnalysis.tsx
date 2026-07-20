@@ -4,7 +4,7 @@ import {
   CartesianGrid, Line, LineChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { Building2, User } from "lucide-react";
-import type { DriverPaceSummary, RaceSession } from "@/lib/types";
+import type { ClassificationRow, DriverPaceSummary, RaceSession } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { Term } from "@/components/ui/Term";
@@ -13,6 +13,16 @@ import { useIsSimple } from "@/lib/mode";
 import { cx, fmtLap } from "@/lib/format";
 
 type PaceView = "drivers" | "teams";
+
+// Which section a driver belongs in, from the official classification only.
+type PaceGroup = "finisher" | "dnf" | "dns" | "dsq";
+function statusGroupOf(c?: ClassificationRow): PaceGroup {
+  const st = (c?.status ?? "").toLowerCase();
+  if (/disqualif|dsq|excluded/.test(st)) return "dsq";
+  if (/did not start|dns|withdrawn/.test(st)) return "dns";
+  if (c?.retired || /\bdnf\b|retired/.test(st)) return "dnf";
+  return "finisher";
+}
 
 interface TeamPace {
   team: string;
@@ -41,6 +51,40 @@ export function PaceAnalysis({
     }),
     [pace],
   );
+  const classByDriver = useMemo(() => {
+    const m = new Map<string, ClassificationRow>();
+    for (const c of session.classification) m.set(c.driver, c);
+    return m;
+  }, [session]);
+
+  // Advanced-table grouping: classified finishers first (ordered by pace,
+  // exactly as today), then a Retired (DNF) section, then DNS / DSQ if present.
+  // This changes ONLY the grouping/ordering shown — never how pace is computed
+  // or ranked. Finishers keep their raw pace_rank; the DNF section is ordered by
+  // laps completed (most first) as required.
+  const sections = useMemo(() => {
+    const finishers: DriverPaceSummary[] = [];
+    const dnf: DriverPaceSummary[] = [];
+    const dns: DriverPaceSummary[] = [];
+    const dsq: DriverPaceSummary[] = [];
+    for (const p of pace) {
+      const g = statusGroupOf(classByDriver.get(p.driver));
+      (g === "dsq" ? dsq : g === "dns" ? dns : g === "dnf" ? dnf : finishers).push(p);
+    }
+    const laps = (p: DriverPaceSummary) => classByDriver.get(p.driver)?.laps_completed ?? -1;
+    // finishers: by pace rank (unchanged, stable)
+    finishers.sort((a, b) => (a.pace_rank ?? 999) - (b.pace_rank ?? 999));
+    // DNF / DSQ: most laps completed first, pace rank as a stable tiebreak
+    const byLaps = (a: DriverPaceSummary, b: DriverPaceSummary) =>
+      (laps(b) - laps(a)) || (a.pace_rank ?? 999) - (b.pace_rank ?? 999);
+    dnf.sort(byLaps);
+    dsq.sort(byLaps);
+    // DNS ran nothing — order by grid so it's at least deterministic
+    dns.sort((a, b) =>
+      (classByDriver.get(a.driver)?.grid ?? 99) - (classByDriver.get(b.driver)?.grid ?? 99));
+    return { finishers, dnf, dns, dsq };
+  }, [pace, classByDriver]);
+
   // which drivers to plot: highlighted set, else top 5 on pace
   const plot = selected.length ? selected : ranked.slice(0, 5).map((p) => p.driver);
   const plotKey = plot.join(",");
@@ -217,53 +261,80 @@ export function PaceAnalysis({
                 </tr>
               </thead>
               <tbody>
-                {ranked.map((p) => {
-                  // A driver whose pace couldn't be evaluated (retired / DSQ /
-                  // DNS / too few clean laps) is dimmed, and the field-relative
-                  // metrics that would mislead on a tiny sample (rank, clean-air
-                  // pace, consistency) show "—". Raw best/median laps remain —
-                  // those are real measurements.
-                  const unranked = p.pace_evaluated === false;
-                  return (
-                  <tr key={p.driver}
-                    className={cx("border-b border-white/[0.04]",
-                      selected.includes(p.driver) && "bg-accent/[0.05]", unranked && "opacity-55")}>
-                    <td className="py-2 pr-3 tabular-nums text-ink-faint">{unranked ? "—" : (p.pace_rank ?? "—")}</td>
-                    <td className="py-2 pr-3">
-                      <span className="flex items-center gap-2">
-                        {/* fixed-width identity block so the tyre-limited badges
-                            line up in a clean column for every driver */}
-                        <DriverBadge driver={session.drivers.find((d) => d.code === p.driver)}
-                          code={p.driver} name={p.name} team={p.team} teamColor={p.team_color}
-                          size={26} className="w-48 min-w-0" />
-                        {p.tyre_limited && !unranked && (
-                          <Term term="tyre-limited">
-                            <Badge tone="bad" className="whitespace-nowrap">tyre-limited</Badge>
-                          </Term>
-                        )}
-                      </span>
-                    </td>
-                    <td className="py-2 pr-3 tabular-nums text-speed">{unranked ? "—" : fmtLap(p.clean_air_pace)}</td>
-                    <td className="py-2 pr-3 tabular-nums text-ink-muted">{fmtLap(p.best_lap)}</td>
-                    <td className="py-2 pr-3 tabular-nums text-ink-muted">{fmtLap(p.median_lap)}</td>
-                    <td className="py-2 pr-3">
-                      {unranked ? <span className="text-ink-faint">—</span>
-                        : <ConsistencyBar score={p.consistency_score} />}
-                    </td>
-                    <td className="py-2 pr-3 tabular-nums text-ink-muted">{p.traffic_laps}</td>
-                    <td className={cx("max-w-[24rem] py-2 pr-2 text-xs leading-relaxed",
-                      unranked ? "italic text-ink-faint" : "text-ink-muted")}>
-                      {p.verdict}
-                    </td>
-                  </tr>
-                  );
-                })}
+                {sections.finishers.map((p) => (
+                  <PaceRow key={p.driver} p={p} session={session} selected={selected} />
+                ))}
+                <PaceSection label="Retired (DNF)" rows={sections.dnf} session={session} selected={selected} />
+                <PaceSection label="Did not start (DNS)" rows={sections.dns} session={session} selected={selected} />
+                <PaceSection label="Disqualified (DSQ)" rows={sections.dsq} session={session} selected={selected} />
               </tbody>
             </table>
           </div>
         </>
       )}
     </div>
+  );
+}
+
+/* ---- one pace-table row, reused for finishers and every DNF/DNS/DSQ row ---- */
+function PaceRow({ p, session, selected }: {
+  p: DriverPaceSummary; session: RaceSession; selected: string[];
+}) {
+  // A driver whose pace couldn't be evaluated (retired / DSQ / DNS / too few
+  // clean laps) is dimmed, and the field-relative metrics that would mislead on
+  // a tiny sample (rank, clean-air pace, consistency) show "—". Raw best/median
+  // laps remain — those are real measurements.
+  const unranked = p.pace_evaluated === false;
+  return (
+    <tr className={cx("border-b border-white/[0.04]",
+      selected.includes(p.driver) && "bg-accent/[0.05]", unranked && "opacity-55")}>
+      <td className="py-2 pr-3 tabular-nums text-ink-faint">{unranked ? "—" : (p.pace_rank ?? "—")}</td>
+      <td className="py-2 pr-3">
+        <span className="flex items-center gap-2">
+          {/* fixed-width identity block so the tyre-limited badges line up in a
+              clean column for every driver */}
+          <DriverBadge driver={session.drivers.find((d) => d.code === p.driver)}
+            code={p.driver} name={p.name} team={p.team} teamColor={p.team_color}
+            size={26} className="w-48 min-w-0" />
+          {p.tyre_limited && !unranked && (
+            <Term term="tyre-limited">
+              <Badge tone="bad" className="whitespace-nowrap">tyre-limited</Badge>
+            </Term>
+          )}
+        </span>
+      </td>
+      <td className="py-2 pr-3 tabular-nums text-speed">{unranked ? "—" : fmtLap(p.clean_air_pace)}</td>
+      <td className="py-2 pr-3 tabular-nums text-ink-muted">{fmtLap(p.best_lap)}</td>
+      <td className="py-2 pr-3 tabular-nums text-ink-muted">{fmtLap(p.median_lap)}</td>
+      <td className="py-2 pr-3">
+        {unranked ? <span className="text-ink-faint">—</span>
+          : <ConsistencyBar score={p.consistency_score} />}
+      </td>
+      <td className="py-2 pr-3 tabular-nums text-ink-muted">{p.traffic_laps}</td>
+      <td className={cx("max-w-[24rem] py-2 pr-2 text-xs leading-relaxed",
+        unranked ? "italic text-ink-faint" : "text-ink-muted")}>
+        {p.verdict}
+      </td>
+    </tr>
+  );
+}
+
+/* ---- a labelled divider + its rows, kept inside the same table so it reads as
+       one continuous list (renders nothing when the group is empty) ---- */
+function PaceSection({ label, rows, session, selected }: {
+  label: string; rows: DriverPaceSummary[]; session: RaceSession; selected: string[];
+}) {
+  if (!rows.length) return null;
+  return (
+    <>
+      <tr>
+        <td colSpan={8}
+          className="border-t border-white/[0.08] bg-white/[0.015] px-3 pb-1.5 pt-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+          {label} · {rows.length}
+        </td>
+      </tr>
+      {rows.map((p) => <PaceRow key={p.driver} p={p} session={session} selected={selected} />)}
+    </>
   );
 }
 
