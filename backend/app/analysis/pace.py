@@ -207,14 +207,14 @@ _DNS_KEYS = ("did not start", "dns", "withdrawn", "not classified")
 
 
 def _retirement_phrase(row) -> str:
-    """A factual retirement verdict from official data only — the classification
-    status / retirement reason. Never invents or infers a cause."""
+    """A clean, factual retirement verdict from official data only. Just the lap
+    (and the official reason when there is a real one) — no "no cause" or "not
+    evaluated" filler, so it reads the same for every retirement."""
     reason = (row.retirement_reason or "").strip()
-    lap_bit = f" after {row.laps_completed} laps" if row.laps_completed else ""
+    lap_bit = f" after lap {row.laps_completed}" if row.laps_completed else ""
     if reason.lower() in ("", "retired", "dnf", "did not finish"):
-        return (f"Retired{lap_bit} — the official data doesn't give a cause; "
-                f"race pace not evaluated.")
-    return f"Retired ({reason.lower()}){lap_bit}; race pace not evaluated."
+        return f"Retired{lap_bit}"
+    return f"Retired{lap_bit} ({reason.lower()})"
 
 
 def _write_verdicts(summaries: list[DriverPaceSummary], class_by_driver: dict) -> None:

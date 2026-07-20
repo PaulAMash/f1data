@@ -23,7 +23,7 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
           (Winner already appears in the key cards above and is never repeated) */}
       {!simple && (
         <div className="grid gap-3 sm:grid-cols-3">
-          <StatTile label="Standout drive · data pick"
+          <StatTile label="Standout drive"
             value={
               <span className="flex items-center gap-2.5">
                 <DriverAvatar size={34}
@@ -161,32 +161,26 @@ function cxTable(simple: boolean) {
 }
 
 /**
- * Interactive DNF badge: hover (desktop) or tap (mobile) explains the
- * retirement — official reason, the lap they stopped, and where the reason
- * came from — without sending the user off to search elsewhere.
+ * Interactive DNF badge: hover (desktop) or tap (mobile) shows when the car
+ * retired. Kept deliberately minimal — just the lap — so it reads the same for
+ * every retirement instead of surfacing a reason for some and an awkward
+ * "no reason available" for others.
  */
 function DnfBadge({ row }: { row: ClassificationRow }) {
   const [open, setOpen] = useState(false);
-  // a reason only counts if it says something ("Hydraulics"), never the
-  // generic "Retired"/"DNF" — that would just repeat the badge
-  const raw = row.retirement_reason ?? row.status;
-  const reason = raw && !/^\s*(dnf|dns|dsq|retired)\s*$/i.test(raw) ? raw : null;
+  const lap = row.laps_completed != null && row.laps_completed > 0 ? row.laps_completed : null;
+  const text = lap ? `Retired after lap ${lap}` : "Retired";
   return (
     <span className="relative inline-flex"
       onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
       <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
-        aria-label={`Retired${reason ? `: ${reason}` : ""}`}
+        aria-label={text}
         className="inline-flex cursor-help items-center gap-1 whitespace-nowrap rounded-full border border-rose-400/30 bg-rose-400/10 px-2 py-0.5 text-[11px] font-semibold text-rose-300 underline decoration-rose-300/40 decoration-dotted underline-offset-2">
         DNF
       </button>
       {open && (
-        <span className="absolute bottom-full left-1/2 z-50 mb-1.5 w-44 -translate-x-1/2 rounded-lg border border-white/10 bg-base-900 p-2.5 text-left text-xs shadow-glow">
-          {reason && <span className="block font-semibold text-ink">{reason}</span>}
-          {row.laps_completed != null && row.laps_completed > 0 ? (
-            <span className="mt-0.5 block text-ink-muted">Retired after lap {row.laps_completed}</span>
-          ) : !reason ? (
-            <span className="block text-ink-muted">Retired — no official reason in this session&apos;s data.</span>
-          ) : null}
+        <span className="absolute bottom-full left-1/2 z-50 mb-1.5 w-max max-w-[12rem] -translate-x-1/2 whitespace-nowrap rounded-lg border border-white/10 bg-base-900 px-2.5 py-1.5 text-left text-xs text-ink-muted shadow-glow">
+          {text}
         </span>
       )}
     </span>

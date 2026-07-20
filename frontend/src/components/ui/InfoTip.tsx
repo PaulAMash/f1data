@@ -25,7 +25,10 @@ export function InfoTip({ text, label }: { text: string; label?: string }) {
       {open && (
         <span
           role="tooltip"
-          className="absolute left-1/2 top-5 z-50 w-64 -translate-x-1/2 rounded-lg border border-white/10 bg-base-900 p-3 text-xs leading-relaxed text-ink-muted shadow-glow"
+          // normal-case / tracking-normal / font-normal / normal whitespace reset
+          // the header's uppercase + letter-spacing so the copy wraps inside the
+          // box instead of overflowing it and bleeding onto the text behind.
+          className="absolute left-1/2 top-5 z-50 w-64 max-w-[min(16rem,80vw)] -translate-x-1/2 whitespace-normal break-words rounded-lg border border-white/10 bg-base-900 p-3 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-ink-muted shadow-glow"
         >
           {label && <span className="mb-1 block font-semibold text-ink">{label}</span>}
           {text}

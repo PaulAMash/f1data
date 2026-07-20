@@ -8,6 +8,20 @@ import { fmtLap } from "@/lib/format";
 
 interface Tip { x: number; y: number; title: string; lines: string[] }
 
+// One fixed short code per neutralization type, keyed off the status so the
+// same event always renders identically in every session's timeline (the full
+// name lives in the hover tooltip). Falls back to the label's initials.
+function windowCode(w: { status?: string | null; label?: string | null }): string {
+  switch (w.status) {
+    case "VSC": return "VSC";
+    case "SAFETY_CAR": return "SC";
+    case "RED": return "RED";
+    case "YELLOW": return "YELLOW";
+    default:
+      return (w.label ?? "SC").split(" ").map((t) => t[0]).join("").toUpperCase();
+  }
+}
+
 /**
  * Key moments at a glance: one horizontal lap strip with neutralization
  * windows (VSC / Safety Car), the turning point, and pit stops — the podium's
@@ -127,11 +141,13 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
 
         {/* neutralization windows — label lives in its own top band (LABEL_Y),
             above the marker band, so it can never be covered by or cover the
-            flags/diamond; x is clamped so it never clips at the edges */}
+            flags/diamond. The label text is a fixed short code per status, so
+            the SAME event always reads the same across every session (never
+            "SC" here and "Safety Car" there), and x is clamped so it never
+            clips at the edges. */}
         {session.track_status_windows.map((w, i) => {
           const x1 = x(w.start_lap), x2 = x(w.end_lap);
-          const wide = x2 - x1 > 70;
-          const labelX = Math.min(Math.max((x1 + x2) / 2, PAD + 46), W - PAD - 46);
+          const labelX = Math.min(Math.max((x1 + x2) / 2, PAD + 24), W - PAD - 24);
           return (
             <g key={i} className="cursor-help"
               onMouseMove={(e) => show(e, w.label ?? "Neutralization", windowTip(w))}
@@ -140,7 +156,7 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
                 fill="rgba(255,176,32,0.30)" stroke="rgba(255,176,32,0.55)" strokeWidth={1} />
               <text x={labelX} y={LABEL_Y} textAnchor="middle" pointerEvents="none"
                 fill="#ffb020" fontSize={11} fontWeight={600}>
-                {wide ? (w.label ?? "SC") : (w.label ?? "SC").split(" ").map((t: string) => t[0]).join("")}
+                {windowCode(w)}
               </text>
             </g>
           );

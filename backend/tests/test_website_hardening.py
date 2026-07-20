@@ -397,27 +397,32 @@ def test_tyre_summary_always_internally_consistent_on_mock_race():
             assert t["stops"] == len(t["sequence"]) - 1, t
 
 
-def test_pace_verdict_retired_is_factual_not_generic():
+def test_pace_verdict_retired_is_clean_and_factual():
     """A retired driver never gets 'solid, unremarkable run' and never a claim
-    that they finished — they get the official reason and pace_evaluated=False."""
+    that they finished — a clean 'Retired after lap N' (with the official reason
+    when there is one), pace_evaluated=False, and no 'not evaluated' filler."""
     from app.analysis.pace import compute_pace
     s = _mk_session_with_phantom_retirement()
     p = next(x for x in compute_pace(s) if x.driver == "XYZ")
     assert p.pace_evaluated is False
     v = (p.verdict or "").lower()
     assert "unremarkable" not in v and "finished" not in v
-    assert "retired" in v and "gearbox" in v      # official reason surfaced
+    assert "not evaluated" not in v                # no ugly filler
+    assert "retired after lap 25" in v and "gearbox" in v
 
 
-def test_pace_verdict_no_reason_says_so():
-    """A retirement with no official reason states that plainly, never guesses."""
+def test_pace_verdict_no_reason_is_just_lap():
+    """A retirement with no official reason reads as a clean 'Retired after lap
+    N' — no 'no cause' / 'not evaluated' filler."""
     from app.analysis.pace import compute_pace
     s = _mk_session_with_phantom_retirement()
     s.classification[0].retirement_reason = None
     s.classification[0].status = "DNF"
     p = next(x for x in compute_pace(s) if x.driver == "XYZ")
     assert p.pace_evaluated is False
-    assert "doesn't give a cause" in (p.verdict or "").lower()
+    v = (p.verdict or "").lower()
+    assert v == "retired after lap 25"
+    assert "cause" not in v and "not evaluated" not in v
 
 
 def test_no_finished_claim_for_any_retired_driver_in_mock_race():
