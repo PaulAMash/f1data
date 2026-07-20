@@ -439,3 +439,33 @@ def test_no_finished_claim_for_any_retired_driver_in_mock_race():
             assert p.pace_evaluated is False
             assert "finished" not in (p.verdict or "").lower()
             assert "retired" in (p.verdict or "").lower()
+
+
+def test_retirement_laps_completed_filled_from_timing():
+    """A retirement with no source-provided laps_completed gets a real lap number
+    derived from the timing, so the DNF badge and pace verdict are never blank."""
+    from app.models import ClassificationRow, Driver, Lap, RaceSession
+    from app.analysis.normalize import fill_laps_completed
+    s = RaceSession(year=2025, grand_prix="Test GP", session_type="Race",
+                    category="race", total_laps=50)
+    s.drivers = [Driver(number="63", code="RUS", name="George Russell", team="Mercedes")]
+    s.laps = [Lap(driver="RUS", lap=n, lap_time=90.0) for n in range(1, 19)]  # ran 18 laps
+    s.classification = [ClassificationRow(position=None, driver="RUS", name="George Russell",
+                                          team="Mercedes", retired=True, laps_completed=None)]
+    fill_laps_completed(s)
+    assert s.classification[0].laps_completed == 18
+
+
+def test_retirement_lap_flows_into_pace_verdict():
+    """End-to-end: a blank-lap retirement ends up with 'Retired after lap N'."""
+    from app.models import ClassificationRow, Driver, Lap, RaceSession
+    from app.analysis.engine import analyze
+    s = RaceSession(year=2025, grand_prix="Test GP", session_type="Race",
+                    category="race", total_laps=50)
+    s.drivers = [Driver(number="63", code="RUS", name="George Russell", team="Mercedes")]
+    s.laps = [Lap(driver="RUS", lap=n, lap_time=90.0) for n in range(1, 19)]
+    s.classification = [ClassificationRow(position=None, driver="RUS", name="George Russell",
+                                          team="Mercedes", retired=True, laps_completed=None)]
+    _, pace = analyze(s)
+    p = next(x for x in pace if x.driver == "RUS")
+    assert p.verdict == "Retired after lap 18"

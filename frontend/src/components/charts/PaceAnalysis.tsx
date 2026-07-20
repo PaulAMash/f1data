@@ -29,7 +29,16 @@ export function PaceAnalysis({
   const simple = useIsSimple();
   const [view, setView] = useState<PaceView>("drivers");
   const ranked = useMemo(
-    () => [...pace].sort((a, b) => (a.pace_rank ?? 99) - (b.pace_rank ?? 99)),
+    // Drivers whose pace couldn't be evaluated (retired / DSQ / DNS) always sort
+    // to the bottom — whether or not they set a time before stopping — so the
+    // ranked field reads top-to-bottom by real, comparable pace. Within each
+    // group, order by pace rank.
+    () => [...pace].sort((a, b) => {
+      const ga = a.pace_evaluated === false ? 1 : 0;
+      const gb = b.pace_evaluated === false ? 1 : 0;
+      if (ga !== gb) return ga - gb;
+      return (a.pace_rank ?? 999) - (b.pace_rank ?? 999);
+    }),
     [pace],
   );
   // which drivers to plot: highlighted set, else top 5 on pace

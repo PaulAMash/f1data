@@ -243,6 +243,26 @@ def pit_data_reliable(session: RaceSession) -> bool:
     return len(session.pit_stops) > 0
 
 
+def fill_laps_completed(session: RaceSession) -> None:
+    """Every classified retirement should report the lap it happened on. When a
+    source leaves ``laps_completed`` blank, derive it from the furthest lap the
+    driver actually reached in the lap / position data — a real figure straight
+    from the timing, never a guess. Only fills a missing value; never overrides
+    one the source provided."""
+    if session.category not in ("race", "sprint"):
+        return
+    reached: dict[str, int] = {}
+    for l in session.laps:
+        reached[l.driver] = max(reached.get(l.driver, 0), l.lap)
+    for p in session.positions:
+        reached[p.driver] = max(reached.get(p.driver, 0), p.lap)
+    for c in session.classification:
+        if c.retired and not c.laps_completed:
+            d = reached.get(c.driver)
+            if d:
+                c.laps_completed = d
+
+
 def reconcile_stints_and_stops(session: RaceSession) -> None:
     """Enforce the physical invariant that a driver runs exactly one more tyre
     stint than the pit stops they completed (stints == stops + 1), and that a
@@ -311,6 +331,9 @@ def normalize_session(session: RaceSession) -> None:
     fix_classification(session)
     fill_team_colors(session)
     attach_window_causes(session)
+    # Give every retirement a real "laps completed" from the timing when the
+    # source left it blank, so the DNF badge and pace verdict always show a lap.
+    fill_laps_completed(session)
     # Remove phantom stints / retirement pit entries and make per-driver stop
     # counts agree with the stints actually run, before anything reads them.
     reconcile_stints_and_stops(session)
