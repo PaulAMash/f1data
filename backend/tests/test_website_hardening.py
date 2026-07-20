@@ -71,11 +71,15 @@ def test_winner_gap_never_absurd():
 
 
 def test_no_zero_stop_claim_without_pit_data():
-    """A race with no pit records must not be flagged reliable or claim 0 stops."""
+    """A source with no pit AND no stint data must not be flagged reliable, must
+    zero stop counts, and must never claim an N-stop race in the narrative.
+    (With stint data present, counts are derived from stints instead — the
+    number of stints is authoritative even without pit-lane timing.)"""
     from app.adapters.mock_adapter import get_mock_session
     from app.analysis.engine import analyze
     s = get_mock_session(2026, "Austrian Grand Prix", "Race")
     s.pit_stops = []                      # simulate a source with no pit data
+    s.stints = []                         # ...and no stint data to derive counts from
     strategy, _pace = analyze(s)          # runs normalize_session
     assert s.pit_data_reliable is False
     assert all(c.pit_stops == 0 for c in s.classification)
@@ -322,3 +326,111 @@ def test_turning_point_states_undetermined_cause_explicitly():
     strategy, _ = analyze(s)
     tp = " ".join(i.detail for i in strategy.turning_points)
     assert "didn't record" in tp or "not" in tp.lower()
+
+
+# --------------------------------------------------------------------------- #
+# V25 — tyre-strategy consistency + context-aware pace verdicts
+# --------------------------------------------------------------------------- #
+def _mk_session_with_phantom_retirement():
+    """A driver who ran Hard → Soft → Hard then retired in the pits, delivered
+    (as some real sources do) with a phantom 4th stint and a 3rd pit entry —
+    the exact Perez/Belgian-GP shape."""
+    from app.models import (ClassificationRow, Compound, Driver, Lap, PitStop,
+                            RaceSession, Stint)
+    s = RaceSession(year=2025, grand_prix="Test GP", session_type="Race",
+                    category="race", total_laps=40)
+    s.drivers = [Driver(number="5", code="XYZ", name="Test Driver", team="Test")]
+    # ran and completed 25 laps, then retired
+    s.laps = [Lap(driver="XYZ", lap=n, lap_time=90.0) for n in range(1, 26)]
+    s.classification = [ClassificationRow(position=None, driver="XYZ", name="Test Driver",
+                                          team="Test", laps_completed=25, retired=True,
+                                          retirement_reason="Gearbox")]
+    # real stints: 3 (H 1-10, S 11-20, H 21-25) + a PHANTOM 4th starting at lap 26
+    s.stints = [
+        Stint(driver="XYZ", stint=1, compound=Compound.HARD, start_lap=1, end_lap=10, laps=10),
+        Stint(driver="XYZ", stint=2, compound=Compound.SOFT, start_lap=11, end_lap=20, laps=10),
+        Stint(driver="XYZ", stint=3, compound=Compound.HARD, start_lap=21, end_lap=25, laps=5),
+        Stint(driver="XYZ", stint=4, compound=Compound.HARD, start_lap=26, end_lap=26, laps=1),
+    ]
+    # real stops: 2 (lap 10, lap 20) + a PHANTOM retirement pit entry at lap 25
+    s.pit_stops = [
+        PitStop(driver="XYZ", lap=10), PitStop(driver="XYZ", lap=20),
+        PitStop(driver="XYZ", lap=25),
+    ]
+    return s
+
+
+def test_retirement_pit_entry_not_counted_as_stop_or_stint():
+    """H→S→H→Retired must read as 3 stints / 2 stops, never 4 stints / 3 stops."""
+    from app.analysis.normalize import reconcile_stints_and_stops
+    s = _mk_session_with_phantom_retirement()
+    reconcile_stints_and_stops(s)
+    stints = [st for st in s.stints if st.driver == "XYZ"]
+    stops = [ps for ps in s.pit_stops if ps.driver == "XYZ"]
+    assert len(stints) == 3, "phantom 4th stint should be dropped"
+    assert len(stops) == 2, "retirement pit entry should not count as a stop"
+    row = s.classification[0]
+    assert row.pit_stops == 2
+    # the required invariant: stints == stops + 1
+    assert len(stints) == row.pit_stops + 1
+
+
+def test_tyre_summary_stops_match_stints_after_retirement():
+    """The displayed tyre card can never show stops != stints - 1."""
+    from app.analysis.engine import analyze
+    s = _mk_session_with_phantom_retirement()
+    strategy, _ = analyze(s)
+    row = next(t for t in strategy.tyre_summary if t["driver"] == "XYZ")
+    assert len(row["sequence"]) == 3
+    assert row["stops"] == 2 == len(row["sequence"]) - 1
+
+
+def test_tyre_summary_always_internally_consistent_on_mock_race():
+    """Universal check on a full mock race: every driver's tyre-card stop count
+    equals their stint count minus one."""
+    from app.adapters.mock_adapter import get_mock_session
+    from app.analysis.engine import analyze
+    s = get_mock_session(2026, "Belgian Grand Prix", "Race")
+    strategy, _ = analyze(s)
+    for t in strategy.tyre_summary:
+        if t["sequence"]:
+            assert t["stops"] == len(t["sequence"]) - 1, t
+
+
+def test_pace_verdict_retired_is_factual_not_generic():
+    """A retired driver never gets 'solid, unremarkable run' and never a claim
+    that they finished — they get the official reason and pace_evaluated=False."""
+    from app.analysis.pace import compute_pace
+    s = _mk_session_with_phantom_retirement()
+    p = next(x for x in compute_pace(s) if x.driver == "XYZ")
+    assert p.pace_evaluated is False
+    v = (p.verdict or "").lower()
+    assert "unremarkable" not in v and "finished" not in v
+    assert "retired" in v and "gearbox" in v      # official reason surfaced
+
+
+def test_pace_verdict_no_reason_says_so():
+    """A retirement with no official reason states that plainly, never guesses."""
+    from app.analysis.pace import compute_pace
+    s = _mk_session_with_phantom_retirement()
+    s.classification[0].retirement_reason = None
+    s.classification[0].status = "DNF"
+    p = next(x for x in compute_pace(s) if x.driver == "XYZ")
+    assert p.pace_evaluated is False
+    assert "doesn't give a cause" in (p.verdict or "").lower()
+
+
+def test_no_finished_claim_for_any_retired_driver_in_mock_race():
+    """Austrian-GP regression: every retired driver's verdict must mention the
+    retirement and must not claim they finished above/below their pace."""
+    from app.adapters.mock_adapter import get_mock_session
+    from app.analysis.engine import analyze
+    s = get_mock_session(2026, "Austrian Grand Prix", "Race")
+    _, pace = analyze(s)
+    retired = {c.driver for c in s.classification if c.retired}
+    assert retired, "mock race should include at least one retirement"
+    for p in pace:
+        if p.driver in retired:
+            assert p.pace_evaluated is False
+            assert "finished" not in (p.verdict or "").lower()
+            assert "retired" in (p.verdict or "").lower()

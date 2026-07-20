@@ -341,6 +341,14 @@ class DriverPaceSummary(BaseModel):
     # "Pace rank" among all classified drivers by clean-air pace (1 = fastest).
     pace_rank: Optional[int] = None
     verdict: Optional[str] = None
+    # Number of representative (clean-air, non-outlier) laps behind the pace
+    # read — surfaced so the UI can be honest about small samples.
+    representative_laps: int = 0
+    # False when pace could not be meaningfully evaluated (retired, DSQ, DNS,
+    # or too few representative laps). The verdict then states the factual
+    # reason instead of a generic "solid run", and the UI hides the
+    # field-relative metrics that would mislead.
+    pace_evaluated: bool = True
 
 
 class RaceInsight(BaseModel):

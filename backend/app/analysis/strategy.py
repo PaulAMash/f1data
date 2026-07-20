@@ -144,13 +144,16 @@ def compute_strategy(session: RaceSession, pace: list[DriverPaceSummary]) -> Str
     else:
         avg_pit_loss, avg_pit_loss_kind = None, None
 
-    # tyre summary
+    # tyre summary — stops are derived from the stints actually shown so the
+    # card's stint count and stop count are always internally consistent (a
+    # driver on N stints made N-1 stops; a retirement pit entry is never a stop).
     tyre_summary = []
     for c in session.classification:
         seq = _compound_seq(session, c.driver)
+        stops = max(0, len(seq) - 1) if seq else c.pit_stops
         tyre_summary.append({
             "driver": c.driver, "team": c.team, "position": c.position,
-            "sequence": [comp.value for comp in seq], "stops": c.pit_stops,
+            "sequence": [comp.value for comp in seq], "stops": stops,
         })
 
     # strategy vs pace: strategy_gain = pace_rank - finish (positive => strategy helped)

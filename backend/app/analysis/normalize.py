@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from ..models import RaceSession
+from ..models import PitStop, RaceSession, Stint
 
 # A plausible on-track gap ceiling (seconds). Anything larger is almost certainly
 # cumulative time, not a gap — so we drop it rather than display nonsense.
@@ -243,29 +243,89 @@ def pit_data_reliable(session: RaceSession) -> bool:
     return len(session.pit_stops) > 0
 
 
+def reconcile_stints_and_stops(session: RaceSession) -> None:
+    """Enforce the physical invariant that a driver runs exactly one more tyre
+    stint than the pit stops they completed (stints == stops + 1), and that a
+    car which enters the pits only to retire is never credited with a completed
+    stop or a fresh stint.
+
+    Data sources sometimes emit a phantom trailing stint or count the final
+    pit-lane entry of a retiring car — e.g. Hard → Soft → Hard → retired can
+    arrive as 4 stints / 3 stops instead of the correct 3 stints / 2 stops.
+    Both artefacts are removed here from real, source-provided data (nothing is
+    ever invented), so the tyre-strategy chart and the pit-stop counts can
+    never disagree. Runs for every source and season."""
+    if session.category not in ("race", "sprint"):
+        return
+
+    # The last lap each driver actually completed under power — the boundary a
+    # genuine stint or stop must fall on or before.
+    last_lap: dict[str, int] = {}
+    for l in session.laps:
+        if l.lap_time is not None:
+            last_lap[l.driver] = max(last_lap.get(l.driver, 0), l.lap)
+    for c in session.classification:
+        if c.laps_completed:
+            last_lap[c.driver] = max(last_lap.get(c.driver, 0), c.laps_completed)
+
+    # 1) Drop phantom stints: a "stint" the driver never ran a racing lap in
+    #    (it begins after the last lap they completed) came from a retirement
+    #    pit entry, not from racing.
+    kept_stints: list[Stint] = []
+    stints_by_driver: dict[str, list[Stint]] = {}
+    for st in sorted(session.stints, key=lambda s: (s.driver, s.stint)):
+        ll = last_lap.get(st.driver)
+        if ll is not None and st.start_lap > ll:
+            continue   # never ran this stint → phantom
+        kept_stints.append(st)
+        stints_by_driver.setdefault(st.driver, []).append(st)
+    session.stints = kept_stints
+
+    # 2) Drop retirement pit entries: a stop the driver never rejoined from
+    #    (no completed racing lap after it) is not a racing pit stop.
+    kept_stops: list[PitStop] = []
+    for ps in session.pit_stops:
+        ll = last_lap.get(ps.driver)
+        if ll is not None and ps.lap >= ll:
+            continue   # entered the pits and stayed there → retirement, not a stop
+        kept_stops.append(ps)
+    session.pit_stops = kept_stops
+
+    # 3) Make the per-driver stop count agree with the stints actually run.
+    #    With real stint data the count is exact (stops == stints - 1); without
+    #    it, fall back to the cleaned pit-stop list.
+    stops_from_list: dict[str, int] = {}
+    for ps in kept_stops:
+        stops_from_list[ps.driver] = stops_from_list.get(ps.driver, 0) + 1
+    for c in session.classification:
+        sts = stints_by_driver.get(c.driver)
+        if sts:
+            c.pit_stops = max(0, len(sts) - 1)
+        else:
+            c.pit_stops = stops_from_list.get(c.driver, c.pit_stops)
+
+
 def normalize_session(session: RaceSession) -> None:
     """In-place: fix gaps, fill derivable per-driver stats, and flag pit-data
     reliability so the UI never fabricates '0-stop race' claims or absurd gaps."""
     fix_classification(session)
     fill_team_colors(session)
     attach_window_causes(session)
+    # Remove phantom stints / retirement pit entries and make per-driver stop
+    # counts agree with the stints actually run, before anything reads them.
+    reconcile_stints_and_stops(session)
     reliable = pit_data_reliable(session)
     session.pit_data_reliable = reliable
 
-    if reliable:
-        # Sources often deliver pit stops as a list but leave the per-driver
-        # count on the classification at 0 — derive it so 'Pits' is never blank.
-        counts: dict[str, int] = {}
-        for ps in session.pit_stops:
-            counts[ps.driver] = counts.get(ps.driver, 0) + 1
+    if not reliable and session.category in ("race", "sprint"):
+        # Without pit-lane data AND without stint evidence we can't trust a stop
+        # count — zero those so no "0-stop race" story is generated (the UI shows
+        # "pit data unavailable"). Drivers whose count came from real stint data
+        # keep it: the number of stints is authoritative even without lane timing.
+        drivers_with_stints = {s.driver for s in session.stints}
         for c in session.classification:
-            if not c.pit_stops:
-                c.pit_stops = counts.get(c.driver, 0)
-    elif session.category in ("race", "sprint"):
-        # Without pit data we can't trust per-driver stop counts — zero them out
-        # so no "0-stop race" story is generated; the UI shows "pit data unavailable".
-        for c in session.classification:
-            c.pit_stops = 0
+            if c.driver not in drivers_with_stints:
+                c.pit_stops = 0
 
     # best race lap per driver, derived from the lap sheet when the result lacks it
     if session.laps:

@@ -98,14 +98,21 @@ def compare_drivers(session: RaceSession, a: str, b: str) -> dict:
         points.append(f"Traffic: {stuck} spent more green laps in dirty air "
                       f"({max(pa.traffic_laps, pb.traffic_laps)} vs {min(pa.traffic_laps, pb.traffic_laps)}).")
 
-    # biggest swing between them (largest single-lap delta change)
+    # biggest swing between them (largest single-lap delta change). Only name a
+    # cause when the data actually records one (a pit stop by either driver on
+    # that lap); otherwise report the swing as a fact without guessing why.
     if len(lap_delta) > 2:
         swings = [(abs(lap_delta[i]["delta"] - lap_delta[i - 1]["delta"]), lap_delta[i]["lap"])
                   for i in range(1, len(lap_delta))]
         mag, lap = max(swings)
         if mag >= 2.5:
-            points.append(f"The biggest single swing came on lap {lap} (~{mag:.1f}s), "
-                          f"most likely a pit stop or on-track incident — check the delta trace there.")
+            pit_here = {p.driver for p in session.pit_stops
+                        if p.lap in (lap, lap - 1) and p.driver in (a, b)}
+            cause = (f" — {', '.join(sorted(pit_here))} pitted around there."
+                     if pit_here else
+                     " — the timing data doesn't record what caused it.")
+            points.append(f"The biggest single swing between them came on lap {lap} "
+                          f"(~{mag:.1f}s){cause}")
 
     if faster != finished_ahead:
         points.append(f"Bottom line: {faster} had the outright speed, but {finished_ahead} "

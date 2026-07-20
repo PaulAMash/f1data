@@ -238,9 +238,9 @@ def _overtake_between(q, ctx, a, b, ents):
                       else "an on-track move") + f". {ahead} finished P{ctx.class_by_driver[ahead].position}.")
             return _qa(q, ans, "overtake", "medium", ctx, [a, b], follow_ups=fups)
         ans = (f"{ahead} finished ahead of {behind} (P{ctx.class_by_driver[ahead].position} vs "
-               f"P{ctx.class_by_driver[behind].position}), but I couldn't find a direct on-track pass "
-               f"between them in the data — the gap was most likely built through pit strategy or "
-               f"an early-lap exchange rather than a wheel-to-wheel move.")
+               f"P{ctx.class_by_driver[behind].position}), but there's no logged on-track pass "
+               f"between them in the data and the position trace doesn't show a clear swap — "
+               f"so the data doesn't establish how the position was decided.")
         return _qa(q, ans, "overtake", "low", ctx, [a, b], follow_ups=fups)
     return _missing(q, [f"race data for {a} and/or {b}"], ctx)
 
@@ -640,7 +640,7 @@ def _h_why_lost(q, ctx, ents):
             head += f" and again {mech[1]}"
         head += f" — pointing to {cause} rather than a lack of pace."
     else:
-        head += ", most likely through the pit cycle or traffic rather than raw pace."
+        head += ", but the data doesn't isolate a single cause."
     body = (" The strongest clues: " + "; ".join(ev) + "." if ev
             else " There isn't enough pit/gap detail to prove the exact cause, but the position "
                  "trace is where the loss shows up.")
@@ -861,7 +861,12 @@ def _h_winner(q, ctx, ents):
     c = ctx.class_by_driver.get(w) if w else None
     if not c:
         return _missing(q, ["classification"], ctx)
-    return _qa(q, f"{c.name} ({c.team}) won the {ctx.session.grand_prix} from P{c.grid}, running {c.pit_stops} stops.",
+    # Only state a stop count when pit data is trustworthy — never claim
+    # "0 stops" just because a source lacked pit records.
+    stops = (f", running {c.pit_stops} stops"
+             if ctx.session.pit_data_reliable and c.pit_stops > 0 else "")
+    from_grid = f" from P{c.grid}" if c.grid else ""
+    return _qa(q, f"{c.name} ({c.team}) won the {ctx.session.grand_prix}{from_grid}{stops}.",
                "winner", "high", ctx, [w])
 
 

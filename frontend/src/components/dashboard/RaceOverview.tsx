@@ -23,7 +23,7 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
           (Winner already appears in the key cards above and is never repeated) */}
       {!simple && (
         <div className="grid gap-3 sm:grid-cols-3">
-          <StatTile label="Driver of the day"
+          <StatTile label="Standout drive · data pick"
             value={
               <span className="flex items-center gap-2.5">
                 <DriverAvatar size={34}
@@ -32,7 +32,7 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
               </span>
             }
             sub={strategy.dotd_reason ?? undefined}
-            info="Analytical pick: gained positions, weighted by race pace and a win-from-behind bonus." />
+            info="Pitwall IQ's own data-driven pick: positions gained, weighted by race pace and a win-from-behind bonus. This is NOT the official fan-voted Driver of the Day — that's a public vote, which isn't part of the timing data." />
           {strategy.avg_pit_loss != null ? (
             <StatTile label="Avg pit loss" value={fmtSec(strategy.avg_pit_loss)}
               sub={strategy.avg_pit_loss_kind === "estimated" ? "estimated" : "pit-lane time"}
@@ -102,9 +102,11 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
                       </td>
                       <td className="py-2 pr-2">
                         <span className="flex items-center gap-2">
+                          {/* fixed-width identity block so status badges align in a
+                              clean column regardless of name length */}
                           <DriverBadge driver={session.drivers.find((d) => d.code === c.driver)}
                             code={c.driver} name={c.name} team={c.team} teamColor={c.team_color}
-                            size={26} />
+                            size={26} className="w-48 min-w-0" />
                           {c.retired && <DnfBadge row={c} />}
                         </span>
                       </td>

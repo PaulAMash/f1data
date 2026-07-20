@@ -90,6 +90,7 @@ export interface DriverPaceSummary {
   clean_air_pace?: number | null; consistency?: number | null; consistency_score?: number | null;
   pit_stops: number; total_pit_loss?: number | null; traffic_laps: number;
   tyre_limited: boolean; stints: StintPace[]; pace_rank?: number | null; verdict?: string | null;
+  representative_laps?: number; pace_evaluated?: boolean;
 }
 export interface RaceInsight {
   kind: string; title: string; detail: string; explanation?: string | null; drivers: string[];

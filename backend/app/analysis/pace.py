@@ -175,10 +175,11 @@ def compute_pace(session: RaceSession) -> list[DriverPaceSummary]:
             clean_air_pace=clean_air_pace, consistency=stdev,
             pit_stops=row.pit_stops if row else 0, traffic_laps=traffic_laps,
             tyre_limited=tyre_limited, stints=stint_paces,
+            representative_laps=len(clean_air),
         ))
 
     _rank_and_score(summaries)
-    _write_verdicts(summaries)
+    _write_verdicts(summaries, class_by_driver)
     return summaries
 
 
@@ -197,17 +198,65 @@ def _rank_and_score(summaries: list[DriverPaceSummary]) -> None:
                 s.consistency_score = round(100 * (1 - (s.consistency - lo) / span), 1)
 
 
-def _write_verdicts(summaries: list[DriverPaceSummary]) -> None:
+# Minimum clean-air laps before a representative-pace verdict is trustworthy.
+MIN_REPRESENTATIVE_LAPS = 5
+
+# Keywords in an official result status that mean pace can't be judged.
+_DSQ_KEYS = ("disqualif", "dsq", "excluded")
+_DNS_KEYS = ("did not start", "dns", "withdrawn", "not classified")
+
+
+def _retirement_phrase(row) -> str:
+    """A factual retirement verdict from official data only — the classification
+    status / retirement reason. Never invents or infers a cause."""
+    reason = (row.retirement_reason or "").strip()
+    lap_bit = f" after {row.laps_completed} laps" if row.laps_completed else ""
+    if reason.lower() in ("", "retired", "dnf", "did not finish"):
+        return (f"Retired{lap_bit} — the official data doesn't give a cause; "
+                f"race pace not evaluated.")
+    return f"Retired ({reason.lower()}){lap_bit}; race pace not evaluated."
+
+
+def _write_verdicts(summaries: list[DriverPaceSummary], class_by_driver: dict) -> None:
+    """Every verdict is backed by the official classification or the driver's
+    own laps. A driver who retired, was disqualified, didn't start, or ran too
+    few clean laps never gets a generic filler line or a claim that they
+    "finished" anywhere — we state the factual reason and stop there."""
     for s in summaries:
-        bits = []
-        if s.pace_rank:
-            bits.append(f"P{s.pace_rank} on raw pace")
-        if s.finish and s.pace_rank and s.finish - s.pace_rank >= 2:
+        row = class_by_driver.get(s.driver)
+        status = ((row.status if row else "") or "").lower()
+
+        # 1) Could not be evaluated — state the official reason, don't invent one.
+        if row and row.retired:
+            s.verdict = _retirement_phrase(row)
+            s.pace_evaluated = False
+            continue
+        if any(k in status for k in _DSQ_KEYS):
+            s.verdict = "Disqualified from the classified result; race pace not evaluated."
+            s.pace_evaluated = False
+            continue
+        if any(k in status for k in _DNS_KEYS):
+            s.verdict = "Did not start / not classified; no race pace to evaluate."
+            s.pace_evaluated = False
+            continue
+        if s.representative_laps < MIN_REPRESENTATIVE_LAPS or not s.pace_rank:
+            s.verdict = (f"Not enough representative laps "
+                         f"({s.representative_laps}) for a meaningful pace read.")
+            s.pace_evaluated = False
+            continue
+
+        # 2) Evaluated — build the verdict from measured facts only.
+        bits = [f"P{s.pace_rank} on raw pace"]
+        if s.finish and s.finish - s.pace_rank >= 2:
             bits.append("finished below their pace (track position / strategy cost them)")
-        elif s.pace_rank and s.finish and s.pace_rank - s.finish >= 2:
+        elif s.finish and s.pace_rank - s.finish >= 2:
             bits.append("finished above their pace (strategy / track position helped)")
         if s.traffic_laps >= 8:
             bits.append(f"{s.traffic_laps} laps stuck in traffic")
         if s.tyre_limited:
             bits.append("tyre-limited in at least one stint")
-        s.verdict = "; ".join(bits) if bits else "solid, unremarkable run"
+        if len(bits) == 1:
+            # The rank is real; simply state that no traffic/strategy/tyre factor
+            # stood out in the data — a fact, not a flourish.
+            bits.append("no notable traffic, strategy or tyre factor in the data")
+        s.verdict = "; ".join(bits)

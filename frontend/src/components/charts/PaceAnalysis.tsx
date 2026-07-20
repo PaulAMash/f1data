@@ -159,8 +159,14 @@ export function PaceAnalysis({
         <>
           {/* lap-time trend */}
           <div>
-            <div className="mb-2 flex items-center gap-2 text-xs text-ink-muted">
-              Lap-time trend (outliers, in/out laps &amp; neutralized laps excluded)
+            <div className="mb-2.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-speed" />
+                <span className="label">Lap-time trend</span>
+              </span>
+              <span className="text-[11px] text-ink-faint">
+                outliers, in/out laps &amp; neutralized laps excluded
+              </span>
               <InfoTip label="Reading pace" text="Lower is faster. Rising lines within a stint show tyre degradation; a step down marks fresh tyres after a stop. Pit and safety-car laps are removed so only representative green-flag pace is shown." />
             </div>
             <div className="h-[300px] w-full">
@@ -202,30 +208,47 @@ export function PaceAnalysis({
                 </tr>
               </thead>
               <tbody>
-                {ranked.map((p) => (
+                {ranked.map((p) => {
+                  // A driver whose pace couldn't be evaluated (retired / DSQ /
+                  // DNS / too few clean laps) is dimmed, and the field-relative
+                  // metrics that would mislead on a tiny sample (rank, clean-air
+                  // pace, consistency) show "—". Raw best/median laps remain —
+                  // those are real measurements.
+                  const unranked = p.pace_evaluated === false;
+                  return (
                   <tr key={p.driver}
-                    className={cx("border-b border-white/[0.04]", selected.includes(p.driver) && "bg-accent/[0.05]")}>
-                    <td className="py-2 pr-2 tabular-nums text-ink-faint">{p.pace_rank ?? "—"}</td>
-                    <td className="py-2 pr-2">
-                      <span className="inline-flex items-center gap-2">
+                    className={cx("border-b border-white/[0.04]",
+                      selected.includes(p.driver) && "bg-accent/[0.05]", unranked && "opacity-55")}>
+                    <td className="py-2 pr-3 tabular-nums text-ink-faint">{unranked ? "—" : (p.pace_rank ?? "—")}</td>
+                    <td className="py-2 pr-3">
+                      <span className="flex items-center gap-2">
+                        {/* fixed-width identity block so the tyre-limited badges
+                            line up in a clean column for every driver */}
                         <DriverBadge driver={session.drivers.find((d) => d.code === p.driver)}
                           code={p.driver} name={p.name} team={p.team} teamColor={p.team_color}
-                          size={26} />
-                        {p.tyre_limited && (
-                          <Term term="tyre-limited"><Badge tone="bad">tyre-limited</Badge></Term>
+                          size={26} className="w-48 min-w-0" />
+                        {p.tyre_limited && !unranked && (
+                          <Term term="tyre-limited">
+                            <Badge tone="bad" className="whitespace-nowrap">tyre-limited</Badge>
+                          </Term>
                         )}
                       </span>
                     </td>
-                    <td className="py-2 pr-2 tabular-nums text-speed">{fmtLap(p.clean_air_pace)}</td>
-                    <td className="py-2 pr-2 tabular-nums text-ink-muted">{fmtLap(p.best_lap)}</td>
-                    <td className="py-2 pr-2 tabular-nums text-ink-muted">{fmtLap(p.median_lap)}</td>
-                    <td className="py-2 pr-2">
-                      <ConsistencyBar score={p.consistency_score} />
+                    <td className="py-2 pr-3 tabular-nums text-speed">{unranked ? "—" : fmtLap(p.clean_air_pace)}</td>
+                    <td className="py-2 pr-3 tabular-nums text-ink-muted">{fmtLap(p.best_lap)}</td>
+                    <td className="py-2 pr-3 tabular-nums text-ink-muted">{fmtLap(p.median_lap)}</td>
+                    <td className="py-2 pr-3">
+                      {unranked ? <span className="text-ink-faint">—</span>
+                        : <ConsistencyBar score={p.consistency_score} />}
                     </td>
-                    <td className="py-2 pr-2 tabular-nums text-ink-muted">{p.traffic_laps}</td>
-                    <td className="py-2 pr-2 text-xs text-ink-muted">{p.verdict}</td>
+                    <td className="py-2 pr-3 tabular-nums text-ink-muted">{p.traffic_laps}</td>
+                    <td className={cx("max-w-[24rem] py-2 pr-2 text-xs leading-relaxed",
+                      unranked ? "italic text-ink-faint" : "text-ink-muted")}>
+                      {p.verdict}
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -410,7 +433,9 @@ function TeamTable({ rows }: { rows: TeamPace[] }) {
 
 function Th({ children, info }: { children: React.ReactNode; info?: string }) {
   return (
-    <th className="py-2 pr-2 font-semibold">
+    // nowrap: header labels must never wrap to a second line and knock the
+    // columns out of alignment with each other.
+    <th className="whitespace-nowrap py-2 pr-3 font-semibold">
       <span className="inline-flex items-center gap-1">{children}{info && <InfoTip text={info} />}</span>
     </th>
   );

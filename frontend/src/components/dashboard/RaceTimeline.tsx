@@ -19,7 +19,11 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
   const advanced = useIsAdvanced();
   const [tip, setTip] = useState<Tip | null>(null);
   const total = Math.max(1, session.total_laps);
-  const W = 1000, H = 64, PAD = 18, Y = 34;
+  // Three reserved vertical bands so nothing can ever cover anything else:
+  //   labels (window names) → markers (flags/diamond) → track + ticks.
+  // The translucent window pill sits on the track and may be crossed by dots —
+  // that's intentional; text and markers never share a band.
+  const W = 1000, H = 78, PAD = 18, Y = 46, LABEL_Y = 14;
   const x = (lap: number) => PAD + ((lap - 1) / Math.max(1, total - 1)) * (W - 2 * PAD);
 
   const maxPos = advanced ? 10 : 3;
@@ -121,17 +125,20 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
         onMouseLeave={() => setTip(null)}>
         <line x1={PAD} y1={Y} x2={W - PAD} y2={Y} stroke="rgba(255,255,255,0.12)" strokeWidth={4} strokeLinecap="round" />
 
-        {/* neutralization windows */}
+        {/* neutralization windows — label lives in its own top band (LABEL_Y),
+            above the marker band, so it can never be covered by or cover the
+            flags/diamond; x is clamped so it never clips at the edges */}
         {session.track_status_windows.map((w, i) => {
           const x1 = x(w.start_lap), x2 = x(w.end_lap);
           const wide = x2 - x1 > 70;
+          const labelX = Math.min(Math.max((x1 + x2) / 2, PAD + 46), W - PAD - 46);
           return (
             <g key={i} className="cursor-help"
               onMouseMove={(e) => show(e, w.label ?? "Neutralization", windowTip(w))}
               onMouseLeave={() => setTip(null)}>
               <rect x={x1} y={Y - 8} width={Math.max(5, x2 - x1)} height={16} rx={8}
                 fill="rgba(255,176,32,0.30)" stroke="rgba(255,176,32,0.55)" strokeWidth={1} />
-              <text x={(x1 + x2) / 2} y={Y - 14} textAnchor="middle" pointerEvents="none"
+              <text x={labelX} y={LABEL_Y} textAnchor="middle" pointerEvents="none"
                 fill="#ffb020" fontSize={11} fontWeight={600}>
                 {wide ? (w.label ?? "SC") : (w.label ?? "SC").split(" ").map((t: string) => t[0]).join("")}
               </text>
