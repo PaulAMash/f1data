@@ -210,8 +210,8 @@ export default function ExplorerPage() {
                   { id: "control", label: "Race control & weather", icon: <Wind size={14} /> },
                 ]} active={chartTab} onChange={setChartTab} />
                 {chartTab === "position" && (
-                  <Section title="Track position" info="One line per driver, P1 at the top. Shaded bands are safety-car / VSC windows; hover any lap for tyre, gap and pit detail.">
-                    <PositionChart session={session} selected={selected} onSelect={setSelected} />
+                  <Section title="Track position" info="Every driver's place, lap by lap, P1 at the top. Focus a driver for their story, read the race events on the lap axis, and hover any lap for the full running order.">
+                    <PositionChart session={session} selected={selected} onSelect={setSelected} strategy={bundle.strategy} />
                   </Section>
                 )}
                 {chartTab === "tyres" && (
