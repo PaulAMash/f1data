@@ -212,7 +212,7 @@ export default function ExplorerPage() {
                 {chartTab === "position" && (
                   <Section title="Track position" info="Every driver's place, lap by lap, P1 at the top. Click any line to follow a driver, jump to key moments, and hover any lap for the full running order.">
                     <PositionChart session={session} selected={selected} onSelect={setSelected}
-                      strategy={bundle.strategy}
+                      strategy={bundle.strategy} pace={bundle.pace}
                       onDeepDive={(code) => { setSelected([code]); setTab("compare"); }} />
                   </Section>
                 )}
