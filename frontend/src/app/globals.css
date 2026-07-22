@@ -71,3 +71,12 @@ body {
 .recharts-cartesian-grid line { stroke: rgba(255, 255, 255, 0.05); }
 .recharts-tooltip-wrapper:focus { outline: none; }
 .recharts-default-tooltip { background: #0f131d !important; border: 1px solid rgba(255,255,255,0.1) !important; border-radius: 12px !important; }
+
+/* Track-position chart: emphasis changes glide instead of snapping, so
+   focusing a driver reads as a calm, premium transition. */
+.pos-line path.recharts-curve { transition: stroke-opacity .28s ease, stroke-width .2s ease; }
+.pos-edge { transition: opacity .28s ease; }
+/* the "jump to a moment" accent line breathes so the eye lands on it */
+@keyframes moment-pulse { 0%, 100% { opacity: .95; } 50% { opacity: .4; } }
+.moment-line line { animation: moment-pulse 1.7s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .moment-line line { animation: none; } }

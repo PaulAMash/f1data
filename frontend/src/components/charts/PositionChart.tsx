@@ -1,91 +1,85 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  CartesianGrid, Line, LineChart, ReferenceArea, ReferenceDot, ReferenceLine,
+  CartesianGrid, Line, LineChart, ReferenceArea, ReferenceLine,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
-  Flag, ShieldAlert, Gauge, Wrench, Sparkles, Users, X, ChevronDown,
-  TrendingUp, TrendingDown, Minus,
+  Flag, ShieldAlert, Gauge, Sparkles, Users, X, ChevronRight, ArrowUpRight,
 } from "lucide-react";
-import type { RaceSession, Driver, StrategySummary, Compound } from "@/lib/types";
+import type { RaceSession, Driver, StrategySummary, Compound, RaceInsight } from "@/lib/types";
 import { COMPOUND_COLOR, COMPOUND_LABEL, COMPOUND_SHORT } from "@/lib/compounds";
 import { useIsSimple } from "@/lib/mode";
 import { cx, fmtSec, ordinal } from "@/lib/format";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
+import { DriverPalette } from "./DriverPalette";
 
 /* -------------------------------------------------------------------------- */
-/* One chart, two experiences.                                                */
+/* Track Position — the race as a story, the chart as the hero.               */
 /*                                                                            */
-/* Simple and Advanced share ONE visual identity — same lines, same team      */
-/* colours, same event markers, same focus card, same right-edge running      */
-/* order. They differ only in *density*: Simple tells the story (fewer cars,  */
-/* bigger type, minimal controls, plain-English hover); Advanced is the       */
-/* analyst tool (all cars, per-driver control, full running order on hover).  */
-/*                                                                            */
-/* Colour follows the team, never rank. Two team-mates share a colour and are */
-/* told apart by the direct code label at the right edge — identity is never  */
+/* Simple and Advanced are the SAME product at two densities: identical       */
+/* layout, colours, type and motion. Simple tells the story (Top 5, plain     */
+/* English, minimal controls); Advanced investigates it (all cars, gaps &     */
+/* tyre age, a driver command-palette). Team colour carries identity; the     */
+/* code at each line's end (and everywhere text appears) makes it never       */
 /* colour-alone.                                                              */
 /* -------------------------------------------------------------------------- */
+
+// Chart geometry — shared by Recharts AND the HTML annotation band so the
+// editorial event markers above the plot line up exactly with the laps below.
+const M = { top: 10, right: 58, bottom: 26, left: 8 };
+const Y_AXIS_W = 44;
+const PLOT_LEFT = M.left + Y_AXIS_W;
 
 type Preset = "podium" | "top5" | "top10" | "all";
 const PRESETS: { id: Preset; label: string; keep: number }[] = [
   { id: "podium", label: "Podium", keep: 3 },
   { id: "top5", label: "Top 5", keep: 5 },
   { id: "top10", label: "Top 10", keep: 10 },
-  { id: "all", label: "All drivers", keep: 99 },
+  { id: "all", label: "All", keep: 99 },
 ];
 
-type EventKind = "start" | "sc" | "vsc" | "red" | "yellow" | "pit";
-interface RaceEvent {
-  lap: number; kind: EventKind; code: string; label: string; color: string;
-  band?: [number, number];   // shaded window (start,end) for neutralizations
-  row: number;               // 0/1 vertical stagger so close labels never collide
-}
-const EVENT_META: Record<EventKind, { code: string; label: string; color: string; icon: any }> = {
-  start:  { code: "START", label: "Lights out",   color: "#00e0c6", icon: Flag },
-  sc:     { code: "SC",    label: "Safety car",    color: "#ff8c1a", icon: ShieldAlert },
-  vsc:    { code: "VSC",   label: "Virtual SC",    color: "#ffb020", icon: Gauge },
-  red:    { code: "RED",   label: "Red flag",      color: "#ff4d4d", icon: ShieldAlert },
-  yellow: { code: "YEL",   label: "Yellow flag",   color: "#ffd24a", icon: ShieldAlert },
-  pit:    { code: "PIT",   label: "Pit window",    color: "#a78bfa", icon: Wrench },
+type EventKind = "start" | "sc" | "vsc" | "red";
+const EVENT: Record<EventKind, { code: string; label: string; color: string; icon: any }> = {
+  start: { code: "START", label: "Race start", color: "#00e0c6", icon: Flag },
+  sc:    { code: "SC",    label: "Safety Car",  color: "#ff8c1a", icon: ShieldAlert },
+  vsc:   { code: "VSC",   label: "Virtual SC",  color: "#ffb020", icon: Gauge },
+  red:   { code: "RED",   label: "Red flag",    color: "#ff4d4d", icon: ShieldAlert },
 };
 const BAND_FILL: Partial<Record<EventKind, string>> = {
-  sc: "rgba(255,140,26,0.11)", vsc: "rgba(255,176,32,0.08)",
-  red: "rgba(255,77,77,0.12)", yellow: "rgba(255,210,74,0.06)",
+  sc: "rgba(255,140,26,0.10)", vsc: "rgba(255,176,32,0.07)", red: "rgba(255,77,77,0.11)",
 };
 
 interface LapInfo {
   position?: number | null; compound: Compound; tyre_age?: number | null;
-  gap?: number | null; interval?: number | null;
-  pit_in: boolean; pit_out: boolean; status: string;
+  gap?: number | null; interval?: number | null; pit_in: boolean; status: string;
 }
 interface DriverStat {
   grid?: number | null; best?: number | null; finish?: number | null;
-  dnf: boolean; overtakes: number; net?: number | null;
-  pits: number; compounds: Compound[];
+  dnf: boolean; overtakes: number; net?: number | null; pits: number; compounds: Compound[];
 }
+interface RaceEvt { lap: number; kind: EventKind; band?: [number, number]; }
+interface Moment { lap: number; label: string; kind: EventKind | "story" | "finish"; }
 
 export function PositionChart({
-  session, selected, onSelect, strategy,
+  session, selected, onSelect, strategy, onDeepDive,
 }: {
   session: RaceSession;
   selected: string[];
   onSelect: (codes: string[]) => void;
   strategy?: StrategySummary;
+  onDeepDive?: (code: string) => void;
 }) {
   const simple = useIsSimple();
   const drivers = session.drivers;
 
-  const [preset, setPreset] = useState<Preset>("top10");
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [visibleSet, setVisibleSet] = useState<Set<string>>(new Set());
+  const [favourites, setFavourites] = useState<Set<string>>(new Set());
   const [hover, setHover] = useState<string | null>(null);
-  const [showDrivers, setShowDrivers] = useState(false);
-
-  // Each mode has its own sensible default density: Simple opens on the Top 10
-  // (the story), Advanced opens on the full field (the tool). Switching modes
-  // resets to that default; the user can still override within a mode.
-  useEffect(() => { setPreset(simple ? "top10" : "all"); }, [simple]);
+  const [activeLap, setActiveLap] = useState<number | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [width, setWidth] = useState(0);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
   const driverByCode = useMemo(() => {
     const m: Record<string, Driver> = {};
@@ -93,48 +87,69 @@ export function PositionChart({
     return m;
   }, [drivers]);
 
-  // Finishing order drives the leaderboard, the presets and the focus picker.
   const finishOrder = useMemo(() => {
-    const cls = [...session.classification].sort(
-      (a, b) => (a.position ?? 99) - (b.position ?? 99));
-    if (cls.length) return cls.map((c) => c.driver).filter((c) => driverByCode[c]);
-    return drivers.map((d) => d.code);
+    const cls = [...session.classification].sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
+    const codes = cls.map((c) => c.driver).filter((c) => driverByCode[c]);
+    return codes.length ? codes : drivers.map((d) => d.code);
   }, [session.classification, drivers, driverByCode]);
 
   const podiumSet = useMemo(() => new Set(finishOrder.slice(0, 3)), [finishOrder]);
 
-  // Wide-format rows for the chart + a per-(driver,lap) lookup for the tooltip.
+  const presetSet = (id: Preset) =>
+    new Set(finishOrder.slice(0, PRESETS.find((p) => p.id === id)!.keep));
+
+  // Visibility source of truth. Presets replace it; the palette mutates it.
+  // Each mode opens on its own density: Simple on the Top 5 (the story),
+  // Advanced on the full field (the tool).
+  useEffect(() => {
+    setVisibleSet(new Set(finishOrder.slice(0, simple ? 5 : 99)));
+  }, [simple, finishOrder]);
+
+  const activePreset = useMemo<Preset | null>(() => {
+    for (const p of PRESETS) {
+      const s = presetSet(p.id);
+      if (s.size === visibleSet.size && [...s].every((c) => visibleSet.has(c))) return p.id;
+    }
+    return null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleSet, finishOrder]);
+
+  // measure the plot so the annotation band can align to laps
+  useEffect(() => {
+    if (!wrapRef.current) return;
+    const el = wrapRef.current;
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
+    ro.observe(el); setWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  const lapToX = (lap: number) => {
+    const x0 = PLOT_LEFT, x1 = width - M.right;
+    if (session.total_laps <= 1 || width === 0) return x0;
+    return x0 + ((lap - 1) / (session.total_laps - 1)) * (x1 - x0);
+  };
+
   const { data, info } = useMemo(() => {
     const byLap = new Map<number, Record<string, number>>();
     for (let l = 1; l <= session.total_laps; l++) byLap.set(l, { lap: l });
-    for (const p of session.positions) {
-      const row = byLap.get(p.lap);
-      if (row) row[p.driver] = p.position;
-    }
+    for (const p of session.positions) { const r = byLap.get(p.lap); if (r) r[p.driver] = p.position; }
     const info = new Map<string, LapInfo>();
     for (const lp of session.laps) {
       info.set(`${lp.driver}:${lp.lap}`, {
         position: lp.position, compound: lp.compound, tyre_age: lp.tyre_age,
-        gap: lp.gap_to_leader, interval: lp.interval,
-        pit_in: lp.pit_in, pit_out: lp.pit_out, status: lp.track_status,
+        gap: lp.gap_to_leader, interval: lp.interval, pit_in: lp.pit_in, status: lp.track_status,
       });
     }
     return { data: Array.from(byLap.values()), info };
   }, [session]);
 
-  // Per-driver stats for the focus card — every value read straight from the
-  // session, never invented.
   const stats = useMemo(() => {
     const best: Record<string, number> = {};
-    for (const p of session.positions) {
-      best[p.driver] = Math.min(best[p.driver] ?? 99, p.position);
-    }
-    const overtakes: Record<string, number> = {};
-    for (const o of session.overtakes) overtakes[o.overtaker] = (overtakes[o.overtaker] ?? 0) + 1;
-    const compounds: Record<string, Compound[]> = {};
+    for (const p of session.positions) best[p.driver] = Math.min(best[p.driver] ?? 99, p.position);
+    const ot: Record<string, number> = {};
+    for (const o of session.overtakes) ot[o.overtaker] = (ot[o.overtaker] ?? 0) + 1;
+    const comp: Record<string, Compound[]> = {};
     for (const s of [...session.stints].sort((a, b) => a.start_lap - b.start_lap)) {
-      (compounds[s.driver] ??= []);
-      if (!compounds[s.driver].includes(s.compound)) compounds[s.driver].push(s.compound);
+      (comp[s.driver] ??= []); if (!comp[s.driver].includes(s.compound)) comp[s.driver].push(s.compound);
     }
     const out: Record<string, DriverStat> = {};
     for (const d of drivers) {
@@ -142,99 +157,85 @@ export function PositionChart({
       const grid = cls?.grid ?? d.grid ?? null;
       const finish = cls?.position ?? null;
       const dnf = !!cls?.retired;
-      const net = grid != null && finish != null && !dnf ? grid - finish : null;
       out[d.code] = {
         grid, best: best[d.code] ?? null, finish, dnf,
-        overtakes: overtakes[d.code] ?? 0, net,
-        pits: cls?.pit_stops ?? 0, compounds: compounds[d.code] ?? [],
+        overtakes: ot[d.code] ?? 0, net: grid != null && finish != null && !dnf ? grid - finish : null,
+        pits: cls?.pit_stops ?? 0, compounds: comp[d.code] ?? [],
       };
     }
     return out;
   }, [session, drivers]);
 
-  // The busiest green-flag pit lap — a real strategic beat, not every stop.
-  const pitWindowLap = useMemo(() => {
-    if (session.pit_data_reliable === false) return null;
-    const laps = session.pit_stops
-      .filter((p) => !p.under_safety_car && !p.under_vsc)
-      .map((p) => p.lap).sort((a, b) => a - b);
-    if (laps.length < 4) return null;
-    let best = { lap: 0, count: 0 };
-    for (const l of laps) {
-      const c = laps.filter((x) => x >= l && x <= l + 2).length;
-      if (c > best.count) best = { lap: l + 1, count: c };
-    }
-    return best.count >= 4 ? Math.min(best.lap, session.total_laps) : null;
-  }, [session]);
-
-  // Build the event set. Simple keeps the headline beats; Advanced adds yellows.
-  const events = useMemo<RaceEvent[]>(() => {
-    const mk = (kind: EventKind, lap: number, band?: [number, number]): Omit<RaceEvent, "row"> => ({
-      kind, lap, band, code: EVENT_META[kind].code, label: EVENT_META[kind].label, color: EVENT_META[kind].color,
-    });
-    const raw: Omit<RaceEvent, "row">[] = [mk("start", 1)];
+  // Race-control events for the annotation band + shaded bands (calm: no pit).
+  const events = useMemo<RaceEvt[]>(() => {
+    const out: RaceEvt[] = [{ lap: 1, kind: "start" }];
     for (const w of session.track_status_windows) {
       const k: EventKind | null = w.status === "SAFETY_CAR" ? "sc" : w.status === "VSC" ? "vsc"
-        : w.status === "RED" ? "red" : w.status === "YELLOW" ? "yellow" : null;
-      if (!k) continue;
-      if (simple && k === "yellow") continue;   // yellows are noise for casual fans
-      raw.push(mk(k, w.start_lap, [w.start_lap, w.end_lap]));
+        : w.status === "RED" ? "red" : null;
+      if (k) out.push({ lap: w.start_lap, kind: k, band: [w.start_lap, w.end_lap] });
     }
-    if (pitWindowLap) raw.push(mk("pit", pitWindowLap));
-    raw.sort((a, b) => a.lap - b.lap);
-    // Stagger labels that fall within a few laps of each other.
-    const span = Math.max(session.total_laps, 1);
-    let lastLap = -99, lastRow = 1;
-    return raw.map((e) => {
-      const near = e.lap - lastLap < span * 0.07;
-      const row = near ? 1 - lastRow : 0;
-      lastLap = e.lap; lastRow = row;
-      return { ...e, row };
-    });
-  }, [session.track_status_windows, session.total_laps, pitWindowLap, simple]);
+    return dedupeByLap(out, session.total_laps);
+  }, [session.track_status_windows, session.total_laps]);
 
-  // Which drivers are drawn. Focused drivers are always kept visible.
-  const visible = useMemo(() => {
-    const focus = new Set(selected);
-    const keepN = PRESETS.find((p) => p.id === preset)!.keep;
-    const codes = new Set(finishOrder.slice(0, keepN));
-    for (const c of selected) codes.add(c);
-    let list = drivers.filter((d) => codes.has(d.code));
-    if (!simple) list = list.filter((d) => !hidden.has(d.code) || focus.has(d.code));
-    return list;
-  }, [drivers, finishOrder, preset, selected, hidden, simple]);
+  // Narrative beats for the interactive story timeline (jump-to-moment).
+  const moments = useMemo<Moment[]>(() => {
+    const out: Moment[] = [{ lap: 1, kind: "start", label: "Race start" }];
+    for (const e of events) if (e.kind !== "start") out.push({ lap: e.lap, kind: e.kind, label: EVENT[e.kind].label });
+    const beats: RaceInsight[] = [...(strategy?.turning_points ?? []), ...(strategy?.insights ?? [])];
+    for (const b of beats) {
+      const lap = b.lap_range?.[0];
+      if (lap != null && !out.some((m) => Math.abs(m.lap - lap) < 2)) out.push({ lap, kind: "story", label: b.title });
+    }
+    out.push({ lap: session.total_laps, kind: "finish", label: "Race finish" });
+    return out.sort((a, b) => a.lap - b.lap).slice(0, simple ? 5 : 8);
+  }, [events, strategy, session.total_laps, simple]);
 
   const anyFocus = selected.length > 0;
+  function focusOnly(code: string) { onSelect([code]); setActiveLap(null); }
 
-  function emphasis(code: string): { op: number; w: number; rank: number; label: boolean } {
+  function emphasis(code: string) {
     const isFocus = selected.includes(code);
-    if (hover === code) return { op: 1, w: simple ? 3.6 : 3.2, rank: 5, label: true };
+    if (hover === code) return { op: 1, w: simple ? 3.4 : 3, rank: 5, label: true, glow: true };
     if (anyFocus) return isFocus
-      ? { op: 1, w: 3, rank: 4, label: true }
-      : { op: 0.1, w: 1.2, rank: 0, label: false };
-    if (hover) return { op: 0.16, w: 1.2, rank: 0, label: false };
-    if (podiumSet.has(code)) return { op: 1, w: simple ? 2.6 : 2.2, rank: 3, label: true };
-    return { op: simple ? 0.4 : 0.55, w: 1.5, rank: 1, label: !simple };
+      ? { op: 1, w: 3, rank: 4, label: true, glow: true }
+      : { op: 0.12, w: 1.25, rank: 0, label: false, glow: false };
+    if (hover) return { op: 0.14, w: 1.25, rank: 0, label: false, glow: false };
+    if (podiumSet.has(code)) return { op: 1, w: simple ? 2.6 : 2.2, rank: 3, label: true, glow: false };
+    return { op: simple ? 0.36 : 0.5, w: 1.5, rank: 1, label: !simple, glow: false };
   }
 
-  // Draw least-emphasised first so highlighted lines sit on top.
+  const visible = useMemo(() => {
+    const focus = new Set(selected);
+    return drivers.filter((d) => visibleSet.has(d.code) || focus.has(d.code));
+  }, [drivers, visibleSet, selected]);
+
   const drawOrder = useMemo(
     () => [...visible].sort((a, b) => emphasis(a.code).rank - emphasis(b.code).rank),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [visible, selected, hover, podiumSet, simple],
   );
 
-  function toggleHidden(code: string) {
-    setHidden((h) => { const n = new Set(h); n.has(code) ? n.delete(code) : n.add(code); return n; });
+  function toggleVisible(code: string) {
+    setVisibleSet((s) => { const n = new Set(s); n.has(code) ? n.delete(code) : n.add(code); return n; });
   }
-  function toggleFocus(code: string) {
-    onSelect(selected.includes(code) ? selected.filter((c) => c !== code) : [...selected, code]);
+  function toggleFav(code: string) {
+    setFavourites((s) => { const n = new Set(s); n.has(code) ? n.delete(code) : n.add(code); return n; });
   }
 
-  // Practice / qualifying carry no running order — say so plainly.
+  // Fit the vertical axis to the field actually on screen — showing 20 rows for
+  // a Top-5 view wastes half the frame. The lowest place any drawn driver hits
+  // sets the floor, so the lines fill the chart instead of floating up top.
+  const yMax = useMemo(() => {
+    let mx = 5;
+    for (const p of session.positions) {
+      if (visibleSet.has(p.driver) || selected.includes(p.driver)) mx = Math.max(mx, p.position);
+    }
+    return Math.min(drivers.length, Math.max(mx, Math.min(5, drivers.length)));
+  }, [session.positions, visibleSet, selected, drivers.length]);
+
   if (!session.positions.length) {
     return (
-      <p className="py-10 text-center text-sm text-ink-faint">
+      <p className="py-12 text-center text-sm text-ink-faint">
         Position order isn&apos;t tracked in this session — practice and qualifying have no
         lap-by-lap running order to chart.
       </p>
@@ -242,234 +243,290 @@ export function PositionChart({
   }
 
   const focusCode = selected.length === 1 ? selected[0] : null;
-  const yMax = drivers.length;
+  const activeMoment = activeLap != null ? moments.find((m) => m.lap === activeLap) ?? null : null;
 
   return (
-    <div className="space-y-4">
-      <StoryCard simple={simple} strategy={strategy} />
-
-      {/* CONTROLS — Simple keeps it to the essentials; Advanced reveals the tool. */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <FocusPicker
-          finishOrder={finishOrder} driverByCode={driverByCode} stats={stats}
-          value={focusCode} onPick={(c) => onSelect(c ? [c] : [])} />
-        <div className="flex items-center gap-1.5">
-          <span className="hidden text-[11px] font-semibold uppercase tracking-wider text-ink-faint sm:inline">Show</span>
-          <Segmented
-            options={(simple ? PRESETS.filter((p) => p.id !== "top5") : PRESETS)
-              .map((p) => ({ id: p.id, label: p.label }))}
-            value={preset} onChange={(v) => setPreset(v as Preset)} />
-        </div>
-        <div className="ml-auto flex items-center gap-1.5">
-          {!simple && (
-            <button onClick={() => setShowDrivers((s) => !s)}
-              aria-pressed={showDrivers}
-              className={cx("inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
-                showDrivers ? "border-accent/40 bg-accent/10 text-accent-soft" : "border-white/10 bg-white/[0.03] text-ink-muted hover:text-ink")}>
-              <Users size={13} /> Drivers
-              <ChevronDown size={12} className={cx("transition-transform", showDrivers && "rotate-180")} />
-            </button>
-          )}
-          {anyFocus && (
-            <button onClick={() => onSelect([])} className="chip hover:text-ink">
-              <X size={12} /> Clear
-            </button>
-          )}
-        </div>
+    <div className="space-y-5">
+      {/* ── STORY: summary + interactive timeline ─────────────────────────── */}
+      <div className="grid gap-3 lg:grid-cols-5">
+        <SummaryStory simple={simple} strategy={strategy} className="lg:col-span-3" />
+        <StoryTimeline moments={moments} activeLap={activeLap}
+          onJump={(l) => setActiveLap((cur) => (cur === l ? null : l))} className="lg:col-span-2" />
       </div>
 
-      {/* Advanced-only per-driver control panel, revealed on demand so it never
-          clutters the default view. Click = show/hide · double-click = highlight. */}
-      {!simple && showDrivers && (
-        <div className="rounded-xl border border-white/[0.06] bg-base-900/40 p-2.5">
-          <div className="mb-2 flex items-center justify-between px-0.5">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-              Click to show / hide · double-click to highlight &amp; compare
-            </span>
-            {hidden.size > 0 && (
-              <button onClick={() => setHidden(new Set())} className="text-[11px] text-ink-muted hover:text-ink">
-                Show all
-              </button>
-            )}
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {finishOrder.map((code) => {
-              const d = driverByCode[code]; if (!d) return null;
-              const off = hidden.has(code); const sel = selected.includes(code);
-              return (
-                <button key={code}
-                  onClick={() => toggleHidden(code)}
-                  onDoubleClick={() => toggleFocus(code)}
-                  onMouseEnter={() => setHover(code)} onMouseLeave={() => setHover(null)}
-                  aria-pressed={!off}
-                  className={cx("inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-semibold transition-all",
-                    off ? "border-white/5 text-ink-faint opacity-50" : "border-white/10 bg-white/[0.03] text-ink",
-                    sel && "ring-1 ring-accent/60")}>
-                  <span className="h-2 w-2 rounded-full" style={{ background: d.team_color }} />
-                  {code}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+      {activeMoment && (
+        <MomentCard moment={activeMoment} info={info} drivers={drivers} visible={visible}
+          onClose={() => setActiveLap(null)} />
       )}
 
       {focusCode && (
-        <FocusCard driver={driverByCode[focusCode]} stat={stats[focusCode]} simple={simple}
-          onClear={() => onSelect([])} />
-      )}
-      {selected.length > 1 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/[0.06] bg-base-900/40 px-3 py-2 text-xs text-ink-muted">
-          <span className="font-semibold text-ink">Comparing {selected.length} drivers:</span>
-          {selected.map((c) => (
-            <span key={c} className="inline-flex items-center gap-1.5 font-semibold text-ink">
-              <span className="h-2 w-2 rounded-full" style={{ background: driverByCode[c]?.team_color }} />
-              {c}
-            </span>
-          ))}
-        </div>
+        <FocusBar driver={driverByCode[focusCode]} stat={stats[focusCode]} simple={simple}
+          onClear={() => onSelect([])} onDeepDive={onDeepDive} />
       )}
 
-      {/* EVENT STRIP — the same beats both modes; a quick-read legend that pairs
-          with the vertical markers on the chart. */}
-      {events.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          {events.map((e, i) => {
-            const Icon = EVENT_META[e.kind].icon;
-            return (
-              <span key={i} className="inline-flex items-center gap-1.5 text-[11px] text-ink-muted">
-                <Icon size={13} style={{ color: e.color }} />
-                <span className="font-semibold text-ink">{e.label}</span>
-                <span className="text-ink-faint">· Lap {e.lap}</span>
-              </span>
-            );
-          })}
+      {/* ── CONTROLS — same row both modes, just fewer decisions in Simple ── */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex items-center gap-1.5">
+          <span className="hidden text-[11px] font-semibold uppercase tracking-wider text-ink-faint sm:inline">Show</span>
+          <Segmented
+            options={(simple ? PRESETS.filter((p) => p.id !== "podium") : PRESETS).map((p) => ({ id: p.id, label: p.label }))}
+            value={activePreset ?? ""} onChange={(v) => setVisibleSet(presetSet(v as Preset))} />
         </div>
-      )}
-
-      {/* THE CHART */}
-      <div className={cx("w-full select-none", simple ? "h-[440px]" : "h-[460px]")}>
-        <ResponsiveContainer>
-          <LineChart data={data} margin={{ top: 24, right: 52, bottom: 24, left: 8 }}>
-            <CartesianGrid strokeDasharray="2 5" vertical={false} />
-            {/* neutralization bands */}
-            {events.filter((e) => e.band).map((e, i) => (
-              <ReferenceArea key={`b${i}`} x1={e.band![0]} x2={e.band![1]}
-                fill={BAND_FILL[e.kind] ?? "rgba(255,255,255,0.05)"} stroke="none" />
-            ))}
-            {/* event markers */}
-            {events.map((e, i) => (
-              <ReferenceLine key={`e${i}`} x={e.lap} stroke={e.color} strokeOpacity={0.5}
-                strokeDasharray="3 4"
-                label={(props: any) => <EventLabel viewBox={props.viewBox} event={e} />} />
-            ))}
-            <XAxis
-              dataKey="lap" type="number" domain={[1, session.total_laps]}
-              tick={{ fill: "#5f6b84", fontSize: simple ? 12 : 11 }} tickLine={false}
-              axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
-              label={{ value: "Lap number", position: "insideBottom", offset: -12,
-                fill: "#5f6b84", fontSize: simple ? 12 : 11 }} />
-            <YAxis
-              type="number" reversed domain={[1, yMax]} interval={0}
-              ticks={Array.from({ length: yMax }, (_, i) => i + 1)}
-              tick={{ fill: "#5f6b84", fontSize: simple ? 12 : 11 }} tickLine={false}
-              tickMargin={6} width={44} axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
-              label={{ value: "Track position", angle: -90, position: "insideLeft",
-                offset: 4, fill: "#5f6b84", fontSize: simple ? 12 : 11 }} />
-            <Tooltip
-              isAnimationActive={false} allowEscapeViewBox={{ x: false, y: false }}
-              wrapperStyle={{ zIndex: 40, outline: "none" }}
-              content={(p: any) => (
-                <PosTooltip active={p.active} label={p.label} info={info} drivers={drivers}
-                  visible={visible} focus={focusCode} simple={simple} stat={focusCode ? stats[focusCode] : undefined} />
-              )} />
-            {drawOrder.map((d) => {
-              const em = emphasis(d.code);
-              return (
-                <Line
-                  key={d.code} dataKey={d.code} type="monotone"
-                  stroke={d.team_color} strokeWidth={em.w} strokeOpacity={em.op}
-                  dot={false} connectNulls isAnimationActive={false}
-                  label={(props: any) =>
-                    props.index === data.length - 1 && em.label
-                      ? <EdgeLabel x={props.x} y={props.y} code={d.code} color={d.team_color} op={em.op} />
-                      : <g />} />
-              );
-            })}
-            {/* pit stops on the focused line only — clean, legible */}
-            {focusCode && session.pit_stops.filter((p) => p.driver === focusCode).map((p, i) => {
-              const pos = info.get(`${focusCode}:${p.lap}`)?.position;
-              if (pos == null) return null;
-              return <ReferenceDot key={`p${i}`} x={p.lap} y={pos} r={4}
-                fill="#0b0e16" stroke={driverByCode[focusCode]?.team_color} strokeWidth={2} />;
-            })}
-          </LineChart>
-        </ResponsiveContainer>
+        {selected.map((c) => (
+          <button key={c} onClick={() => onSelect(selected.filter((x) => x !== c))}
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] py-1 pl-2 pr-1.5 text-xs font-semibold text-ink">
+            <span className="h-2 w-2 rounded-full" style={{ background: driverByCode[c]?.team_color }} />
+            {c} <X size={12} className="text-ink-faint" />
+          </button>
+        ))}
+        <div className="ml-auto flex items-center gap-1.5">
+          <button onClick={() => setPaletteOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:text-ink">
+            <Users size={13} /> Drivers
+            <kbd className="hidden rounded bg-white/[0.06] px-1 text-[10px] text-ink-faint sm:inline">{visibleSet.size}</kbd>
+          </button>
+          {anyFocus && (
+            <button onClick={() => onSelect([])} className="chip hover:text-ink"><X size={12} /> Clear focus</button>
+          )}
+        </div>
       </div>
 
-      <ChartLegend simple={simple} hasFocus={!!focusCode} />
+      {/* ── EVENT ANNOTATION BAND + CHART ─────────────────────────────────── */}
+      <div ref={wrapRef} className="relative">
+        <EventBand events={events} lapToX={lapToX} ready={width > 0} activeLap={activeLap}
+          onJump={(l) => setActiveLap((cur) => (cur === l ? null : l))} />
+        <div className={cx("w-full select-none", simple ? "h-[420px]" : "h-[440px]")}>
+          <ResponsiveContainer>
+            <LineChart data={data} margin={M}>
+              <CartesianGrid stroke="rgba(255,255,255,0.035)" strokeDasharray="1 6" vertical={false} />
+              {events.filter((e) => e.band).map((e, i) => (
+                <ReferenceArea key={`b${i}`} x1={e.band![0]} x2={e.band![1]} y1={1} y2={yMax}
+                  fill={BAND_FILL[e.kind]} stroke="none" ifOverflow="hidden" />
+              ))}
+              {events.map((e, i) => (
+                <ReferenceLine key={`e${i}`} x={e.lap} stroke={EVENT[e.kind].color} strokeOpacity={0.22}
+                  strokeDasharray="2 5" ifOverflow="extendDomain" />
+              ))}
+              {activeLap != null && (
+                <ReferenceLine x={activeLap} stroke="#ffffff" strokeOpacity={0.85} strokeWidth={1.4}
+                  className="moment-line" ifOverflow="extendDomain" />
+              )}
+              <XAxis
+                dataKey="lap" type="number" domain={[1, session.total_laps]} allowDecimals={false}
+                tick={{ fill: "#5f6b84", fontSize: simple ? 12 : 11 }} tickLine={false} tickMargin={8}
+                axisLine={{ stroke: "rgba(255,255,255,0.07)" }}
+                label={{ value: "Lap", position: "insideBottom", offset: -14, fill: "#5f6b84", fontSize: 11 }} />
+              <YAxis
+                type="number" reversed domain={[1, yMax]} interval={0}
+                ticks={Array.from({ length: yMax }, (_, i) => i + 1)}
+                tick={{ fill: "#5f6b84", fontSize: simple ? 12 : 11 }} tickLine={false} tickMargin={6}
+                width={Y_AXIS_W} axisLine={{ stroke: "rgba(255,255,255,0.07)" }}
+                label={{ value: "Position", angle: -90, position: "insideLeft", offset: 4, fill: "#5f6b84", fontSize: 11 }} />
+              <Tooltip isAnimationActive={false} allowEscapeViewBox={{ x: false, y: false }}
+                cursor={{ stroke: "rgba(255,255,255,0.18)", strokeWidth: 1 }}
+                wrapperStyle={{ zIndex: 30, outline: "none" }}
+                content={(p: any) => (
+                  <OrderTooltip active={p.active} label={p.label} info={info} drivers={drivers}
+                    visible={visible} focus={focusCode} simple={simple} />
+                )} />
+              {/* soft halo under emphasised lines — premium, cheap (1–2 extra) */}
+              {drawOrder.filter((d) => emphasis(d.code).glow).map((d) => (
+                <Line key={`${d.code}-glow`} dataKey={d.code} type="monotone" stroke={d.team_color}
+                  strokeWidth={emphasis(d.code).w + 6} strokeOpacity={0.16} dot={false}
+                  connectNulls isAnimationActive={false} legendType="none" />
+              ))}
+              {drawOrder.map((d) => {
+                const em = emphasis(d.code);
+                return (
+                  <Line
+                    key={d.code} dataKey={d.code} type="monotone" className="pos-line"
+                    stroke={d.team_color} strokeWidth={em.w} strokeOpacity={em.op}
+                    dot={false} connectNulls isAnimationActive={false}
+                    onClick={() => focusOnly(d.code)} style={{ cursor: "pointer" }}
+                    label={(props: any) =>
+                      props.index === data.length - 1 && em.label
+                        ? <EdgeLabel x={props.x} y={props.y} code={d.code} color={d.team_color}
+                            op={em.op} onClick={() => focusOnly(d.code)} />
+                        : <g />} />
+                );
+              })}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <UnifiedLegend simple={simple} events={events} hasFocus={anyFocus} />
+
+      <DriverPalette
+        open={paletteOpen} onClose={() => setPaletteOpen(false)}
+        drivers={drivers} finishOrder={finishOrder}
+        visible={visibleSet} onToggleVisible={toggleVisible}
+        onSetVisible={(codes) => setVisibleSet(new Set(codes))}
+        onFocus={focusOnly} favourites={favourites} onToggleFav={toggleFav} />
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* Sub-components                                                             */
+/* helpers + sub-components                                                   */
 /* -------------------------------------------------------------------------- */
 
-function StoryCard({ simple, strategy }: { simple: boolean; strategy?: StrategySummary }) {
+function dedupeByLap(evts: RaceEvt[], total: number): RaceEvt[] {
+  const seen = new Set<number>();
+  return evts.filter((e) => e.lap >= 1 && e.lap <= total && !seen.has(e.lap) && seen.add(e.lap));
+}
+
+function SummaryStory({ simple, strategy, className }: {
+  simple: boolean; strategy?: StrategySummary; className?: string;
+}) {
   const lines = useMemo(() => {
     if (!strategy) return [];
     const src = (!simple && strategy.story_advanced?.length ? strategy.story_advanced : strategy.story) ?? [];
     return src.filter(Boolean).slice(0, simple ? 2 : 3);
   }, [strategy, simple]);
-  if (!lines.length) return null;
+  if (!lines.length) return <div className={className} />;
   return (
-    <div className="rounded-xl border border-speed/15 bg-speed/[0.04] p-4">
-      <div className="mb-1.5 flex items-center gap-2">
+    <div className={cx("rounded-2xl border border-white/[0.06] bg-gradient-to-br from-speed/[0.06] to-transparent p-5", className)}>
+      <div className="mb-2 flex items-center gap-2">
         <Sparkles size={14} className="text-speed" />
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-speed">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-speed">
           {simple ? "The story" : "Analyst read"}
         </span>
       </div>
-      <div className={cx("space-y-1 text-ink", simple ? "text-[15px] leading-relaxed" : "text-sm leading-relaxed text-ink-muted")}>
+      <div className={cx("space-y-1.5 text-ink", simple ? "text-[17px] font-medium leading-snug" : "text-sm leading-relaxed text-ink-muted")}>
         {lines.map((l, i) => <p key={i}>{l}</p>)}
       </div>
     </div>
   );
 }
 
-function FocusPicker({
-  finishOrder, driverByCode, stats, value, onPick,
-}: {
-  finishOrder: string[]; driverByCode: Record<string, Driver>;
-  stats: Record<string, DriverStat>; value: string | null; onPick: (code: string | null) => void;
+function StoryTimeline({ moments, activeLap, onJump, className }: {
+  moments: Moment[]; activeLap: number | null; onJump: (lap: number) => void; className?: string;
 }) {
+  if (moments.length < 2) return <div className={className} />;
   return (
-    <label className="relative inline-flex items-center">
-      <span className="pointer-events-none absolute left-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-        Focus
-      </span>
-      <select
-        aria-label="Focus a driver"
-        value={value ?? ""}
-        onChange={(e) => onPick(e.target.value || null)}
-        className="appearance-none rounded-lg border border-white/10 bg-base-800 py-2 pl-[4.2rem] pr-8 text-sm font-semibold text-ink transition-colors hover:border-white/20 focus-visible:border-accent/50">
-        <option value="">a driver…</option>
-        {finishOrder.map((code, i) => {
-          const d = driverByCode[code]; if (!d) return null;
-          const s = stats[code];
-          const place = s?.dnf ? "DNF" : s?.finish != null ? `P${s.finish}` : `#${i + 1}`;
-          return <option key={code} value={code}>{place} · {d.name}</option>;
+    <div className={cx("rounded-2xl border border-white/[0.06] bg-base-900/40 p-4", className)}>
+      <div className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Key moments</div>
+      <ol className="relative space-y-1 before:absolute before:left-[5px] before:top-1.5 before:bottom-1.5 before:w-px before:bg-white/[0.08]">
+        {moments.map((m) => {
+          const on = activeLap === m.lap;
+          const color = m.kind in EVENT ? EVENT[m.kind as EventKind].color : "#8892a6";
+          return (
+            <li key={`${m.lap}-${m.label}`}>
+              <button onClick={() => onJump(m.lap)}
+                className={cx("group relative flex w-full items-center gap-2.5 rounded-lg py-1 pl-0 pr-1 text-left transition-colors",
+                  on ? "bg-white/[0.05]" : "hover:bg-white/[0.03]")}>
+                <span className="relative z-10 grid h-[11px] w-[11px] place-items-center rounded-full ring-2 ring-base-900"
+                  style={{ background: color }} />
+                <span className="w-12 shrink-0 text-[11px] font-semibold tabular-nums text-ink-faint">Lap {m.lap}</span>
+                <span className={cx("min-w-0 flex-1 truncate text-xs", on ? "text-ink" : "text-ink-muted group-hover:text-ink")}>{m.label}</span>
+                <ChevronRight size={13} className={cx("shrink-0 transition-opacity", on ? "text-ink opacity-100" : "text-ink-faint opacity-0 group-hover:opacity-100")} />
+              </button>
+            </li>
+          );
         })}
-      </select>
-      <ChevronDown size={14} className="pointer-events-none absolute right-2.5 text-ink-faint" />
-    </label>
+      </ol>
+    </div>
   );
 }
 
-function Segmented({
-  options, value, onChange,
-}: { options: { id: string; label: string }[]; value: string; onChange: (v: string) => void }) {
+function MomentCard({ moment, info, drivers, visible, onClose }: {
+  moment: Moment; info: Map<string, LapInfo>; drivers: Driver[]; visible: Driver[]; onClose: () => void;
+}) {
+  const rows = visible
+    .map((d) => ({ d, i: info.get(`${d.code}:${moment.lap}`) }))
+    .filter((r) => r.i && r.i.position != null)
+    .sort((a, b) => (a.i!.position ?? 99) - (b.i!.position ?? 99))
+    .slice(0, 5);
+  const color = moment.kind in EVENT ? EVENT[moment.kind as EventKind].color : "#8892a6";
+  return (
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-white/[0.08] bg-base-900/60 p-4 animate-fade-in">
+      <div className="flex items-center gap-3">
+        <span className="grid h-9 w-9 place-items-center rounded-full" style={{ background: `${color}22`, boxShadow: `inset 0 0 0 1.5px ${color}` }}>
+          <span className="text-xs font-bold" style={{ color }}>L{moment.lap}</span>
+        </span>
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">The moment</div>
+          <div className="text-sm font-semibold text-ink">{moment.label}</div>
+        </div>
+      </div>
+      {rows.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          {rows.map(({ d, i }) => (
+            <span key={d.code} className="inline-flex items-center gap-1.5 text-xs">
+              <span className="tabular-nums text-ink-faint">P{i!.position}</span>
+              <span className="h-2 w-2 rounded-full" style={{ background: d.team_color }} />
+              <span className="font-semibold text-ink">{d.code}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      <button onClick={onClose} aria-label="Dismiss moment" className="ml-auto rounded-md p-1 text-ink-faint hover:text-ink"><X size={16} /></button>
+    </div>
+  );
+}
+
+function FocusBar({ driver, stat, simple, onClear, onDeepDive }: {
+  driver?: Driver; stat?: DriverStat; simple: boolean; onClear: () => void; onDeepDive?: (code: string) => void;
+}) {
+  if (!driver || !stat) return null;
+  const net = stat.net;
+  const tiles: { label: string; value: string; tone?: "good" | "bad" }[] = [
+    { label: "Started", value: stat.grid != null ? `P${stat.grid}` : "—" },
+    { label: "Highest", value: stat.best != null ? `P${stat.best}` : "—" },
+    { label: "Finished", value: stat.dnf ? "DNF" : stat.finish != null ? `P${stat.finish}` : "—", tone: stat.dnf ? "bad" : undefined },
+    { label: "Gain / loss", value: net == null ? "—" : net > 0 ? `+${net}` : net < 0 ? `${net}` : "0",
+      tone: net == null || net === 0 ? undefined : net > 0 ? "good" : "bad" },
+    { label: "Overtakes", value: String(stat.overtakes) },
+  ];
+  if (!simple) tiles.push({ label: "Pit stops", value: String(stat.pits) });
+  return (
+    <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-white/[0.08] bg-gradient-to-br from-white/[0.04] to-transparent p-4 animate-fade-in">
+      <button onClick={() => onDeepDive?.(driver.code)} disabled={!onDeepDive}
+        className="group flex items-center gap-3 text-left disabled:cursor-default">
+        <DriverAvatar driver={driver} size={simple ? 52 : 46} />
+        <div className="min-w-0">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Focused driver</div>
+          <div className={cx("flex items-center gap-1.5 font-bold leading-tight", simple ? "text-xl" : "text-lg")}>
+            <span className="truncate">{driver.name}</span>
+            {onDeepDive && <ArrowUpRight size={15} className="shrink-0 text-ink-faint opacity-0 transition-opacity group-hover:opacity-100" />}
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-ink-muted">
+            <span className="h-2 w-2 rounded-full" style={{ background: driver.team_color }} /> {driver.team}
+          </div>
+        </div>
+      </button>
+      <div className="flex flex-1 flex-wrap items-stretch gap-2">
+        {tiles.map((t) => <StatTile key={t.label} {...t} big={simple} />)}
+      </div>
+      <button onClick={onClear} aria-label="Clear focus" className="ml-auto self-start rounded-md p-1 text-ink-faint hover:text-ink"><X size={16} /></button>
+      {!simple && stat.compounds.length > 0 && (
+        <div className="flex w-full items-center gap-1.5 border-t border-white/[0.06] pt-2.5">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Tyres</span>
+          {stat.compounds.map((c, i) => (
+            <span key={i} className="rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ background: COMPOUND_COLOR[c], color: "#0b0e16" }}>
+              {COMPOUND_LABEL[c]}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatTile({ label, value, tone, big }: { label: string; value: string; tone?: "good" | "bad"; big?: boolean }) {
+  const color = tone === "good" ? "text-speed" : tone === "bad" ? "text-accent-soft" : "text-ink";
+  return (
+    <div className="flex-1 min-w-[72px] rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-center">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">{label}</div>
+      <div className={cx("mt-0.5 font-bold tabular-nums", big ? "text-xl" : "text-lg", color)}>{value}</div>
+    </div>
+  );
+}
+
+function Segmented({ options, value, onChange }: {
+  options: { id: string; label: string }[]; value: string; onChange: (v: string) => void;
+}) {
   return (
     <div role="tablist" className="inline-flex rounded-lg border border-white/10 bg-base-900/60 p-0.5">
       {options.map((o) => (
@@ -483,173 +540,109 @@ function Segmented({
   );
 }
 
-function FocusCard({
-  driver, stat, simple, onClear,
-}: { driver?: Driver; stat?: DriverStat; simple: boolean; onClear: () => void }) {
-  if (!driver || !stat) return null;
-  const net = stat.net;
-  const tiles: { label: string; value: string; tone?: "good" | "bad" }[] = [
-    { label: "Started", value: stat.grid != null ? `P${stat.grid}` : "—" },
-    { label: "Highest", value: stat.best != null ? `P${stat.best}` : "—" },
-    { label: "Finished", value: stat.dnf ? "DNF" : stat.finish != null ? `P${stat.finish}` : "—",
-      tone: stat.dnf ? "bad" : undefined },
-    { label: "Overtakes", value: String(stat.overtakes) },
-    { label: "Net", value: net == null ? "—" : net > 0 ? `+${net}` : net < 0 ? `${net}` : "0",
-      tone: net == null || net === 0 ? undefined : net > 0 ? "good" : "bad" },
-  ];
-  if (!simple) {
-    tiles.push({ label: "Pit stops", value: String(stat.pits) });
-  }
+// Editorial event markers, in their own band ABOVE the plot, aligned to laps.
+function EventBand({ events, lapToX, ready, activeLap, onJump }: {
+  events: RaceEvt[]; lapToX: (lap: number) => number; ready: boolean; activeLap: number | null; onJump: (lap: number) => void;
+}) {
   return (
-    <div className="flex flex-wrap items-center gap-4 rounded-xl border border-white/[0.08] bg-base-900/50 p-4">
-      <div className="flex items-center gap-3">
-        <DriverAvatar driver={driver} size={simple ? 52 : 46} />
-        <div className="min-w-0">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Selected driver</div>
-          <div className={cx("truncate font-bold leading-tight", simple ? "text-xl" : "text-lg")}>{driver.name}</div>
-          <div className="flex items-center gap-1.5 text-xs text-ink-muted">
-            <span className="h-2 w-2 rounded-full" style={{ background: driver.team_color }} />
-            {driver.team}
-          </div>
-        </div>
-      </div>
-      <div className="flex flex-1 flex-wrap items-stretch gap-2">
-        {tiles.map((t) => <StatTile key={t.label} {...t} big={simple} />)}
-      </div>
-      <button onClick={onClear} aria-label="Clear focus"
-        className="ml-auto self-start rounded-md p-1 text-ink-faint hover:text-ink">
-        <X size={16} />
-      </button>
-      {!simple && stat.compounds.length > 0 && (
-        <div className="flex w-full items-center gap-1.5 border-t border-white/[0.06] pt-2.5">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Tyres</span>
-          {stat.compounds.map((c, i) => (
-            <span key={i} className="rounded px-1.5 py-0.5 text-[10px] font-bold"
-              style={{ background: COMPOUND_COLOR[c], color: "#0b0e16" }}>
-              {COMPOUND_LABEL[c]}
+    <div className={cx("relative mb-1 h-11 transition-opacity", ready ? "opacity-100" : "opacity-0")}>
+      {events.map((e, i) => {
+        const meta = EVENT[e.kind];
+        const Icon = meta.icon;
+        const on = activeLap === e.lap;
+        return (
+          <button key={i} onClick={() => onJump(e.lap)} title={`${meta.label} · Lap ${e.lap}`}
+            className="group absolute bottom-0 flex -translate-x-1/2 flex-col items-center"
+            style={{ left: Math.max(28, Math.min(lapToX(e.lap), 100000)) }}>
+            <span className={cx("flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold transition-colors",
+              on ? "bg-white/10" : "bg-base-900/80 group-hover:bg-white/[0.06]")}
+              style={{ borderColor: `${meta.color}66`, color: meta.color }}>
+              <Icon size={11} /> {meta.code}
             </span>
-          ))}
-        </div>
-      )}
+            <span className="mt-0.5 text-[10px] tabular-nums text-ink-faint">L{e.lap}</span>
+            <span className="mt-0.5 h-1.5 w-px" style={{ background: `${meta.color}66` }} />
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-function StatTile({ label, value, tone, big }: {
-  label: string; value: string; tone?: "good" | "bad"; big?: boolean;
+function EdgeLabel({ x, y, code, color, op, onClick }: {
+  x: number; y: number; code: string; color: string; op: number; onClick: () => void;
 }) {
-  const color = tone === "good" ? "text-speed" : tone === "bad" ? "text-accent-soft" : "text-ink";
   return (
-    <div className="flex-1 min-w-[68px] rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-center">
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">{label}</div>
-      <div className={cx("mt-0.5 font-bold tabular-nums", big ? "text-xl" : "text-lg", color)}>{value}</div>
-    </div>
-  );
-}
-
-// Vertical event marker label — a small chip on the axis, auto-aligned to the
-// line's x pixel. Staggered rows keep close events from colliding.
-function EventLabel({ viewBox, event }: { viewBox?: any; event: RaceEvent }) {
-  if (!viewBox) return <g />;
-  const { x, y } = viewBox;               // y is the top of the plot area
-  const w = event.code.length * 7 + 12;
-  const top = (y ?? 0) + (event.row === 1 ? 15 : -1);
-  // keep the chip fully on-canvas at the left edge (lap 1 sits on the axis)
-  const left = Math.max(x - w / 2, 2);
-  return (
-    <g transform={`translate(${left}, ${top - 16})`}>
-      <rect width={w} height={15} rx={4} fill="#0b0e16" stroke={event.color} strokeOpacity={0.8} />
-      <text x={w / 2} y={11} textAnchor="middle" fontSize={9} fontWeight={700} fill={event.color}>
-        {event.code}
-      </text>
+    <g className="pos-edge" opacity={Math.max(op, 0.35)} style={{ cursor: "pointer" }} onClick={onClick}>
+      <rect x={x + 3} y={y - 8} width={40} height={16} rx={4} fill="transparent" />
+      <circle cx={x + 9} cy={y} r={3} fill={color} />
+      <text x={x + 16} y={y} dy={3.5} fontSize={11} fontWeight={800} fill={color}>{code}</text>
     </g>
   );
 }
 
-// Right-edge running-order label: team-colour dot + driver code at each line's
-// final position. Positions are distinct integers at the last lap, so these
-// never collide — the chart edge becomes a live leaderboard.
-function EdgeLabel({ x, y, code, color, op }: {
-  x: number; y: number; code: string; color: string; op: number;
-}) {
+function UnifiedLegend({ simple, events, hasFocus }: { simple: boolean; events: RaceEvt[]; hasFocus: boolean }) {
+  const kinds = Array.from(new Set(events.map((e) => e.kind)));
   return (
-    <g opacity={Math.max(op, 0.35)}>
-      <circle cx={x + 8} cy={y} r={3} fill={color} />
-      <text x={x + 15} y={y} dy={3.5} fontSize={10.5} fontWeight={700} fill={color}>{code}</text>
-    </g>
-  );
-}
-
-function ChartLegend({ simple, hasFocus }: { simple: boolean; hasFocus: boolean }) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-white/[0.05] pt-3 text-[11px] text-ink-faint">
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-white/[0.05] bg-base-900/30 px-4 py-2.5 text-[11px] text-ink-muted">
       <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block h-0.5 w-5 rounded bg-ink-muted" /> Each line is a driver (team colour · code at the right)
+        <span className="inline-block h-0.5 w-6 rounded" style={{ background: "#8892a6" }} /> Driver · team colour, code at the right
       </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block h-3 w-4 rounded-sm bg-amber/20" /> Safety-car / VSC window
-      </span>
-      {hasFocus && (
+      {kinds.map((k) => {
+        const meta = EVENT[k]; const Icon = meta.icon;
+        return (
+          <span key={k} className="inline-flex items-center gap-1.5">
+            <Icon size={12} style={{ color: meta.color }} /> {meta.label}
+          </span>
+        );
+      })}
+      {events.some((e) => e.band) && (
         <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 rounded-full border-2 border-ink-muted bg-base-900" /> Pit stop
+          <span className="inline-block h-3 w-4 rounded-sm bg-amber/20" /> Neutralised (shaded)
         </span>
       )}
-      <span className="ml-auto hidden sm:inline">
-        {simple ? "Hover any lap to see the running order." : "Hover for full running order, gaps & tyres. Open Drivers to compare."}
+      <span className="ml-auto hidden text-ink-faint sm:inline">
+        {hasFocus
+          ? "Hover the chart for the running order at any lap."
+          : simple ? "Click any line to follow that driver." : "Click a line to focus · hover for gaps & tyres · ⌘ Drivers to filter."}
       </span>
     </div>
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Hover tooltip — running order, plus a plain-English read of the focus.     */
-/* -------------------------------------------------------------------------- */
-function PosTooltip({
-  active, label, info, drivers, visible, focus, simple, stat,
-}: {
-  active?: boolean; label?: any; info: Map<string, LapInfo>;
-  drivers: Driver[]; visible: Driver[]; focus: string | null; simple: boolean; stat?: DriverStat;
+/* Hover: the running order at a lap. Never truncated — every visible driver is
+   listed; the focused driver is pinned on top with a plain-English read. */
+function OrderTooltip({ active, label, info, drivers, visible, focus, simple }: {
+  active?: boolean; label?: any; info: Map<string, LapInfo>; drivers: Driver[];
+  visible: Driver[]; focus: string | null; simple: boolean;
 }) {
   if (!active || label == null) return null;
   const lap = Number(label);
-  const pool = focus ? drivers : visible;   // when focused, rank the whole field
-  const rows = pool
+  const rows = visible
     .map((d) => ({ d, i: info.get(`${d.code}:${lap}`) }))
     .filter((r) => r.i && r.i.position != null)
     .sort((a, b) => (a.i!.position ?? 99) - (b.i!.position ?? 99));
   if (!rows.length) return null;
-
-  const cap = simple ? 6 : 12;
-  let shown = rows.slice(0, cap);
-  // Always include the focused driver even if outside the cap.
-  if (focus && !shown.some((r) => r.d.code === focus)) {
-    const fr = rows.find((r) => r.d.code === focus);
-    if (fr) shown = [...shown.slice(0, cap - 1), fr];
-  }
-
   const focusRead = focus ? plainRead(focus, lap, info) : null;
-
   return (
-    <div className="max-w-[min(20rem,86vw)] rounded-xl border border-white/10 bg-base-900/97 p-3 text-xs shadow-glow backdrop-blur-sm">
-      <div className="mb-1.5 flex items-baseline justify-between">
+    <div className="w-[min(21rem,88vw)] overflow-hidden rounded-xl border border-white/10 bg-base-900/97 text-xs shadow-glow backdrop-blur-md">
+      <div className="flex items-baseline justify-between border-b border-white/[0.06] px-3 py-2">
         <span className="font-semibold text-ink">Lap {lap}</span>
-        <span className="text-[10px] uppercase tracking-wider text-ink-faint">Running order</span>
+        <span className="text-[10px] uppercase tracking-wider text-ink-faint">Running order · {rows.length}</span>
       </div>
       {focus && focusRead && (
-        <div className="mb-2 rounded-lg bg-speed/[0.06] px-2 py-1.5 text-[11px] leading-snug text-ink">
-          {focusRead}
-        </div>
+        <div className="border-b border-white/[0.06] bg-speed/[0.06] px-3 py-1.5 text-[11px] leading-snug text-ink">{focusRead}</div>
       )}
-      <div className="space-y-1">
-        {shown.map(({ d, i }) => {
+      {/* every driver shown — the whole field fits without scrolling; the
+          cap is only a safety net for an unusually deep grid */}
+      <div className="max-h-[62vh] overflow-y-auto p-2 text-[11px]">
+        {rows.map(({ d, i }) => {
           const isFocus = d.code === focus;
           return (
-            <div key={d.code} className={cx("flex items-center gap-2", isFocus && "rounded bg-white/[0.05] -mx-1 px-1 py-0.5")}>
+            <div key={d.code} className={cx("flex items-center gap-2 rounded px-1 py-[1.5px] leading-tight", isFocus && "bg-white/[0.06]")}>
               <span className="w-6 text-right tabular-nums text-ink-faint">P{i!.position}</span>
               <span className="h-2 w-2 rounded-full" style={{ background: d.team_color }} />
               <span className={cx("w-9 font-semibold", isFocus ? "text-ink" : "text-ink-muted")}>{d.code}</span>
-              <span className="rounded px-1 text-[10px] font-bold"
-                style={{ background: COMPOUND_COLOR[i!.compound], color: "#0b0e16" }}>
+              <span className="rounded px-1 text-[10px] font-bold" style={{ background: COMPOUND_COLOR[i!.compound], color: "#0b0e16" }}>
                 {COMPOUND_SHORT[i!.compound]}{!simple && i!.tyre_age != null ? i!.tyre_age : ""}
               </span>
               {!simple && (
@@ -657,42 +650,32 @@ function PosTooltip({
                   {i!.position === 1 ? "leader" : i!.interval != null ? `+${fmtSec(i!.interval)}` : fmtSec(i!.gap)}
                 </span>
               )}
-              {i!.pit_in && <span className={cx("font-semibold text-[#a78bfa]", !simple && "ml-0")}>PIT</span>}
+              {i!.pit_in && <span className={cx("font-semibold text-[#a78bfa]", simple && "ml-auto")}>PIT</span>}
               {i!.status !== "GREEN" && <span className="text-amber">{i!.status}</span>}
             </div>
           );
         })}
-        {rows.length > shown.length && (
-          <div className="pt-0.5 text-center text-[10px] text-ink-faint">+{rows.length - shown.length} more</div>
-        )}
       </div>
     </div>
   );
 }
 
-// A friendly one-liner about the focused driver's moment — recent places
-// gained/lost plus current tyre. Everything read from the lap data.
 function plainRead(code: string, lap: number, info: Map<string, LapInfo>): string | null {
   const now = info.get(`${code}:${lap}`);
   if (!now || now.position == null) return null;
-  const back = 3;
+  if (now.pit_in) return `Pitting from ${ordinal(now.position)} — onto fresh rubber.`;
   let prev: number | null = null;
-  for (let l = lap - 1; l >= Math.max(1, lap - back); l--) {
+  for (let l = lap - 1; l >= Math.max(1, lap - 3); l--) {
     const p = info.get(`${code}:${l}`);
     if (p?.position != null) { prev = p.position; break; }
   }
-  const tyre = COMPOUND_LABEL[now.compound];
-  const posTxt = `running ${ordinal(now.position)}`;
-  let move = "";
+  const bits = [`Running ${ordinal(now.position)}`];
   if (prev != null) {
     const delta = prev - now.position;
-    if (delta > 0) move = `gained ${delta} place${delta > 1 ? "s" : ""}`;
-    else if (delta < 0) move = `lost ${-delta} place${-delta > 1 ? "s" : ""}`;
-    else move = "holding position";
+    if (delta > 0) bits.push(`gained ${delta} place${delta > 1 ? "s" : ""}`);
+    else if (delta < 0) bits.push(`lost ${-delta} place${-delta > 1 ? "s" : ""}`);
+    else bits.push("holding position");
   }
-  if (now.pit_in) return `Pitting from ${ordinal(now.position)} — onto fresh rubber.`;
-  const bits = [posTxt.charAt(0).toUpperCase() + posTxt.slice(1)];
-  if (move) bits.push(move);
-  bits.push(`on ${tyre}s`);
+  bits.push(`on ${COMPOUND_LABEL[now.compound]}s`);
   return bits.join(" · ") + " over the last few laps.";
 }
