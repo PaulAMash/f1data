@@ -77,6 +77,14 @@ body {
 .pos-line path.recharts-curve { transition: stroke-opacity .28s ease, stroke-width .2s ease; }
 .pos-edge { transition: opacity .28s ease; }
 /* the "jump to a moment" accent line breathes so the eye lands on it */
-@keyframes moment-pulse { 0%, 100% { opacity: .95; } 50% { opacity: .4; } }
-.moment-line line { animation: moment-pulse 1.7s ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce) { .moment-line line { animation: none; } }
+@keyframes moment-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .38; } }
+.moment-line line { animation: moment-pulse 1.6s ease-in-out infinite; }
+/* the focused driver's halo gently breathes — "this is the active driver" */
+@keyframes focus-breath { 0%, 100% { stroke-opacity: .1; } 50% { stroke-opacity: .36; } }
+.focus-halo path.recharts-curve { animation: focus-breath 2.4s ease-in-out infinite; }
+/* the open Key-Moment chip echoes the same restrained pulse */
+@keyframes chip-breath { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); } 50% { box-shadow: 0 0 0 3px rgba(255,255,255,.07); } }
+.chip-breathing { animation: chip-breath 2.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .moment-line line, .focus-halo path.recharts-curve, .chip-breathing { animation: none; }
+}

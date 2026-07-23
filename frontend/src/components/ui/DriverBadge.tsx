@@ -6,7 +6,7 @@ import { cx } from "@/lib/format";
 // A friendly driver identity: the official Formula1.com portrait where the
 // provider resolved one, else a clean team-coloured initials avatar. Used
 // across all views so casual fans see names + teams, not just VER/HAM.
-export function DriverAvatar({ driver, size = 28 }: { driver?: Driver | null; size?: number }) {
+export function DriverAvatar({ driver, size = 28, ring = true }: { driver?: Driver | null; size?: number; ring?: boolean }) {
   const url = driver?.headshot_url ?? null;
   const [broken, setBroken] = useState(false);
   // React reuses component instances across prop changes — without this reset,
@@ -18,7 +18,7 @@ export function DriverAvatar({ driver, size = 28 }: { driver?: Driver | null; si
   const showImg = url && !broken;
   return (
     <span className="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full"
-      style={{ width: size, height: size, background: `${color}22`, boxShadow: `inset 0 0 0 1.5px ${color}` }}>
+      style={{ width: size, height: size, background: `${color}22`, boxShadow: ring ? `inset 0 0 0 1.5px ${color}` : undefined }}>
       {showImg ? (
         // no-referrer: F1's image CDN rejects hotlinked requests that carry a
         // referrer. If the asset is genuinely missing the load fails and we

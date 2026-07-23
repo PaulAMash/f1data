@@ -3,13 +3,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import type { Driver } from "@/lib/types";
 import { cx } from "@/lib/format";
+import { DriverAvatar } from "@/components/ui/DriverBadge";
 
 /* -------------------------------------------------------------------------- */
-/* Driver browser — pick a driver the way you'd scan the grid, not a settings  */
-/* list. Teams are laid out two-up, each driver a compact card with a team-    */
-/* colour spine. One interaction only: click a driver → focus them and close.  */
-/* Search filters instantly by name, surname, code or team. No checkboxes, no  */
-/* favourites, no confirm button — the click IS the confirmation.              */
+/* Driver browser — scan the grid, don't read a settings list. Teams are laid  */
+/* out as cards, two-up, each pairing its drivers with their portraits and a   */
+/* team-colour spine so the eye recognises the team before it reads a name.    */
+/* One interaction: click a driver → focus and close. Search filters instantly.*/
 /* -------------------------------------------------------------------------- */
 
 export function DriverPalette({
@@ -30,7 +30,6 @@ export function DriverPalette({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  // Teams ordered by their best finisher — the same running order the chart uses.
   const groups = useMemo(() => {
     const rank: Record<string, number> = {};
     finishOrder.forEach((c, i) => (rank[c] = i));
@@ -58,10 +57,10 @@ export function DriverPalette({
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-[8vh]"
+    <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-[6vh]"
       role="dialog" aria-modal="true" aria-label="Choose a driver">
-      <div className="absolute inset-0 bg-base-950/70 backdrop-blur-sm animate-fade-in" onClick={onClose} />
-      <div className="relative w-full max-w-2xl animate-fade-in overflow-hidden rounded-2xl border border-white/10 bg-base-850 shadow-glow">
+      <div className="absolute inset-0 bg-base-950/72 backdrop-blur-sm animate-fade-in" onClick={onClose} />
+      <div className="relative w-full max-w-4xl animate-fade-in overflow-hidden rounded-2xl border border-white/10 bg-base-850 shadow-glow">
         <div className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-3">
           <Search size={16} className="shrink-0 text-ink-faint" />
           <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)}
@@ -72,34 +71,34 @@ export function DriverPalette({
           <button onClick={onClose} aria-label="Close" className="text-ink-faint hover:text-ink"><X size={16} /></button>
         </div>
 
-        <div className="max-h-[64vh] overflow-y-auto p-3">
+        <div className="max-h-[74vh] overflow-y-auto p-3">
           {filtered.length === 0 ? (
-            <p className="px-4 py-8 text-center text-sm text-ink-faint">No drivers match “{q}”.</p>
+            <p className="px-4 py-10 text-center text-sm text-ink-faint">No drivers match “{q}”.</p>
           ) : (
-            <div className="grid grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
               {filtered.map(([team, g]) => (
-                <div key={team}>
-                  <div className="mb-1.5 flex items-center gap-2 px-0.5">
+                <div key={team} className="rounded-xl border p-2.5"
+                  style={{ borderColor: `${g.color}33`, background: `linear-gradient(135deg, ${g.color}12, transparent 55%)` }}>
+                  <div className="mb-2 flex items-center gap-2 px-0.5">
                     <span className="h-2.5 w-2.5 rounded-full" style={{ background: g.color }} />
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-faint">{team}</span>
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted">{team}</span>
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="grid grid-cols-2 gap-2">
                     {g.drivers.map((d) => {
                       const on = focused.includes(d.code);
                       return (
                         <button key={d.code} onClick={() => pick(d.code)}
-                          className={cx("group flex w-full items-center gap-3 overflow-hidden rounded-xl border bg-white/[0.02] py-2 pl-0 pr-3 text-left transition-all",
-                            on ? "border-white/25 bg-white/[0.06]" : "border-white/[0.06] hover:-translate-y-px hover:bg-white/[0.05]")}
-                          style={{ boxShadow: on ? `inset 3px 0 0 0 ${d.team_color}` : undefined }}>
-                          <span className="h-9 w-1 shrink-0 rounded-r" style={{ background: d.team_color }} />
-                          <span className="w-9 shrink-0 text-sm font-extrabold tabular-nums" style={{ color: d.team_color }}>{d.code}</span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-semibold text-ink">{d.name}</span>
+                          className={cx("group flex items-center gap-2.5 overflow-hidden rounded-lg border py-1.5 pl-1.5 pr-2 text-left transition-all",
+                            on ? "border-white/25 bg-white/[0.06]" : "border-white/[0.05] bg-white/[0.02] hover:-translate-y-px hover:border-white/15 hover:bg-white/[0.05]")}>
+                          <DriverAvatar driver={d} size={34} />
+                          <span className="min-w-0 leading-tight">
+                            <span className="block text-[13px] font-extrabold tabular-nums" style={{ color: d.team_color }}>{d.code}</span>
+                            <span className="block truncate text-xs text-ink-muted group-hover:text-ink">{d.name}</span>
                           </span>
-                          <span className="shrink-0 text-[11px] font-medium text-ink-faint opacity-0 transition-opacity group-hover:opacity-100">Focus →</span>
                         </button>
                       );
                     })}
+                    {g.drivers.length === 1 && <span className="rounded-lg border border-dashed border-white/[0.05]" />}
                   </div>
                 </div>
               ))}
