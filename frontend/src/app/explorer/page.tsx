@@ -217,8 +217,8 @@ export default function ExplorerPage() {
                   </Section>
                 )}
                 {chartTab === "tyres" && (
-                  <Section title="Tyre strategy timeline" info="Each bar is a stint, coloured by compound. ▲ marks a detected undercut; shaded bands are neutralizations.">
-                    <TyreStrategyChart session={session} undercuts={bundle.strategy.undercuts} highlight={selected} />
+                  <Section title="Tyre strategy timeline" info="Each bar is a stint, coloured by compound. ▲ marks a detected undercut; shaded bands are neutralizations. Click a driver to focus their strategy.">
+                    <TyreStrategyChart session={session} undercuts={bundle.strategy.undercuts} highlight={selected} onSelect={setSelected} />
                   </Section>
                 )}
                 {chartTab === "control" && (

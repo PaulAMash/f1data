@@ -17,6 +17,25 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
   // the full grid/pits/best-lap detail.
   const rows = session.classification;
 
+  // Retired reads the same everywhere: "Retired – Lap X" (or just "Retired").
+  const retiredText = (c: ClassificationRow) => {
+    const lap = c.laps_completed != null && c.laps_completed > 0 ? c.laps_completed : null;
+    return lap ? `Retired – Lap ${lap}` : "Retired";
+  };
+  // Advanced adds a real interval-to-the-car-ahead column beside the time to the
+  // leader — computed from the lead-lap gaps we have.
+  const intervalOf = new Map<string, string>();
+  const finishers = rows.filter((c) => !c.retired && c.position != null)
+    .sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
+  // the leader is the 0s reference, so the P2 interval reads correctly even when
+  // the winner's gap is stored as "LEADER"/null rather than a number.
+  const secOf = (c: ClassificationRow) => (c.position === 1 ? 0 : gapSeconds(c.gap));
+  finishers.forEach((c, i) => {
+    if (i === 0) { intervalOf.set(c.driver, "—"); return; }
+    const a = secOf(c), b = secOf(finishers[i - 1]);
+    intervalOf.set(c.driver, a != null && b != null ? `+${(a - b).toFixed(3)}s` : "—");
+  });
+
   return (
     <div className="space-y-4">
       {/* headline tiles + strategy verdicts are analyst material — Advanced only
@@ -82,7 +101,7 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
                   ) : (
                     <>
                       <th className="py-2 pr-2">Grid→Fin</th><th className="py-2 pr-2">Pits</th>
-                      <th className="py-2 pr-2">Best</th><th className="py-2 pr-2">Gap</th>
+                      <th className="py-2 pr-2">Best</th><th className="py-2 pr-2">Time</th><th className="py-2 pr-2">Gap</th>
                     </>
                   )}
                   <th className="py-2 pr-5 text-right">Pts</th>
@@ -91,10 +110,9 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
               <tbody>
                 {rows.map((c) => {
                   const nb = netBadge(c.grid && c.position ? c.grid - c.position : null);
-                  const timeOrRetired = c.retired
-                    ? (c.retirement_reason && !/^\s*(dnf|dns|dsq|retired)\s*$/i.test(c.retirement_reason)
-                        ? c.retirement_reason : "Retired")
-                    : fmtGap(c.position, c.gap);
+                  // Simple & the Advanced "Time" column: official time to the
+                  // leader for finishers, a plain "Retired – Lap X" otherwise.
+                  const timeOrRetired = c.retired ? retiredText(c) : fmtGap(c.position, c.gap);
                   return (
                     <tr key={c.driver} className="border-b border-white/[0.04]">
                       <td className="py-2 pl-5 pr-2 tabular-nums font-semibold">
@@ -126,7 +144,8 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
                           </td>
                           <td className="py-2 pr-2 tabular-nums text-ink-muted">{c.pit_stops}</td>
                           <td className="py-2 pr-2 tabular-nums text-ink-muted">{fmtLap(c.best_lap)}</td>
-                          <td className="py-2 pr-2 tabular-nums text-ink-faint">{timeOrRetired}</td>
+                          <td className="py-2 pr-2 tabular-nums text-ink">{timeOrRetired}</td>
+                          <td className="py-2 pr-2 tabular-nums text-ink-faint">{c.retired ? "—" : (intervalOf.get(c.driver) ?? "—")}</td>
                         </>
                       )}
                       <td className="py-2 pr-5 text-right tabular-nums">{c.points ?? "—"}</td>
@@ -157,7 +176,19 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
 
 // the simple table has 4 columns and fits narrow screens without scrolling
 function cxTable(simple: boolean) {
-  return simple ? "w-full min-w-[420px] text-sm" : "w-full min-w-[560px] text-sm";
+  return simple ? "w-full min-w-[420px] text-sm" : "w-full min-w-[640px] text-sm";
+}
+
+// Parse the numeric seconds out of a gap string ("+1.952s" → 1.952). Lapped or
+// non-numeric gaps ("+1 Lap", "Winner") return null so no interval is computed.
+function gapSeconds(gap?: string | null): number | null {
+  if (!gap) return null;
+  if (/lap/i.test(gap)) return null;
+  if (/leader|winner/i.test(gap)) return 0;
+  const m = gap.match(/(-?\d+(?:\.\d+)?)/);
+  if (!m) return null;
+  const v = parseFloat(m[1]);
+  return isFinite(v) && v >= 0 && v < 600 ? v : null;
 }
 
 /**

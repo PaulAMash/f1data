@@ -82,9 +82,15 @@ body {
 /* the focused driver's halo gently breathes — "this is the active driver" */
 @keyframes focus-breath { 0%, 100% { stroke-opacity: .1; } 50% { stroke-opacity: .36; } }
 .focus-halo path.recharts-curve { animation: focus-breath 2.4s ease-in-out infinite; }
-/* the open Key-Moment chip echoes the same restrained pulse */
-@keyframes chip-breath { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); } 50% { box-shadow: 0 0 0 3px rgba(255,255,255,.07); } }
-.chip-breathing { animation: chip-breath 2.2s ease-in-out infinite; }
+/* the open Key-Moment card pulses in its OWN accent colour (var set inline) */
+@keyframes accent-breath { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 4px var(--pulse, rgba(255,255,255,.08)); } }
+.accent-breathing { animation: accent-breath 2s ease-in-out infinite; }
+/* pit-stop markers breathe gently so they're easy to pick out while scanning */
+@keyframes pit-breath { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
+.pit-dot { animation: pit-breath 1.8s ease-in-out infinite; }
+/* a neutralisation badge softly glows so SC / VSC never blend in */
+@keyframes badge-breath { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 3px var(--pulse, rgba(255,210,30,.28)); } }
+.badge-breathing { animation: badge-breath 1.9s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .moment-line line, .focus-halo path.recharts-curve, .chip-breathing { animation: none; }
+  .moment-line line, .focus-halo path.recharts-curve, .accent-breathing, .pit-dot, .badge-breathing { animation: none; }
 }
