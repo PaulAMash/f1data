@@ -22,19 +22,28 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
     const lap = c.laps_completed != null && c.laps_completed > 0 ? c.laps_completed : null;
     return lap ? `Retired – Lap ${lap}` : "Retired";
   };
-  // Advanced adds a real interval-to-the-car-ahead column beside the time to the
-  // leader — computed from the lead-lap gaps we have.
-  const intervalOf = new Map<string, string>();
-  const finishers = rows.filter((c) => !c.retired && c.position != null)
-    .sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
-  // the leader is the 0s reference, so the P2 interval reads correctly even when
-  // the winner's gap is stored as "LEADER"/null rather than a number.
-  const secOf = (c: ClassificationRow) => (c.position === 1 ? 0 : gapSeconds(c.gap));
-  finishers.forEach((c, i) => {
-    if (i === 0) { intervalOf.set(c.driver, "—"); return; }
-    const a = secOf(c), b = secOf(finishers[i - 1]);
-    intervalOf.set(c.driver, a != null && b != null ? `+${(a - b).toFixed(3)}s` : "—");
-  });
+
+  // Official finishing race TIME (not a gap): a driver's race time is the sum of
+  // their lap times. Source-agnostic — needs only the lap data every chart uses.
+  // Fall back to null (→ the +gap result string) when lap timing is incomplete.
+  const raceTimeOf = new Map<string, string>();
+  {
+    const sum: Record<string, number> = {}, cnt: Record<string, number> = {};
+    for (const lp of session.laps) {
+      if (lp.lap_time == null) continue;
+      sum[lp.driver] = (sum[lp.driver] ?? 0) + lp.lap_time; cnt[lp.driver] = (cnt[lp.driver] ?? 0) + 1;
+    }
+    for (const c of rows) {
+      if (c.retired) continue;
+      const need = c.laps_completed ?? session.total_laps;
+      if (sum[c.driver] != null && cnt[c.driver] >= need - 1) raceTimeOf.set(c.driver, fmtRaceTime(sum[c.driver]));
+    }
+  }
+  // Advanced Time column shows that official race time; the Gap column is the
+  // classic gap to the leader — two genuinely distinct metrics.
+  const finishTime = (c: ClassificationRow) =>
+    c.retired ? retiredText(c) : (raceTimeOf.get(c.driver) ?? fmtGap(c.position, c.gap));
+  const gapToLeader = (c: ClassificationRow) => (c.retired || c.position === 1 ? "—" : fmtGap(c.position, c.gap));
 
   return (
     <div className="space-y-4">
@@ -89,8 +98,8 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
         <Card>
           <CardHeader title="Final classification"
             info={<InfoTip label={simple ? "Reading the results" : "Grid → Finish"} text={simple
-              ? "Every car, in finishing order. Time is how far behind the winner they finished; cars that retired show why (hover the DNF badge for the lap)."
-              : "The ▲/▼ badge is net positions gained or lost versus the starting grid."} />} />
+              ? "Every car, in finishing order. Time is each driver's official race time; cars that retired show the lap they stopped (hover the DNF badge)."
+              : "Time is the official race time; Gap is the margin to the winner. The ▲/▼ badge is net positions gained or lost versus the starting grid."} />} />
           <div className="overflow-x-auto">
             <table className={cxTable(simple)}>
               <thead>
@@ -110,9 +119,6 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
               <tbody>
                 {rows.map((c) => {
                   const nb = netBadge(c.grid && c.position ? c.grid - c.position : null);
-                  // Simple & the Advanced "Time" column: official time to the
-                  // leader for finishers, a plain "Retired – Lap X" otherwise.
-                  const timeOrRetired = c.retired ? retiredText(c) : fmtGap(c.position, c.gap);
                   return (
                     <tr key={c.driver} className="border-b border-white/[0.04]">
                       <td className="py-2 pl-5 pr-2 tabular-nums font-semibold">
@@ -129,7 +135,7 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
                         </span>
                       </td>
                       {simple ? (
-                        <td className="py-2 pr-2 tabular-nums text-ink-muted">{timeOrRetired}</td>
+                        <td className="py-2 pr-2 tabular-nums text-ink-muted">{finishTime(c)}</td>
                       ) : (
                         <>
                           <td className="py-2 pr-2">
@@ -144,8 +150,8 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
                           </td>
                           <td className="py-2 pr-2 tabular-nums text-ink-muted">{c.pit_stops}</td>
                           <td className="py-2 pr-2 tabular-nums text-ink-muted">{fmtLap(c.best_lap)}</td>
-                          <td className="py-2 pr-2 tabular-nums text-ink">{timeOrRetired}</td>
-                          <td className="py-2 pr-2 tabular-nums text-ink-faint">{c.retired ? "—" : (intervalOf.get(c.driver) ?? "—")}</td>
+                          <td className="py-2 pr-2 tabular-nums text-ink">{finishTime(c)}</td>
+                          <td className="py-2 pr-2 tabular-nums text-ink-faint">{gapToLeader(c)}</td>
                         </>
                       )}
                       <td className="py-2 pr-5 text-right tabular-nums">{c.points ?? "—"}</td>
@@ -179,16 +185,12 @@ function cxTable(simple: boolean) {
   return simple ? "w-full min-w-[420px] text-sm" : "w-full min-w-[640px] text-sm";
 }
 
-// Parse the numeric seconds out of a gap string ("+1.952s" → 1.952). Lapped or
-// non-numeric gaps ("+1 Lap", "Winner") return null so no interval is computed.
-function gapSeconds(gap?: string | null): number | null {
-  if (!gap) return null;
-  if (/lap/i.test(gap)) return null;
-  if (/leader|winner/i.test(gap)) return 0;
-  const m = gap.match(/(-?\d+(?:\.\d+)?)/);
-  if (!m) return null;
-  const v = parseFloat(m[1]);
-  return isFinite(v) && v >= 0 && v < 600 ? v : null;
+// Total race time in seconds → "1:24:31.652" (or "58:12.340" for short races).
+function fmtRaceTime(sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = (sec % 60).toFixed(3).padStart(6, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
 }
 
 /**

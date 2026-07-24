@@ -42,7 +42,7 @@ interface DriverStat {
   compounds: Compound[]; avgPos?: number | null; ledLaps: number;
 }
 type MomentKind = EventKind | "story" | "finish";
-interface Moment { lap: number; kind: MomentKind; label: string; insight?: RaceInsight; }
+interface Moment { id: string; lap: number; kind: MomentKind; label: string; insight?: RaceInsight; }
 interface Mover { code: string; d: number; from: number; to: number; }
 
 const momentColor = (k: MomentKind) => (k in EVENT ? EVENT[k as EventKind].color : NEUTRAL_ACCENT);
@@ -60,13 +60,13 @@ export function PositionChart({
 
   const [preset, setPreset] = useState<Preset>("top5");
   const [hover, setHover] = useState<string | null>(null);
-  const [openMoment, setOpenMoment] = useState<number | null>(null);
+  const [openMoment, setOpenMoment] = useState<string | null>(null);   // moment id, not lap
   const [browserOpen, setBrowserOpen] = useState(false);
   const [pitOverlay, setPitOverlay] = useState(false);
   const [width, setWidth] = useState(0);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { setPreset(simple ? "top5" : "all"); setPitOverlay(false); }, [simple]);
+  useEffect(() => { setPreset(simple ? "top5" : "all"); setPitOverlay(false); setOpenMoment(null); }, [simple]);
 
   const driverByCode = useMemo(() => Object.fromEntries(drivers.map((d) => [d.code, d])) as Record<string, Driver>, [drivers]);
   const paceByCode = useMemo(() => Object.fromEntries((pace ?? []).map((p) => [p.driver, p])) as Record<string, DriverPaceSummary>, [pace]);
@@ -165,19 +165,23 @@ export function PositionChart({
     return out.filter((m) => { const k = `${m.lap}:${m.kind}`; return !seen.has(k) && seen.add(k); }).sort((a, b) => a.lap - b.lap);
   }, [windows]);
 
+  // Key Moments tells the STORY of the race — only events that changed it.
+  // Race start / finish are not moments (they're always-present bookends); the
+  // panel is reserved for neutralisations and the strategy beats that mattered.
   const moments = useMemo<Moment[]>(() => {
-    const out: Moment[] = [{ lap: 1, kind: "start", label: "Race start" }];
+    const out: Omit<Moment, "id">[] = [];
     for (const w of windows) out.push({ lap: w.start, kind: w.kind, label: EVENT[w.kind].label });
     const beats: RaceInsight[] = [...(strategy?.turning_points ?? []), ...(strategy?.insights ?? [])];
     for (const b of beats) {
       const lap = b.lap_range?.[0];
-      if (lap != null && lap > 1 && lap < total && !out.some((m) => Math.abs(m.lap - lap) < 2 && m.kind !== "start"))
+      if (lap != null && lap > 1 && lap < total && !out.some((m) => Math.abs(m.lap - lap) < 2))
         out.push({ lap, kind: "story", label: b.title, insight: b });
     }
-    out.push({ lap: total, kind: "finish", label: "Race finish" });
     const seen = new Set<string>();
     return out.filter((m) => { const k = `${m.lap}:${m.kind}`; return !seen.has(k) && seen.add(k); })
-      .sort((a, b) => a.lap - b.lap).slice(0, simple ? 6 : 10);
+      .sort((a, b) => a.lap - b.lap).slice(0, simple ? 6 : 10)
+      // a stable, unique id per moment so same-lap events never share selection
+      .map((m, i) => ({ ...m, id: `${m.lap}:${m.kind}:${i}` }));
   }, [windows, strategy, total, simple]);
 
   const narratives = useMemo(() => {
@@ -225,8 +229,8 @@ export function PositionChart({
       const clean = (a: (string | null)[]) => a.filter((x): x is string => !!x && x.length > 0).map(cap);
       return { simple: clean(S).slice(0, 2), advanced: clean(A).slice(0, 5), up: up.slice(0, 3), down: down.slice(0, 3) };
     }
-    const map = new Map<number, ReturnType<typeof forMoment>>();
-    for (const m of moments) map.set(m.lap, forMoment(m));
+    const map = new Map<string, ReturnType<typeof forMoment>>();
+    for (const m of moments) map.set(m.id, forMoment(m));
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moments, drivers, orderByLap, posByLap, windows, session.pit_stops, strategy, finishOrder, clsByCode]);
@@ -295,7 +299,7 @@ export function PositionChart({
   return (
     <div className="space-y-5">
       <KeyMoments moments={moments} narratives={narratives} open={openMoment} simple={simple}
-        onToggle={(lap) => setOpenMoment((cur) => (cur === lap ? null : lap))} onClose={() => setOpenMoment(null)} driverByCode={driverByCode} />
+        onToggle={(id) => setOpenMoment((cur) => (cur === id ? null : id))} onClose={() => setOpenMoment(null)} driverByCode={driverByCode} />
 
       {focusCode && driverByCode[focusCode] && (
         <PositionFocusCard driver={driverByCode[focusCode]} stat={stats[focusCode]} pace={paceByCode[focusCode]}
@@ -342,10 +346,13 @@ export function PositionChart({
                 <ReferenceLine key={`e${i}`} x={m.lap} stroke={EVENT[m.kind].color}
                   strokeOpacity={m.kind === "start" ? 0.3 : 0.42} strokeDasharray="2 5" ifOverflow="extendDomain" />
               ))}
-              {openMoment != null && (
-                <ReferenceLine x={openMoment} stroke={momentColor(moments.find((m) => m.lap === openMoment)?.kind ?? "story")}
-                  strokeOpacity={0.9} strokeWidth={1.8} className="moment-line" ifOverflow="extendDomain" />
-              )}
+              {(() => {
+                const om = openMoment != null ? moments.find((m) => m.id === openMoment) : null;
+                return om ? (
+                  <ReferenceLine x={om.lap} stroke={momentColor(om.kind)} strokeOpacity={0.9} strokeWidth={1.8}
+                    className="moment-line" ifOverflow="extendDomain" />
+                ) : null;
+              })()}
               <XAxis dataKey="lap" type="number" domain={[1, total]} allowDecimals={false}
                 tick={{ fill: "#5f6b84", fontSize: simple ? 12 : 11 }} tickLine={false} tickMargin={8}
                 axisLine={{ stroke: "rgba(255,255,255,0.07)" }}
@@ -402,11 +409,11 @@ export function PositionChart({
 /* Key Moments                                                                */
 /* -------------------------------------------------------------------------- */
 function KeyMoments({ moments, narratives, open, simple, onToggle, onClose, driverByCode }: {
-  moments: Moment[]; narratives: Map<number, { simple: string[]; advanced: string[]; up: Mover[]; down: Mover[] }>;
-  open: number | null; simple: boolean; onToggle: (lap: number) => void; onClose: () => void; driverByCode: Record<string, Driver>;
+  moments: Moment[]; narratives: Map<string, { simple: string[]; advanced: string[]; up: Mover[]; down: Mover[] }>;
+  open: string | null; simple: boolean; onToggle: (id: string) => void; onClose: () => void; driverByCode: Record<string, Driver>;
 }) {
-  if (moments.length < 2) return null;
-  const openM = open != null ? moments.find((m) => m.lap === open) : null;
+  if (!moments.length) return null;
+  const openM = open != null ? moments.find((m) => m.id === open) : null;
   const text = open != null ? narratives.get(open) : null;
   const lines = text ? (simple ? text.simple : text.advanced) : [];
 
@@ -416,14 +423,17 @@ function KeyMoments({ moments, narratives, open, simple, onToggle, onClose, driv
         <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-faint">Key moments</span>
         <span className="text-[11px] text-ink-faint/70">· {simple ? "tap a beat for the story" : "tap a beat for the analysis"}</span>
       </div>
-      <div className="flex gap-2 overflow-x-auto px-3 pb-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {/* flex-wrap (not a scroll container) so a hover/selected card is never
+          clipped along the top edge; padding gives the elevation room */}
+      <div className="flex flex-wrap gap-2 px-3 pb-3 pt-1">
         {moments.map((m) => {
-          const on = open === m.lap; const c = momentColor(m.kind); const Icon = momentIcon(m.kind);
+          const on = open === m.id; const c = momentColor(m.kind); const Icon = momentIcon(m.kind);
           return (
-            <button key={`${m.lap}-${m.label}`} onClick={() => onToggle(m.lap)} aria-expanded={on}
-              className={cx("group relative flex min-w-[150px] flex-1 flex-col gap-1.5 rounded-xl border p-2.5 text-left transition-all hover:-translate-y-px",
-                on ? "accent-breathing bg-white/[0.06]" : "bg-white/[0.02] hover:bg-white/[0.05]")}
-              style={{ borderColor: on ? c : `${c}59`, ...(on ? { ["--pulse" as any]: `${c}55` } : {}) }}>
+            <button key={m.id} onClick={() => onToggle(m.id)} aria-expanded={on}
+              className={cx("group relative flex min-w-[150px] flex-1 flex-col gap-1.5 rounded-xl border p-2.5 text-left transition-all duration-200",
+                on ? "accent-breathing bg-white/[0.07] -translate-y-0.5"
+                   : "bg-white/[0.02] hover:-translate-y-0.5 hover:bg-white/[0.05] hover:[box-shadow:0_0_0_1.5px_var(--mc),0_12px_26px_-10px_rgba(0,0,0,.6)]")}
+              style={{ ["--mc" as any]: c, borderColor: on ? c : `${c}55`, ...(on ? { ["--pulse" as any]: `${c}66` } : {}) }}>
               <div className="flex items-center gap-1.5">
                 <Icon size={13} style={{ color: c }} />
                 <span className="rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide" style={{ background: `${c}22`, color: c }}>LAP {m.lap}</span>
@@ -560,39 +570,50 @@ function Segmented({ options, value, onChange }: { options: { id: string; label:
   );
 }
 
-// Editorial event markers above the plot; colliding markers stagger vertically.
+// Editorial event markers above the plot. Same-lap events (e.g. START + SC on
+// lap 1) stack vertically in one column so their labels never collide; columns
+// that fall close together are staggered so those don't collide either.
 function EventBand({ markers, lapToX, ready, simple, total }: {
   markers: { lap: number; kind: EventKind; cause?: string | null; dur: number }[]; lapToX: (lap: number) => number; ready: boolean; simple: boolean; total: number;
 }) {
+  const byLap = new Map<number, typeof markers>();
+  for (const m of markers) (byLap.get(m.lap) ?? byLap.set(m.lap, []).get(m.lap)!).push(m);
+  const groups = [...byLap.entries()].sort((a, b) => a[0] - b[0]);
   let lastLap = -99, lastRow = 1;
-  const withRow = markers.map((m) => {
-    const near = m.lap - lastLap < total * 0.06;
+  const withRow = groups.map(([lap, ms]) => {
+    const near = lap - lastLap < total * 0.06;
     const row = near ? 1 - lastRow : 0;
-    lastLap = m.lap; lastRow = row;
-    return { ...m, row };
+    lastLap = lap; lastRow = row;
+    return { lap, ms, row };
   });
   return (
-    <div className={cx("relative mb-1 transition-opacity", simple ? "h-14" : "h-13", ready ? "opacity-100" : "opacity-0")} style={{ height: simple ? 58 : 52 }}>
-      {withRow.map((m, i) => {
-        const meta = EVENT[m.kind]; const Icon = meta.icon;
-        return (
-          <div key={i} className="group absolute bottom-0 flex -translate-x-1/2 flex-col items-center"
-            style={{ left: Math.max(30, lapToX(m.lap)), paddingBottom: m.row === 1 ? 0 : 20 }}>
-            <span className={cx("flex cursor-default items-center gap-1 rounded-full border font-bold", simple ? "px-2.5 py-1 text-[11px]" : "px-2 py-0.5 text-[10px]")}
-              style={{ borderColor: meta.color, color: meta.color, background: `${meta.color}1a` }}>
-              <Icon size={simple ? 13 : 11} /> {meta.code}
-            </span>
-            <span className="mt-0.5 text-[10px] tabular-nums text-ink-faint">L{m.lap}</span>
-            <span className="mt-0.5 w-px flex-1" style={{ background: meta.color, opacity: 0.55 }} />
-            <div className="pointer-events-none absolute bottom-full left-1/2 z-40 mb-1 w-52 -translate-x-1/2 rounded-lg border border-white/10 bg-base-900/97 p-2.5 text-left opacity-0 shadow-glow backdrop-blur-md transition-opacity group-hover:opacity-100">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-ink"><Icon size={12} style={{ color: meta.color }} /> {meta.label}</div>
-              <div className="mt-0.5 text-[11px] text-ink-faint">Lap {m.lap}{m.dur ? ` · ${m.dur} lap${m.dur === 1 ? "" : "s"}` : ""}</div>
-              {m.cause && <div className="mt-1 text-[11px] text-ink-muted">{m.cause}</div>}
-              <div className="mt-1 text-[11px] leading-snug text-ink-muted">{meta.blurb}</div>
-            </div>
+    <div className={cx("relative mb-1 transition-opacity", ready ? "opacity-100" : "opacity-0")} style={{ height: simple ? 62 : 56 }}>
+      {withRow.map(({ lap, ms, row }) => (
+        <div key={lap} className="absolute bottom-0 flex -translate-x-1/2 flex-col items-center"
+          style={{ left: Math.max(30, lapToX(lap)), paddingBottom: row === 1 ? 0 : 22 }}>
+          <div className="flex flex-col items-center gap-0.5">
+            {ms.map((m, i) => {
+              const meta = EVENT[m.kind]; const Icon = meta.icon;
+              return (
+                <span key={i} className="group/mk relative">
+                  <span className={cx("flex cursor-default items-center gap-1 rounded-full border font-bold", simple ? "px-2.5 py-1 text-[11px]" : "px-2 py-0.5 text-[10px]")}
+                    style={{ borderColor: meta.color, color: meta.color, background: `${meta.color}1a` }}>
+                    <Icon size={simple ? 13 : 11} /> {meta.code}
+                  </span>
+                  <div className="pointer-events-none absolute bottom-full left-1/2 z-40 mb-1 w-52 -translate-x-1/2 rounded-lg border border-white/10 bg-base-900/97 p-2.5 text-left opacity-0 shadow-glow backdrop-blur-md transition-opacity group-hover/mk:opacity-100">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-ink"><Icon size={12} style={{ color: meta.color }} /> {meta.label}</div>
+                    <div className="mt-0.5 text-[11px] text-ink-faint">Lap {m.lap}{m.dur ? ` · ${m.dur} lap${m.dur === 1 ? "" : "s"}` : ""}</div>
+                    {m.cause && <div className="mt-1 text-[11px] text-ink-muted">{m.cause}</div>}
+                    <div className="mt-1 text-[11px] leading-snug text-ink-muted">{meta.blurb}</div>
+                  </div>
+                </span>
+              );
+            })}
           </div>
-        );
-      })}
+          <span className="mt-0.5 text-[10px] tabular-nums text-ink-faint">L{lap}</span>
+          <span className="mt-0.5 w-px flex-1" style={{ background: ms[0] ? EVENT[ms[0].kind].color : "#888", opacity: 0.55 }} />
+        </div>
+      ))}
     </div>
   );
 }
@@ -643,16 +664,22 @@ function OrderTooltip({ active, label, info, drivers, visible, focus, simple, la
   const grid = simple ? "grid grid-cols-[1.5rem_0.55rem_1fr_2.9rem] items-center gap-x-2"
     : "grid grid-cols-[1.5rem_0.55rem_2.1rem_1fr_2.9rem_3.4rem] items-center gap-x-1.5";
 
+  // under SC/VSC/red the ENTIRE card softly pulses in the event colour, so a
+  // neutralised lap is unmistakable without hunting for the badge
+  const sc = status ? EVENT[status] : null;
   return (
-    <div className={cx("overflow-hidden rounded-xl border border-white/10 bg-base-900/97 text-xs shadow-glow backdrop-blur-md", simple ? "w-[17rem]" : "w-[21rem]")}>
-      <div className={cx("flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2", status && "bg-amber/[0.06]")}>
+    <div className={cx("overflow-hidden rounded-xl border text-xs backdrop-blur-md bg-base-900/97",
+        sc ? "tip-breathing" : "border-white/10 shadow-glow", simple ? "w-[17rem]" : "w-[21rem]")}
+      style={sc ? { borderColor: `${sc.color}80`, ["--pulse" as any]: sc.color } : undefined}>
+      <div className={cx("flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2")}
+        style={sc ? { background: `${sc.color}18` } : undefined}>
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Lap</span>
           <span className="text-sm font-bold text-ink">{lap}</span>
-          {status && (
-            <span className="badge-breathing inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-extrabold"
-              style={{ background: EVENT[status].color, color: "#0b0e16", ["--pulse" as any]: `${EVENT[status].color}44` }}>
-              {(() => { const Ic = EVENT[status].icon; return <Ic size={11} />; })()} {EVENT[status].code}
+          {sc && (
+            <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-extrabold"
+              style={{ background: sc.color, color: "#0b0e16" }}>
+              {(() => { const Ic = sc.icon; return <Ic size={11} />; })()} {sc.code}
             </span>
           )}
         </div>

@@ -83,8 +83,18 @@ body {
 @keyframes focus-breath { 0%, 100% { stroke-opacity: .1; } 50% { stroke-opacity: .36; } }
 .focus-halo path.recharts-curve { animation: focus-breath 2.4s ease-in-out infinite; }
 /* the open Key-Moment card pulses in its OWN accent colour (var set inline) */
-@keyframes accent-breath { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 4px var(--pulse, rgba(255,255,255,.08)); } }
-.accent-breathing { animation: accent-breath 2s ease-in-out infinite; }
+@keyframes accent-breath {
+  0%, 100% { box-shadow: 0 0 0 1px var(--pulse, rgba(255,255,255,.2)), 0 10px 26px -12px rgba(0,0,0,.6); }
+  50%      { box-shadow: 0 0 0 4px var(--pulse, rgba(255,255,255,.12)), 0 10px 26px -10px rgba(0,0,0,.6); }
+}
+.accent-breathing { animation: accent-breath 1.9s ease-in-out infinite; }
+/* SC / VSC hover card: the WHOLE tooltip softly pulses in the event colour so a
+   neutralised lap is unmistakable at a glance */
+@keyframes tip-breath {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255,255,255,.06), 0 8px 40px -12px rgba(0,0,0,.6); }
+  50%      { box-shadow: 0 0 0 1.5px var(--pulse), 0 0 22px -4px var(--pulse), 0 8px 40px -12px rgba(0,0,0,.6); }
+}
+.tip-breathing { animation: tip-breath 1.9s ease-in-out infinite; }
 /* pit-stop markers breathe gently so they're easy to pick out while scanning */
 @keyframes pit-breath { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
 .pit-dot { animation: pit-breath 1.8s ease-in-out infinite; }
@@ -92,5 +102,5 @@ body {
 @keyframes badge-breath { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 3px var(--pulse, rgba(255,210,30,.28)); } }
 .badge-breathing { animation: badge-breath 1.9s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .moment-line line, .focus-halo path.recharts-curve, .accent-breathing, .pit-dot, .badge-breathing { animation: none; }
+  .moment-line line, .focus-halo path.recharts-curve, .accent-breathing, .pit-dot, .badge-breathing, .tip-breathing { animation: none; }
 }
