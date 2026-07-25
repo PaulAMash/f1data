@@ -217,10 +217,21 @@ def _track_evolving(session: RaceSession) -> bool:
 
 
 def _red_flags(session: RaceSession) -> list[str]:
-    out = []
+    """Distinct red-flag EPISODES, not raw messages. Feeds repeat the RED FLAG
+    line during a stoppage; only a restart (green / clear / chequered) opens
+    the door to counting a new one. Keeps counts consistent with the UI's
+    episode-based interruption counting."""
+    out: list[str] = []
+    in_red = False
     for m in session.race_control:
-        if m.message and re.search(r"\bRED\s+FLAG\b", m.message, re.I):
-            out.append(m.message.strip()[:110])
+        text = (m.message or "")
+        if re.search(r"\bRED\s+FLAG\b", text, re.I):
+            if not in_red:
+                out.append(text.strip()[:110])
+                in_red = True
+        elif re.search(r"GREEN|TRACK\s+CLEAR|CHEQUERED", text, re.I) or \
+                (m.flag or "").upper() in ("GREEN", "CLEAR", "CHEQUERED"):
+            in_red = False
     return out[:4]
 
 
@@ -449,7 +460,9 @@ def _with_stories(session: RaceSession, q: QualifyingSummary) -> QualifyingSumma
         a.append(f"{len(q.deleted_laps)} lap(s) deleted for track limits"
                  + (" — enough to reshuffle an elimination zone." if len(q.deleted_laps) > 1 else "."))
     if q.red_flags:
-        a.append(f"Interruption: {q.red_flags[0].lower()} — runs immediately after the restart "
+        # lowercase the shouty RC message but keep FIA driver codes as-is: (BEA), never (bea)
+        cause = re.sub(r"\(([a-z]{3})\)", lambda m: f"({m.group(1).upper()})", q.red_flags[0].lower())
+        a.append(f"Interruption: {cause} — runs immediately after the restart "
                  "carried the timing risk.")
     a = a[:6] + [f"Net result: the {_grid_word(session)} is set; race pace remains unproven "
                  "until lights out."]

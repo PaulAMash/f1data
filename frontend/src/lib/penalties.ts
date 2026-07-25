@@ -42,7 +42,9 @@ function codesIn(msg: string): string[] {
 
 function clean(msg: string): string {
   const s = msg.replace(/^FIA STEWARDS:\s*/i, "").trim();
-  return s.charAt(0) + s.slice(1).toLowerCase();
+  const lowered = s.charAt(0) + s.slice(1).toLowerCase();
+  // Driver abbreviations always keep FIA formatting: (HAM), never (ham).
+  return lowered.replace(/\(([a-z]{3})\)/g, (_, c: string) => `(${c.toUpperCase()})`);
 }
 
 /** Parse the race-control log into structured penalties, newest last. */
@@ -95,4 +97,13 @@ export function penaltiesByDriver(penalties: Penalty[]): Map<string, Penalty[]> 
   const m = new Map<string, Penalty[]>();
   for (const p of penalties) (m.get(p.driver) ?? m.set(p.driver, []).get(p.driver)!).push(p);
   return m;
+}
+
+/**
+ * Final steward decisions only — what classification tables and the race story
+ * show. Investigations are an intermediate administrative state (the outcome is
+ * what matters) and deleted laps belong to lap analysis, not the results table.
+ */
+export function finalPenalties(penalties: Penalty[]): Penalty[] {
+  return penalties.filter((p) => p.kind !== "investigation" && p.kind !== "deleted_lap");
 }

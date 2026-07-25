@@ -11,8 +11,9 @@ import { DriverAvatar, DriverBadge } from "@/components/ui/DriverBadge";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { Term } from "@/components/ui/Term";
 import { EmptyState } from "@/components/ui/misc";
-import { cx, fmtLap } from "@/lib/format";
-import { derivePenalties, gridPenaltiesByDriver, penaltiesByDriver } from "@/lib/penalties";
+import { fmtLap } from "@/lib/format";
+import { interruptionCounts } from "@/lib/raceEvents";
+import { derivePenalties, finalPenalties, gridPenaltiesByDriver, penaltiesByDriver } from "@/lib/penalties";
 import { PenaltyBadges } from "@/components/ui/PenaltyBadge";
 
 /**
@@ -127,36 +128,31 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
       </div>
 
       <GridPenaltyCallout session={session} />
-      <SessionEvents session={session} simple={simple} />
       <GridTable q={q} session={session} simple={simple} />
     </div>
   );
 }
 
-/* ------------------------- session events & penalties -------------------- */
+/* ------------------------- interruptions & penalties --------------------- */
 
-// The Interruptions card must reflect the OFFICIAL log — a session with two
-// yellow flags and a spin is not a "Clean session" just because nothing went red.
-function rcCounts(session: RaceSession) {
-  let reds = 0, yellows = 0;
-  for (const e of session.race_control) {
-    const f = (e.flag ?? "").toUpperCase();
-    if (f.includes("RED")) reds += 1;
-    else if (f.includes("YELLOW")) yellows += 1;
-  }
-  return { reds, yellows };
+// One source of truth for interruption counts: distinct EPISODES derived from
+// the official race-control log (raceEvents.interruptionCounts). The red count
+// prefers the backend's red-flag analysis — the same dataset Lap Analysis
+// reads — so the story card and the analysis section can never contradict.
+function interruptionEpisodes(q: QualifyingSummary, session: RaceSession) {
+  const { reds, yellows } = interruptionCounts(session.race_control);
+  return { reds: q.red_flags.length || reds, yellows };
 }
 function interruptionsValue(q: QualifyingSummary, session: RaceSession): string {
-  const { reds, yellows } = rcCounts(session);
-  const r = Math.max(reds, q.red_flags.length);
+  const { reds, yellows } = interruptionEpisodes(q, session);
   const parts: string[] = [];
-  if (r) parts.push(`${r} red flag${r > 1 ? "s" : ""}`);
+  if (reds) parts.push(`${reds} red flag${reds > 1 ? "s" : ""}`);
   if (yellows) parts.push(`${yellows} yellow${yellows > 1 ? "s" : ""}`);
   return parts.length ? parts.join(" · ") : "Clean session";
 }
 function interruptionsWhy(q: QualifyingSummary, session: RaceSession): string {
-  const { reds, yellows } = rcCounts(session);
-  if (Math.max(reds, q.red_flags.length)) return "Stoppages compress everyone's remaining runs — timing gets risky.";
+  const { reds, yellows } = interruptionEpisodes(q, session);
+  if (reds) return "Stoppages compress everyone's remaining runs — timing gets risky.";
   if (yellows) return "Local yellows spoiled laps for anyone caught behind the incident.";
   return "No flags — everyone got their runs in.";
 }
@@ -181,44 +177,13 @@ function GridPenaltyCallout({ session }: { session: RaceSession }) {
   );
 }
 
-// The official race-control log for this session — flags, spins, deleted laps.
-// Qualifying and practice never had a place to show these; now they do.
-function SessionEvents({ session, simple }: { session: RaceSession; simple: boolean }) {
-  const events = session.race_control.filter((e) => {
-    const f = (e.flag ?? "").toUpperCase();
-    const up = e.message.toUpperCase();
-    if (f === "GREEN" || f === "CLEAR" || up.includes("PIT EXIT OPEN") || up.includes("DRS ENABLED")) return false;
-    return true;
-  });
-  if (!events.length) return null;
-  const shown = simple ? events.filter((e) => (e.flag ?? "") || /SPUN|OFF|STOPPED|DELETED|PENALTY/i.test(e.message)) : events;
-  if (!shown.length) return null;
-  return (
-    <Card>
-      <CardHeader title="Session events"
-        info={<InfoTip label="Official log" text="Messages from FIA race control during this session — flags, incidents, deleted laps and steward decisions." />} />
-      <CardBody className="max-h-[240px] space-y-1.5 overflow-y-auto">
-        {shown.map((e, i) => {
-          const f = (e.flag ?? "").toUpperCase();
-          const tone = f.includes("RED") ? "text-rose-300" : f.includes("YELLOW") ? "text-amber"
-            : /PENALTY|INVESTIGATION|DELETED/i.test(e.message) ? "text-amber" : "text-ink-muted";
-          return (
-            <div key={i} className="flex items-start gap-2 rounded-lg border border-white/[0.05] bg-base-800/40 px-3 py-1.5">
-              <AlertTriangle size={12} className={cx("mt-0.5 shrink-0", tone)} />
-              <span className={cx("text-xs leading-snug", tone)}>{e.message}</span>
-            </div>
-          );
-        })}
-      </CardBody>
-    </Card>
-  );
-}
-
 function GridTable({ q, session, simple }: { q: QualifyingSummary; session: RaceSession; simple: boolean }) {
   const pole = q.rows.find((r) => r.position === 1)?.best_lap ?? q.rows[0]?.best_lap ?? null;
   const hasSegments = q.rows.some((r) => r.q1 || r.q2 || r.q3);
   const showSegments = !simple && hasSegments;
-  const penaltyMap = penaltiesByDriver(derivePenalties(session.race_control));
+  // classification badges show final steward decisions only — investigations
+  // and deleted laps are session noise here (deleted laps live in Lap Analysis)
+  const penaltyMap = penaltiesByDriver(finalPenalties(derivePenalties(session.race_control)));
   return (
     <Card>
       <CardHeader title={isSprintQ(session) ? "The Sprint grid, as earned" : "The grid, as earned"}

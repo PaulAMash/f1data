@@ -8,7 +8,7 @@ import { DriverAvatar, DriverBadge } from "@/components/ui/DriverBadge";
 import { StatTile } from "@/components/ui/StatTile";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { fmtGap, fmtLap, fmtSec, netBadge, ordinal } from "@/lib/format";
-import { derivePenalties, penaltiesByDriver } from "@/lib/penalties";
+import { derivePenalties, finalPenalties, penaltiesByDriver } from "@/lib/penalties";
 import { PenaltyBadges } from "@/components/ui/PenaltyBadge";
 
 export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; simple?: boolean }) {
@@ -19,15 +19,12 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
   // the full grid/pits/best-lap detail.
   const rows = session.classification;
 
-  // Retired reads the same everywhere: "Retired – Lap X" (or just "Retired").
-  const retiredText = (c: ClassificationRow) => {
-    const lap = c.laps_completed != null && c.laps_completed > 0 ? c.laps_completed : null;
-    return lap ? `Retired – Lap ${lap}` : "Retired";
-  };
-
-  // Official classified race TIME. Priority: (1) the FIA classified total the
-  // archive publishes (race_time), (2) a lap-time sum when the source lacks it,
-  // (3) the "+N Lap(s)" status for lapped cars — never the gap dressed as a time.
+  // Classic F1 classification timing, the way the FIA and every broadcast
+  // present it: the winner carries the full classified race time, everyone
+  // else shows their gap to the winner, lapped cars read "+N Lap(s)", and
+  // retirements read a plain "Retired" (the lap lives in the DNF tooltip —
+  // no duplication). The winner's total prefers the archive's classified
+  // race_time and falls back to a lap-time sum.
   const lapSumOf = new Map<string, number>();
   {
     const sum: Record<string, number> = {}, cnt: Record<string, number> = {};
@@ -42,15 +39,17 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
     }
   }
   const finishTime = (c: ClassificationRow) => {
-    if (c.retired) return retiredText(c);
-    const t = c.race_time ?? lapSumOf.get(c.driver);
-    if (t != null) return fmtRaceTime(t);
-    if (/lap/i.test(c.status)) return c.status;             // "+1 Lap" — no total exists
-    return "—";
+    if (c.retired) return "Retired";
+    if (c.position === 1) {
+      const t = c.race_time ?? lapSumOf.get(c.driver);
+      return t != null ? fmtRaceTime(t) : "Winner";
+    }
+    if (/lap/i.test(c.status)) return c.status;              // "+1 Lap" — off the lead lap
+    return fmtGap(c.position, c.gap);                        // "+5.832" style
   };
-  const gapToLeader = (c: ClassificationRow) => (c.retired || c.position === 1 ? "—" : fmtGap(c.position, c.gap));
-  // Penalties parsed from the official race-control feed, shown beside drivers.
-  const penaltyMap = penaltiesByDriver(derivePenalties(session.race_control));
+  // Final steward decisions only, beside the driver — investigations and
+  // deleted laps are session noise in a results table.
+  const penaltyMap = penaltiesByDriver(finalPenalties(derivePenalties(session.race_control)));
 
   return (
     <div className="space-y-4">
@@ -105,8 +104,8 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
         <Card>
           <CardHeader title="Final classification"
             info={<InfoTip label={simple ? "Reading the results" : "Grid → Finish"} text={simple
-              ? "Every car, in finishing order. Time is each driver's official race time; cars that retired show the lap they stopped (hover the DNF badge)."
-              : "Time is the official race time; Gap is the margin to the winner. The ▲/▼ badge is net positions gained or lost versus the starting grid."} />} />
+              ? "Every car, in finishing order. The winner shows the full race time; everyone else shows their gap to the winner. Hover a DNF badge for the retirement lap."
+              : "The winner shows the official race time; every other finisher shows the gap to the winner (the classic FIA presentation). The ▲/▼ badge is net positions gained or lost versus the starting grid."} />} />
           <div className="overflow-x-auto">
             <table className={cxTable(simple)}>
               <thead>
@@ -117,7 +116,7 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
                   ) : (
                     <>
                       <th className="py-2 pr-2">Grid→Fin</th><th className="py-2 pr-2">Pits</th>
-                      <th className="py-2 pr-2">Best</th><th className="py-2 pr-2">Time</th><th className="py-2 pr-2">Gap</th>
+                      <th className="py-2 pr-2">Best</th><th className="py-2 pr-2">Time / Retired</th>
                     </>
                   )}
                   <th className="py-2 pr-5 text-right">Pts</th>
@@ -159,7 +158,6 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
                           <td className="py-2 pr-2 tabular-nums text-ink-muted">{c.pit_stops}</td>
                           <td className="py-2 pr-2 tabular-nums text-ink-muted">{fmtLap(c.best_lap)}</td>
                           <td className="py-2 pr-2 tabular-nums text-ink">{finishTime(c)}</td>
-                          <td className="py-2 pr-2 tabular-nums text-ink-faint">{gapToLeader(c)}</td>
                         </>
                       )}
                       <td className="py-2 pr-5 text-right tabular-nums">{c.points ?? "—"}</td>
@@ -190,7 +188,7 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
 
 // the simple table has 4 columns and fits narrow screens without scrolling
 function cxTable(simple: boolean) {
-  return simple ? "w-full min-w-[420px] text-sm" : "w-full min-w-[640px] text-sm";
+  return simple ? "w-full min-w-[420px] text-sm" : "w-full min-w-[580px] text-sm";
 }
 
 // Total race time in seconds → "1:24:31.652" (or "58:12.340" for short races).

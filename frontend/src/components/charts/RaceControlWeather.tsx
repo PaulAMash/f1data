@@ -6,6 +6,7 @@ import {
 import { CloudRain, Flag, Gauge, ShieldAlert, TriangleAlert, Wind } from "lucide-react";
 import type { RaceSession } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
+import { flagKindOf } from "@/lib/raceEvents";
 import { cx } from "@/lib/format";
 
 export function RaceControlWeather({ session }: { session: RaceSession }) {
@@ -115,11 +116,13 @@ function iconFor(category: string, flag?: string | null) {
 }
 
 function flagTone(flag?: string | null) {
-  if (!flag) return "text-ink-muted";
-  const f = flag.toUpperCase();
-  if (f.includes("RED")) return "text-accent-soft";
-  if (f.includes("YELLOW")) return "text-amber";
-  if (f.includes("CHEQUERED")) return "text-ink";
-  if (f.includes("GREEN")) return "text-emerald-300";
-  return "text-ink-muted";
+  // exact flag semantics via the shared classifier — "CHEQUERED" contains
+  // "RED", so substring checks painted every chequered flag as a stoppage
+  switch (flagKindOf(flag)) {
+    case "red": return "text-accent-soft";
+    case "yellow": case "double_yellow": return "text-amber";
+    case "chequered": return "text-ink";
+    case "green": case "clear": return "text-emerald-300";
+    default: return "text-ink-muted";
+  }
 }

@@ -66,3 +66,53 @@ export function lapStatusMap(windows: Win[]): Map<number, EventKind> {
   for (const w of windows) for (let l = w.start; l <= w.end; l++) m.set(l, w.kind);
   return m;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Flag semantics — exact, not substring. "CHEQUERED" contains "RED", so any    */
+/* naive includes() check counts every segment-end chequered flag as a red      */
+/* flag (the Hungarian-quali "3 red flags" bug: three segments, three           */
+/* chequereds). Every component classifies flags through this one function.     */
+/* -------------------------------------------------------------------------- */
+
+export type FlagKind = "red" | "yellow" | "double_yellow" | "green" | "clear" | "chequered" | "blue" | "other";
+
+export function flagKindOf(flag?: string | null): FlagKind {
+  if (!flag) return "other";
+  const f = flag.toUpperCase().trim();
+  if (f.includes("CHEQUERED") || f.includes("CHECKERED")) return "chequered";
+  if (f.includes("DOUBLE YELLOW")) return "double_yellow";
+  if (f.includes("YELLOW")) return "yellow";
+  if (f.includes("GREEN")) return "green";
+  if (f.includes("CLEAR")) return "clear";
+  if (f.includes("BLUE")) return "blue";
+  // exact word "RED" only — never a substring of another flag name
+  if (/(^|\s)RED(\s|$)/.test(f) || f === "RED FLAG") return "red";
+  return "other";
+}
+
+export interface InterruptionCounts { reds: number; yellows: number; }
+
+/**
+ * Distinct interruption EPISODES, not raw message counts. The FIA feed emits
+ * several messages per incident (sector yellow, double yellow, repeats, then a
+ * clear) — broadcast graphics say "1 yellow", not "7". Consecutive same-colour
+ * messages collapse into one episode; a green/clear/chequered boundary or a
+ * red flag closes whatever was open.
+ */
+export function interruptionCounts(raceControl: { flag?: string | null; message: string }[]): InterruptionCounts {
+  let reds = 0, yellows = 0;
+  let inYellow = false, inRed = false;
+  for (const e of raceControl) {
+    const k = flagKindOf(e.flag);
+    const up = (e.message || "").toUpperCase();
+    if (k === "red") {
+      if (!inRed) { reds += 1; inRed = true; }
+      inYellow = false;
+    } else if (k === "yellow" || k === "double_yellow") {
+      if (!inYellow) { yellows += 1; inYellow = true; }
+    } else if (k === "green" || k === "clear" || k === "chequered" || up.includes("TRACK CLEAR")) {
+      inYellow = false; inRed = false;
+    }
+  }
+  return { reds, yellows };
+}
