@@ -155,11 +155,11 @@ export function PositionChart({
     return `Held station around P${s.finish}${s.overtakes ? `, with ${s.overtakes} pass${s.overtakes === 1 ? "" : "es"} along the way` : ""}.`;
   }
 
-  // Markers for the band + chart: START plus every window. Deduped by lap+kind
-  // (NOT lap alone) so a Safety Car that starts on lap 1 coexists with the race
-  // start instead of being swallowed by it.
+  // Markers for the band + chart: one per neutralisation window. The race start
+  // gets no annotation — lap 1 is self-evident, and a permanent START chip only
+  // crowded the controls above the plot.
   const markers = useMemo(() => {
-    const out: { lap: number; kind: EventKind; cause?: string | null; dur: number }[] = [{ lap: 1, kind: "start", dur: 0 }];
+    const out: { lap: number; kind: EventKind; cause?: string | null; dur: number }[] = [];
     for (const w of windows) out.push({ lap: w.start, kind: w.kind, cause: w.cause, dur: w.end - w.start + 1 });
     const seen = new Set<string>();
     return out.filter((m) => { const k = `${m.lap}:${m.kind}`; return !seen.has(k) && seen.add(k); }).sort((a, b) => a.lap - b.lap);

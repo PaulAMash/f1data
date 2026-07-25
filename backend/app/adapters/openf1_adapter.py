@@ -471,9 +471,11 @@ def _race_control(rows):
 def _windows_from_rc(events):
     windows: list[TrackStatusWindow] = []
     open_status: dict = {}
+    last_lap = 0
     for e in sorted(events, key=lambda x: (x.lap or 0)):
         up = e.message.upper()
         lap = e.lap or 0
+        last_lap = max(last_lap, lap)
         if e.status in (TrackStatus.VSC, TrackStatus.SAFETY_CAR) and "END" not in up and "CLEAR" not in up:
             open_status.setdefault(e.status, lap)
         if ("ENDING" in up or "CLEAR" in up or "IN THIS LAP" in up) and open_status:
@@ -481,6 +483,11 @@ def _windows_from_rc(events):
                 windows.append(TrackStatusWindow(status=st, start_lap=start, end_lap=lap,
                                label="Virtual Safety Car" if st == TrackStatus.VSC else "Safety Car"))
                 del open_status[st]
+    # A deployment with no recorded "ending" message (feed cut, session end)
+    # must still surface — close it at the last known lap instead of dropping it.
+    for st, start in open_status.items():
+        windows.append(TrackStatusWindow(status=st, start_lap=start, end_lap=max(start, last_lap),
+                       label="Virtual Safety Car" if st == TrackStatus.VSC else "Safety Car"))
     return windows
 
 

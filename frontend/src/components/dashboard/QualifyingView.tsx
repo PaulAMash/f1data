@@ -1,6 +1,6 @@
 "use client";
 import {
-  AlertTriangle, ArrowDownWideNarrow, ChevronRight, CloudSun, Flag, Gauge,
+  AlertTriangle, ArrowDownWideNarrow, ChevronRight, CloudSun, Flag, Gauge, Gavel,
   Medal, Ruler, Sparkles, Target, Thermometer, TrendingDown, TrendingUp, Zap,
 } from "lucide-react";
 import type { Driver, QualifyingSummary, RaceSession } from "@/lib/types";
@@ -11,7 +11,9 @@ import { DriverAvatar, DriverBadge } from "@/components/ui/DriverBadge";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { Term } from "@/components/ui/Term";
 import { EmptyState } from "@/components/ui/misc";
-import { fmtLap } from "@/lib/format";
+import { cx, fmtLap } from "@/lib/format";
+import { derivePenalties, gridPenaltiesByDriver, penaltiesByDriver } from "@/lib/penalties";
+import { PenaltyBadges } from "@/components/ui/PenaltyBadge";
 
 /**
  * The Saturday experience, in two depths that share one design language:
@@ -83,10 +85,8 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
           value={q.conditions ?? "Unknown"}
           why="Air and track state shape how much grip everyone has to play with." />
         <QCard icon={<AlertTriangle size={15} />} tone="amber" label="Interruptions"
-          value={q.red_flags.length ? `${q.red_flags.length} red flag${q.red_flags.length > 1 ? "s" : ""}` : "Clean session"}
-          why={q.red_flags.length
-            ? "Stoppages compress everyone's remaining runs — timing gets risky."
-            : "No red flags — everyone got their runs in."} />
+          value={interruptionsValue(q, session)}
+          why={interruptionsWhy(q, session)} />
 
         {!simple && (
           <>
@@ -126,8 +126,91 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
         )}
       </div>
 
+      <GridPenaltyCallout session={session} />
+      <SessionEvents session={session} simple={simple} />
       <GridTable q={q} session={session} simple={simple} />
     </div>
+  );
+}
+
+/* ------------------------- session events & penalties -------------------- */
+
+// The Interruptions card must reflect the OFFICIAL log — a session with two
+// yellow flags and a spin is not a "Clean session" just because nothing went red.
+function rcCounts(session: RaceSession) {
+  let reds = 0, yellows = 0;
+  for (const e of session.race_control) {
+    const f = (e.flag ?? "").toUpperCase();
+    if (f.includes("RED")) reds += 1;
+    else if (f.includes("YELLOW")) yellows += 1;
+  }
+  return { reds, yellows };
+}
+function interruptionsValue(q: QualifyingSummary, session: RaceSession): string {
+  const { reds, yellows } = rcCounts(session);
+  const r = Math.max(reds, q.red_flags.length);
+  const parts: string[] = [];
+  if (r) parts.push(`${r} red flag${r > 1 ? "s" : ""}`);
+  if (yellows) parts.push(`${yellows} yellow${yellows > 1 ? "s" : ""}`);
+  return parts.length ? parts.join(" · ") : "Clean session";
+}
+function interruptionsWhy(q: QualifyingSummary, session: RaceSession): string {
+  const { reds, yellows } = rcCounts(session);
+  if (Math.max(reds, q.red_flags.length)) return "Stoppages compress everyone's remaining runs — timing gets risky.";
+  if (yellows) return "Local yellows spoiled laps for anyone caught behind the incident.";
+  return "No flags — everyone got their runs in.";
+}
+
+// Grid penalties change where these cars actually start — impossible to miss.
+function GridPenaltyCallout({ session }: { session: RaceSession }) {
+  const grid = gridPenaltiesByDriver(derivePenalties(session.race_control));
+  if (!grid.size) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-rose-400/25 bg-rose-400/[0.06] px-4 py-2.5">
+      <span className="flex items-center gap-1.5 text-xs font-semibold text-rose-300">
+        <Gavel size={13} /> This grid will change
+      </span>
+      {[...grid.entries()].map(([code, pens]) => (
+        <span key={code} className="flex items-center gap-1.5 text-xs text-ink-muted">
+          <span className="font-bold text-ink">{code}</span>
+          <PenaltyBadges penalties={pens} />
+        </span>
+      ))}
+      <span className="text-[11px] text-ink-faint">Steward decisions apply before the race start.</span>
+    </div>
+  );
+}
+
+// The official race-control log for this session — flags, spins, deleted laps.
+// Qualifying and practice never had a place to show these; now they do.
+function SessionEvents({ session, simple }: { session: RaceSession; simple: boolean }) {
+  const events = session.race_control.filter((e) => {
+    const f = (e.flag ?? "").toUpperCase();
+    const up = e.message.toUpperCase();
+    if (f === "GREEN" || f === "CLEAR" || up.includes("PIT EXIT OPEN") || up.includes("DRS ENABLED")) return false;
+    return true;
+  });
+  if (!events.length) return null;
+  const shown = simple ? events.filter((e) => (e.flag ?? "") || /SPUN|OFF|STOPPED|DELETED|PENALTY/i.test(e.message)) : events;
+  if (!shown.length) return null;
+  return (
+    <Card>
+      <CardHeader title="Session events"
+        info={<InfoTip label="Official log" text="Messages from FIA race control during this session — flags, incidents, deleted laps and steward decisions." />} />
+      <CardBody className="max-h-[240px] space-y-1.5 overflow-y-auto">
+        {shown.map((e, i) => {
+          const f = (e.flag ?? "").toUpperCase();
+          const tone = f.includes("RED") ? "text-rose-300" : f.includes("YELLOW") ? "text-amber"
+            : /PENALTY|INVESTIGATION|DELETED/i.test(e.message) ? "text-amber" : "text-ink-muted";
+          return (
+            <div key={i} className="flex items-start gap-2 rounded-lg border border-white/[0.05] bg-base-800/40 px-3 py-1.5">
+              <AlertTriangle size={12} className={cx("mt-0.5 shrink-0", tone)} />
+              <span className={cx("text-xs leading-snug", tone)}>{e.message}</span>
+            </div>
+          );
+        })}
+      </CardBody>
+    </Card>
   );
 }
 
@@ -135,6 +218,7 @@ function GridTable({ q, session, simple }: { q: QualifyingSummary; session: Race
   const pole = q.rows.find((r) => r.position === 1)?.best_lap ?? q.rows[0]?.best_lap ?? null;
   const hasSegments = q.rows.some((r) => r.q1 || r.q2 || r.q3);
   const showSegments = !simple && hasSegments;
+  const penaltyMap = penaltiesByDriver(derivePenalties(session.race_control));
   return (
     <Card>
       <CardHeader title={isSprintQ(session) ? "The Sprint grid, as earned" : "The grid, as earned"}
@@ -171,6 +255,7 @@ function GridTable({ q, session, simple }: { q: QualifyingSummary; session: Race
                         <Badge tone="neutral">out in {r.knocked_out_in}</Badge>
                       </Term>
                     )}
+                    <PenaltyBadges penalties={penaltyMap.get(r.driver)} />
                   </span>
                 </td>
                 {showSegments ? (

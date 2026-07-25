@@ -79,12 +79,53 @@ export function QuestionBox({
       <div className="mt-4 space-y-3">
         {thinking && <AnalysisProgress />}
         {history.map((a, i) => (
-          <AnswerCard key={i} a={a} />
+          <AnswerCard key={i} a={a} onAsk={ask} />
         ))}
+        {!thinking && history.length === 0 && (
+          <div className="rounded-xl border border-white/[0.06] bg-base-850/40 p-4">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-faint">
+              Ask the race engineer
+            </div>
+            <p className="mb-3 text-sm leading-relaxed text-ink-muted">
+              Every answer is built from this session&apos;s timing, strategy, tyre and
+              race-control data — and it will say so honestly when the data can&apos;t support one.
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {STARTERS[category === "practice" ? "practice" : category === "qualifying" ? "qualifying" : "race"].map((s) => (
+                <button key={s} onClick={() => ask(s)}
+                  className="chip border-accent/25 text-ink-muted transition-colors hover:border-accent/50 hover:text-ink">
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+
+// Conversation starters per session type — the empty thread teaches what the
+// analyst can actually answer instead of presenting a blank box.
+const STARTERS: Record<string, string[]> = {
+  race: [
+    "Who won and how?",
+    "Which strategy worked best?",
+    "Why did the biggest loser lose places?",
+    "How did the Safety Car change the race?",
+  ],
+  qualifying: [
+    "Who took pole and by how much?",
+    "What was the biggest surprise?",
+    "Were any laps deleted?",
+    "How close were the teammates?",
+  ],
+  practice: [
+    "Who had the best long-run pace?",
+    "Which compounds did teams focus on?",
+    "Who looks quickest over one lap?",
+  ],
+};
 
 /**
  * One answer, two renditions, no global mode involved: every card leads with
@@ -92,7 +133,7 @@ export function QuestionBox({
  * "Show deeper analysis" reveals the full analyst version — stint medians,
  * degradation, stop-by-stop costs. The toggle lives on the card itself.
  */
-function AnswerCard({ a }: { a: QuestionAnswer }) {
+function AnswerCard({ a, onAsk }: { a: QuestionAnswer; onAsk?: (q: string) => void }) {
   // what the user is *currently* reading: plain or full analysis
   const [showPlain, setShowPlain] = useState(true);
 
@@ -169,6 +210,19 @@ function AnswerCard({ a }: { a: QuestionAnswer }) {
               <Wand2 size={11} /> Simplify
             </button>
           )}
+        </div>
+      )}
+
+      {/* the conversation continues: engine-suggested follow-ups, one tap away */}
+      {onAsk && (a.follow_ups?.length ?? 0) > 0 && a.kind !== "error" && (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-white/[0.05] pt-2.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Follow up</span>
+          {a.follow_ups.slice(0, 3).map((f) => (
+            <button key={f} onClick={() => onAsk(f)}
+              className="chip text-ink-muted transition-colors hover:border-accent/40 hover:text-ink">
+              {f}
+            </button>
+          ))}
         </div>
       )}
     </div>

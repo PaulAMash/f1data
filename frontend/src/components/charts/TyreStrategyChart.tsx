@@ -68,12 +68,13 @@ export function TyreStrategyChart({
               const RowTag = focusable ? "button" : "div";
               return (
                 <RowTag key={c.driver} {...(focusable ? { onClick: () => pick(c.driver), type: "button" as const } : {})}
-                  className={cx("flex w-full items-center gap-2 rounded-md text-left transition-all",
-                    focusable && "hover:bg-white/[0.03]", dim && "opacity-30", isFocus && "bg-white/[0.05] ring-1 ring-white/15")}
+                  className={cx("group flex w-full items-center gap-2 rounded-md text-left transition-all",
+                    focusable && "cursor-pointer hover:-translate-y-px hover:bg-white/[0.04] hover:ring-1 hover:ring-white/12",
+                    dim && "opacity-30", isFocus && "bg-white/[0.05] ring-1 ring-white/15")}
                   style={isFocus ? { boxShadow: `inset 3px 0 0 0 ${c.team_color}` } : undefined}>
                   <div className="flex w-12 shrink-0 items-center gap-1.5 pl-1">
                     <span className="h-2 w-2 rounded-full" style={{ background: c.team_color }} />
-                    <span className={cx("text-xs font-semibold", isFocus && "text-ink")}>{c.driver}</span>
+                    <span className={cx("text-xs font-semibold transition-colors", isFocus ? "text-ink" : focusable ? "group-hover:text-ink" : "")}>{c.driver}</span>
                   </div>
                   <div className="relative h-6 flex-1">
                     {stints.map((s) => {
@@ -94,6 +95,12 @@ export function TyreStrategyChart({
                         style={{ left: `${((undercuts.find((u) => u.attacker === c.driver)!.pit_lap) / total) * 100}%` }}>▲</span>
                     )}
                   </div>
+                  {/* the row teaches itself: an explicit affordance appears on hover */}
+                  {focusable && !isFocus && (
+                    <span className="mr-1 shrink-0 whitespace-nowrap text-[10px] font-semibold text-ink-faint opacity-0 transition-opacity group-hover:opacity-100">
+                      Focus →
+                    </span>
+                  )}
                 </RowTag>
               );
             })}
@@ -108,7 +115,6 @@ export function TyreStrategyChart({
           {Array.from(new Set(windows.map((w) => w.kind))).map((k) => (
             <span key={k} className="inline-flex items-center gap-1.5"><span className="h-2.5 w-3 rounded-sm" style={{ background: `${EVENT[k].color}33` }} /> {EVENT[k].label}</span>
           ))}
-          {focusable && <span className="text-ink-faint">· click a driver to focus their strategy</span>}
         </div>
 
         {tip && <StintTooltip {...tip} />}

@@ -64,6 +64,7 @@ export interface TrackStatusWindow {
 export interface ClassificationRow {
   position?: number | null; driver: string; name: string; team: string; team_color: string;
   grid?: number | null; laps_completed?: number | null; status: string; gap?: string | null;
+  race_time?: number | null;   // FIA classified total (seconds), lead-lap finishers only
   best_lap?: number | null; pit_stops: number; points?: number | null; retired: boolean;
   retirement_reason?: string | null; retirement_source?: string | null;
 }

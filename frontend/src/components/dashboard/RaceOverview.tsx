@@ -8,6 +8,8 @@ import { DriverAvatar, DriverBadge } from "@/components/ui/DriverBadge";
 import { StatTile } from "@/components/ui/StatTile";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { fmtGap, fmtLap, fmtSec, netBadge, ordinal } from "@/lib/format";
+import { derivePenalties, penaltiesByDriver } from "@/lib/penalties";
+import { PenaltyBadges } from "@/components/ui/PenaltyBadge";
 
 export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; simple?: boolean }) {
   const { session, strategy } = bundle;
@@ -23,10 +25,10 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
     return lap ? `Retired – Lap ${lap}` : "Retired";
   };
 
-  // Official finishing race TIME (not a gap): a driver's race time is the sum of
-  // their lap times. Source-agnostic — needs only the lap data every chart uses.
-  // Fall back to null (→ the +gap result string) when lap timing is incomplete.
-  const raceTimeOf = new Map<string, string>();
+  // Official classified race TIME. Priority: (1) the FIA classified total the
+  // archive publishes (race_time), (2) a lap-time sum when the source lacks it,
+  // (3) the "+N Lap(s)" status for lapped cars — never the gap dressed as a time.
+  const lapSumOf = new Map<string, number>();
   {
     const sum: Record<string, number> = {}, cnt: Record<string, number> = {};
     for (const lp of session.laps) {
@@ -36,14 +38,19 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
     for (const c of rows) {
       if (c.retired) continue;
       const need = c.laps_completed ?? session.total_laps;
-      if (sum[c.driver] != null && cnt[c.driver] >= need - 1) raceTimeOf.set(c.driver, fmtRaceTime(sum[c.driver]));
+      if (sum[c.driver] != null && cnt[c.driver] >= need - 1) lapSumOf.set(c.driver, sum[c.driver]);
     }
   }
-  // Advanced Time column shows that official race time; the Gap column is the
-  // classic gap to the leader — two genuinely distinct metrics.
-  const finishTime = (c: ClassificationRow) =>
-    c.retired ? retiredText(c) : (raceTimeOf.get(c.driver) ?? fmtGap(c.position, c.gap));
+  const finishTime = (c: ClassificationRow) => {
+    if (c.retired) return retiredText(c);
+    const t = c.race_time ?? lapSumOf.get(c.driver);
+    if (t != null) return fmtRaceTime(t);
+    if (/lap/i.test(c.status)) return c.status;             // "+1 Lap" — no total exists
+    return "—";
+  };
   const gapToLeader = (c: ClassificationRow) => (c.retired || c.position === 1 ? "—" : fmtGap(c.position, c.gap));
+  // Penalties parsed from the official race-control feed, shown beside drivers.
+  const penaltyMap = penaltiesByDriver(derivePenalties(session.race_control));
 
   return (
     <div className="space-y-4">
@@ -132,6 +139,7 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
                             code={c.driver} name={c.name} team={c.team} teamColor={c.team_color}
                             size={26} className="w-48 min-w-0" />
                           {c.retired && <DnfBadge row={c} />}
+                          <PenaltyBadges penalties={penaltyMap.get(c.driver)} />
                         </span>
                       </td>
                       {simple ? (

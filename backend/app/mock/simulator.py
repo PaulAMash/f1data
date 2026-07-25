@@ -363,14 +363,16 @@ def simulate() -> RaceSession:
             status = f"DNF — {p.dnf_reason}"
             gap = None
             display_pos = None
+            race_time = None
         else:
             status = "Finished"
             gap = "LEADER" if pos == 1 else f"+{cum[code][TOTAL_LAPS] - cum[final_order[0]][TOTAL_LAPS]:.1f}s"
             display_pos = pos
+            race_time = round(cum[code][TOTAL_LAPS], 3)   # official classified total
         classification.append(ClassificationRow(
             position=display_pos, driver=code, name=p.name, team=p.team,
             team_color=TEAM_COLORS.get(p.team, "#888888"), grid=p.grid,
-            laps_completed=laps_done, status=status, gap=gap,
+            laps_completed=laps_done, status=status, gap=gap, race_time=race_time,
             best_lap=round(best, 3) if best else None, pit_stops=n_pits,
             points=points_map.get(pos) if not retired else None, retired=retired,
         ))
@@ -453,13 +455,30 @@ def simulate_qualifying(session_name: str = "Qualifying") -> RaceSession:
                             seg_best[p.code][f"q{seg}"] = round(lt, 3)
         _ = cutoff
 
-    # a mid-Q2 red flag and two deleted laps for track limits
+    # a realistic race-control log: yellows for spins, a mid-Q2 red flag, deleted
+    # laps, an investigation and two grid penalties announced during the session
+    spin1, spin2 = order[9], order[13]
+    rc.append(RaceControlEvent(lap=None, category="Flag", flag="YELLOW", scope="Sector",
+                               message=f"YELLOW FLAG SECTOR 2 — CAR {spin1.number} ({spin1.code}) SPUN AT TURN 4"))
+    rc.append(RaceControlEvent(lap=None, category="Flag", flag="CLEAR", scope="Sector",
+                               message="TRACK CLEAR SECTOR 2"))
     rc.append(RaceControlEvent(lap=None, category="Flag", flag="RED",
                                message="RED FLAG — CAR 22 (BEA) STOPPED AT TURN 6"))
+    rc.append(RaceControlEvent(lap=None, category="Flag", flag="YELLOW", scope="Sector",
+                               message=f"YELLOW FLAG SECTOR 3 — CAR {spin2.number} ({spin2.code}) OFF AT TURN 9"))
     for code in (order[4].code, order[12].code):
         rc.append(RaceControlEvent(lap=None, category="Other",
                                    message=f"CAR {next(pp.number for pp in PLANS if pp.code == code)} "
                                            f"({code}) LAP DELETED — TRACK LIMITS AT TURN 10"))
+    rc.append(RaceControlEvent(lap=None, category="Other",
+                               message=f"CAR {spin1.number} ({spin1.code}) UNDER INVESTIGATION — IMPEDING AT TURN 7"))
+    # post-session steward decisions the race grid must reflect
+    ham = next(pp for pp in PLANS if pp.code == "HAM")
+    rus = next(pp for pp in PLANS if pp.code == "RUS")
+    rc.append(RaceControlEvent(lap=None, category="Other",
+                               message=f"FIA STEWARDS: CAR {ham.number} ({ham.code}) 5 PLACE GRID PENALTY — GEARBOX CHANGE"))
+    rc.append(RaceControlEvent(lap=None, category="Other",
+                               message=f"FIA STEWARDS: CAR {rus.number} ({rus.code}) 3 PLACE GRID PENALTY — IMPEDING"))
 
     classification = []
     for pos, p in enumerate(order, start=1):

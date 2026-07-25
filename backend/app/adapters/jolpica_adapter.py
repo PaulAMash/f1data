@@ -164,10 +164,14 @@ def _driver_from(res: dict) -> tuple[Driver, ClassificationRow]:
     driver = Driver(number=str(res.get("number", "")), code=code,
                     name=f"{d.get('givenName','')} {d.get('familyName','')}".strip(),
                     team=team, team_color=color, grid=grid, country=d.get("nationality"))
+    # Official total race time: Ergast/Jolpica carries Time.millis for every
+    # lead-lap finisher (the FIA classified time), not just the winner.
+    millis = res.get("Time", {}).get("millis")
+    race_time = (int(millis) / 1000.0) if millis else None
     row = ClassificationRow(
         position=(None if retired else pos), driver=code, name=driver.name, team=team,
         team_color=color, grid=grid, laps_completed=_int(res.get("laps")),
-        status=("DNF" if retired else status), gap=None,
+        status=("DNF" if retired else status), gap=None, race_time=race_time,
         best_lap=_time_to_sec(fl), points=_num(res.get("points")), retired=retired,
         # keep the official reason ("Hydraulics", "Collision", ...) for the DNF tooltip
         retirement_reason=(status if retired else None),

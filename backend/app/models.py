@@ -217,6 +217,9 @@ class ClassificationRow(BaseModel):
     laps_completed: Optional[int] = None
     status: str = "Finished"          # Finished, +1 Lap, DNF, ...
     gap: Optional[str] = None
+    # Official classified race time in seconds (FIA classification total for
+    # lead-lap finishers). None for lapped cars and retirements.
+    race_time: Optional[float] = None
     best_lap: Optional[float] = None
     pit_stops: int = 0
     points: Optional[float] = None

@@ -222,29 +222,35 @@ def _merge_missing_facets(session: RaceSession, primary: str) -> None:
 
 
 def _enrich_retirements(session: RaceSession, primary: str) -> None:
-    """OpenF1/FastF1 report *that* a car retired but not *why*. Jolpica carries
-    the official reason ("Hydraulics", "Collision", ...) — copy it across so
-    the UI's DNF badge can explain the retirement. Races only: the Jolpica
+    """Copy across what live timing lacks from the official archive: retirement
+    reasons ("Hydraulics", "Collision", ...) for the DNF badge, and the FIA
+    classified race time for each lead-lap finisher. Races only: the Jolpica
     results endpoint describes the Grand Prix, not sprints."""
     if primary == "jolpica" or session.category != "race":
         return
     retired = [c for c in session.classification if c.retired]
-    if not retired or all(c.retirement_reason for c in retired):
+    need_reasons = retired and not all(c.retirement_reason for c in retired)
+    need_times = any(not c.retired and c.race_time is None for c in session.classification)
+    if not need_reasons and not need_times:
         return
     try:
         _drivers, rows, _meta = jolpica_adapter.fetch_classification(
             session.year, session.grand_prix)
     except Exception as exc:  # noqa: BLE001
-        log.info("retirement enrich failed: %s", exc)
+        log.info("classification enrich failed: %s", exc)
         return
     by_code = {r.driver: r for r in rows}
-    for c in retired:
+    for c in session.classification:
         src = by_code.get(c.driver)
-        if src and src.retirement_reason and not c.retirement_reason:
+        if not src:
+            continue
+        if c.retired and src.retirement_reason and not c.retirement_reason:
             c.retirement_reason = src.retirement_reason
             c.retirement_source = "jolpica"
             if c.laps_completed is None:
                 c.laps_completed = src.laps_completed
+        if not c.retired and c.race_time is None and src.race_time is not None:
+            c.race_time = src.race_time
 
 
 def _enrich_quali_segments(session: RaceSession, primary: str) -> None:
