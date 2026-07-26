@@ -190,9 +190,11 @@ export function PaceAnalysis({
             </span>
             {viewSwitch}
           </div>
+          {/* the fastest car already has the hero card above — the ranking
+              starts at #2 rather than repeating them */}
           {view === "drivers"
-            ? <DriverBars rows={withPace.slice(0, 10)} session={session} />
-            : <TeamBars rows={teams} />}
+            ? <DriverBars rows={withPace.slice(0, 11)} session={session} hideLeader />
+            : <TeamBars rows={teams} hideLeader />}
         </div>
       </div>
     );
@@ -339,16 +341,28 @@ function PaceSection({ label, rows, session, selected }: {
 }
 
 /* ---- simple-mode bars ---- */
-function DriverBars({ rows, session }: { rows: DriverPaceSummary[]; session: RaceSession }) {
+/**
+ * The pace ranking. `hideLeader` drops the fastest car from the list when a
+ * hero card above already features them — the ranking then starts at #2 instead
+ * of repeating the winner, which gives the hero its emphasis back. The leader
+ * still sets the gap scale, so every bar stays measured against them.
+ */
+function DriverBars({ rows, session, hideLeader = false }: {
+  rows: DriverPaceSummary[]; session: RaceSession; hideLeader?: boolean;
+}) {
   const fastest = rows[0];
   const maxGap = Math.max(0.001, ...rows.map(
     (p) => (p.clean_air_pace ?? 0) - (fastest?.clean_air_pace ?? 0)));
+  const shown = hideLeader ? rows.slice(1) : rows;
   return (
     <div className="space-y-2">
-      {rows.map((p) => {
+      {shown.map((p, i) => {
         const gap = (p.clean_air_pace ?? 0) - (fastest?.clean_air_pace ?? 0);
         return (
           <div key={p.driver} className="flex items-center gap-2">
+            <span className="w-4 shrink-0 text-right text-[11px] tabular-nums text-ink-faint">
+              {i + 1 + (hideLeader ? 1 : 0)}
+            </span>
             <DriverBadge driver={session.drivers.find((d) => d.code === p.driver)}
               code={p.driver} name={p.name} team={p.team} teamColor={p.team_color}
               size={24} className="w-36 shrink-0" />
@@ -366,13 +380,17 @@ function DriverBars({ rows, session }: { rows: DriverPaceSummary[]; session: Rac
   );
 }
 
-function TeamBars({ rows }: { rows: TeamPace[] }) {
+function TeamBars({ rows, hideLeader = false }: { rows: TeamPace[]; hideLeader?: boolean }) {
   if (!rows.length) return <p className="text-sm text-ink-faint">No team pace data for this session.</p>;
   const maxGap = Math.max(0.001, ...rows.map((t) => t.gap));
+  const shown = hideLeader ? rows.slice(1) : rows;
   return (
     <div className="space-y-2">
-      {rows.map((t) => (
+      {shown.map((t, i) => (
         <div key={t.team} className="flex items-center gap-2">
+          <span className="w-4 shrink-0 text-right text-[11px] tabular-nums text-ink-faint">
+            {i + 1 + (hideLeader ? 1 : 0)}
+          </span>
           <span className="flex w-36 shrink-0 items-center gap-2 text-sm">
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: t.color }} />
             <span className="truncate font-medium">{t.team}</span>

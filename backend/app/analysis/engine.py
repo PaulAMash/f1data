@@ -58,10 +58,16 @@ def compare_drivers(session: RaceSession, a: str, b: str) -> dict:
     behind = b if finished_ahead == a else a
     points: list[str] = []
 
+    # NB: lap_delta sums non-pit lap times, so it is a PACE measure, not the
+    # finishing margin — describing it as "the margin on track" implied a track
+    # position gap the number never represented.
+    quicker_by = None
+    if lap_delta and abs(lap_delta[-1]["delta"]) < 300:
+        d = lap_delta[-1]["delta"]
+        quicker = b if d > 0 else a
+        quicker_by = f" Over the laps both ran, {quicker} was {abs(d):.1f}s quicker in total."
     points.append(f"{finished_ahead} finished ahead: P{class_by[finished_ahead].position} vs "
-                  f"P{class_by[behind].position}"
-                  + (f", with a final margin of {abs(lap_delta[-1]['delta']):.1f}s on track"
-                     if lap_delta and abs(lap_delta[-1]["delta"]) < 300 else "") + ".")
+                  f"P{class_by[behind].position}." + (quicker_by or ""))
 
     if pa.clean_air_pace and pb.clean_air_pace:
         d = abs(pa.clean_air_pace - pb.clean_air_pace)

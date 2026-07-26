@@ -14,6 +14,7 @@ import { Term } from "@/components/ui/Term";
 import { EmptyState } from "@/components/ui/misc";
 import { cx, fmtLap } from "@/lib/format";
 import { deriveWindows, sessionInterruptions } from "@/lib/raceEvents";
+import { TrackConditions } from "@/components/charts/TrackConditions";
 import { derivePenalties, finalPenalties, gridPenaltiesByDriver, penaltiesByDriver } from "@/lib/penalties";
 import { PenaltyBadges } from "@/components/ui/PenaltyBadge";
 
@@ -83,9 +84,17 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
           value={nameOf(q.biggest_disappointment?.driver)}
           avatar={q.biggest_disappointment ? <DriverAvatar driver={driverOf(session, q.biggest_disappointment.driver)} size={34} /> : undefined}
           why={q.biggest_disappointment?.reason ? q.biggest_disappointment.reason + "." : "Nobody badly under-delivered."} />
-        <QCard icon={<CloudSun size={15} />} tone="speed" label="Track conditions"
-          value={q.conditions ?? "Unknown"}
-          why="Air and track state shape how much grip everyone has to play with." />
+        {/* conditions read visually — temperature as colour, sky as an icon,
+            wind as a needle — with the numbers arriving second */}
+        <div className="rounded-xl border border-white/[0.06] bg-base-850/50 p-4">
+          <div className="mb-2.5 flex items-center gap-1.5">
+            <CloudSun size={15} className="text-speed" />
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Track conditions</span>
+          </div>
+          {session.weather.length
+            ? <TrackConditions session={session} compact />
+            : <div className="text-sm text-ink-muted">{q.conditions ?? "Not reported for this session."}</div>}
+        </div>
         <QCard icon={<AlertTriangle size={15} />} tone="amber" label="Interruptions"
           value={interruptionsValue(q, session)}
           why={interruptionsWhy(q, session)} />
@@ -128,7 +137,6 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
         )}
       </div>
 
-      <GridPenaltyCallout session={session} changes={q.grid_changes} />
       <GridTable q={q} session={session} simple={simple} />
     </div>
   );
@@ -167,35 +175,29 @@ function interruptionsWhy(q: QualifyingSummary, session: RaceSession): string {
     : "No stoppages — everyone got their runs in.";
 }
 
-// Grid penalties change where these cars actually start — impossible to miss.
-// Two honest sources: penalties announced during the session (race control),
-// and post-session decisions verified against the official starting grid.
-function GridPenaltyCallout({ session, changes }: { session: RaceSession; changes?: QualifyingSummary["grid_changes"] }) {
-  const grid = gridPenaltiesByDriver(derivePenalties(session.race_control));
-  const verified = (changes ?? []).filter((c) => !grid.has(c.driver));
-  if (!grid.size && !verified.length) return null;
+/** The starting slot a driver actually takes, shown on their own grid row. */
+function StartsCell({ change, penalties }: {
+  change?: { qualified: number; starts: number; places: number };
+  penalties?: ReturnType<typeof derivePenalties>;
+}) {
+  const drop = penalties?.find((p) => p.kind === "grid");
+  if (!change && !drop) return <span className="text-ink-faint">—</span>;
+  const reason = change
+    ? `Qualified P${change.qualified} · starts P${change.starts} on the official grid`
+    : drop!.detail;
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-violet-400/30 bg-violet-400/[0.07] px-4 py-2.5">
-      <span className="flex items-center gap-1.5 text-xs font-semibold text-violet-300">
-        <Gavel size={13} /> This grid will change
-      </span>
-      {[...grid.entries()].map(([code, pens]) => (
-        <span key={code} className="flex items-center gap-1.5 text-xs text-ink-muted">
-          <span className="font-bold text-ink">{code}</span>
-          <PenaltyBadges penalties={pens} />
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap" title={reason}>
+      <Gavel size={11} className="shrink-0 text-violet-300" />
+      {change ? (
+        <span className="inline-flex items-center gap-1 tabular-nums">
+          <span className="text-ink-faint line-through">P{change.qualified}</span>
+          <ChevronRight size={11} className="text-violet-300" />
+          <span className="font-bold text-violet-200">P{change.starts}</span>
         </span>
-      ))}
-      {verified.map((c) => (
-        <span key={c.driver} className="flex items-center gap-1.5 text-xs text-ink-muted"
-          title={`Qualified P${c.qualified}, starts P${c.starts} on the official grid`}>
-          <span className="font-bold text-ink">{c.driver}</span>
-          <span className="inline-flex items-center gap-1 rounded-full border border-violet-400/45 bg-violet-400/12 px-2 py-0.5 text-[10px] font-bold text-violet-300">
-            <Gavel size={10} /> P{c.qualified}→P{c.starts}
-          </span>
-        </span>
-      ))}
-      <span className="text-[11px] text-ink-faint">Steward decisions apply before the race start.</span>
-    </div>
+      ) : (
+        <span className="font-bold text-violet-200">{drop!.label}</span>
+      )}
+    </span>
   );
 }
 
@@ -206,6 +208,11 @@ function GridTable({ q, session, simple }: { q: QualifyingSummary; session: Race
   // classification badges show final steward decisions only — investigations
   // and deleted laps are session noise here (deleted laps live in Lap Analysis)
   const penaltyMap = penaltiesByDriver(finalPenalties(derivePenalties(session.race_control)));
+  // Grid penalties belong on the driver's own row, not in a separate panel:
+  // one place to understand one driver's outcome.
+  const changeOf = new Map((q.grid_changes ?? []).map((c) => [c.driver, c]));
+  const hasGridChanges = changeOf.size > 0
+    || q.rows.some((r) => penaltyMap.get(r.driver)?.some((p) => p.kind === "grid"));
   return (
     <Card>
       <CardHeader title={isSprintQ(session) ? "The Sprint grid" : "The grid"}
@@ -227,6 +234,7 @@ function GridTable({ q, session, simple }: { q: QualifyingSummary; session: Race
                 <th className="py-2 pr-2">Best lap</th>
               )}
               <th className="py-2 pr-5">Gap to pole</th>
+              {hasGridChanges && <th className="py-2 pr-5">Starts</th>}
             </tr>
           </thead>
           <tbody>
@@ -263,6 +271,11 @@ function GridTable({ q, session, simple }: { q: QualifyingSummary; session: Race
                 <td className="py-2 pr-5 tabular-nums text-ink-muted">
                   {r.best_lap && pole ? (r.best_lap === pole ? "pole" : `+${(r.best_lap - pole).toFixed(3)}`) : "—"}
                 </td>
+                {hasGridChanges && (
+                  <td className="py-2 pr-5 text-xs">
+                    <StartsCell change={changeOf.get(r.driver)} penalties={penaltyMap.get(r.driver)} />
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

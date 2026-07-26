@@ -7,6 +7,7 @@ import { CloudRain, Flag, Gauge, ShieldAlert, TriangleAlert, Wind } from "lucide
 import type { RaceSession } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { flagKindOf } from "@/lib/raceEvents";
+import { TrackConditions } from "./TrackConditions";
 import { cx } from "@/lib/format";
 
 export function RaceControlWeather({ session }: { session: RaceSession }) {
@@ -26,14 +27,11 @@ export function RaceControlWeather({ session }: { session: RaceSession }) {
     <div className="grid gap-5 lg:grid-cols-2">
       {/* weather */}
       <div>
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="label">Track conditions</span>
-          {latest?.rainfall
-            ? <Badge tone="speed"><CloudRain size={11} /> Wet</Badge>
-            : <Badge tone="neutral">Dry</Badge>}
-          {latest?.air_temp != null && <span className="chip">Air {latest.air_temp.toFixed(0)}°C</span>}
-          {latest?.track_temp != null && <span className="chip">Track {latest.track_temp.toFixed(0)}°C</span>}
-          {latest?.wind_speed != null && <span className="chip"><Wind size={11} /> {latest.wind_speed.toFixed(1)} km/h</span>}
+        {/* the same visual conditions panel the qualifying story uses, so
+            weather reads identically wherever it appears */}
+        <div className="mb-3">
+          <div className="label mb-2">Track conditions</div>
+          <TrackConditions session={session} />
         </div>
         {weatherData.length ? (
           <div className="h-[210px] w-full">
