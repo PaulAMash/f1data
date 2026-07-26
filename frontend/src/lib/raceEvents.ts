@@ -90,29 +90,89 @@ export function flagKindOf(flag?: string | null): FlagKind {
   return "other";
 }
 
-export interface InterruptionCounts { reds: number; yellows: number; }
+/* -------------------------------------------------------------------------- */
+/* ONE definition of an interruption, used by every page.                      */
+/*                                                                            */
+/* An INTERRUPTION is something that stopped or neutralised the session — a    */
+/* red flag, safety car or VSC. That is what Lap Analysis has always shown and */
+/* what a broadcast means by the word, so the headline statistic now matches   */
+/* everywhere. Local yellow flags are NOT interruptions: the session keeps     */
+/* running. They are reported separately, clearly labelled, so the two numbers */
+/* can never be mistaken for the same thing.                                   */
+/* -------------------------------------------------------------------------- */
+
+export interface SessionInterruptions {
+  /** red-flag stoppages (the session was halted) */
+  stoppages: number;
+  /** safety-car deployments */
+  safetyCars: number;
+  /** virtual safety-car periods */
+  virtualSafetyCars: number;
+  /** everything above — the canonical "interruptions" count */
+  total: number;
+  /** local yellow-flag incidents; the session was never stopped */
+  localYellows: number;
+}
+
+// which sector a flag message refers to, so a yellow in S1 and a yellow in S3
+// are two incidents while repeated S1 messages are one
+function sectorOf(message: string): string {
+  const m = message.toUpperCase().match(/SECTOR\s*(\d+)/);
+  return m ? `S${m[1]}` : "TRACK";
+}
 
 /**
- * Distinct interruption EPISODES, not raw message counts. The FIA feed emits
- * several messages per incident (sector yellow, double yellow, repeats, then a
- * clear) — broadcast graphics say "1 yellow", not "7". Consecutive same-colour
- * messages collapse into one episode; a green/clear/chequered boundary or a
- * red flag closes whatever was open.
+ * Interruption episodes from the official race-control log.
+ *
+ * Yellow counting is sector-aware: the FIA feed repeats a yellow for as long
+ * as the incident stands (and often re-issues it per sector), so a naive
+ * message count reported seven yellows for a session that had two incidents.
+ * A yellow opens an episode for its sector; the matching clear (or any
+ * green/chequered) closes it. Reds and neutralisations collapse the same way.
  */
-export function interruptionCounts(raceControl: { flag?: string | null; message: string }[]): InterruptionCounts {
-  let reds = 0, yellows = 0;
-  let inYellow = false, inRed = false;
+export function sessionInterruptions(
+  raceControl: { flag?: string | null; message: string; status?: string | null }[],
+  windows?: Win[],
+): SessionInterruptions {
+  let stoppages = 0;
+  let inRed = false;
+  const openYellow = new Set<string>();
+  const yellowIncidents = new Set<string>();
+  let yellowSeq = 0;
+
   for (const e of raceControl) {
     const k = flagKindOf(e.flag);
     const up = (e.message || "").toUpperCase();
-    if (k === "red") {
-      if (!inRed) { reds += 1; inRed = true; }
-      inYellow = false;
-    } else if (k === "yellow" || k === "double_yellow") {
-      if (!inYellow) { yellows += 1; inYellow = true; }
-    } else if (k === "green" || k === "clear" || k === "chequered" || up.includes("TRACK CLEAR")) {
-      inYellow = false; inRed = false;
+    const sector = sectorOf(up);
+    if (k === "red" || /\bRED\s+FLAG\b/.test(up)) {
+      if (!inRed) { stoppages += 1; inRed = true; }
+      openYellow.clear();
+      continue;
+    }
+    if (k === "yellow" || k === "double_yellow") {
+      if (!openYellow.has(sector)) {
+        openYellow.add(sector);
+        yellowIncidents.add(`${sector}#${++yellowSeq}`);
+      }
+      continue;
+    }
+    if (k === "green" || k === "chequered") { openYellow.clear(); inRed = false; continue; }
+    if (k === "clear" || up.includes("TRACK CLEAR")) {
+      // a sector-scoped clear only ends that sector's yellow
+      if (sector === "TRACK") { openYellow.clear(); inRed = false; }
+      else openYellow.delete(sector);
     }
   }
-  return { reds, yellows };
+
+  // neutralisations come from the same derived windows the charts draw
+  const safetyCars = (windows ?? []).filter((w) => w.kind === "sc").length;
+  const virtualSafetyCars = (windows ?? []).filter((w) => w.kind === "vsc").length;
+  const redWindows = (windows ?? []).filter((w) => w.kind === "red").length;
+  stoppages = Math.max(stoppages, redWindows);
+
+  return {
+    stoppages, safetyCars, virtualSafetyCars,
+    total: stoppages + safetyCars + virtualSafetyCars,
+    localYellows: yellowIncidents.size,
+  };
 }

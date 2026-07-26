@@ -186,8 +186,35 @@ def _sector_king(rows) -> str | None:
 
 
 def _most_consistent(rows) -> str | None:
-    cands = [r for r in rows if r.consistency_score is not None and r.laps_completed >= 4]
-    return max(cands, key=lambda r: r.consistency_score).driver if cands else None
+    """The session's most consistent PERFORMANCE, not merely its lowest variance.
+
+    Raw variance rewards the wrong drivers: a car eliminated in Q1 runs the
+    fewest, least pressured laps, so tight-but-slow running used to beat a
+    driver who delivered repeatedly through to the final segment. An analyst
+    reads consistency in context, so the pick requires a representative sample
+    and a competitive lap, and prefers drivers who kept delivering deeper into
+    the session (where the pressure and the track evolution are greatest).
+    """
+    cands = [r for r in rows if r.consistency_score is not None and (r.laps_completed or 0) >= 4]
+    if not cands:
+        return None
+
+    # competitive baseline: within 2% of the session's best lap. A driver who
+    # was never near the pace can't be the session's standout performance.
+    bests = [r.best_lap for r in cands if r.best_lap]
+    if bests:
+        cutoff = min(bests) * 1.02
+        competitive = [r for r in cands if r.best_lap and r.best_lap <= cutoff]
+        if competitive:
+            cands = competitive
+
+    def stage_rank(r) -> int:
+        # reached the final segment > out in Q2 > out in Q1
+        return {None: 2, "Q3": 2, "Q2": 1, "Q1": 0}.get(r.knocked_out_in, 0)
+
+    deepest = max(stage_rank(r) for r in cands)
+    finalists = [r for r in cands if stage_rank(r) == deepest]
+    return max(finalists, key=lambda r: (r.consistency_score, r.laps_completed or 0)).driver
 
 
 def _early_exit(rows) -> dict | None:

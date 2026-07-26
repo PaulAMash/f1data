@@ -495,6 +495,12 @@ class QualifyingSummary(BaseModel):
     # structured red-flag parse: {message, driver, driver_name, cause, turn, lap}
     interruptions: list[dict] = Field(default_factory=list)
     deleted_laps: list[str] = Field(default_factory=list)
+    # Verified grid changes: the official starting grid compared against this
+    # qualifying result. Post-session steward decisions (gearbox/engine grid
+    # drops) are published after the session's own race-control feed closes, so
+    # the starting grid is the only trustworthy record that they happened.
+    # {driver, name, qualified, starts, places}
+    grid_changes: list[dict] = Field(default_factory=list)
     pole_sector_breakdown: Optional[dict] = None  # pole's sectors vs session-best sectors
     segment_bests: dict = Field(default_factory=dict)  # {"Q1": s, "Q2": s, "Q3": s} where known
     rows: list[QualiDriverRow] = Field(default_factory=list)

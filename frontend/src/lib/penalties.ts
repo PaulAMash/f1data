@@ -20,12 +20,15 @@ export interface Penalty {
   seconds?: number | null;   // time penalties
 }
 
-export const PENALTY_META: Record<PenaltyKind, { tone: "red" | "amber" | "neutral"; title: string }> = {
-  grid:          { tone: "red",     title: "Grid penalty" },
-  time:          { tone: "red",     title: "Time penalty" },
-  drive_through: { tone: "red",     title: "Drive-through penalty" },
-  stop_go:       { tone: "red",     title: "Stop-go penalty" },
-  disqualified:  { tone: "red",     title: "Disqualified" },
+/* Steward penalties read violet across the app; only an ENDED race (DSQ, and
+   the DNF badge elsewhere) uses rose. Sharing rose made a time penalty and a
+   retirement look like the same kind of event at a glance. */
+export const PENALTY_META: Record<PenaltyKind, { tone: "penalty" | "ended" | "amber" | "neutral"; title: string }> = {
+  grid:          { tone: "penalty", title: "Grid penalty" },
+  time:          { tone: "penalty", title: "Time penalty" },
+  drive_through: { tone: "penalty", title: "Drive-through penalty" },
+  stop_go:       { tone: "penalty", title: "Stop-go penalty" },
+  disqualified:  { tone: "ended",   title: "Disqualified" },
   deleted_lap:   { tone: "amber",   title: "Lap time deleted" },
   investigation: { tone: "amber",   title: "Under investigation" },
   reprimand:     { tone: "neutral", title: "Reprimand" },

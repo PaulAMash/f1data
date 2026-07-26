@@ -1,7 +1,8 @@
 "use client";
+import { useState } from "react";
 import {
-  AlertTriangle, ArrowDownWideNarrow, ChevronRight, CloudSun, Flag, Gauge, Gavel,
-  Medal, Ruler, Sparkles, Target, Thermometer, TrendingDown, TrendingUp, Zap,
+  AlertTriangle, ArrowDownWideNarrow, Building2, ChevronRight, CloudSun, Flag, Gauge, Gavel,
+  Medal, Ruler, Sparkles, Target, Thermometer, TrendingDown, TrendingUp, User, Zap,
 } from "lucide-react";
 import type { Driver, QualifyingSummary, RaceSession } from "@/lib/types";
 import { useIsSimple } from "@/lib/mode";
@@ -11,8 +12,8 @@ import { DriverAvatar, DriverBadge } from "@/components/ui/DriverBadge";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { Term } from "@/components/ui/Term";
 import { EmptyState } from "@/components/ui/misc";
-import { fmtLap } from "@/lib/format";
-import { interruptionCounts } from "@/lib/raceEvents";
+import { cx, fmtLap } from "@/lib/format";
+import { deriveWindows, sessionInterruptions } from "@/lib/raceEvents";
 import { derivePenalties, finalPenalties, gridPenaltiesByDriver, penaltiesByDriver } from "@/lib/penalties";
 import { PenaltyBadges } from "@/components/ui/PenaltyBadge";
 
@@ -127,7 +128,7 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
         )}
       </div>
 
-      <GridPenaltyCallout session={session} />
+      <GridPenaltyCallout session={session} changes={q.grid_changes} />
       <GridTable q={q} session={session} simple={simple} />
     </div>
   );
@@ -135,41 +136,62 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
 
 /* ------------------------- interruptions & penalties --------------------- */
 
-// One source of truth for interruption counts: distinct EPISODES derived from
-// the official race-control log (raceEvents.interruptionCounts). The red count
-// prefers the backend's red-flag analysis — the same dataset Lap Analysis
-// reads — so the story card and the analysis section can never contradict.
+// ONE definition, shared with Lap Analysis and every chart: an interruption is
+// a stoppage or neutralisation. The red count prefers the backend's red-flag
+// analysis — the exact dataset the Interruptions panel below renders — so the
+// headline card and the detail panel can never disagree. Local yellows are a
+// separate, explicitly-labelled statistic; the session never stopped for them.
 function interruptionEpisodes(q: QualifyingSummary, session: RaceSession) {
-  const { reds, yellows } = interruptionCounts(session.race_control);
-  return { reds: q.red_flags.length || reds, yellows };
+  const s = sessionInterruptions(session.race_control, deriveWindows(session));
+  const stoppages = Math.max(q.red_flags.length, s.stoppages);
+  return { ...s, stoppages, total: stoppages + s.safetyCars + s.virtualSafetyCars };
 }
 function interruptionsValue(q: QualifyingSummary, session: RaceSession): string {
-  const { reds, yellows } = interruptionEpisodes(q, session);
-  const parts: string[] = [];
-  if (reds) parts.push(`${reds} red flag${reds > 1 ? "s" : ""}`);
-  if (yellows) parts.push(`${yellows} yellow${yellows > 1 ? "s" : ""}`);
-  return parts.length ? parts.join(" · ") : "Clean session";
+  const { stoppages } = interruptionEpisodes(q, session);
+  if (!stoppages) return "Clean session";
+  return `${stoppages} red flag${stoppages > 1 ? "s" : ""}`;
+}
+// the same yellow statistic, worded for the detail panel
+function localYellowNote(session: RaceSession): string {
+  const n = sessionInterruptions(session.race_control, deriveWindows(session)).localYellows;
+  return n ? ` ${n} local yellow${n > 1 ? "s" : ""} were shown without halting running.` : "";
 }
 function interruptionsWhy(q: QualifyingSummary, session: RaceSession): string {
-  const { reds, yellows } = interruptionEpisodes(q, session);
-  if (reds) return "Stoppages compress everyone's remaining runs — timing gets risky.";
-  if (yellows) return "Local yellows spoiled laps for anyone caught behind the incident.";
-  return "No flags — everyone got their runs in.";
+  const { stoppages, localYellows } = interruptionEpisodes(q, session);
+  const yellowNote = localYellows
+    ? ` ${localYellows} local yellow${localYellows > 1 ? "s" : ""} also spoiled laps without stopping the session.`
+    : "";
+  if (stoppages) return `Stoppages compress everyone's remaining runs — timing gets risky.${yellowNote}`;
+  return localYellows
+    ? `The session was never stopped.${yellowNote}`
+    : "No stoppages — everyone got their runs in.";
 }
 
 // Grid penalties change where these cars actually start — impossible to miss.
-function GridPenaltyCallout({ session }: { session: RaceSession }) {
+// Two honest sources: penalties announced during the session (race control),
+// and post-session decisions verified against the official starting grid.
+function GridPenaltyCallout({ session, changes }: { session: RaceSession; changes?: QualifyingSummary["grid_changes"] }) {
   const grid = gridPenaltiesByDriver(derivePenalties(session.race_control));
-  if (!grid.size) return null;
+  const verified = (changes ?? []).filter((c) => !grid.has(c.driver));
+  if (!grid.size && !verified.length) return null;
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-rose-400/25 bg-rose-400/[0.06] px-4 py-2.5">
-      <span className="flex items-center gap-1.5 text-xs font-semibold text-rose-300">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-violet-400/30 bg-violet-400/[0.07] px-4 py-2.5">
+      <span className="flex items-center gap-1.5 text-xs font-semibold text-violet-300">
         <Gavel size={13} /> This grid will change
       </span>
       {[...grid.entries()].map(([code, pens]) => (
         <span key={code} className="flex items-center gap-1.5 text-xs text-ink-muted">
           <span className="font-bold text-ink">{code}</span>
           <PenaltyBadges penalties={pens} />
+        </span>
+      ))}
+      {verified.map((c) => (
+        <span key={c.driver} className="flex items-center gap-1.5 text-xs text-ink-muted"
+          title={`Qualified P${c.qualified}, starts P${c.starts} on the official grid`}>
+          <span className="font-bold text-ink">{c.driver}</span>
+          <span className="inline-flex items-center gap-1 rounded-full border border-violet-400/45 bg-violet-400/12 px-2 py-0.5 text-[10px] font-bold text-violet-300">
+            <Gavel size={10} /> P{c.qualified}→P{c.starts}
+          </span>
         </span>
       ))}
       <span className="text-[11px] text-ink-faint">Steward decisions apply before the race start.</span>
@@ -186,7 +208,7 @@ function GridTable({ q, session, simple }: { q: QualifyingSummary; session: Race
   const penaltyMap = penaltiesByDriver(finalPenalties(derivePenalties(session.race_control)));
   return (
     <Card>
-      <CardHeader title={isSprintQ(session) ? "The Sprint grid, as earned" : "The grid, as earned"}
+      <CardHeader title={isSprintQ(session) ? "The Sprint grid" : "The grid"}
         info={<InfoTip label="Reading qualifying" text={simple
           ? "Ordered by qualifying result. Gap is how far each driver's best lap was from pole."
           : "Ordered by qualifying classification. Q1/Q2/Q3 show each knockout segment's best where the data provides it — eliminated drivers simply have no later-segment time."} />} />
@@ -212,14 +234,20 @@ function GridTable({ q, session, simple }: { q: QualifyingSummary; session: Race
               <tr key={r.driver} className="border-b border-white/[0.04]">
                 <td className="py-2 pl-5 pr-2 tabular-nums font-semibold">{r.position ?? "—"}</td>
                 <td className="py-2 pr-2">
+                  {/* fixed-width identity + status columns so elimination labels
+                      and penalty badges line up cleanly down the table, the same
+                      way the race classification aligns its DNF badges */}
                   <span className="flex items-center gap-2">
                     <DriverBadge driver={driverOf(session, r.driver)} code={r.driver}
-                      name={r.name} team={r.team} teamColor={r.team_color} size={26} />
-                    {r.knocked_out_in && (
-                      <Term term={`out in ${r.knocked_out_in.toLowerCase()}`}>
-                        <Badge tone="neutral">out in {r.knocked_out_in}</Badge>
-                      </Term>
-                    )}
+                      name={r.name} team={r.team} teamColor={r.team_color}
+                      size={26} className="w-48 min-w-0" />
+                    <span className="w-[5.5rem] shrink-0">
+                      {r.knocked_out_in && (
+                        <Term term={`out in ${r.knocked_out_in.toLowerCase()}`}>
+                          <Badge tone="neutral">out in {r.knocked_out_in}</Badge>
+                        </Term>
+                      )}
+                    </span>
                     <PenaltyBadges penalties={penaltyMap.get(r.driver)} />
                   </span>
                 </td>
@@ -429,7 +457,8 @@ function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSessio
       <div className="grid gap-4 lg:grid-cols-2">
         {/* interruptions as explained event cards, not echoed flags */}
         <Card>
-          <CardHeader title="Interruptions" />
+          <CardHeader title="Interruptions"
+            info={<InfoTip label="What counts" text="An interruption is a stoppage or neutralisation — a red flag, safety car or VSC. Local yellow flags are reported separately: the session kept running through them." />} />
           <CardBody className="space-y-2">
             {q.interruptions.length ? q.interruptions.map((it, i) => {
               const who = it.driver_name ?? it.driver;
@@ -477,7 +506,8 @@ function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSessio
                 <div>
                   <div className="text-sm font-semibold text-emerald-200">Clean session</div>
                   <div className="text-xs text-ink-muted">
-                    No red flags — every driver got their runs in{!simple ? ", so the timesheet reflects pure pace rather than timing luck" : ""}.
+                    The session was never stopped{!simple ? ", so the timesheet reflects pure pace rather than timing luck" : ""}.
+                    {localYellowNote(session)}
                   </div>
                 </div>
               </div>
@@ -546,45 +576,111 @@ function parseDeleted(msg: string, session: RaceSession) {
 }
 
 /* ------------------------------- pace ---------------------------------- */
+/**
+ * One-lap pace, built from the same component vocabulary as the race Pace tab:
+ * a single card with a Drivers / Constructors toggle and one bar-chart
+ * language, so the statistic looks the same whichever session you're in.
+ * Simple keeps the clean ranking; Advanced adds the gap column and, for
+ * drivers, the segment each lap came from.
+ */
 function QualiPace({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
+  const simple = useIsSimple();
+  const [view, setView] = useState<"drivers" | "teams">("drivers");
+
   const timed = q.rows.filter((r) => r.best_lap);
   const poleT = timed[0]?.best_lap ?? 0;
-  const maxGap = Math.max(0.001, ...timed.map((r) => (r.best_lap ?? 0) - poleT));
+  const maxDelta = Math.max(0.001, ...timed.map((r) => (r.best_lap ?? 0) - poleT));
+  const teamMax = Math.max(0.001, ...q.team_ranking.map((t) => t.gap));
+
+  const viewSwitch = (
+    <div className="flex gap-1 rounded-lg border border-white/[0.06] bg-base-850/60 p-1 text-xs"
+      role="tablist" aria-label="Pace view">
+      {([["drivers", "Drivers", User], ["teams", "Constructors", Building2]] as const).map(([id, label, Icon]) => (
+        <button key={id} role="tab" aria-selected={view === id} onClick={() => setView(id)}
+          className={cx("inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium transition-colors",
+            view === id ? "bg-accent/15 text-accent-soft" : "text-ink-muted hover:text-ink")}>
+          <Icon size={12} /> {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const leader = view === "drivers" ? timed[0] : null;
+  const topTeam = q.team_ranking[0];
+
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card>
-        <CardHeader title="One-lap pace"
-          info={<InfoTip text="Best lap each driver set, ranked. Bars show the gap to pole." />} />
-        <CardBody className="space-y-2">
-          {timed.map((r) => (
-            <div key={r.driver} className="flex items-center gap-2">
+    <Card>
+      <CardHeader
+        title="One-lap pace"
+        right={viewSwitch}
+        info={<InfoTip label={view === "drivers" ? "Reading one-lap pace" : "Reading constructor pace"}
+          text={view === "drivers"
+            ? "Every driver's best lap of the session, ranked. Bars show how far each lap was from pole."
+            : "Constructors ranked by their quickest car's best lap — the one-lap machinery order. Bars show the gap to the quickest team."} />} />
+      <CardBody className="space-y-2.5">
+        {/* the headline, matching the race Pace tab's "fastest car" framing */}
+        {view === "drivers" && leader && (
+          <div className="mb-1 flex items-center gap-3 rounded-xl border border-white/[0.06] bg-base-800/40 p-3">
+            <DriverAvatar driver={driverOf(session, leader.driver)} size={38} />
+            <div className="min-w-0">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Quickest lap</div>
+              <div className="truncate text-sm font-bold text-ink">{leader.name}</div>
+            </div>
+            <span className="ml-auto tabular-nums text-sm font-semibold text-speed">{fmtLap(leader.best_lap)}</span>
+          </div>
+        )}
+        {view === "teams" && topTeam && (
+          <div className="mb-1 flex items-center gap-3 rounded-xl border border-white/[0.06] bg-base-800/40 p-3">
+            <span className="h-8 w-1.5 rounded-full" style={{ background: topTeam.color }} />
+            <div className="min-w-0">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Quickest constructor</div>
+              <div className="truncate text-sm font-bold text-ink">{topTeam.team}</div>
+            </div>
+            <span className="ml-auto tabular-nums text-sm font-semibold text-speed">
+              {fmtLap(timed.find((r) => r.team === topTeam.team)?.best_lap ?? null)}
+            </span>
+          </div>
+        )}
+
+        {view === "drivers" ? timed.map((r, i) => {
+          const delta = (r.best_lap ?? 0) - poleT;
+          return (
+            <div key={r.driver} className="flex items-center gap-2.5">
+              <span className="w-5 shrink-0 text-right text-[11px] tabular-nums text-ink-faint">{i + 1}</span>
               <DriverBadge driver={driverOf(session, r.driver)} code={r.driver}
                 name={r.name} team={r.team} teamColor={r.team_color}
                 size={24} className="w-40 shrink-0" />
-              <span className="h-2 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
-                <span className="block h-full rounded-full"
-                  style={{ width: `${Math.max(8, 100 - (((r.best_lap ?? 0) - poleT) / maxGap) * 70)}%`, background: r.team_color }} />
+              <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-white/[0.05]">
+                <span className="block h-full rounded-full transition-all"
+                  style={{ width: `${Math.max(6, 100 - (delta / maxDelta) * 72)}%`, background: r.team_color }} />
               </span>
-              <span className="w-24 shrink-0 text-right text-xs tabular-nums text-ink-muted">{fmtLap(r.best_lap)}</span>
+              <span className="w-[4.5rem] shrink-0 text-right text-xs tabular-nums text-ink">{fmtLap(r.best_lap)}</span>
+              {!simple && (
+                <span className="w-14 shrink-0 text-right text-[11px] tabular-nums text-ink-faint">
+                  {i === 0 ? "pole" : `+${delta.toFixed(3)}`}
+                </span>
+              )}
             </div>
-          ))}
-        </CardBody>
-      </Card>
-      <Card>
-        <CardHeader title="Constructor pace"
-          info={<InfoTip text="Teams ranked by their quickest car's best lap — the one-lap machinery order." />} />
-        <CardBody className="space-y-1.5">
-          {q.team_ranking.map((t, i) => (
-            <div key={t.team} className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-base-800/50 px-3 py-2">
-              <span className="w-4 tabular-nums text-ink-faint">{i + 1}</span>
+          );
+        }) : q.team_ranking.map((t, i) => (
+          <div key={t.team} className="flex items-center gap-2.5">
+            <span className="w-5 shrink-0 text-right text-[11px] tabular-nums text-ink-faint">{i + 1}</span>
+            <span className="flex w-40 shrink-0 items-center gap-2">
               <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: t.color }} />
-              <span className="flex-1 text-sm font-medium">{t.team}</span>
-              <span className="tabular-nums text-xs text-ink-muted">{i === 0 ? "quickest" : `+${t.gap.toFixed(3)}s`}</span>
-            </div>
-          ))}
-        </CardBody>
-      </Card>
-    </div>
+              <span className="truncate text-sm font-medium">{t.team}</span>
+            </span>
+            <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-white/[0.05]">
+              <span className="block h-full rounded-full transition-all"
+                style={{ width: `${Math.max(6, 100 - (t.gap / teamMax) * 72)}%`, background: t.color }} />
+            </span>
+            <span className="w-[4.5rem] shrink-0 text-right text-xs tabular-nums text-ink">
+              {i === 0 ? "quickest" : `+${t.gap.toFixed(3)}s`}
+            </span>
+            {!simple && <span className="w-14 shrink-0" />}
+          </div>
+        ))}
+      </CardBody>
+    </Card>
   );
 }
 

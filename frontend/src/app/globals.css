@@ -95,6 +95,9 @@ body {
   50%      { box-shadow: 0 0 0 1.5px var(--pulse), 0 0 22px -4px var(--pulse), 0 8px 40px -12px rgba(0,0,0,.6); }
 }
 .tip-breathing { animation: tip-breath 1.9s ease-in-out infinite; }
+/* the selected Key-Moment marker, drawn above the dimmed plot */
+@keyframes overlay-breath { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+.moment-line-overlay { animation: overlay-breath 1.8s ease-in-out infinite; }
 /* pit-stop markers breathe gently so they're easy to pick out while scanning */
 @keyframes pit-breath { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
 .pit-dot { animation: pit-breath 1.8s ease-in-out infinite; }
@@ -102,5 +105,6 @@ body {
 @keyframes badge-breath { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 3px var(--pulse, rgba(255,210,30,.28)); } }
 .badge-breathing { animation: badge-breath 1.9s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .moment-line line, .focus-halo path.recharts-curve, .accent-breathing, .pit-dot, .badge-breathing, .tip-breathing { animation: none; }
+  .moment-line line, .focus-halo path.recharts-curve, .accent-breathing, .pit-dot,
+  .badge-breathing, .tip-breathing, .moment-line-overlay { animation: none; }
 }

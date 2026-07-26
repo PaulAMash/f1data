@@ -253,6 +253,34 @@ def _enrich_retirements(session: RaceSession, primary: str) -> None:
             c.race_time = src.race_time
 
 
+def quali_grid_changes(session: RaceSession, quali_rows) -> list[dict]:
+    """Grid penalties that landed AFTER qualifying ended.
+
+    A gearbox or engine penalty is announced once the session's own race-control
+    feed has closed, so it can never appear in the qualifying messages — which is
+    why a driver could qualify P2 and the page still showed no penalty. The
+    official starting grid is the trustworthy record: comparing it against the
+    qualifying result surfaces exactly who lost places, and by how many, without
+    guessing at a reason we can't verify.
+    """
+    if session.category not in ("qualifying", "sprint_qualifying"):
+        return []
+    try:
+        _drivers, race_rows, _meta = jolpica_adapter.fetch_classification(
+            session.year, session.grand_prix)
+    except Exception as exc:  # noqa: BLE001
+        log.info("grid-change lookup unavailable: %s", exc)
+        return []
+    grid_of = {r.driver: r.grid for r in race_rows if r.grid}
+    out: list[dict] = []
+    for row in quali_rows:
+        qpos, start = row.position, grid_of.get(row.driver)
+        if qpos and start and start > qpos:
+            out.append({"driver": row.driver, "name": row.name,
+                        "qualified": qpos, "starts": start, "places": start - qpos})
+    return sorted(out, key=lambda d: -d["places"])[:6]
+
+
 def _enrich_quali_segments(session: RaceSession, primary: str) -> None:
     """Merge official Q1/Q2/Q3 bests into a qualifying classification. Plain
     qualifying only — the archive has no per-segment data for sprint shootouts."""

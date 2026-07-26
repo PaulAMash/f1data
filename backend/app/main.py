@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from . import cache, service
-from .adapters import history_adapter, historical, pitstop_service
+from .adapters import data_source_manager, history_adapter, historical, pitstop_service
 from .adapters.data_source_manager import DataUnavailableError
 from .analysis.engine import analyze, compare_drivers
 from .analysis.practice import compute_practice
@@ -131,6 +131,12 @@ def _bundle(year, gp, session_type, mock, refresh):
     practice = compute_practice(s) if s.category == "practice" else None
     qualifying = (compute_qualifying(s)
                   if s.category in ("qualifying", "sprint_qualifying") else None)
+    if qualifying is not None and s.data_source != DataSource.MOCK:
+        # post-session grid penalties can only be verified against the official
+        # starting grid — a lookup, so it stays out of the pure analysis pass
+        changes = data_source_manager.quali_grid_changes(s, qualifying.rows)
+        if changes:
+            qualifying = qualifying.model_copy(update={"grid_changes": changes})
     return s, strategy, pace, practice, qualifying
 
 

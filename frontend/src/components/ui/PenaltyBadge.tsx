@@ -10,8 +10,14 @@ import { cx } from "@/lib/format";
 /* grid; amber = session events (deleted laps, investigations).                */
 /* -------------------------------------------------------------------------- */
 
+/* Status colour identity, kept distinct across the whole app:
+     rose   = the car stopped (DNF / DSQ — an ending)
+     violet = a steward penalty (grid drop, time penalty, drive-through)
+     amber  = a session note (deleted lap, investigation)
+   DNF and penalties previously shared rose and were hard to tell apart. */
 const TONE: Record<string, string> = {
-  red: "border-rose-400/40 bg-rose-400/10 text-rose-300",
+  penalty: "border-violet-400/45 bg-violet-400/12 text-violet-300",
+  ended: "border-rose-400/40 bg-rose-400/10 text-rose-300",
   amber: "border-amber/40 bg-amber/10 text-amber",
   neutral: "border-white/15 bg-white/[0.05] text-ink-muted",
 };

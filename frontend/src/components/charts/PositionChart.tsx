@@ -334,7 +334,25 @@ export function PositionChart({
 
       <div ref={wrapRef} className="relative">
         <EventBand markers={markers} lapToX={lapToX} ready={width > 0} simple={simple} total={total} />
-        <div className={cx("w-full select-none", simple ? "h-[420px]" : "h-[440px]")}>
+        {/* selecting a Key Moment focuses the chart on that beat the same way
+            focusing a driver does: the field recedes and the moment, drawn
+            crisply on top, dominates */}
+        {(() => {
+          const om = openMoment != null ? moments.find((m) => m.id === openMoment) : null;
+          if (!om || width === 0) return null;
+          const c = momentColor(om.kind);
+          return (
+            <div className="pointer-events-none absolute z-20"
+              style={{ left: lapToX(om.lap), top: M.top, bottom: M.bottom + 18 }}>
+              <span className="moment-line-overlay absolute inset-y-0 -left-px w-0.5 rounded"
+                style={{ background: c, boxShadow: `0 0 12px 0 ${c}` }} />
+              <span className="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rounded-full"
+                style={{ background: c, boxShadow: `0 0 10px 1px ${c}` }} />
+            </div>
+          );
+        })()}
+        <div className={cx("w-full select-none transition-opacity duration-300",
+          simple ? "h-[420px]" : "h-[440px]", openMoment != null && "opacity-[0.45]")}>
           <ResponsiveContainer>
             <LineChart data={data} margin={M}>
               {!simple && <CartesianGrid stroke="rgba(255,255,255,0.035)" strokeDasharray="1 6" vertical={false} />}
@@ -386,12 +404,20 @@ export function PositionChart({
                         : <g />} />
                 );
               })}
-              {pitDots.map((p, i) => (
-                <ReferenceDot key={`pd${i}`} x={p.lap} y={p.pos} ifOverflow="hidden"
-                  shape={(props: any) => (
-                    <circle className="pit-dot" cx={props.cx} cy={props.cy} r={3.6} fill="#0b0e16" stroke={p.color} strokeWidth={2} />
-                  )} />
-              ))}
+              {/* pit markers follow the same emphasis rule as the lines: when a
+                  driver is focused, only their stops stay bright and breathing;
+                  everyone else's fade back with their line */}
+              {pitDots.map((p, i) => {
+                const dim = anyFocus && !selected.includes(p.code);
+                return (
+                  <ReferenceDot key={`pd${i}`} x={p.lap} y={p.pos} ifOverflow="hidden"
+                    shape={(props: any) => (
+                      <circle className={dim ? undefined : "pit-dot"} cx={props.cx} cy={props.cy}
+                        r={dim ? 3 : 3.6} fill="#0b0e16" stroke={p.color} strokeWidth={2}
+                        opacity={dim ? 0.16 : 1} />
+                    )} />
+                );
+              })}
             </LineChart>
           </ResponsiveContainer>
         </div>
