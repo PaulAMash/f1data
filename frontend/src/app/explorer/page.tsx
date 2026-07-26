@@ -234,11 +234,10 @@ export default function ExplorerPage() {
                   onFocusDrivers={(d) => { setSelected(d); setChartTab("position"); setTab("charts"); }} />
               </Section>
             )}
+            {/* Pace, Qualifying and Practice all bring their own card framing —
+                wrapping them in another Section would double-frame the panel */}
             {isRaceLike && tab === "pace" && (
-              <Section title="Pace analysis" info="Separates real speed from track position using fuel- and tyre-corrected clean-air pace.">
-                {/* focus highlights only affect the Charts tab — Pace always shows the field */}
-                <PaceAnalysis session={session} pace={bundle.pace} selected={[]} />
-              </Section>
+              <PaceAnalysis session={session} pace={bundle.pace} selected={[]} />
             )}
 
             {isQuali && bundle.qualifying && ["story", "laps", "pace"].includes(tab) && (
@@ -252,10 +251,8 @@ export default function ExplorerPage() {
             )}
 
             {tab === "compare" && (
-              <Section title="Driver comparison">
-                <DriverComparison bundle={bundle} year={sel.year} gp={session.grand_prix}
-                  session={sel.session} initial={selected} />
-              </Section>
+              <DriverComparison bundle={bundle} year={sel.year} gp={session.grand_prix}
+                session={sel.session} initial={selected} />
             )}
             {tab === "ask" && (
               <Section title="Ask about this session">

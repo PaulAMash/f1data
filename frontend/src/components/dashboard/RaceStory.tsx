@@ -2,9 +2,12 @@
 import { Crown, Flag, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 import type { RaceBundle } from "@/lib/types";
 import { useIsSimple } from "@/lib/mode";
-import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Term } from "@/components/ui/Term";
-import { DriverAvatar } from "@/components/ui/DriverBadge";
+import { InsightCard, InsightGrid } from "@/components/ui/InsightCard";
+import { StoryPanel, type StoryHighlight } from "@/components/ui/StoryPanel";
+import { Meter, PositionShift } from "@/components/ui/Visuals";
+import { fmtGap } from "@/lib/format";
+import { deriveWindows } from "@/lib/raceEvents";
 import { RaceOverview } from "./RaceOverview";
 import { RaceTimeline } from "./RaceTimeline";
 
@@ -23,91 +26,100 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
   const cls = session.classification;
   const driverOf = (code?: string | null) => session.drivers.find((d) => d.code === code) ?? null;
   const winner = cls.find((c) => c.driver === strategy.winner);
+  const runnerUp = cls.find((c) => c.position === 2);
   const topPace = [...bundle.pace].sort((a, b) => (a.pace_rank ?? 99) - (b.pace_rank ?? 99))[0];
+  const secondPace = [...bundle.pace].sort((a, b) => (a.pace_rank ?? 99) - (b.pace_rank ?? 99))[1];
   const loser = strategy.biggest_losers[0];
   const turningPoint = strategy.turning_points[0] ?? strategy.insights.find((i) => i.severity === "key");
   const story = (!simple && strategy.story_advanced?.length)
     ? strategy.story_advanced : strategy.story;
 
+  const finishers = cls.filter((c) => !c.retired).length;
+  const retirements = cls.length - finishers;
+  const windows = deriveWindows(session);
+  const paceGap = topPace?.clean_air_pace != null && secondPace?.clean_air_pace != null
+    ? secondPace.clean_air_pace - topPace.clean_air_pace : null;
+  const maxNet = Math.max(1, ...[...strategy.biggest_gainers, ...strategy.biggest_losers]
+    .map((m: any) => Math.abs(m?.net ?? 0)));
+
+  const highlights: StoryHighlight[] = [
+    { label: "Winner", value: lastName(winner?.name ?? winner?.driver ?? "—"), tone: "accent" },
+    ...(runnerUp ? [{ label: "Margin", value: fmtGap(2, runnerUp.gap), tone: "speed" as const }] : []),
+    { label: "Finishers", value: `${finishers}/${cls.length}` },
+    ...(retirements ? [{ label: "Retirements", value: retirements, tone: "bad" as const }] : []),
+    {
+      label: "Neutralisations",
+      value: windows.length || "None",
+      tone: (windows.length ? "amber" : "good") as StoryHighlight["tone"],
+    },
+  ];
+
   return (
     <div className="space-y-4">
-      {/* narrative — reads like a short race report: lede, then supporting lines */}
-      <Card>
-        <CardHeader title={<span className="flex items-center gap-2"><Sparkles size={15} className="text-accent-soft" /> The story of the race</span>} />
-        <CardBody>
-          {story.length ? (
-            <div>
-              <p className="text-[17px] font-medium leading-relaxed text-ink">{story[0]}</p>
-              {story.length > 1 && (
-                <div className="mt-3 space-y-2 border-l-2 border-white/[0.07] pl-4">
-                  {story.slice(1).map((s, i) => (
-                    <p key={i} className="text-sm leading-relaxed text-ink-muted">{s}</p>
-                  ))}
-                </div>
-              )}
-              <div className="mt-5">
-                <RaceTimeline bundle={bundle} />
-              </div>
-            </div>
-          ) : <p className="text-sm text-ink-muted">Load a race to see its story.</p>}
-        </CardBody>
-      </Card>
+      {/* the race, told rather than listed */}
+      <StoryPanel
+        icon={<Sparkles size={14} />}
+        kicker={`${session.session_type} · ${session.grand_prix}`}
+        story={story}
+        highlights={highlights}
+      >
+        <RaceTimeline bundle={bundle} />
+      </StoryPanel>
 
       {/* answer-first key cards (clickable → the tab with the detail) */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <KeyCard icon={<Crown size={15} />} tone="accent" label="Winner"
+      <InsightGrid cols={4}>
+        <InsightCard icon={<Crown size={14} />} tone="accent" label="Winner"
           value={winner?.name ?? winner?.driver ?? "—"} sub={winner?.team}
-          avatar={<DriverAvatar driver={driverOf(winner?.driver)} size={34} />}
-          why="Took the chequered flag first." onClick={() => onJump?.("charts")} />
-        <KeyCard icon={<TrendingUp size={15} />} tone="speed" label="Best race pace"
+          driver={driverOf(winner?.driver)}
+          // a shift of zero isn't a visual — a lights-to-flag win is its own fact
+          visual={winner?.grid && winner.position && winner.grid !== winner.position ? (
+            <PositionShift from={winner.grid} to={winner.position} />
+          ) : winner?.grid === 1 ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent-soft">
+              Led from pole
+            </span>
+          ) : undefined}
+          caption={runnerUp ? `${fmtGap(2, runnerUp.gap)} clear of ${runnerUp.driver}.` : "Took the chequered flag first."}
+          onClick={() => onJump?.("charts")} />
+
+        <InsightCard icon={<TrendingUp size={14} />} tone="speed" label="Best race pace"
           value={driverOf(topPace?.driver)?.name ?? topPace?.driver ?? "—"}
           sub={<>fastest <Term>clean-air pace</Term></>}
-          avatar={<DriverAvatar driver={driverOf(topPace?.driver)} size={34} />}
-          why="Quickest once fuel and tyres are accounted for. Tap to open Pace."
+          driver={driverOf(topPace?.driver)}
+          visual={paceGap != null && secondPace ? (
+            <Meter label={`Clear of ${secondPace.driver}`} tone="speed"
+              value={`${paceGap.toFixed(3)}s`} pct={Math.min(100, (paceGap / 0.6) * 100)}
+              hint="Per lap, once fuel and tyres are corrected." />
+          ) : undefined}
+          caption={paceGap == null ? "Quickest once fuel and tyres are accounted for." : undefined}
           onClick={() => onJump?.("pace")} />
-        <KeyCard icon={<Flag size={15} />} tone="amber" label="Turning point"
+
+        <InsightCard icon={<Flag size={14} />} tone="amber" label="Turning point"
           value={turningPoint ? turningPoint.title.split("(")[0].trim() : "—"}
           sub={turningPoint?.lap_range ? `Lap ${turningPoint.lap_range.join("–")}` : undefined}
-          why="The moment that most shaped the result. Tap for Strategy." onClick={() => onJump?.("strategy")} />
-        <KeyCard icon={<TrendingDown size={15} />} tone="default" label="Biggest loss"
+          visual={turningPoint?.lap_range?.length && session.total_laps ? (
+            <Meter label="When it happened" tone="amber"
+              value={`Lap ${turningPoint.lap_range[0]}`}
+              pct={(turningPoint.lap_range[0] / session.total_laps) * 100}
+              hint={`of ${session.total_laps} laps`} />
+          ) : undefined}
+          caption="The moment that most shaped the result."
+          onClick={() => onJump?.("strategy")} />
+
+        <InsightCard icon={<TrendingDown size={14} />} tone="bad" label="Biggest loss"
           value={driverOf(loser?.driver)?.name ?? loser?.driver ?? "—"}
-          sub={loser ? `P${loser.grid}→P${loser.finish}` : undefined}
-          avatar={<DriverAvatar driver={driverOf(loser?.driver)} size={34} />}
-          why="Lost the most places. Tap to ask why." onClick={() => onJump?.("ask")} />
-      </div>
+          sub={loser?.team}
+          driver={driverOf(loser?.driver)}
+          visual={loser ? <PositionShift from={loser.grid} to={loser.finish} /> : undefined}
+          caption="Lost the most places against the grid."
+          onClick={() => onJump?.("ask")} />
+      </InsightGrid>
 
       {/* classification + movers + weather — points scorers in Simple,
           the full field with strategy verdicts in Advanced */}
-      <RaceOverview bundle={bundle} simple={simple} />
+      <RaceOverview bundle={bundle} simple={simple} maxNet={maxNet} />
     </div>
   );
 }
 
-function KeyCard({
-  icon, label, value, sub, why, tone, onClick, avatar,
-}: {
-  icon: React.ReactNode; label: string; value: React.ReactNode; sub?: React.ReactNode;
-  why: string; tone: "accent" | "speed" | "amber" | "default"; onClick?: () => void;
-  avatar?: React.ReactNode;
-}) {
-  const toneClass = { accent: "text-accent-soft", speed: "text-speed", amber: "text-amber", default: "text-ink" }[tone];
-  return (
-    <button onClick={onClick} disabled={!onClick}
-      className="group rounded-xl border border-white/[0.06] bg-base-800/60 p-4 text-left transition-colors enabled:hover:border-white/[0.14]">
-      <div className="flex items-center gap-1.5 text-ink-faint">
-        <span className={toneClass}>{icon}</span>
-        <span className="label">{label}</span>
-      </div>
-      {/* value text is always white — tone colour lives in the icon/label only,
-          so a driver's name never changes colour from card to card */}
-      <div className="mt-1.5 flex items-center gap-2.5">
-        {avatar}
-        <div className="min-w-0">
-          <div className="truncate text-xl font-semibold tracking-tight text-ink">{value}</div>
-          {sub && <div className="text-xs text-ink-muted">{sub}</div>}
-        </div>
-      </div>
-      <div className="mt-2 text-[11px] leading-snug text-ink-faint">{why}</div>
-    </button>
-  );
-}
+const lastName = (name: string) => name.split(" ").slice(-1)[0] || name;

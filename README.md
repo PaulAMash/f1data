@@ -144,8 +144,9 @@ structured `503 data_unavailable` (which sources were tried, whether it's retrya
 the UI shows a retry + a link to Data Sources. Every response is tagged `live` / `cache`
 / `mock`; the UI surfaces this in the tucked-away **Data Sources** panel. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md),
-[`docs/ASK_ENGINE.md`](docs/ASK_ENGINE.md) and
-[`docs/HISTORICAL_EXPLORER.md`](docs/HISTORICAL_EXPLORER.md).
+[`docs/ASK_ENGINE.md`](docs/ASK_ENGINE.md),
+[`docs/HISTORICAL_EXPLORER.md`](docs/HISTORICAL_EXPLORER.md) and
+[`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md).
 
 ### Data / diagnostics endpoints
 

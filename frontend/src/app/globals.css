@@ -49,10 +49,22 @@ body {
 }
 
 @layer components {
+  /* ONE surface language, two levels of it.
+     .card / .panel  — anything that stands on the page background.
+     .tile           — anything nested inside one of those.
+     Radius encodes the nesting: 2xl outside, xl inside. Nothing in the product
+     invents a third surface. */
   .card {
     @apply rounded-2xl border border-white/[0.06] bg-base-850/70 shadow-card backdrop-blur-sm;
   }
-  .card-hover {
+  .panel {
+    @apply rounded-2xl border border-white/[0.06] bg-base-850/60 shadow-card backdrop-blur-sm;
+  }
+  .tile {
+    @apply rounded-xl border border-white/[0.06] bg-base-800/50;
+  }
+  .card-hover,
+  .panel-hover {
     @apply transition-all duration-200 hover:border-white/[0.12] hover:bg-base-800/80;
   }
   .chip {

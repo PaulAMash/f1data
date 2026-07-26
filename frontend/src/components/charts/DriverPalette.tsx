@@ -64,7 +64,7 @@ export function DriverPalette({
         <div className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-3">
           <Search size={16} className="shrink-0 text-ink-faint" />
           <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)}
-            placeholder="Search a driver or team…"
+            placeholder="Search a driver or constructor…"
             onKeyDown={(e) => { if (e.key === "Enter" && flat[0]) pick(flat[0].code); }}
             className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint" />
           <span className="hidden text-[11px] text-ink-faint sm:inline">Click a driver to focus</span>

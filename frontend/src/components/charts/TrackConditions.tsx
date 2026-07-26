@@ -1,6 +1,8 @@
 "use client";
 import { CloudRain, CloudSun, Droplets, Navigation, Sun, Thermometer } from "lucide-react";
 import type { RaceSession } from "@/lib/types";
+import { InsightCard } from "@/components/ui/InsightCard";
+import { IconTile } from "@/components/ui/Visuals";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
@@ -133,3 +135,34 @@ export function TrackConditions({ session, compact = false }: { session: RaceSes
     </div>
   );
 }
+
+/**
+ * The conditions panel wearing the standard insight-card shell, so weather sits
+ * in any card grid — Practice, Qualifying, Sprint or Race — without looking like
+ * a visitor. Weather shapes tyre choice, grip, long runs and pit strategy, so it
+ * belongs on every session, not just Saturday.
+ */
+export function ConditionsCard({
+  session, fallback,
+}: { session: RaceSession; fallback?: string | null }) {
+  if (!session.weather.length) {
+    return (
+      <InsightCard icon={<CloudSun size={14} />} tone="sky" label="Track conditions"
+        value={fallback ? capitalize(fallback) : "Not reported"}
+        caption="This session's sources didn't publish weather readings." />
+    );
+  }
+  return (
+    <div className="panel p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <IconTile tone="sky" size={26}><CloudSun size={14} /></IconTile>
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+          Track conditions
+        </span>
+      </div>
+      <TrackConditions session={session} compact />
+    </div>
+  );
+}
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);

@@ -122,7 +122,7 @@ const STARTERS: Record<string, string[]> = {
   ],
   practice: [
     "Who had the best long-run pace?",
-    "Which compounds did teams focus on?",
+    "Which compounds did constructors focus on?",
     "Who looks quickest over one lap?",
   ],
 };

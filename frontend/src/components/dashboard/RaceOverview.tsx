@@ -1,17 +1,21 @@
 "use client";
 import { useState } from "react";
-import { Award, Timer, TrendingDown, TrendingUp } from "lucide-react";
+import { Award, Flag, Timer, TrendingDown, TrendingUp } from "lucide-react";
 import type { ClassificationRow, RaceBundle } from "@/lib/types";
-import { Card, CardBody, CardHeader } from "@/components/ui/Card";
-import { Badge, TeamDot } from "@/components/ui/Badge";
+import { Card, CardHeader } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
 import { DriverAvatar, DriverBadge } from "@/components/ui/DriverBadge";
 import { StatTile } from "@/components/ui/StatTile";
 import { InfoTip } from "@/components/ui/InfoTip";
-import { fmtGap, fmtLap, fmtSec, netBadge, ordinal } from "@/lib/format";
+import { IconTile, type VisualTone } from "@/components/ui/Visuals";
+import { ConditionsCard } from "@/components/charts/TrackConditions";
+import { cx, fmtGap, fmtLap, fmtSec, netBadge } from "@/lib/format";
 import { derivePenalties, finalPenalties, penaltiesByDriver } from "@/lib/penalties";
 import { PenaltyBadges } from "@/components/ui/PenaltyBadge";
 
-export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; simple?: boolean }) {
+export function RaceOverview({
+  bundle, simple = false, maxNet = 1,
+}: { bundle: RaceBundle; simple?: boolean; maxNet?: number }) {
   const { session, strategy } = bundle;
   const dotd = session.classification.find((c) => c.driver === strategy.driver_of_the_day);
   // Everyone sees the whole field, DNFs included — Simple just reads it with
@@ -57,26 +61,32 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
           (Winner already appears in the key cards above and is never repeated) */}
       {!simple && (
         <div className="grid gap-3 sm:grid-cols-3">
-          <StatTile label="Standout drive"
+          <StatTile label="Standout drive" tone="accent" icon={<Award size={14} />}
             value={
               <span className="flex items-center gap-2.5">
                 <DriverAvatar size={34}
                   driver={session.drivers.find((d) => d.code === strategy.driver_of_the_day) ?? null} />
-                <span className="truncate">{dotd?.name ?? strategy.driver_of_the_day ?? "—"}</span>
+                {/* tone colours the glyph, never a driver's name — a name must
+                    read the same on every card in the product */}
+                <span className="truncate text-xl text-ink">
+                  {dotd?.name ?? strategy.driver_of_the_day ?? "—"}
+                </span>
               </span>
             }
             sub={strategy.dotd_reason ?? undefined}
             info="Pitwall IQ's own data-driven pick: positions gained, weighted by race pace and a win-from-behind bonus. This is NOT the official fan-voted Driver of the Day — that's a public vote, which isn't part of the timing data." />
           {strategy.avg_pit_loss != null ? (
-            <StatTile label="Avg pit loss" value={fmtSec(strategy.avg_pit_loss)}
+            <StatTile label="Avg pit loss" tone="speed" icon={<Timer size={14} />}
+              value={fmtSec(strategy.avg_pit_loss)}
               sub={strategy.avg_pit_loss_kind === "estimated" ? "estimated" : "pit-lane time"}
               info="Average pit-lane time lost per stop across the field — the cost of a green-flag stop." />
           ) : (
-            <StatTile label="Avg pit loss" value="Unavailable"
+            <StatTile label="Avg pit loss" icon={<Timer size={14} />} value="Unavailable"
               sub="not provided by source"
               info="This session's source doesn't include pit-lane timing. OpenF1/Jolpica provide it where available." />
           )}
-          <StatTile label="Race" value={`${session.total_laps} laps`}
+          <StatTile label="Race distance" tone="violet" icon={<Flag size={14} />}
+            value={`${session.total_laps} laps`}
             sub={session.circuit?.name ?? session.grand_prix} />
         </div>
       )}
@@ -170,16 +180,12 @@ export function RaceOverview({ bundle, simple = false }: { bundle: RaceBundle; s
         </Card>
 
         <div className="space-y-4">
-          <MoverList title="Biggest gainers" icon={<TrendingUp size={15} className="text-emerald-300" />}
-            rows={strategy.biggest_gainers} tone="up" />
-          <MoverList title="Biggest losers" icon={<TrendingDown size={15} className="text-rose-300" />}
-            rows={strategy.biggest_losers} tone="down" />
-          {strategy.weather_summary && (
-            <Card>
-              <CardHeader title="Weather" />
-              <CardBody className="text-sm capitalize text-ink-muted">{strategy.weather_summary}</CardBody>
-            </Card>
-          )}
+          <MoverList title="Biggest gainers" tone="up" rows={strategy.biggest_gainers}
+            session={session} maxNet={maxNet} />
+          <MoverList title="Biggest losers" tone="down" rows={strategy.biggest_losers}
+            session={session} maxNet={maxNet} />
+          {/* weather reads exactly as it does on Practice and Qualifying */}
+          <ConditionsCard session={session} fallback={strategy.weather_summary} />
         </div>
       </div>
     </div>
@@ -226,38 +232,75 @@ function DnfBadge({ row }: { row: ClassificationRow }) {
   );
 }
 
+/** A strategy verdict, in the shared insight-card shape. */
 function VerdictCard({
   tone, icon, title, driver, detail,
-}: { tone: "good" | "bad" | "key"; icon: React.ReactNode; title: string; driver?: string; detail?: string }) {
+}: {
+  tone: "good" | "bad" | "key"; icon: React.ReactNode; title: string;
+  driver?: string; detail?: string;
+}) {
+  const visualTone: VisualTone = tone === "good" ? "good" : tone === "bad" ? "bad" : "amber";
   return (
-    <Card className="p-4">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">{icon}{title}</span>
-        {driver && <Badge tone={tone}>{driver}</Badge>}
+    <div className="panel p-4">
+      <div className="flex items-center gap-2">
+        <IconTile tone={visualTone} size={26}>{icon}</IconTile>
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{title}</span>
+        {driver && <span className="ml-auto"><Badge tone={tone}>{driver}</Badge></span>}
       </div>
-      <p className="text-sm leading-relaxed text-ink-muted">{detail ?? "No clear signal in this race."}</p>
-    </Card>
+      <p className="mt-3 text-sm leading-relaxed text-ink-muted">
+        {detail ?? "No clear signal in this race."}
+      </p>
+    </div>
   );
 }
 
+/**
+ * Movers, shown as movement. Each driver gets their portrait, the shift drawn
+ * the way a broadcast draws it, and a bar scaled against the biggest swing in
+ * the race — so "gained 15" and "lost 3" are instantly comparable, and the
+ * gainers and losers panels share one scale rather than each normalising to
+ * their own top row.
+ */
 function MoverList({
-  title, icon, rows, tone,
-}: { title: string; icon: React.ReactNode; rows: any[]; tone: "up" | "down" }) {
+  title, rows, tone, session, maxNet,
+}: {
+  title: string; rows: any[]; tone: "up" | "down"; session: RaceBundle["session"]; maxNet: number;
+}) {
+  const up = tone === "up";
   return (
-    <Card>
-      <CardHeader title={<span className="flex items-center gap-1.5">{icon}{title}</span>} />
-      <CardBody className="space-y-1.5">
-        {rows.length ? rows.map((r) => (
-          <div key={r.driver} className="flex items-center gap-2 text-sm">
-            <TeamDot color={r.team_color} />
-            <span className="min-w-0 truncate font-semibold">{r.name ?? r.driver}</span>
-            <span className="shrink-0 text-xs text-ink-faint">P{r.grid}→P{r.finish}</span>
-            <span className={`ml-auto shrink-0 tabular-nums text-xs ${tone === "up" ? "text-emerald-300" : "text-rose-300"}`}>
-              {tone === "up" ? "▲" : "▼"} {Math.abs(r.net)}
-            </span>
-          </div>
-        )) : <p className="text-xs text-ink-faint">No notable movers.</p>}
-      </CardBody>
-    </Card>
+    <div className="panel p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <IconTile tone={up ? "good" : "bad"} size={26}>
+          {up ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+        </IconTile>
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{title}</span>
+      </div>
+      {rows.length ? (
+        <div className="space-y-2.5">
+          {rows.map((r) => (
+            <div key={r.driver} className="flex items-center gap-2.5">
+              <DriverAvatar driver={session.drivers.find((d) => d.code === r.driver) ?? null} size={26} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-semibold leading-tight text-ink">
+                  {r.name ?? r.driver}
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                  <div className={cx("h-full rounded-full transition-[width] duration-500",
+                    up ? "bg-emerald-400/80" : "bg-rose-400/80")}
+                    style={{ width: `${Math.max(6, (Math.abs(r.net) / maxNet) * 100)}%` }} />
+                </div>
+              </div>
+              <div className="shrink-0 text-right">
+                <div className={cx("text-sm font-bold leading-none tabular-nums",
+                  up ? "text-emerald-300" : "text-rose-300")}>
+                  {up ? "▲" : "▼"} {Math.abs(r.net)}
+                </div>
+                <div className="mt-1 text-[10px] tabular-nums text-ink-faint">P{r.grid}→P{r.finish}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : <p className="text-xs text-ink-faint">No notable movers.</p>}
+    </div>
   );
 }

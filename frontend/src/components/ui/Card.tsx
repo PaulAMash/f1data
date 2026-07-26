@@ -12,8 +12,13 @@ export function CardHeader({
   title: React.ReactNode; subtitle?: React.ReactNode; right?: React.ReactNode; info?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-white/[0.06] px-5 py-4">
-      <div className="min-w-0">
+    // flex-wrap: on a phone a control on the right would otherwise squeeze the
+    // title into an ellipsis and wrap the subtitle to four lines — it drops to
+    // its own row instead
+    <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 border-b border-white/[0.06] px-5 py-4">
+      {/* a real min-width is what forces the wrap: a flex child that can shrink
+          to zero never wraps, it just ellipsises the title instead */}
+      <div className="min-w-[9rem] flex-1">
         <div className="flex items-center gap-2">
           <h3 className="truncate text-sm font-semibold text-ink">{title}</h3>
           {info}

@@ -1,8 +1,8 @@
 "use client";
-import { useState } from "react";
+
 import {
-  AlertTriangle, ArrowDownWideNarrow, Building2, ChevronRight, CloudSun, Flag, Gauge, Gavel,
-  Medal, Ruler, Sparkles, Target, Thermometer, TrendingDown, TrendingUp, User, Zap,
+  AlertTriangle, ArrowDownWideNarrow, ArrowUp, Building2, ChevronRight, Flag, Gauge,
+  Gavel, Medal, Ruler, Sparkles, Target, Thermometer, TrendingDown, TrendingUp, User, Zap,
 } from "lucide-react";
 import type { Driver, QualifyingSummary, RaceSession } from "@/lib/types";
 import { useIsSimple } from "@/lib/mode";
@@ -12,10 +12,16 @@ import { DriverAvatar, DriverBadge } from "@/components/ui/DriverBadge";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { Term } from "@/components/ui/Term";
 import { EmptyState } from "@/components/ui/misc";
+import { InsightCard, InsightGrid } from "@/components/ui/InsightCard";
+import { StoryPanel } from "@/components/ui/StoryPanel";
+import {
+  DeltaBar, Meter, SectorChips, Sparkline, Tally, type VisualTone,
+} from "@/components/ui/Visuals";
 import { cx, fmtLap } from "@/lib/format";
 import { deriveWindows, sessionInterruptions } from "@/lib/raceEvents";
-import { TrackConditions } from "@/components/charts/TrackConditions";
-import { derivePenalties, finalPenalties, gridPenaltiesByDriver, penaltiesByDriver } from "@/lib/penalties";
+import { ConditionsCard } from "@/components/charts/TrackConditions";
+import { PaceBoard } from "@/components/charts/PaceBoard";
+import { derivePenalties, finalPenalties, penaltiesByDriver } from "@/lib/penalties";
 import { PenaltyBadges } from "@/components/ui/PenaltyBadge";
 
 /**
@@ -47,99 +53,215 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
     driverOf(session, code)?.name ?? q.rows.find((r) => r.driver === code)?.name ?? code ?? "—";
   const rowOf = (code?: string | null) => q.rows.find((r) => r.driver === code);
   const story = simple ? q.story : (q.story_advanced.length ? q.story_advanced : q.story);
+  const sprint = isSprintQ(session);
 
   // biggest teammate delta (advanced card)
   const tmate = [...q.rows]
     .filter((r) => r.vs_teammate != null && r.vs_teammate < 0)
     .sort((a, b) => (a.vs_teammate ?? 0) - (b.vs_teammate ?? 0))[0];
+  const tmatePartner = tmate
+    ? q.rows.find((r) => r.team === tmate.team && r.driver !== tmate.driver)
+    : undefined;
+
+  const timed = q.rows.filter((r) => r.best_lap != null);
+  // the top-10 spread gives every margin on this page a shared, honest scale:
+  // "how big is this gap, for this session?" rather than an abstract number
+  const topSpread = spreadOf(timed.slice(0, 10).map((r) => r.best_lap!));
+  const { stoppages, localYellows } = interruptionEpisodes(q, session);
+  const segs = ["Q1", "Q2", "Q3"].map((s) => q.segment_bests[s]).filter((v): v is number => v != null);
+  const sectorOwner = rowOf(q.fastest_sector_driver);
+  const bestSectors = sectorsOwned(q, q.fastest_sector_driver);
+  const improver = rowOf(q.biggest_improvement_driver);
+  const maxImprovement = Math.max(0.001, ...q.rows.map((r) => r.improvement ?? 0));
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader title={<span className="flex items-center gap-2"><Sparkles size={15} className="text-accent-soft" /> How the {isSprintQ(session) ? "Sprint grid" : "grid"} was earned</span>} />
-        <CardBody className="space-y-2.5">
-          {story.map((s, i) => (
-            <p key={i} className="text-[15px] leading-relaxed text-ink"><span className="mr-2 text-accent-soft">•</span>{s}</p>
-          ))}
-          {q.notes.map((n, i) => <p key={i} className="text-xs text-amber">{n}</p>)}
-        </CardBody>
-      </Card>
+      <StoryPanel
+        icon={<Sparkles size={14} />}
+        kicker={`${sprint ? "Sprint qualifying" : "Qualifying"} · ${session.grand_prix}`}
+        story={story}
+        notes={q.notes}
+        highlights={[
+          { label: "Pole", value: shortName(nameOf(q.pole_driver)), tone: "accent" },
+          ...(q.pole_lap != null ? [{ label: "Time", value: fmtLap(q.pole_lap) }] : []),
+          ...(q.pole_margin != null
+            ? [{ label: "Margin", value: `${q.pole_margin.toFixed(3)}s`, tone: "speed" as const }] : []),
+          { label: "Cars timed", value: timed.length },
+          {
+            label: "Stoppages",
+            value: stoppages || "None",
+            tone: (stoppages ? "bad" : "good") as VisualTone,
+          },
+        ]}
+      />
 
-      {/* Simple: the six takeaways. Advanced: the full analyst card set. */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <QCard icon={<Medal size={15} />} tone="accent"
+      {/* Simple: the six takeaways. Advanced: the full analyst card set.
+          Every card carries its number as a shape, not as a sentence. */}
+      <InsightGrid cols={3}>
+        <InsightCard icon={<Medal size={14} />} tone="accent"
           label={<Term term="pole margin">Pole position</Term>}
-          value={nameOf(q.pole_driver)} avatar={<DriverAvatar driver={driverOf(session, q.pole_driver)} size={34} />}
+          value={nameOf(q.pole_driver)} driver={driverOf(session, q.pole_driver)}
           sub={q.pole_lap ? fmtLap(q.pole_lap) : undefined}
-          why={q.pole_margin != null ? `${q.pole_margin.toFixed(3)}s clear of the next car.` : "Quickest single lap of the session."} />
-        <QCard icon={<Ruler size={15} />} tone="speed" label="Closest margin"
+          visual={q.pole_margin != null && topSpread ? (
+            <Meter label="Margin to P2" value={`${q.pole_margin.toFixed(3)}s`} tone="accent"
+              pct={(q.pole_margin / topSpread) * 100}
+              hint={q.pole_margin < 0.1 ? "Knife-edge — inside a tenth" : "Comfortably clear"} />
+          ) : undefined}
+          caption={q.pole_margin == null ? "Quickest single lap of the session." : undefined} />
+
+        <InsightCard icon={<Ruler size={14} />} tone="speed" label="Closest margin"
           value={q.closest_pair ? `${q.closest_pair.a} vs ${q.closest_pair.b}` : "—"}
-          sub={q.closest_pair ? `${q.closest_pair.delta.toFixed(3)}s (${q.closest_pair.positions})` : undefined}
-          why="The tightest gap anywhere in the top ten." />
-        <QCard icon={<Zap size={15} />} tone="amber" label="Biggest surprise"
+          sub={q.closest_pair?.positions}
+          visual={q.closest_pair && topSpread ? (
+            <DeltaBar left={q.closest_pair.a} right={q.closest_pair.b}
+              leftColor={teamColor(q, q.closest_pair.a)} rightColor={teamColor(q, q.closest_pair.b)}
+              lean={0.5 + Math.min(0.42, (q.closest_pair.delta / topSpread) * 0.5)}
+              value={`${q.closest_pair.delta.toFixed(3)}s`}
+              caption="The tightest gap anywhere in the top ten." />
+          ) : undefined}
+          caption={q.closest_pair ? undefined : "No comparable pair in the top ten."} />
+
+        <InsightCard icon={<Zap size={14} />} tone="amber" label="Biggest surprise"
           value={nameOf(q.biggest_surprise?.driver)}
-          avatar={q.biggest_surprise ? <DriverAvatar driver={driverOf(session, q.biggest_surprise.driver)} size={34} /> : undefined}
-          why={q.biggest_surprise?.reason ? q.biggest_surprise.reason + "." : "No clear over-delivery today."} />
-        <QCard icon={<TrendingDown size={15} />} tone="default" label="Biggest disappointment"
+          driver={q.biggest_surprise ? driverOf(session, q.biggest_surprise.driver) : undefined}
+          sub={q.biggest_surprise && rowOf(q.biggest_surprise.driver)?.position
+            ? `Qualified P${rowOf(q.biggest_surprise.driver)!.position}` : undefined}
+          caption={q.biggest_surprise?.reason ? sentence(q.biggest_surprise.reason) : "No clear over-delivery today."} />
+
+        <InsightCard icon={<TrendingDown size={14} />} tone="bad" label="Biggest disappointment"
           value={nameOf(q.biggest_disappointment?.driver)}
-          avatar={q.biggest_disappointment ? <DriverAvatar driver={driverOf(session, q.biggest_disappointment.driver)} size={34} /> : undefined}
-          why={q.biggest_disappointment?.reason ? q.biggest_disappointment.reason + "." : "Nobody badly under-delivered."} />
+          driver={q.biggest_disappointment ? driverOf(session, q.biggest_disappointment.driver) : undefined}
+          sub={q.biggest_disappointment && rowOf(q.biggest_disappointment.driver)?.position
+            ? `Qualified P${rowOf(q.biggest_disappointment.driver)!.position}` : undefined}
+          caption={q.biggest_disappointment?.reason ? sentence(q.biggest_disappointment.reason) : "Nobody badly under-delivered."} />
+
         {/* conditions read visually — temperature as colour, sky as an icon,
             wind as a needle — with the numbers arriving second */}
-        <div className="rounded-xl border border-white/[0.06] bg-base-850/50 p-4">
-          <div className="mb-2.5 flex items-center gap-1.5">
-            <CloudSun size={15} className="text-speed" />
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Track conditions</span>
-          </div>
-          {session.weather.length
-            ? <TrackConditions session={session} compact />
-            : <div className="text-sm text-ink-muted">{q.conditions ?? "Not reported for this session."}</div>}
-        </div>
-        <QCard icon={<AlertTriangle size={15} />} tone="amber" label="Interruptions"
-          value={interruptionsValue(q, session)}
-          why={interruptionsWhy(q, session)} />
+        <ConditionsCard session={session} fallback={q.conditions} />
+
+        <InsightCard icon={<AlertTriangle size={14} />} tone={stoppages ? "bad" : "good"}
+          label="Interruptions" value={interruptionsValue(q, session)}
+          visual={
+            <div className="space-y-2">
+              <Tally count={stoppages} tone="bad" label={stoppages === 1 ? "red flag" : "red flags"}
+                emptyLabel="Never stopped" />
+              {localYellows > 0 && (
+                <Tally count={localYellows} tone="amber"
+                  label={localYellows === 1 ? "local yellow" : "local yellows"} />
+              )}
+            </div>
+          }
+          caption={interruptionsWhy(q, session)} />
 
         {!simple && (
           <>
-            <QCard icon={<Gauge size={15} />} tone="accent"
+            <InsightCard icon={<Gauge size={14} />} tone="accent"
               label={<Term term="sector">Fastest sectors</Term>}
               value={nameOf(q.fastest_sector_driver)}
-              avatar={q.fastest_sector_driver ? <DriverAvatar driver={driverOf(session, q.fastest_sector_driver)} size={34} /> : undefined}
-              why="Owns the most session-best sectors." />
-            <QCard icon={<Thermometer size={15} />} tone="amber"
+              driver={q.fastest_sector_driver ? driverOf(session, q.fastest_sector_driver) : undefined}
+              sub={sectorOwner?.position ? `Qualified P${sectorOwner.position}` : undefined}
+              visual={<SectorChips owned={bestSectors} />}
+              caption="Lit sectors are session bests." />
+
+            <InsightCard icon={<Thermometer size={14} />} tone="amber"
               label={<Term>Track evolution</Term>}
               value={q.track_evolving ? "Getting faster" : "Stable"}
-              why={q.track_evolving
+              visual={segs.length >= 2 ? (
+                <div className="flex items-end justify-between gap-3">
+                  <Sparkline points={segs} tone="amber" />
+                  <span className="text-xs font-semibold tabular-nums text-emerald-300">
+                    −{(segs[0] - segs[segs.length - 1]).toFixed(3)}s
+                  </span>
+                </div>
+              ) : undefined}
+              caption={q.track_evolving
                 ? "Rubber built up on the racing line — late runs were worth chasing."
                 : "Lap times held steady through the session."} />
-            <QCard icon={<Target size={15} />} tone="speed" label="Most consistent"
+
+            {/* The raw consistency score is a 0–100 scale whose usable range
+                depends on the session — printing "11/100" beside "most
+                consistent" reads like a bad grade and quietly costs trust. The
+                honest statement is the ranking, with the bar measured against
+                the best score anyone actually achieved today. */}
+            <InsightCard icon={<Target size={14} />} tone="speed" label="Most consistent"
               value={nameOf(q.most_consistent_driver)}
-              avatar={q.most_consistent_driver ? <DriverAvatar driver={driverOf(session, q.most_consistent_driver)} size={34} /> : undefined}
-              why="Smallest spread across their push laps." />
-            <QCard icon={<TrendingUp size={15} />} tone="speed" label="Biggest improvement"
+              driver={q.most_consistent_driver ? driverOf(session, q.most_consistent_driver) : undefined}
+              sub={rowOf(q.most_consistent_driver)?.team}
+              visual={rowOf(q.most_consistent_driver)?.consistency_score != null ? (
+                <Meter label="Steadiness" tone="speed"
+                  value={`Best of ${q.rows.filter((r) => r.consistency_score != null).length}`}
+                  pct={100} hint="Measured across each driver's push laps." />
+              ) : undefined}
+              caption="Smallest spread across their push laps." />
+
+            <InsightCard icon={<TrendingUp size={14} />} tone="good" label="Biggest improvement"
               value={nameOf(q.biggest_improvement_driver)}
-              avatar={q.biggest_improvement_driver ? <DriverAvatar driver={driverOf(session, q.biggest_improvement_driver)} size={34} /> : undefined}
-              sub={rowOf(q.biggest_improvement_driver)?.improvement ? `−${rowOf(q.biggest_improvement_driver)!.improvement!.toFixed(2)}s` : undefined}
-              why="Found the most time from first run to last." />
-            <QCard icon={<Flag size={15} />} tone="default"
+              driver={q.biggest_improvement_driver ? driverOf(session, q.biggest_improvement_driver) : undefined}
+              visual={improver?.improvement != null ? (
+                <Meter label="Time found" tone="good"
+                  value={`−${improver.improvement.toFixed(2)}s`}
+                  pct={(improver.improvement / maxImprovement) * 100}
+                  hint="From their first run to their last." />
+              ) : undefined}
+              caption={improver?.improvement == null ? "Found the most time from first run to last." : undefined} />
+
+            <InsightCard icon={<Flag size={14} />} tone={q.deleted_laps.length ? "amber" : "good"}
               label={<Term term="deleted lap">Deleted laps</Term>}
               value={q.deleted_laps.length ? `${q.deleted_laps.length} deleted` : "None"}
-              why={q.deleted_laps.length
-                ? "Track-limits deletions — details in Lap Analysis."
+              visual={<Tally count={q.deleted_laps.length} tone="amber"
+                emptyLabel="All laps stood" label="track limits" />}
+              caption={q.deleted_laps.length
+                ? "Details in Lap Analysis."
                 : "Nobody lost a time to track limits."} />
-            <QCard icon={<ArrowDownWideNarrow size={15} />} tone="accent"
+
+            <InsightCard icon={<ArrowDownWideNarrow size={14} />} tone="violet"
               label={<Term term="teammate delta">Teammate delta</Term>}
               value={tmate ? nameOf(tmate.driver) : "—"}
-              avatar={tmate ? <DriverAvatar driver={driverOf(session, tmate.driver)} size={34} /> : undefined}
-              sub={tmate?.vs_teammate ? `${Math.abs(tmate.vs_teammate).toFixed(3)}s quicker` : undefined}
-              why="The biggest gap between two identical cars — the cleanest driver-vs-driver read." />
+              driver={tmate ? driverOf(session, tmate.driver) : undefined}
+              sub={tmate?.team}
+              visual={tmate?.vs_teammate != null && tmatePartner ? (
+                <DeltaBar left={tmate.driver} right={tmatePartner.driver}
+                  leftColor={tmate.team_color} rightColor="#5f6b84"
+                  lean={0.62} value={`${Math.abs(tmate.vs_teammate).toFixed(3)}s`}
+                  caption="The biggest gap between two identical cars." />
+              ) : undefined}
+              caption={tmate ? undefined : "No teammate pair had comparable laps."} />
           </>
         )}
-      </div>
+      </InsightGrid>
 
       <GridTable q={q} session={session} simple={simple} />
     </div>
   );
+}
+
+/* small shared helpers for the story cards */
+const spreadOf = (vals: number[]) =>
+  vals.length >= 2 ? Math.max(0.001, Math.max(...vals) - Math.min(...vals)) : null;
+const teamColor = (q: QualifyingSummary, code: string) =>
+  q.rows.find((r) => r.driver === code)?.team_color ?? "#9aa6be";
+const shortName = (name: string) => name.split(" ").slice(-1)[0] || name;
+/** Backend fragments arrive lowercase ("qualified P7, …") — make them read as prose. */
+const sentence = (s: string) => {
+  const t = s.trim();
+  if (!t) return t;
+  const capped = t.charAt(0).toUpperCase() + t.slice(1);
+  return /[.!?]$/.test(capped) ? capped : `${capped}.`;
+};
+/** Which of the three sectors this driver actually owns the session best in. */
+function sectorsOwned(q: QualifyingSummary, code?: string | null): boolean[] {
+  if (!code) return [false, false, false];
+  const row = q.rows.find((r) => r.driver === code);
+  if (!row) return [false, false, false];
+  return [0, 1, 2].map((i) => {
+    const mine = row.best_sectors?.[i];
+    if (mine == null) return false;
+    const best = q.rows.reduce<number | null>((b, r) => {
+      const v = r.best_sectors?.[i];
+      return v != null && (b == null || v < b) ? v : b;
+    }, null);
+    return best != null && mine <= best + 0.0005;
+  });
 }
 
 /* ------------------------- interruptions & penalties --------------------- */
@@ -175,31 +297,66 @@ function interruptionsWhy(q: QualifyingSummary, session: RaceSession): string {
     : "No stoppages — everyone got their runs in.";
 }
 
-/** The starting slot a driver actually takes, shown on their own grid row. */
+/**
+ * The starting slot a driver actually takes, shown on their own grid row.
+ *
+ * A gavel means a steward decision was taken against this driver. A driver who
+ * simply inherited a better slot because someone ahead was penalised gets the
+ * quieter treatment — they earned nothing, so the row shouldn't shout.
+ */
 function StartsCell({ change, penalties }: {
-  change?: { qualified: number; starts: number; places: number };
+  change?: NonNullable<QualifyingSummary["grid_changes"]>[number];
   penalties?: ReturnType<typeof derivePenalties>;
 }) {
   const drop = penalties?.find((p) => p.kind === "grid");
   if (!change && !drop) return <span className="text-ink-faint">—</span>;
-  const reason = change
-    ? `Qualified P${change.qualified} · starts P${change.starts} on the official grid`
-    : drop!.detail;
-  return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap" title={reason}>
-      <Gavel size={11} className="shrink-0 text-violet-300" />
-      {change ? (
+
+  if (change?.kind === "pit_lane") {
+    return (
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap"
+        title={`Qualified P${change.qualified} · starts from the pit lane`}>
+        <Gavel size={11} className="shrink-0 text-violet-300" />
+        <span className="text-ink-faint line-through tabular-nums">P{change.qualified}</span>
+        <ChevronRight size={11} className="text-violet-300" />
+        <span className="font-bold text-violet-200">PIT</span>
+      </span>
+    );
+  }
+
+  if (change) {
+    const promoted = change.kind === "promotion";
+    return (
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap"
+        title={promoted
+          ? `Qualified P${change.qualified} · promoted to P${change.starts} after penalties ahead`
+          : `Qualified P${change.qualified} · starts P${change.starts} on the official grid`}>
+        {promoted
+          ? <ArrowUp size={11} className="shrink-0 text-emerald-300/80" />
+          : <Gavel size={11} className="shrink-0 text-violet-300" />}
         <span className="inline-flex items-center gap-1 tabular-nums">
           <span className="text-ink-faint line-through">P{change.qualified}</span>
-          <ChevronRight size={11} className="text-violet-300" />
-          <span className="font-bold text-violet-200">P{change.starts}</span>
+          <ChevronRight size={11} className={promoted ? "text-emerald-300/60" : "text-violet-300"} />
+          <span className={cx("font-bold", promoted ? "text-emerald-200" : "text-violet-200")}>
+            P{change.starts}
+          </span>
         </span>
-      ) : (
-        <span className="font-bold text-violet-200">{drop!.label}</span>
-      )}
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap" title={drop!.detail}>
+      <Gavel size={11} className="shrink-0 text-violet-300" />
+      <span className="font-bold text-violet-200">{drop!.label}</span>
     </span>
   );
 }
+
+const STARTS_INFO =
+  "Starts is the official starting grid after penalties and steward decisions — "
+  + "which is why a driver can qualify P3 and still line up P13. A gavel marks a "
+  + "decision taken against that driver; a green arrow means they inherited a "
+  + "better slot because someone ahead of them was penalised.";
 
 function GridTable({ q, session, simple }: { q: QualifyingSummary; session: RaceSession; simple: boolean }) {
   const pole = q.rows.find((r) => r.position === 1)?.best_lap ?? q.rows[0]?.best_lap ?? null;
@@ -234,7 +391,13 @@ function GridTable({ q, session, simple }: { q: QualifyingSummary; session: Race
                 <th className="py-2 pr-2">Best lap</th>
               )}
               <th className="py-2 pr-5">Gap to pole</th>
-              {hasGridChanges && <th className="py-2 pr-5">Starts</th>}
+              {hasGridChanges && (
+                <th className="py-2 pr-5">
+                  <span className="inline-flex items-center gap-1">
+                    Starts <InfoTip label="Starts" text={STARTS_INFO} />
+                  </span>
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -256,7 +419,11 @@ function GridTable({ q, session, simple }: { q: QualifyingSummary; session: Race
                         </Term>
                       )}
                     </span>
-                    <PenaltyBadges penalties={penaltyMap.get(r.driver)} />
+                    {/* a grid drop already has a home in the Starts column —
+                        showing it beside the name too says it twice */}
+                    <PenaltyBadges penalties={hasGridChanges
+                      ? penaltyMap.get(r.driver)?.filter((p) => p.kind !== "grid")
+                      : penaltyMap.get(r.driver)} />
                   </span>
                 </td>
                 {showSegments ? (
@@ -350,7 +517,7 @@ function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSessio
             )}
             {!simple && q.team_progression.length > 0 && (
               <div className="mt-4 border-t border-white/[0.05] pt-3">
-                <div className="label mb-2">Teams that found the most time, Q1 → final segment</div>
+                <div className="label mb-2">Constructors that found the most time, Q1 → final segment</div>
                 <div className="flex flex-wrap gap-2">
                   {q.team_progression.slice(0, 4).map((t) => (
                     <span key={t.team} className="chip">
@@ -598,118 +765,40 @@ function parseDeleted(msg: string, session: RaceSession) {
  */
 function QualiPace({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
   const simple = useIsSimple();
-  const [view, setView] = useState<"drivers" | "teams">("drivers");
-
   const timed = q.rows.filter((r) => r.best_lap);
   const poleT = timed[0]?.best_lap ?? 0;
-  const maxDelta = Math.max(0.001, ...timed.map((r) => (r.best_lap ?? 0) - poleT));
-  const teamMax = Math.max(0.001, ...q.team_ranking.map((t) => t.gap));
-
-  const viewSwitch = (
-    <div className="flex gap-1 rounded-lg border border-white/[0.06] bg-base-850/60 p-1 text-xs"
-      role="tablist" aria-label="Pace view">
-      {([["drivers", "Drivers", User], ["teams", "Constructors", Building2]] as const).map(([id, label, Icon]) => (
-        <button key={id} role="tab" aria-selected={view === id} onClick={() => setView(id)}
-          className={cx("inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium transition-colors",
-            view === id ? "bg-accent/15 text-accent-soft" : "text-ink-muted hover:text-ink")}>
-          <Icon size={12} /> {label}
-        </button>
-      ))}
-    </div>
-  );
-
-  const leader = view === "drivers" ? timed[0] : null;
-  const topTeam = q.team_ranking[0];
 
   return (
-    <Card>
-      <CardHeader
-        title="One-lap pace"
-        right={viewSwitch}
-        info={<InfoTip label={view === "drivers" ? "Reading one-lap pace" : "Reading constructor pace"}
-          text={view === "drivers"
-            ? "Every driver's best lap of the session, ranked. Bars show how far each lap was from pole."
-            : "Constructors ranked by their quickest car's best lap — the one-lap machinery order. Bars show the gap to the quickest team."} />} />
-      <CardBody className="space-y-2.5">
-        {/* the headline, matching the race Pace tab's "fastest car" framing */}
-        {view === "drivers" && leader && (
-          <div className="mb-1 flex items-center gap-3 rounded-xl border border-white/[0.06] bg-base-800/40 p-3">
-            <DriverAvatar driver={driverOf(session, leader.driver)} size={38} />
-            <div className="min-w-0">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Quickest lap</div>
-              <div className="truncate text-sm font-bold text-ink">{leader.name}</div>
-            </div>
-            <span className="ml-auto tabular-nums text-sm font-semibold text-speed">{fmtLap(leader.best_lap)}</span>
-          </div>
-        )}
-        {view === "teams" && topTeam && (
-          <div className="mb-1 flex items-center gap-3 rounded-xl border border-white/[0.06] bg-base-800/40 p-3">
-            <span className="h-8 w-1.5 rounded-full" style={{ background: topTeam.color }} />
-            <div className="min-w-0">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Quickest constructor</div>
-              <div className="truncate text-sm font-bold text-ink">{topTeam.team}</div>
-            </div>
-            <span className="ml-auto tabular-nums text-sm font-semibold text-speed">
-              {fmtLap(timed.find((r) => r.team === topTeam.team)?.best_lap ?? null)}
-            </span>
-          </div>
-        )}
-
-        {view === "drivers" ? timed.map((r, i) => {
-          const delta = (r.best_lap ?? 0) - poleT;
-          return (
-            <div key={r.driver} className="flex items-center gap-2.5">
-              <span className="w-5 shrink-0 text-right text-[11px] tabular-nums text-ink-faint">{i + 1}</span>
-              <DriverBadge driver={driverOf(session, r.driver)} code={r.driver}
-                name={r.name} team={r.team} teamColor={r.team_color}
-                size={24} className="w-40 shrink-0" />
-              <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-white/[0.05]">
-                <span className="block h-full rounded-full transition-all"
-                  style={{ width: `${Math.max(6, 100 - (delta / maxDelta) * 72)}%`, background: r.team_color }} />
-              </span>
-              <span className="w-[4.5rem] shrink-0 text-right text-xs tabular-nums text-ink">{fmtLap(r.best_lap)}</span>
-              {!simple && (
-                <span className="w-14 shrink-0 text-right text-[11px] tabular-nums text-ink-faint">
-                  {i === 0 ? "pole" : `+${delta.toFixed(3)}`}
-                </span>
-              )}
-            </div>
-          );
-        }) : q.team_ranking.map((t, i) => (
-          <div key={t.team} className="flex items-center gap-2.5">
-            <span className="w-5 shrink-0 text-right text-[11px] tabular-nums text-ink-faint">{i + 1}</span>
-            <span className="flex w-40 shrink-0 items-center gap-2">
-              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: t.color }} />
-              <span className="truncate text-sm font-medium">{t.team}</span>
-            </span>
-            <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-white/[0.05]">
-              <span className="block h-full rounded-full transition-all"
-                style={{ width: `${Math.max(6, 100 - (t.gap / teamMax) * 72)}%`, background: t.color }} />
-            </span>
-            <span className="w-[4.5rem] shrink-0 text-right text-xs tabular-nums text-ink">
-              {i === 0 ? "quickest" : `+${t.gap.toFixed(3)}s`}
-            </span>
-            {!simple && <span className="w-14 shrink-0" />}
-          </div>
-        ))}
-      </CardBody>
-    </Card>
+    <PaceBoard
+      title="One-lap pace"
+      showNotes={!simple}
+      views={[
+        {
+          id: "drivers", label: "Drivers", icon: <User size={12} />,
+          heroLabel: "Quickest lap",
+          measures: "Every driver's best lap of the session, ranked against pole.",
+          info: "Every driver's best lap of the session, ranked. Bars show how far each lap was from pole.",
+          entries: timed.map((r) => ({
+            key: r.driver, name: r.name, sub: r.team, color: r.team_color,
+            driver: driverOf(session, r.driver),
+            value: fmtLap(r.best_lap), gap: (r.best_lap ?? 0) - poleT,
+          })),
+          emptyTitle: "No timed laps",
+        },
+        {
+          id: "constructors", label: "Constructors", icon: <Building2 size={12} />,
+          heroLabel: "Quickest constructor",
+          measures: "Constructors ranked by their quickest car's best lap.",
+          info: "Constructors ranked by their quickest car's best lap — the one-lap machinery order. Bars show the gap to the quickest constructor.",
+          entries: q.team_ranking.map((t) => ({
+            key: t.team, name: t.team, color: t.color,
+            value: fmtLap(timed.find((r) => r.team === t.team)?.best_lap ?? null),
+            gap: t.gap,
+          })),
+          emptyTitle: "No constructor pace",
+        },
+      ]}
+    />
   );
 }
 
-function QCard({ icon, label, value, sub, why, tone, avatar }: any) {
-  const t = { accent: "text-accent-soft", speed: "text-speed", amber: "text-amber", default: "text-ink" }[tone as string];
-  return (
-    <div className="rounded-xl border border-white/[0.06] bg-base-800/60 p-4">
-      <div className="flex items-center gap-1.5 text-ink-faint"><span className={t}>{icon}</span><span className="label">{label}</span></div>
-      <div className="mt-1.5 flex items-center gap-2.5">
-        {avatar}
-        <div className="min-w-0">
-          <div className="truncate text-xl font-semibold tracking-tight text-ink">{value}</div>
-          {sub && <div className="text-xs text-ink-muted">{sub}</div>}
-        </div>
-      </div>
-      <div className="mt-2 text-[11px] leading-snug text-ink-faint">{why}</div>
-    </div>
-  );
-}

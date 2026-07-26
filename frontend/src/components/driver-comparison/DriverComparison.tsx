@@ -87,8 +87,10 @@ export function DriverComparison({
 
   return (
     <div className="space-y-4">
-      {/* who's fighting whom */}
+      {/* who's fighting whom — this page frames its own panels, so the section
+          title lives here rather than in another card around the whole thing */}
       <div className="flex flex-wrap items-center gap-3">
+        <h2 className="mr-1 text-sm font-semibold text-ink">Driver comparison</h2>
         <DriverSelect value={a} onChange={setA} options={codes} color={colorOf(a)} />
         <ArrowLeftRight size={16} className="text-ink-faint" />
         <DriverSelect value={b} onChange={setB} options={codes} color={colorOf(b)} />
@@ -102,7 +104,7 @@ export function DriverComparison({
           <HeadToHead bundle={bundle} data={data} a={a} b={b}
             drvOf={drvOf} nameOf={nameOf} colorOf={colorOf} swings={swings} />
 
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid items-start gap-4 lg:grid-cols-2">
             <ChartCard title="The battle"
               info="Where each car ran, lap by lap. The shaded band shows who was ahead; markers show the laps the lead changed hands and each driver's pit stops.">
               {positionData.length === 0 ? (
@@ -162,7 +164,7 @@ export function DriverComparison({
             </ChartCard>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
+          <div className="grid items-start gap-4 lg:grid-cols-[1.15fr_1fr]">
             <MetricDuel data={data} a={a} b={b} bundle={bundle} colorOf={colorOf} />
             <Verdict data={data} a={a} b={b} nameOf={nameOf} colorOf={colorOf} />
           </div>
@@ -201,7 +203,7 @@ function HeadToHead({ bundle, data, a, b, drvOf, nameOf, colorOf, swings }: any)
     </div>
   );
   return (
-    <div className="rounded-2xl border border-white/[0.06] bg-base-900/40 p-3">
+    <div className="panel p-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
         <Side code={a} won={winner === a} />
         <div className="flex shrink-0 flex-col items-center justify-center px-2 py-1 text-center">
@@ -330,7 +332,7 @@ function MetricDuel({ data, a, b, bundle, colorOf }: any) {
 
   const groups = ["Result", "Speed", "Execution", "Strategy"];
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-base-850/40">
+    <div className="panel overflow-hidden">
       <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-2.5">
         <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-faint">Head-to-head metrics</span>
         <InfoTip text="Each row highlights the driver with the advantage. Bars are relative — a longer bar simply means a bigger share of that metric between the two." />
@@ -403,7 +405,7 @@ function Verdict({ data, a, b, nameOf, colorOf }: any) {
   const pa = data.classification[a]?.position ?? 99, pb = data.classification[b]?.position ?? 99;
   const winner = pa < pb ? a : b;
   return (
-    <div className="overflow-hidden rounded-2xl border p-4"
+    <div className="panel overflow-hidden p-4"
       style={{ borderColor: `${colorOf(winner)}44`, background: `linear-gradient(140deg, ${colorOf(winner)}1a, transparent 60%)` }}>
       <div className="mb-2 flex items-center gap-1.5">
         <Flag size={13} style={{ color: colorOf(winner) }} />
@@ -411,14 +413,23 @@ function Verdict({ data, a, b, nameOf, colorOf }: any) {
       </div>
       <p className="text-base font-semibold leading-snug text-ink">{bottom}</p>
       {reasons.length > 0 && (
-        <ul className="mt-3 space-y-1.5 border-t border-white/[0.07] pt-3">
-          {reasons.map((p, i) => (
-            <li key={i} className="flex gap-2 text-sm leading-relaxed text-ink-muted">
-              <TrendingUp size={12} className="mt-1 shrink-0" style={{ color: colorOf(winner) }} />
-              <span>{p}</span>
-            </li>
-          ))}
-        </ul>
+        <div className="mt-3 divide-y divide-white/[0.05] border-t border-white/[0.07]">
+          {reasons.map((p, i) => {
+            // the engine writes these as "Label: sentence" — surface the label
+            // as a micro-heading so the eye can scan the reasons, not read them
+            const m = /^([^:]{2,22}):\s*(.+)$/.exec(p);
+            return (
+              <div key={i} className="py-2.5">
+                {m && (
+                  <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+                    {m[1]}
+                  </div>
+                )}
+                <p className="text-sm leading-relaxed text-ink-muted">{m ? m[2] : p}</p>
+              </div>
+            );
+          })}
+        </div>
       )}
       <p className="mt-3 text-[11px] text-ink-faint">
         Built from this session&apos;s timing, strategy and tyre data — {nameOf(winner)} is the reference.
@@ -479,7 +490,7 @@ function DriverSelect({ value, onChange, options, color }: {
 
 function ChartCard({ title, info, children }: { title: string; info?: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-white/[0.06] bg-base-850/50 p-4">
+    <div className="panel p-4">
       <div className="mb-2.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
         {title}{info && <InfoTip text={info} />}
       </div>

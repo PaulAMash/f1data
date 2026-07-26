@@ -6,9 +6,11 @@ import {
 import { Building2, User } from "lucide-react";
 import type { ClassificationRow, DriverPaceSummary, RaceSession } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
+import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { Term } from "@/components/ui/Term";
 import { DriverBadge } from "@/components/ui/DriverBadge";
+import { PaceBoard } from "./PaceBoard";
 import { useIsSimple } from "@/lib/mode";
 import { cx, fmtLap } from "@/lib/format";
 
@@ -130,80 +132,85 @@ export function PaceAnalysis({
   const viewSwitch = (
     <div className="flex gap-1 rounded-lg border border-white/[0.06] bg-base-850/60 p-1 text-xs"
       role="tablist" aria-label="Pace view">
-      {([["drivers", "Drivers", User], ["teams", "Teams", Building2]] as const).map(([id, label, Icon]) => (
+      {([["drivers", "Drivers", User], ["teams", "Constructors", Building2]] as const).map(([id, label, Icon]) => (
         <button key={id} role="tab" aria-selected={view === id} onClick={() => setView(id)}
-          className={cx("inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium",
-            view === id ? "bg-accent/15 text-accent-soft" : "text-ink-muted hover:text-ink")}>
+          className={cx("inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium transition-colors",
+            view === id
+              ? "bg-accent/15 text-accent-soft ring-1 ring-accent/25"
+              : "text-ink-muted hover:bg-white/[0.04] hover:text-ink")}>
           <Icon size={12} /> {label}
         </button>
       ))}
     </div>
   );
 
-  // ---- SIMPLE: fastest car + fastest team, then a visual ranking ----
+  // ---- SIMPLE: one pace board, identical to Practice and Qualifying ----
   if (simple) {
     const withPace = ranked.filter((p) => p.clean_air_pace != null);
     const fastest = withPace[0];
     const fastestTeam = teams[0];
     const mismatch = fastest && fastest.finish && fastest.pace_rank && fastest.finish > fastest.pace_rank;
     return (
-      <div className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2">
-          {fastest && (
-            <div className="rounded-xl border border-white/[0.06] bg-base-800/50 p-4">
-              <div className="label text-speed">Fastest car</div>
-              <div className="mt-0.5 flex items-center gap-2 text-2xl font-semibold text-ink">
-                <span className="h-3 w-3 rounded-full" style={{ background: fastest.team_color }} />
-                {fastest.name ?? fastest.driver}
-              </div>
-              <p className="mt-1 text-sm text-ink-muted">
-                {fastest.name} had the quickest <Term>clean-air pace</Term> — the truest measure of speed
-                once fuel and tyres are evened out.
+      <PaceBoard
+        title="Pace analysis"
+        views={[
+          {
+            id: "drivers", label: "Drivers", icon: <User size={12} />,
+            heroLabel: "Fastest car",
+            measures: "True one-lap speed, corrected for fuel and tyres.",
+            info: "Each driver's true one-lap speed, fuel- and tyre-corrected. Bars show the gap to the fastest car.",
+            heroNote: fastest ? (
+              <>
+                {fastest.name} had the quickest <Term>clean-air pace</Term> — the truest measure of
+                speed once fuel and tyres are evened out.
                 {mismatch ? ` Despite that they only finished P${fastest.finish}.`
                   : fastest.finish === 1 ? " And they converted it into the win." : ""}
-              </p>
-            </div>
-          )}
-          {fastestTeam && (
-            <div className="rounded-xl border border-white/[0.06] bg-base-800/50 p-4">
-              <div className="label text-speed">Fastest team</div>
-              <div className="mt-0.5 flex items-center gap-2 text-2xl font-semibold text-ink">
-                <span className="h-3 w-3 rounded-full" style={{ background: fastestTeam.color }} />
-                {fastestTeam.team}
-              </div>
-              <p className="mt-1 text-sm text-ink-muted">
+              </>
+            ) : undefined,
+            entries: withPace.slice(0, 12).map((p) => ({
+              key: p.driver, name: p.name ?? p.driver, sub: p.team, color: p.team_color,
+              driver: session.drivers.find((d) => d.code === p.driver) ?? null,
+              value: fmtLap(p.clean_air_pace),
+              gap: (p.clean_air_pace ?? 0) - (fastest?.clean_air_pace ?? 0),
+            })),
+            formatGap: (g) => `+${g.toFixed(2)}s`,
+            emptyTitle: "No comparable pace",
+            emptyHint: "Too few clean green-flag laps to rank true pace in this session.",
+          },
+          {
+            id: "constructors", label: "Constructors", icon: <Building2 size={12} />,
+            heroLabel: "Fastest constructor",
+            measures: "The average true pace of each constructor's two cars.",
+            info: "Constructors ranked by the average true pace of their cars. Bars show the gap to the fastest constructor.",
+            heroNote: fastestTeam ? (
+              <>
                 Quickest average true pace across their cars
                 ({fastestTeam.drivers.map((d) => d.driver).join(" & ")})
                 {teams[1] ? ` — ${teams[1].gap.toFixed(2)}s per lap ahead of ${teams[1].team}.` : "."}
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="rounded-xl border border-white/[0.06] bg-base-800/50 p-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <span className="flex items-center gap-1.5">
-              <span className="label">Pace ranking</span>
-              <InfoTip text={view === "drivers"
-                ? "Each driver's true one-lap speed, fuel- and tyre-corrected. Bars show the gap to the fastest car."
-                : "Teams ranked by the average true pace of their cars. Bars show the gap to the fastest team."} />
-            </span>
-            {viewSwitch}
-          </div>
-          {/* the fastest car already has the hero card above — the ranking
-              starts at #2 rather than repeating them */}
-          {view === "drivers"
-            ? <DriverBars rows={withPace.slice(0, 11)} session={session} hideLeader />
-            : <TeamBars rows={teams} hideLeader />}
-        </div>
-      </div>
+              </>
+            ) : undefined,
+            entries: teams.map((t) => ({
+              key: t.team, name: t.team, color: t.color,
+              value: fmtLap(t.avg), gap: t.gap,
+            })),
+            formatGap: (g) => `+${g.toFixed(2)}s`,
+            emptyTitle: "No constructor pace",
+          },
+        ]}
+      />
     );
   }
 
   // ---- ADVANCED ----
   return (
-    <div className="space-y-5">
-      <div className="flex justify-end">{viewSwitch}</div>
+    <Card>
+      <CardHeader title="Pace analysis"
+        subtitle={view === "teams"
+          ? "Constructor lap-time trends and the numbers behind them."
+          : "Fuel- and tyre-corrected true pace, driver by driver."}
+        right={viewSwitch}
+        info={<InfoTip label="Reading pace" text="Clean-air pace separates real speed from track position: it corrects for fuel burn and tyre age, and ignores laps spent in traffic, behind a safety car or in the pit lane." />} />
+      <CardBody className="space-y-5">
 
       {view === "teams" ? (
         <>
@@ -274,7 +281,8 @@ export function PaceAnalysis({
           </div>
         </>
       )}
-    </div>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -340,75 +348,7 @@ function PaceSection({ label, rows, session, selected }: {
   );
 }
 
-/* ---- simple-mode bars ---- */
-/**
- * The pace ranking. `hideLeader` drops the fastest car from the list when a
- * hero card above already features them — the ranking then starts at #2 instead
- * of repeating the winner, which gives the hero its emphasis back. The leader
- * still sets the gap scale, so every bar stays measured against them.
- */
-function DriverBars({ rows, session, hideLeader = false }: {
-  rows: DriverPaceSummary[]; session: RaceSession; hideLeader?: boolean;
-}) {
-  const fastest = rows[0];
-  const maxGap = Math.max(0.001, ...rows.map(
-    (p) => (p.clean_air_pace ?? 0) - (fastest?.clean_air_pace ?? 0)));
-  const shown = hideLeader ? rows.slice(1) : rows;
-  return (
-    <div className="space-y-2">
-      {shown.map((p, i) => {
-        const gap = (p.clean_air_pace ?? 0) - (fastest?.clean_air_pace ?? 0);
-        return (
-          <div key={p.driver} className="flex items-center gap-2">
-            <span className="w-4 shrink-0 text-right text-[11px] tabular-nums text-ink-faint">
-              {i + 1 + (hideLeader ? 1 : 0)}
-            </span>
-            <DriverBadge driver={session.drivers.find((d) => d.code === p.driver)}
-              code={p.driver} name={p.name} team={p.team} teamColor={p.team_color}
-              size={24} className="w-36 shrink-0" />
-            <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
-              <span className="block h-full rounded-full"
-                style={{ width: `${100 - (gap / maxGap) * 75}%`, background: p.team_color }} />
-            </span>
-            <span className="w-20 text-right text-xs tabular-nums text-ink-muted">
-              {gap === 0 ? "fastest" : `+${gap.toFixed(2)}s`}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function TeamBars({ rows, hideLeader = false }: { rows: TeamPace[]; hideLeader?: boolean }) {
-  if (!rows.length) return <p className="text-sm text-ink-faint">No team pace data for this session.</p>;
-  const maxGap = Math.max(0.001, ...rows.map((t) => t.gap));
-  const shown = hideLeader ? rows.slice(1) : rows;
-  return (
-    <div className="space-y-2">
-      {shown.map((t, i) => (
-        <div key={t.team} className="flex items-center gap-2">
-          <span className="w-4 shrink-0 text-right text-[11px] tabular-nums text-ink-faint">
-            {i + 1 + (hideLeader ? 1 : 0)}
-          </span>
-          <span className="flex w-36 shrink-0 items-center gap-2 text-sm">
-            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: t.color }} />
-            <span className="truncate font-medium">{t.team}</span>
-          </span>
-          <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
-            <span className="block h-full rounded-full"
-              style={{ width: `${100 - (t.gap / maxGap) * 75}%`, background: t.color }} />
-          </span>
-          <span className="w-20 text-right text-xs tabular-nums text-ink-muted">
-            {t.gap === 0 ? "fastest" : `+${t.gap.toFixed(2)}s`}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ---- advanced-mode team view: the same lap-trend chart, per team ---- */
+/* ---- advanced-mode constructor view: the same lap-trend chart, per team ---- */
 function TeamTrend({ session, pace, teams }: {
   session: RaceSession; pace: DriverPaceSummary[]; teams: TeamPace[];
 }) {
@@ -447,8 +387,8 @@ function TeamTrend({ session, pace, teams }: {
   return (
     <div>
       <div className="mb-2 flex items-center gap-2 text-xs text-ink-muted">
-        Team lap-time trend — average of each team&apos;s cars (top 5 teams; outliers, in/out &amp; neutralized laps excluded)
-        <InfoTip label="Reading team pace" text="Each line averages a team's drivers lap by lap. Lower is faster; diverging lines show one team's tyres holding on longer than another's." />
+        Constructor lap-time trend — average of each constructor&apos;s cars (top 5; outliers, in/out &amp; neutralized laps excluded)
+        <InfoTip label="Reading constructor pace" text="Each line averages a constructor's drivers lap by lap. Lower is faster; diverging lines show one constructor's tyres holding on longer than another's." />
       </div>
       <div className="h-[300px] w-full">
         <ResponsiveContainer>
@@ -477,21 +417,21 @@ function TeamTrend({ session, pace, teams }: {
   );
 }
 
-/* ---- advanced-mode team table: the numbers under the chart ---- */
+/* ---- advanced-mode constructor table: the numbers under the chart ---- */
 function TeamTable({ rows }: { rows: TeamPace[] }) {
-  if (!rows.length) return <p className="text-sm text-ink-faint">No team pace data for this session.</p>;
+  if (!rows.length) return <p className="text-sm text-ink-faint">No constructor pace data for this session.</p>;
   return (
     <div className="space-y-4">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[680px] text-sm">
           <thead>
             <tr className="border-b border-white/[0.06] text-left text-[11px] uppercase tracking-wider text-ink-faint">
-              <Th>#</Th><Th>Team</Th>
-              <Th info="Mean of the team's drivers' fuel- and tyre-corrected clean-air laps — the fairest read of car speed.">Avg clean-air pace</Th>
+              <Th>#</Th><Th>Constructor</Th>
+              <Th info="Mean of the constructor's drivers' fuel- and tyre-corrected clean-air laps — the fairest read of car speed.">Avg clean-air pace</Th>
               <Th>Gap</Th>
-              <Th info="The team's quicker driver on corrected pace, with their lap.">Faster driver</Th>
+              <Th info="The constructor's quicker driver on corrected pace, with their lap.">Faster driver</Th>
               <Th>Best lap</Th>
-              <Th info="Where each of the team's drivers ranks in the field on true pace.">Driver pace ranks</Th>
+              <Th info="Where each of the constructor's drivers ranks in the field on true pace.">Driver pace ranks</Th>
             </tr>
           </thead>
           <tbody>

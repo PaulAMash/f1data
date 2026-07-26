@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from ..config import get_settings
 from ..models import DriverPaceSummary, QuestionAnswer, RaceSession, StrategySummary
 from .events import infer_overtakes, overtakes_between
+from .text import plural
 
 TEAM_ALIASES = {
     "Red Bull Racing": ["red bull", "redbull", "rbr"],
@@ -359,7 +360,7 @@ def _h_why_retired(q, ctx, ents):
             f"{c.name} ({(c.retirement_reason or 'reason not given').lower()}"
             + (f", after lap {c.laps_completed}" if c.laps_completed else "") + ")"
             for c in retired[:6])
-        return _qa(q, f"{len(retired)} car(s) retired: {names}.", "retirement", "high", ctx,
+        return _qa(q, f"{plural(len(retired), 'car')} retired: {names}.", "retirement", "high", ctx,
                    [c.driver for c in retired])
     code = drivers[0]
     c = ctx.class_by_driver.get(code)
@@ -463,7 +464,8 @@ def _h_could_do_better(q, ctx, ents):
 
     where, options = [], []
     if c.position and wc and wc.position:
-        where.append(f"finished P{c.position}, {max(0, c.position - wc.position)} place(s) behind {winner}")
+        where.append(f"finished P{c.position}, "
+                     f"{plural(max(0, c.position - wc.position), 'place')} behind {winner}")
     if p and wp and p.pace_rank and wp.pace_rank:
         if p.pace_rank <= wp.pace_rank:
             where.append(f"actually had comparable pace (P{p.pace_rank} clean-air vs {winner} P{wp.pace_rank})")
@@ -617,7 +619,7 @@ def _h_why_lost(q, ctx, ents):
     ev = []
     if p and p.pace_rank and c.position and c.position > p.pace_rank:
         ev.append(f"their clean-air pace was worth about P{p.pace_rank}, so the result was "
-                  f"{c.position - p.pace_rank} place(s) worse than their speed")
+                  f"{plural(c.position - p.pace_rank, 'place')} worse than their speed")
     ref = _reference_stops(ctx.session, code)
     if ctx.session.pit_data_reliable and c.pit_stops > ref:
         ev.append(f"an extra stop ({c.pit_stops} vs the {ref} most cars ran) cost roughly "

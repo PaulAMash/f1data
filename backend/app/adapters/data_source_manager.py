@@ -254,14 +254,26 @@ def _enrich_retirements(session: RaceSession, primary: str) -> None:
 
 
 def quali_grid_changes(session: RaceSession, quali_rows) -> list[dict]:
-    """Grid penalties that landed AFTER qualifying ended.
+    """Every difference between where a driver qualified and where they start.
 
     A gearbox or engine penalty is announced once the session's own race-control
     feed has closed, so it can never appear in the qualifying messages — which is
     why a driver could qualify P2 and the page still showed no penalty. The
-    official starting grid is the trustworthy record: comparing it against the
-    qualifying result surfaces exactly who lost places, and by how many, without
-    guessing at a reason we can't verify.
+    official starting grid is the trustworthy record.
+
+    Three kinds of change exist, and the grid is only honest when it reports all
+    of them:
+
+    * ``drop``      — a steward decision cost this driver places.
+    * ``promotion`` — someone ahead was penalised, so this driver inherits a
+      better slot. Nothing they did; still not where they qualified. Reporting
+      only drops was why drivers who moved UP (the far more numerous group, since
+      one penalty at the front shifts everyone behind it) showed nothing at all.
+    * ``pit_lane``  — Ergast encodes a pit-lane start as grid 0, which the old
+      truthiness test silently discarded along with the driver.
+
+    Every changed row is returned — the grid renders these per driver, so
+    truncating the list would blank out real rows further down the order.
     """
     if session.category not in ("qualifying", "sprint_qualifying"):
         return []
@@ -271,14 +283,23 @@ def quali_grid_changes(session: RaceSession, quali_rows) -> list[dict]:
     except Exception as exc:  # noqa: BLE001
         log.info("grid-change lookup unavailable: %s", exc)
         return []
-    grid_of = {r.driver: r.grid for r in race_rows if r.grid}
+    # `is not None` and not truthiness: grid 0 is a pit-lane start, not "no data"
+    grid_of = {r.driver: r.grid for r in race_rows if r.grid is not None}
     out: list[dict] = []
     for row in quali_rows:
         qpos, start = row.position, grid_of.get(row.driver)
-        if qpos and start and start > qpos:
+        if not qpos or start is None:
+            continue
+        if start == 0:
+            out.append({"driver": row.driver, "name": row.name, "kind": "pit_lane",
+                        "qualified": qpos, "starts": 0, "places": None})
+        elif start != qpos:
             out.append({"driver": row.driver, "name": row.name,
-                        "qualified": qpos, "starts": start, "places": start - qpos})
-    return sorted(out, key=lambda d: -d["places"])[:6]
+                        "kind": "drop" if start > qpos else "promotion",
+                        "qualified": qpos, "starts": start, "places": abs(start - qpos)})
+    # biggest movements first — a stable, meaningful order for any consumer that
+    # wants a summary rather than a per-driver lookup
+    return sorted(out, key=lambda d: -(d["places"] or 99))
 
 
 def _enrich_quali_segments(session: RaceSession, primary: str) -> None:

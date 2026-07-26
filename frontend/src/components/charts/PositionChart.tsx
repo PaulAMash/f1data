@@ -658,7 +658,7 @@ function UnifiedLegend({ simple, windows, hasFocus, pitOverlay }: { simple: bool
   const kinds = Array.from(new Set(windows.map((w) => w.kind)));
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-white/[0.05] bg-base-900/30 px-4 py-2.5 text-[11px] text-ink-muted">
-      <span className="inline-flex items-center gap-1.5"><span className="inline-block h-0.5 w-6 rounded" style={{ background: "#8892a6" }} /> Driver · team colour, code at the right</span>
+      <span className="inline-flex items-center gap-1.5"><span className="inline-block h-0.5 w-6 rounded" style={{ background: "#8892a6" }} /> Driver · constructor colour, code at the right</span>
       {kinds.map((k) => { const meta = EVENT[k]; const Icon = meta.icon; return <span key={k} className="inline-flex items-center gap-1.5"><Icon size={12} style={{ color: meta.color }} /> {meta.label}</span>; })}
       {(hasFocus || pitOverlay) && <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full border-2 border-ink-muted bg-base-900" /> Pit stop</span>}
       <span className="ml-auto hidden text-ink-faint sm:inline">

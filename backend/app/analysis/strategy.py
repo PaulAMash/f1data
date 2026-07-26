@@ -26,6 +26,7 @@ from ..models import (
     UndercutEvent,
 )
 from .normalize import official_incident_cause
+from .text import plural
 
 PIT_LOSS_GREEN_EST = 20.5   # used to value VSC/SC cheap stops when lane time is unknown
 
@@ -445,7 +446,7 @@ def _all_insights(session, pace_by_driver, undercuts, best_strategy, worst_strat
         insights.append(RaceInsight(
             kind=u.kind, title=f"{u.attacker} {u.kind} on {u.victim}",
             detail=(f"{u.attacker} pitted lap {u.pit_lap} and emerged ahead of {u.victim}, "
-                    f"gaining {u.positions_gained} place(s) through the pit cycle."),
+                    f"gaining {plural(u.positions_gained, 'place')} through the pit cycle."),
             explanation=(f"Fresh tyres are worth a second or more per lap at first. By stopping before "
                          f"{u.victim}, {u.attacker} used that extra grip while {u.victim} was still on "
                          f"worn rubber — so when {u.victim} finally stopped, they rejoined behind. "
@@ -525,7 +526,8 @@ def _driver_of_the_day(session: RaceSession, pace_by_driver) -> tuple[str | None
     net = (best.grid - best.position) if best.grid else 0
     reason_bits = []
     if net > 0:
-        reason_bits.append(f"gained {net} places (P{best.grid} → P{best.position})")
+        reason_bits.append(
+            f"gained {net} place{'s' if net != 1 else ''} (P{best.grid} → P{best.position})")
     p = pace_by_driver.get(best.driver)
     if p and p.pace_rank and p.pace_rank <= 3:
         reason_bits.append(f"top-{p.pace_rank} race pace")

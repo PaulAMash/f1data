@@ -20,6 +20,7 @@ from ..models import (
     RaceSession,
 )
 from .normalize import classify_incident_message
+from .text import plural
 
 
 def compute_qualifying(session: RaceSession) -> QualifyingSummary:
@@ -422,6 +423,65 @@ def _race_word(session: RaceSession) -> str:
     return "Sprint" if session.category == "sprint_qualifying" else "race"
 
 
+def _cut_margin(q: QualifyingSummary, seg: str) -> float | None:
+    """How close the knockout was: the gap between the slowest car to survive a
+    segment and the fastest car eliminated in it.
+
+    Derived from who was actually knocked out rather than a hard-coded field
+    size, so it stays correct for short grids and sprint shootouts alike.
+    """
+    key = seg.lower()
+    times = lambda rows: [(getattr(r, key), r) for r in rows if getattr(r, key, None)]  # noqa: E731
+    out = [r for r, in ((r,) for r in q.rows) if r.knocked_out_in == seg]
+    survived = [r for r in q.rows if r.knocked_out_in != seg
+                and not (seg == "Q2" and r.knocked_out_in == "Q1")]
+    out_t = times(out)
+    surv_t = times(survived)
+    if not out_t or not surv_t:
+        return None
+    fastest_out = min(t for t, _ in out_t)
+    slowest_in = max(t for t, _ in surv_t)
+    margin = fastest_out - slowest_in
+    return round(margin, 3) if margin > 0 else None
+
+
+def _cut_story(q: QualifyingSummary) -> str | None:
+    """The tightest knockout, in plain English."""
+    margins = [(seg, _cut_margin(q, seg)) for seg in ("Q1", "Q2")]
+    tight = [(s, m) for s, m in margins if m is not None]
+    if not tight:
+        return None
+    seg, m = min(tight, key=lambda sm: sm[1])
+    if m > 0.5:
+        return None                       # not tight enough to be the story
+    return (f"The {seg} cut was brutal: {m:.3f}s separated the last car through "
+            f"from the first one out.")
+
+
+def _teammate_story(q: QualifyingSummary, n) -> str | None:
+    """Two identical cars, two different afternoons — the cleanest read there is
+    on a driver, and something no single card can express."""
+    best = None
+    for r in q.rows:
+        if r.vs_teammate is None or r.vs_teammate >= 0:
+            continue
+        mate = next((o for o in q.rows if o.team == r.team and o.driver != r.driver), None)
+        if not mate or r.position is None or mate.position is None:
+            continue
+        if best is None or r.vs_teammate < best[0].vs_teammate:
+            best = (r, mate)
+    if not best:
+        return None
+    r, mate = best
+    gap = abs(r.vs_teammate)
+    if gap < 0.3:
+        return None                       # too close to be a story
+    mate_fate = (f"went out in {mate.knocked_out_in}" if mate.knocked_out_in
+                 else f"qualified P{mate.position}")
+    return (f"Same car, different afternoon at {r.team}: {n(r.driver)} qualified "
+            f"P{r.position} while {n(mate.driver)} {mate_fate}, {gap:.3f}s apart.")
+
+
 def _with_stories(session: RaceSession, q: QualifyingSummary) -> QualifyingSummary:
     """Two tellings of the same Saturday. Simple reads like a broadcast recap;
     Advanced reads like the analyst's debrief. Neither ever implies the
@@ -429,24 +489,33 @@ def _with_stories(session: RaceSession, q: QualifyingSummary) -> QualifyingSumma
     name = {r.driver: r.name for r in q.rows}
     n = lambda code: name.get(code, code)  # noqa: E731
 
-    # ---- Simple: plain English, few bullets ----
+    # ---- Simple: plain English narrative ----
+    # The card grid alongside this panel already states the surprise, the
+    # disappointment, the interruption count and the conditions. Repeating them
+    # here made the story a caption for the cards. This tells what SHAPED the
+    # session instead: how the grip arrived, what the stoppage cost, how close
+    # the cut was, and where two identical cars diverged.
     s: list[str] = []
     if q.pole_driver:
         margin = (f" — just {q.pole_margin:.3f}s ahead of the next car"
                   if q.pole_margin is not None else "")
         s.append(f"{n(q.pole_driver)} was the fastest of anyone and starts first{margin}.")
-    if q.biggest_surprise:
-        s.append(f"The surprise of the day: {n(q.biggest_surprise['driver'])}, who "
-                 f"{q.biggest_surprise['reason']}.")
-    if q.biggest_disappointment:
-        s.append(f"The disappointment: {n(q.biggest_disappointment['driver'])}, "
-                 f"{q.biggest_disappointment['reason']}.")
+    if q.track_evolving:
+        s.append("The track kept gaining grip all session, so the times that counted came "
+                 "late — anyone forced to run early was chasing a moving target.")
     if q.red_flags:
-        s.append("The session was stopped by a red flag along the way.")
+        s.append("A red flag stopped the session and compressed everyone's remaining runs. "
+                 "Drivers still without a banker lap carried all of the risk.")
     elif q.deleted_laps:
-        s.append("A few lap times were deleted for running off track.")
-    if q.conditions:
-        s.append(f"Conditions: {q.conditions}.")
+        s.append(f"{len(q.deleted_laps)} lap time"
+                 + ("s were" if len(q.deleted_laps) > 1 else " was")
+                 + " deleted for running off track — enough to decide an elimination.")
+    cut = _cut_story(q)
+    if cut:
+        s.append(cut)
+    split = _teammate_story(q, n)
+    if split:
+        s.append(split)
     s = s[:5] + [f"This sets tomorrow's {_grid_word(session)} — the {_race_word(session)} "
                  "is still to come."]
 
@@ -465,26 +534,27 @@ def _with_stories(session: RaceSession, q: QualifyingSummary) -> QualifyingSumma
     if q.avg_final_run_gain:
         evo_bits.append(f"drivers averaged −{q.avg_final_run_gain:.2f}s from first run to last")
     if evo_bits:
+        # conditions live in the Track Conditions panel beside this story — they
+        # don't need saying twice
         a.append(("Track evolution was decisive: " if q.track_evolving else "Session trend: ")
-                 + "; ".join(evo_bits)
-                 + (f". Conditions: {q.conditions}." if q.conditions else "."))
+                 + "; ".join(evo_bits) + ".")
     if q.team_progression:
         tp = q.team_progression[0]
         a.append(f"{tp['team']} gained the most through the segments (−{tp['gain']:.3f}s "
                  f"Q1→final); teammate deltas peaked at "
                  + (f"{max(abs(r.vs_teammate) for r in q.rows if r.vs_teammate is not None):.3f}s."
                     if any(r.vs_teammate is not None for r in q.rows) else "n/a."))
-    over_under = []
-    if q.biggest_surprise:
-        over_under.append(f"over-delivery from {q.biggest_surprise['driver']} "
-                          f"({q.biggest_surprise['reason']})")
-    if q.biggest_disappointment:
-        over_under.append(f"under-delivery from {q.biggest_disappointment['driver']} "
-                          f"({q.biggest_disappointment['reason']})")
-    if over_under:
-        a.append("Biggest swings vs expectation: " + "; ".join(over_under) + ".")
+    # how close the knockouts actually were — the number the card grid can't show
+    cuts = []
+    for seg in ("Q1", "Q2"):
+        m = _cut_margin(q, seg)
+        if m is not None:
+            cuts.append(f"the {seg} cut came down to {m:.3f}s")
+    if cuts:
+        a.append("Margins at the knockouts: " + "; ".join(cuts)
+                 + " — a deleted lap or a compromised final run was the whole difference.")
     if q.deleted_laps:
-        a.append(f"{len(q.deleted_laps)} lap(s) deleted for track limits"
+        a.append(f"{plural(len(q.deleted_laps), 'lap')} deleted for track limits"
                  + (" — enough to reshuffle an elimination zone." if len(q.deleted_laps) > 1 else "."))
     if q.red_flags:
         # lowercase the shouty RC message but keep FIA driver codes as-is: (BEA), never (bea)

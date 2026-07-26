@@ -5,13 +5,14 @@ import {
 } from "lucide-react";
 import type { RaceInsight, StrategySummary } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
+import { IconTile, type VisualTone } from "@/components/ui/Visuals";
 import { cx } from "@/lib/format";
 
-const SEV_STYLE: Record<string, { border: string; icon: React.ReactNode; badge: any }> = {
-  key: { border: "border-amber/30", icon: <Zap size={15} className="text-amber" />, badge: "key" },
-  good: { border: "border-emerald-400/25", icon: <Award size={15} className="text-emerald-300" />, badge: "good" },
-  bad: { border: "border-rose-400/25", icon: <TrendingDown size={15} className="text-rose-300" />, badge: "bad" },
-  info: { border: "border-white/[0.07]", icon: <GitBranch size={15} className="text-ink-muted" />, badge: "neutral" },
+const SEV_STYLE: Record<string, { border: string; icon: React.ReactNode; badge: any; tone: VisualTone }> = {
+  key: { border: "border-amber/30", icon: <Zap size={14} />, badge: "key", tone: "amber" },
+  good: { border: "border-emerald-400/25", icon: <Award size={14} />, badge: "good", tone: "good" },
+  bad: { border: "border-rose-400/25", icon: <TrendingDown size={14} />, badge: "bad", tone: "bad" },
+  info: { border: "border-white/[0.07]", icon: <GitBranch size={14} />, badge: "neutral", tone: "neutral" },
 };
 
 const KIND_LABEL: Record<string, string> = {
@@ -56,7 +57,7 @@ export function StrategyExplainer({
             {col.map((ins) => {
               const key = `${ins.kind}|${ins.title}`;
               return (
-                <InsightCard key={key} ins={ins} onFocus={onFocusDrivers}
+                <StrategyCard key={key} ins={ins} onFocus={onFocusDrivers}
                   open={openKey === key}
                   onToggle={() => setOpenKey((k) => (k === key ? null : key))} />
               );
@@ -75,7 +76,7 @@ export function StrategyExplainer({
  * so the page scans clean but the depth is one click away. Only one card is
  * open at a time (true accordion), keeping the layout compact.
  */
-function InsightCard({ ins, open, onToggle, onFocus }: {
+function StrategyCard({ ins, open, onToggle, onFocus }: {
   ins: RaceInsight; open: boolean; onToggle: () => void; onFocus?: (c: string[]) => void;
 }) {
   const style = SEV_STYLE[ins.severity] ?? SEV_STYLE.info;
@@ -84,8 +85,9 @@ function InsightCard({ ins, open, onToggle, onFocus }: {
       open && "bg-base-800/60")}>
       <button onClick={onToggle} aria-expanded={open}
         className="flex w-full items-center justify-between gap-2 p-4 text-left transition-colors hover:bg-white/[0.02]">
-        <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-ink">
-          {style.icon}<span className="truncate">{ins.title}</span>
+        <span className="flex min-w-0 items-center gap-2.5 text-sm font-semibold text-ink">
+          <IconTile tone={style.tone} size={26}>{style.icon}</IconTile>
+          <span className="truncate">{ins.title}</span>
         </span>
         <span className="flex shrink-0 items-center gap-2">
           <Badge tone={style.badge}>{KIND_LABEL[ins.kind] ?? ins.kind}</Badge>

@@ -149,8 +149,13 @@ export interface QualifyingSummary {
   early_elimination?: { driver: string; reason: string } | null;
   track_evolving: boolean;
   red_flags: string[]; deleted_laps: string[];
-  // post-session grid penalties, verified against the official starting grid
-  grid_changes?: { driver: string; name: string; qualified: number; starts: number; places: number }[];
+  // post-session grid movement, verified against the official starting grid:
+  // a steward drop, a promotion inherited from someone else's penalty, or a
+  // pit-lane start (which the archive encodes as grid 0)
+  grid_changes?: {
+    driver: string; name: string; qualified: number; starts: number;
+    places: number | null; kind?: "drop" | "promotion" | "pit_lane";
+  }[];
   interruptions: { message: string; driver?: string | null; driver_name?: string | null;
     cause?: string | null; turn?: string | null; lap?: number | null }[];
   pole_sector_breakdown?: { pole: (number | null)[]; session_best: (number | null)[] } | null;
