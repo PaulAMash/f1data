@@ -1,4 +1,5 @@
 "use client";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { GLOSSARY, Term } from "./Term";
 import { cx } from "@/lib/format";
 
@@ -31,6 +32,43 @@ export const toneText: Record<VisualTone, string> = {
 };
 
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
+
+/* -------------------------------------------------------------------------- */
+/* Progressive disclosure, enforced by the system.                            */
+/*                                                                            */
+/* Every visual carries two kinds of text: the SCALE (what the two ends of the */
+/* bar mean — a handful of characters, and without it the graphic is           */
+/* decoration) and the EXPLANATION (a sentence of why it matters). The scale   */
+/* is always visible. The explanation appears only once the reader asks for it.*/
+/*                                                                            */
+/* Doing this with a context rather than a prop at every call site means a new */
+/* card cannot accidentally ship a wall of text at rest: a Meter dropped into  */
+/* a collapsed card hides its own hint without the author thinking about it.   */
+/* -------------------------------------------------------------------------- */
+export const DisclosureContext = createContext<{ inPanel: boolean; expanded: boolean }>({
+  inPanel: false, expanded: true,
+});
+export const useDisclosure = () => useContext(DisclosureContext);
+/** True when explanatory prose should render right now. */
+function useShowProse() {
+  const { inPanel, expanded } = useDisclosure();
+  return !inPanel || expanded;
+}
+
+/** Width of an element, for visuals that should fill whatever column they land in. */
+export function useMeasuredWidth<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
+    ro.observe(el);
+    setWidth(el.getBoundingClientRect().width);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, width] as const;
+}
 
 /**
  * Micro-learning, applied automatically.
@@ -91,6 +129,7 @@ export function Meter({
   plainLabel?: boolean;
 }) {
   const c = color ?? TONE_COLOR[tone];
+  const showProse = useShowProse();
   return (
     <div className={cx("min-w-0", className)}>
       {(label || value) && (
@@ -116,7 +155,9 @@ export function Meter({
           <span className="inline-block h-2 w-px bg-white/45" />{markerLabel}
         </div>
       )}
-      {hint && <div className="mt-1.5 text-[10px] leading-snug text-ink-faint">{hint}</div>}
+      {hint && showProse && (
+        <div className="mt-1.5 text-[10px] leading-snug text-ink-faint">{hint}</div>
+      )}
     </div>
   );
 }
@@ -128,20 +169,27 @@ export function Meter({
  */
 export function DeltaBar({
   left, right, leftColor = TONE_COLOR.speed, rightColor = TONE_COLOR.neutral,
-  lean, value, caption,
+  lean, value, caption, leftSub, rightSub, unit,
 }: {
   left: React.ReactNode; right: React.ReactNode;
   leftColor?: string; rightColor?: string;
   /** 0–1: how much of the bar the left side owns. 0.5 = dead even. */
   lean: number; value?: React.ReactNode; caption?: React.ReactNode;
+  /** What each side actually achieved — the bar means little without it. */
+  leftSub?: React.ReactNode; rightSub?: React.ReactNode;
+  /** What the gap between them is measured in, e.g. "quicker". */
+  unit?: React.ReactNode;
 }) {
   const pct = clamp(lean * 100);
+  const showProse = useShowProse();
   return (
     <div className="min-w-0">
       <div className="mb-1 flex items-baseline gap-2">
         <span className="truncate text-xs font-bold" style={{ color: leftColor }}>{left}</span>
         {value != null && (
-          <span className="shrink-0 text-[11px] font-semibold tabular-nums text-ink-muted">{value}</span>
+          <span className="shrink-0 text-[11px] font-semibold tabular-nums text-ink">
+            {value}{unit ? <span className="ml-1 font-normal text-ink-faint">{unit}</span> : null}
+          </span>
         )}
         <span className="ml-auto truncate text-xs font-semibold text-ink-faint">{right}</span>
       </div>
@@ -150,7 +198,15 @@ export function DeltaBar({
           style={{ width: `${pct}%`, background: leftColor }} />
         <span className="flex-1 rounded-full" style={{ background: `${rightColor}40` }} />
       </div>
-      {caption && <div className="mt-1 text-[10px] leading-snug text-ink-faint">{caption}</div>}
+      {(leftSub || rightSub) && (
+        <div className="mt-1 flex justify-between gap-2 text-[9.5px] leading-none tabular-nums text-ink-faint/80">
+          <span className="truncate">{leftSub}</span>
+          <span className="truncate text-right">{rightSub}</span>
+        </div>
+      )}
+      {caption && showProse && (
+        <div className="mt-1.5 text-[10px] leading-snug text-ink-faint">{caption}</div>
+      )}
     </div>
   );
 }
@@ -167,6 +223,7 @@ export function Tally({
   meaning?: React.ReactNode;
 }) {
   const c = TONE_COLOR[tone];
+  const showProse = useShowProse();
   if (!count) {
     return (
       <div>
@@ -174,7 +231,9 @@ export function Tally({
           <span className="h-1.5 w-6 rounded-full bg-white/[0.08]" />
           <span className="text-[11px] font-medium text-ink-faint">{emptyLabel}</span>
         </div>
-        {meaning && <div className="mt-1 text-[9.5px] leading-snug text-ink-faint/70">{meaning}</div>}
+        {meaning && showProse && (
+          <div className="mt-1 text-[9.5px] leading-snug text-ink-faint/70">{meaning}</div>
+        )}
       </div>
     );
   }
@@ -190,7 +249,9 @@ export function Tally({
         {count > max && <span className="text-[11px] font-semibold tabular-nums" style={{ color: c }}>+{count - max}</span>}
         {label && <span className="ml-1 text-[11px] text-ink-muted"><Explain>{label}</Explain></span>}
       </div>
-      {meaning && <div className="mt-1 text-[9.5px] leading-snug text-ink-faint/70">{meaning}</div>}
+      {meaning && showProse && (
+        <div className="mt-1 text-[9.5px] leading-snug text-ink-faint/70">{meaning}</div>
+      )}
     </div>
   );
 }
@@ -222,13 +283,33 @@ export function PositionShift({
  * line with its endpoints named says what changed, over what, and by how much.
  */
 export function Sparkline({
-  points, labels, tone = "speed", width = 120, height = 28, lowerIsBetter = true, valueFmt,
+  points, labels, tone = "speed", width, height = 28, lowerIsBetter = true, valueFmt, fluid = false,
 }: {
   points: number[];
   /** Names for the first and last point, e.g. ["Q1", "Q3"]. */
   labels?: [string, string];
   tone?: VisualTone; width?: number; height?: number; lowerIsBetter?: boolean;
   valueFmt?: (v: number) => string;
+  /** Grow to fill the container — for a trend that is the point of its panel. */
+  fluid?: boolean;
+}) {
+  // measured rather than percentage-scaled, so the dots stay round and the
+  // stroke keeps its weight however wide the column happens to be
+  const [boxRef, boxWidth] = useMeasuredWidth<HTMLDivElement>();
+  const w = fluid ? Math.max(80, boxWidth || 120) : (width ?? 120);
+  return (
+    <div ref={boxRef} className={fluid ? "w-full min-w-0" : undefined}>
+      <SparkBody points={points} labels={labels} tone={tone} width={w} height={height}
+        lowerIsBetter={lowerIsBetter} valueFmt={valueFmt} />
+    </div>
+  );
+}
+
+function SparkBody({
+  points, labels, tone, width, height, lowerIsBetter, valueFmt,
+}: {
+  points: number[]; labels?: [string, string]; tone: VisualTone;
+  width: number; height: number; lowerIsBetter: boolean; valueFmt?: (v: number) => string;
 }) {
   if (points.length < 2) return null;
   const lo = Math.min(...points), hi = Math.max(...points);
@@ -239,9 +320,14 @@ export function Sparkline({
   const last = points[points.length - 1];
   const improving = lowerIsBetter ? last < points[0] : last > points[0];
   const c = improving ? TONE_COLOR.good : TONE_COLOR[tone];
+  // a horizon line at the starting value turns "a wiggly line" into "it went
+  // below where it began" — direction you can read without a legend
+  const y0 = y(points[0]);
   return (
     <div className="min-w-0">
       <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="overflow-visible" aria-hidden>
+        <line x1={0} y1={y0} x2={width} y2={y0} stroke="currentColor"
+          className="text-ink-faint/35" strokeWidth={1} strokeDasharray="2 3" />
         <path d={`${d} L${width},${height} L0,${height} Z`} fill={c} opacity={0.1} />
         <path d={d} fill="none" stroke={c} strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" />
         <circle cx={0} cy={y(points[0])} r={2} fill={c} opacity={0.6} />
@@ -258,19 +344,35 @@ export function Sparkline({
   );
 }
 
-/** Sector ownership — three chips, lit where they were the session's best. */
-export function SectorChips({ owned, total = 3 }: { owned: boolean[]; total?: number }) {
+/**
+ * Sector ownership. A lit chip alone only says "this one, not that one"; the
+ * delta underneath says by how much, which is the difference between a legend
+ * and a graphic that can be read on its own.
+ */
+export function SectorChips({
+  owned, deltas, total = 3,
+}: { owned: boolean[]; deltas?: (number | null)[]; total?: number }) {
   return (
     <div className="flex gap-1.5">
-      {Array.from({ length: total }).map((_, i) => (
-        <span key={i}
-          className={cx("flex-1 rounded-md border px-1.5 py-1 text-center text-[10px] font-bold tabular-nums",
-            owned[i]
-              ? "border-emerald-400/35 bg-emerald-400/10 text-emerald-300"
-              : "border-white/[0.06] bg-white/[0.02] text-ink-faint")}>
-          S{i + 1}
-        </span>
-      ))}
+      {Array.from({ length: total }).map((_, i) => {
+        const d = deltas?.[i];
+        return (
+          <div key={i} className="min-w-0 flex-1">
+            <span
+              title={owned[i] ? `Session best in sector ${i + 1}` : `Sector ${i + 1}`}
+              className={cx("block rounded-md border px-1.5 py-1 text-center text-[10px] font-bold tabular-nums",
+                owned[i]
+                  ? "border-emerald-400/35 bg-emerald-400/10 text-emerald-300"
+                  : "border-white/[0.06] bg-white/[0.02] text-ink-faint")}>
+              S{i + 1}
+            </span>
+            <div className={cx("mt-0.5 text-center text-[9.5px] leading-none tabular-nums",
+              owned[i] ? "text-emerald-300/80" : "text-ink-faint/70")}>
+              {d == null ? "—" : d <= 0.0005 ? "best" : `+${d.toFixed(3)}`}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

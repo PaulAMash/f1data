@@ -26,6 +26,55 @@ never in a driver's name — a name must not change colour from one card to the 
 
 ---
 
+## Progressive disclosure: understand first, explore second
+
+At rest, a panel shows **four things and nothing else**:
+
+1. the label
+2. the key metric
+3. the primary visual (with its scale — never its essay)
+4. **one** takeaway line, under about ten words
+
+Everything else lives behind the chevron. A dashboard that explains everything at
+once explains nothing: the reader should grasp a session in seconds and choose
+what to go deeper on.
+
+This is enforced by the system, not by discipline. `InsightCard` provides a
+`DisclosureContext`, and `Meter`'s `hint`, `Tally`'s `meaning` and `DeltaBar`'s
+`caption` render **only when the card is open**. A new card therefore cannot
+accidentally ship a wall of text at rest — drop a `Meter` into a collapsed card
+and it hides its own prose without the author thinking about it.
+
+| Prop | When it shows | Rule |
+|---|---|---|
+| `takeaway` | always | one line, the *why it matters* |
+| `detail` | expanded | the depth: how the metric is built, what to watch for |
+| `action` | expanded | a labelled jump, never the whole card |
+
+Scales (`scaleMin` / `scaleMax` / `markerLabel`) stay visible — they're a handful
+of characters and without them the graphic is decoration.
+
+---
+
+## One interaction language
+
+Learn one card, you've learned all of them:
+
+* **A chevron, top-right** marks anything with more to say. Same glyph, same
+  place, every time.
+* **Click anywhere on the card** to open it. The whole surface is the target;
+  it lifts on hover and highlights while open.
+* **Navigation is never implicit.** A card never silently jumps somewhere — the
+  jump is a labelled link inside the drawer (`action`), so clicking a card always
+  does the same thing.
+* **Dotted underline** means a definition on hover, everywhere in the product.
+* **Selection beats hover**, always (see below).
+
+The `StoryPanel` follows the same contract: lede plus one beat, then
+*"Read the full analysis · N more"*.
+
+---
+
 ## A visual must explain itself
 
 A bar that only shows a fill is decoration. Before shipping any visualisation,

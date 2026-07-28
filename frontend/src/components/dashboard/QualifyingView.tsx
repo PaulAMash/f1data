@@ -115,12 +115,27 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
           visual={q.pole_margin != null && topSpread ? (
             <Meter label="Margin" labelTerm="margin" value={`${q.pole_margin.toFixed(3)}s`} tone="accent"
               pct={(q.pole_margin / topSpread) * 100}
-              scaleMin="Dead heat" scaleMax={`${topSpread.toFixed(2)}s — the whole top ten`}
-              hint={q.pole_margin < 0.1
-                ? "Inside a tenth: the front row was decided by a fraction of a corner."
-                : `How far pole was clear of P2, drawn against the spread of the entire top ten.`} />
+              scaleMin="Dead heat" scaleMax={`${topSpread.toFixed(2)}s — whole top ten`}
+              hint="How far pole was clear of P2, drawn against the spread of the entire top ten." />
           ) : undefined}
-          caption={q.pole_margin == null ? "Quickest single lap of the session." : undefined} />
+          takeaway={q.pole_margin == null ? "Quickest lap of the session."
+            : q.pole_margin < 0.1 ? "Decided by a fraction of a corner."
+              : "Comfortably clear of the front row."}
+          detail={
+            <>
+              <p>
+                Pole is the fastest single lap anyone set. The bar puts that margin on the
+                scale of the session: full width would mean the gap to P2 was as large as the
+                gap from P1 to P10.
+              </p>
+              {q.pole_lap != null && rowOf(q.pole_driver)?.q1 != null && (
+                <p className="tabular-nums">
+                  Route to pole: Q1 {fmtLap(rowOf(q.pole_driver)!.q1)} →{" "}
+                  Q2 {fmtLap(rowOf(q.pole_driver)!.q2)} → Q3 {fmtLap(rowOf(q.pole_driver)!.q3)}.
+                </p>
+              )}
+            </>
+          } />
 
         <InsightCard icon={<Ruler size={14} />} tone="speed" label="Closest margin"
           value={q.closest_pair ? `${q.closest_pair.a} vs ${q.closest_pair.b}` : "—"}
@@ -129,10 +144,19 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
             <DeltaBar left={q.closest_pair.a} right={q.closest_pair.b}
               leftColor={teamColor(q, q.closest_pair.a)} rightColor={teamColor(q, q.closest_pair.b)}
               lean={0.5 + Math.min(0.45, (q.closest_pair.delta / topSpread) * 0.5)}
-              value={`${q.closest_pair.delta.toFixed(3)}s`}
-              caption="The closer the split sits to the middle, the tighter the fight. This is the smallest gap between any two neighbouring cars in the top ten." />
+              value={`${q.closest_pair.delta.toFixed(3)}s`} unit="apart"
+              leftSub={posLabel(q, q.closest_pair.a)} rightSub={posLabel(q, q.closest_pair.b)} />
           ) : undefined}
-          caption={q.closest_pair ? undefined : "No comparable pair in the top ten."} />
+          takeaway={q.closest_pair
+            ? "The tightest fight in the top ten."
+            : "No comparable pair in the top ten."}
+          detail={
+            <p>
+              The smallest gap between any two neighbouring cars inside the top ten. A split
+              that sits close to the middle of the bar means the two were near-inseparable;
+              the further it leans, the more one had in hand.
+            </p>
+          } />
 
         <InsightCard icon={<Zap size={14} />} tone="amber" label="Biggest surprise"
           value={nameOf(q.biggest_surprise?.driver)}
@@ -140,9 +164,15 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
           sub={q.biggest_surprise && rowOf(q.biggest_surprise.driver)?.position
             ? `Qualified P${rowOf(q.biggest_surprise.driver)!.position}` : undefined}
           visual={mateBar(q, q.biggest_surprise?.driver, topSpread)}
-          caption={q.biggest_surprise
-            ? "Out-qualified the other car in identical machinery — the clearest sign a driver over-delivered."
-            : "No clear over-delivery today."} />
+          takeaway={q.biggest_surprise ? "Beat the other car in the same machinery."
+            : "No clear over-delivery today."}
+          detail={
+            <p>
+              Two drivers in identical cars is the only genuinely fair comparison in Formula 1.
+              Whoever beats their teammate by the widest margin has done the most with what
+              they were given — regardless of where that put them on the grid.
+            </p>
+          } />
 
         <InsightCard icon={<TrendingDown size={14} />} tone="bad" label="Biggest disappointment"
           value={nameOf(q.biggest_disappointment?.driver)}
@@ -150,9 +180,12 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
           sub={q.biggest_disappointment && rowOf(q.biggest_disappointment.driver)?.position
             ? `Qualified P${rowOf(q.biggest_disappointment.driver)!.position}` : undefined}
           visual={mateBar(q, q.biggest_disappointment?.driver, topSpread)}
-          caption={q.biggest_disappointment
-            ? sentence(q.biggest_disappointment.reason)
-            : "Nobody badly under-delivered."} />
+          takeaway={q.biggest_disappointment ? "Lost out to the sister car."
+            : "Nobody badly under-delivered."}
+          detail={q.biggest_disappointment
+            ? <p>{sentence(q.biggest_disappointment.reason)} The same car reached a later
+                segment, so the machinery wasn&apos;t the limit.</p>
+            : undefined} />
 
         <InsightCard icon={<AlertTriangle size={14} />} tone={stoppages ? "bad" : "good"}
           label="Interruptions" value={interruptionsValue(q, session)}
@@ -167,7 +200,10 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
                 meaning="One mark = a sector under yellow. Drivers must slow through it, ruining the lap, but the session keeps running." />
             </div>
           }
-          caption={interruptionsWhy(q, session)} />
+          takeaway={stoppages ? "Runs were compressed — timing got risky."
+            : localYellows ? "Never stopped, but laps were spoiled."
+              : "Everyone got their runs in."}
+          detail={<p>{interruptionsWhy(q, session)}</p>} />
 
         {!simple && (
           <>
@@ -176,22 +212,22 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
               value={nameOf(q.fastest_sector_driver)}
               driver={q.fastest_sector_driver ? driverOf(session, q.fastest_sector_driver) : undefined}
               sub={sectorOwner?.position ? `Qualified P${sectorOwner.position}` : undefined}
-              visual={
-                <div className="space-y-1.5">
-                  <SectorChips owned={bestSectors} />
-                  <div className="text-[9.5px] leading-snug text-ink-faint/70">
-                    Lit = the fastest anyone went in that sector. {bestSectors.filter(Boolean).length} of 3.
-                  </div>
-                </div>
-              }
-              caption="Owning sectors without owning pole means the perfect lap was there but never strung together." />
+              visual={<SectorChips owned={bestSectors} deltas={sectorDeltas(q, q.fastest_sector_driver)} />}
+              takeaway={`Owns ${bestSectors.filter(Boolean).length} of the 3 session-best sectors.`}
+              detail={
+                <p>
+                  A lit sector is the fastest anyone went through it; the figure beneath each
+                  chip is how far off that best this driver was. Owning sectors without owning
+                  pole means the perfect lap was there but never strung together.
+                </p>
+              } />
 
             <InsightCard icon={<Thermometer size={14} />} tone="amber"
               label={<Term>Track evolution</Term>}
               value={q.track_evolving ? "Getting faster" : "Stable"}
               visual={segs.length >= 2 ? (
                 <div className="flex items-end justify-between gap-3">
-                  <Sparkline points={segs} tone="amber" width={110}
+                  <Sparkline points={segs} tone="amber" fluid
                     labels={[segLabels[0], segLabels[segLabels.length - 1]]}
                     valueFmt={(v) => fmtLap(v)} />
                   <div className="shrink-0 text-right">
@@ -202,15 +238,16 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
                   </div>
                 </div>
               ) : undefined}
-              caption={q.track_evolving
-                ? "Each segment's best lap, start to finish. Rubber builds on the racing line all session, so the last runs are the quickest — and running early costs you."
-                : "Each segment's best lap. The benchmark barely moved, so when a driver ran made little difference."} />
+              takeaway={q.track_evolving ? "Late runs were worth chasing."
+                : "When a driver ran barely mattered."}
+              detail={
+                <p>
+                  Each segment&apos;s best lap, start to finish, against a dashed line at where the
+                  session began. Rubber builds on the racing line all afternoon, so the benchmark
+                  usually falls — and anyone forced to run early is chasing a moving target.
+                </p>
+              } />
 
-            {/* The raw consistency score is a 0–100 scale whose usable range
-                depends on the session — printing "11/100" beside "most
-                consistent" reads like a bad grade and quietly costs trust. The
-                honest statement is the ranking, with the bar measured against
-                the best score anyone actually achieved today. */}
             <InsightCard icon={<Target size={14} />} tone="speed" label="Most consistent"
               value={nameOf(q.most_consistent_driver)}
               driver={q.most_consistent_driver ? driverOf(session, q.most_consistent_driver) : undefined}
@@ -220,9 +257,16 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
                   value={`${rowOf(q.most_consistent_driver)!.consistency_score!.toFixed(0)}/100`}
                   pct={rowOf(q.most_consistent_driver)!.consistency_score!}
                   scaleMin="Erratic" scaleMax="Metronomic"
-                  hint="100 is the tightest lap-to-lap spread anyone managed today — often a driver who ran only a couple of laps." />
+                  hint="100 is the tightest lap-to-lap spread anyone managed today." />
               ) : undefined}
-              caption="Judged among drivers who reached the deepest segment on competitive pace, so a slow-but-tidy Q1 exit can't win it." />
+              takeaway="Repeated the same lap time most closely."
+              detail={
+                <p>
+                  Scored on the spread between a driver&apos;s push laps, then judged only among
+                  those who reached the deepest segment on competitive pace — so a slow-but-tidy
+                  Q1 exit can&apos;t win it.
+                </p>
+              } />
 
             <InsightCard icon={<TrendingUp size={14} />} tone="good" label="Biggest improvement"
               value={nameOf(q.biggest_improvement_driver)}
@@ -234,10 +278,16 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
                   scaleMin="No gain" scaleMax={`−${maxImprovement.toFixed(2)}s`}
                   marker={avgImprovement != null ? (avgImprovement / maxImprovement) * 100 : undefined}
                   markerLabel={avgImprovement != null
-                    ? `Field average −${avgImprovement.toFixed(2)}s` : undefined}
-                  hint="How much quicker their best lap got between their first run and their last." />
+                    ? `Field average −${avgImprovement.toFixed(2)}s` : undefined} />
               ) : undefined}
-              caption={improver?.improvement == null ? "Found the most time from first run to last." : undefined} />
+              takeaway="Found the most between first run and last."
+              detail={
+                <p>
+                  Measured from a driver&apos;s early-run best to their final best. Most of the gain
+                  is the track rubbering in, so beating the field average means they also
+                  genuinely improved.
+                </p>
+              } />
 
             <InsightCard icon={<Flag size={14} />} tone={q.deleted_laps.length ? "amber" : "good"}
               label={<Term term="deleted lap">Deleted laps</Term>}
@@ -245,9 +295,14 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
               visual={<Tally count={q.deleted_laps.length} tone="amber"
                 emptyLabel="All laps stood" label="track limits"
                 meaning="One mark = one lap time wiped for running beyond the white lines." />}
-              caption={q.deleted_laps.length
-                ? "Details in Lap Analysis."
-                : "Nobody lost a time to track limits."} />
+              takeaway={q.deleted_laps.length ? "Track limits cost real lap times."
+                : "Nobody strayed beyond the white lines."}
+              detail={
+                <p>
+                  Race control deletes a lap when all four wheels go beyond the white line. In
+                  the elimination zone a single deletion can decide who goes through.
+                </p>
+              } />
 
             <InsightCard icon={<ArrowDownWideNarrow size={14} />} tone="violet"
               label={<Term term="teammate delta">Teammate delta</Term>}
@@ -258,10 +313,18 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
                 <DeltaBar left={tmate.driver} right={tmatePartner.driver}
                   leftColor={tmate.team_color} rightColor="#5f6b84"
                   lean={0.5 + Math.min(0.4, (Math.abs(tmate.vs_teammate) / (topSpread || 1)) * 0.5)}
-                  value={`${Math.abs(tmate.vs_teammate).toFixed(3)}s`}
-                  caption="Same car, same tyres — so the gap is the driver. The further the split leans, the bigger that gap is for this session." />
+                  value={`${Math.abs(tmate.vs_teammate).toFixed(3)}s`} unit="quicker"
+                  leftSub={posLabel(q, tmate.driver)} rightSub={posLabel(q, tmatePartner.driver)} />
               ) : undefined}
-              caption={tmate ? undefined : "No teammate pair had comparable laps."} />
+              takeaway={tmate ? "The widest gap between two identical cars."
+                : "No teammate pair had comparable laps."}
+              detail={
+                <p>
+                  Same car, same tyres, same track — so whatever separates two teammates is the
+                  drivers themselves. It is the cleanest driver-versus-driver read available all
+                  weekend.
+                </p>
+              } />
           </>
         )}
       </InsightGrid>
@@ -294,6 +357,30 @@ function mateBar(q: QualifyingSummary, code: string | null | undefined, spread: 
       caption={`Against ${mate.name} in the same car${mate.position ? `, who qualified P${mate.position}` : ""}.`}
     />
   );
+}
+
+/** Where a driver ended up — the context a two-sided bar needs at its ends. */
+function posLabel(q: QualifyingSummary, code: string): string {
+  const r = q.rows.find((x) => x.driver === code);
+  if (!r) return "";
+  if (r.knocked_out_in) return `Out in ${r.knocked_out_in}`;
+  return r.position ? `P${r.position}` : "";
+}
+
+/** How far this driver was off the session best in each sector. */
+function sectorDeltas(q: QualifyingSummary, code?: string | null): (number | null)[] {
+  if (!code) return [null, null, null];
+  const row = q.rows.find((r) => r.driver === code);
+  if (!row) return [null, null, null];
+  return [0, 1, 2].map((i) => {
+    const mine = row.best_sectors?.[i];
+    if (mine == null) return null;
+    const best = q.rows.reduce<number | null>((b, r) => {
+      const v = r.best_sectors?.[i];
+      return v != null && (b == null || v < b) ? v : b;
+    }, null);
+    return best == null ? null : mine - best;
+  });
 }
 
 /* small shared helpers for the story cards */

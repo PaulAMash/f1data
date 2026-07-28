@@ -150,7 +150,7 @@ export function ConditionsCard({
     return (
       <InsightCard icon={<CloudSun size={14} />} tone="sky" label="Track conditions"
         value={fallback ? capitalize(fallback) : "Not reported"}
-        caption="This session's sources didn't publish weather readings." />
+        takeaway="No weather readings for this session." />
     );
   }
   return (
@@ -233,7 +233,7 @@ export function TrackConditionsPanel({
         </span>
       </div>
 
-      <div className="grid gap-x-8 gap-y-5 px-5 pb-5 pt-3.5 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-x-8 gap-y-5 px-5 pb-5 pt-3.5 sm:grid-cols-2 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.05fr)]">
         {/* the headline: what the tarmac was doing, and what that means */}
         <div className="min-w-0">
           <div className="text-[22px] font-bold leading-tight tracking-tight text-ink">
@@ -271,8 +271,8 @@ export function TrackConditionsPanel({
             <>
               <VisualLabel term="track temp">Track through the session</VisualLabel>
               <div className="mt-1.5">
-                <Sparkline points={trackSeries} tone="amber" lowerIsBetter={false}
-                  labels={["Start", "End"]} valueFmt={(v) => `${v.toFixed(0)}°`} width={140} height={34} />
+                <Sparkline points={trackSeries} tone="amber" lowerIsBetter={false} fluid
+                  labels={["Start", "End"]} valueFmt={(v) => `${v.toFixed(0)}°`} height={46} />
               </div>
               <p className="mt-1.5 text-[10px] leading-snug text-ink-faint">
                 {trackSeries[trackSeries.length - 1] > trackSeries[0] + 1

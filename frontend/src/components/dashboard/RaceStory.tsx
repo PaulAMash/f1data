@@ -95,8 +95,16 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
               Led from pole
             </span>
           ) : undefined}
-          caption={runnerUp ? `${fmtGap(2, runnerUp.gap)} clear of ${runnerUp.driver}.` : "Took the chequered flag first."}
-          onClick={() => onJump?.("charts")} />
+          takeaway={runnerUp ? `${fmtGap(2, runnerUp.gap)} clear of ${runnerUp.driver}.`
+            : "Took the chequered flag first."}
+          detail={
+            <p>
+              {winner?.name} started P{winner?.grid ?? "?"} and finished P1
+              {winner?.pit_stops != null ? ` after ${plural(winner.pit_stops, "stop")}` : ""}.
+              The track-position chart shows exactly where the race was won.
+            </p>
+          }
+          action={{ label: "See the position chart", onClick: () => onJump?.("charts") }} />
 
         <InsightCard icon={<TrendingUp size={14} />} tone="speed" label="Best race pace"
           value={driverOf(topPace?.driver)?.name ?? topPace?.driver ?? "—"}
@@ -107,30 +115,49 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
               value={`${paceGap.toFixed(3)}s`}
               pct={Math.min(100, (paceGap / Math.max(0.001, paceSpread)) * 100)}
               scaleMin="Level" scaleMax={`${paceSpread.toFixed(2)}s — front to back`}
-              hint={`Per lap versus ${secondPace.driver}, once fuel load and tyre age are corrected for. Drawn against the pace spread of the whole field.`} />
+              hint={`Per lap versus ${secondPace.driver}, once fuel load and tyre age are corrected for.`} />
           ) : undefined}
-          caption={paceGap == null ? "Quickest once fuel and tyres are accounted for." : undefined}
-          onClick={() => onJump?.("pace")} />
+          takeaway={topPace?.driver === strategy.winner
+            ? "The quickest car also won the race."
+            : "Quickest car — but not the winner."}
+          detail={
+            <p>
+              Clean-air pace strips out traffic, safety cars and pit laps, then corrects for fuel
+              burn and tyre age. It answers &ldquo;who had the fastest car today?&rdquo; rather
+              than &ldquo;who finished where?&rdquo;
+            </p>
+          }
+          action={{ label: "Open pace analysis", onClick: () => onJump?.("pace") }} />
 
         <InsightCard icon={<Flag size={14} />} tone="amber" label="Turning point"
           value={turningPoint ? turningPoint.title.split("(")[0].trim() : "—"}
           sub={turningPoint?.lap_range ? `Lap ${turningPoint.lap_range.join("–")}` : undefined}
           visual={turningPoint?.lap_range?.length && session.total_laps ? (
-            <Meter label="When it happened" tone="amber"
+            <Meter label="When it happened" labelTerm="turning point" tone="amber"
               value={`Lap ${turningPoint.lap_range[0]}`}
               pct={(turningPoint.lap_range[0] / session.total_laps) * 100}
-              hint={`of ${session.total_laps} laps`} />
+              scaleMin="Lights out" scaleMax={`Lap ${session.total_laps}`}
+              hint="Early events reshape the whole strategy; late ones decide the result directly." />
           ) : undefined}
-          caption="The moment that most shaped the result."
-          onClick={() => onJump?.("strategy")} />
+          takeaway="The moment that most shaped the result."
+          detail={turningPoint?.detail ? <p>{turningPoint.detail}</p> : undefined}
+          action={{ label: "Explain the race", onClick: () => onJump?.("strategy") }} />
 
         <InsightCard icon={<TrendingDown size={14} />} tone="bad" label="Biggest loss"
           value={driverOf(loser?.driver)?.name ?? loser?.driver ?? "—"}
           sub={loser?.team}
           driver={driverOf(loser?.driver)}
           visual={loser ? <PositionShift from={loser.grid} to={loser.finish} /> : undefined}
-          caption="Lost the most places against the grid."
-          onClick={() => onJump?.("ask")} />
+          takeaway={loser ? `Lost ${plural(Math.abs(loser.net), "place")} against the grid.`
+            : "Nobody lost meaningful ground."}
+          detail={
+            <p>
+              Measured against where they started, not against expectation — so a bad start, a
+              slow stop and a lost strategy gamble all land here. Ask the assistant why, and it
+              will read the lap data back to you.
+            </p>
+          }
+          action={{ label: "Ask what went wrong", onClick: () => onJump?.("ask") }} />
       </InsightGrid>
 
       {/* classification + movers + weather — points scorers in Simple,
@@ -141,3 +168,4 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
 }
 
 const lastName = (name: string) => name.split(" ").slice(-1)[0] || name;
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;

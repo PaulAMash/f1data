@@ -81,7 +81,14 @@ function Story({ practice, session }: { practice: PracticeSummary; session: Race
               scaleMin="Level" scaleMax={`${spread.toFixed(2)}s — whole field`}
               hint="How far clear their best lap was, drawn against the spread from first to last." />
           ) : undefined}
-          caption={spread ? undefined : "Quickest single lap of the session."} />
+          takeaway="Quickest single lap of the session."
+          detail={
+            <p>
+              Practice lap times mix fuel loads and engine modes, so treat one-lap pace as
+              indicative rather than a grid order — but the driver on top has clearly found
+              something.
+            </p>
+          } />
 
         <InsightCard icon={<TrendingUp size={14} />} tone="speed" label="Best long run"
           value={nameOf(p.best_long_run_driver)} driver={driverOf(session, p.best_long_run_driver)}
@@ -95,7 +102,14 @@ function Story({ practice, session }: { practice: PracticeSummary; session: Race
               scaleMin="Level" scaleMax={`${longSpread.toFixed(2)}s — whole field`}
               hint="Median pace over their longest run — the closest read on Sunday available from a Friday." />
           ) : undefined}
-          caption={longSpread ? undefined : "Best read on race pace, on higher fuel."} />
+          takeaway="The best read on race pace available."
+          detail={
+            <p>
+              Taken as the median lap of each driver&apos;s longest continuous run, so a single
+              mistake or a traffic lap can&apos;t skew it. Fuel loads are unknown, which is why
+              this is a guide rather than a prediction.
+            </p>
+          } />
 
         <InsightCard icon={<Repeat size={14} />} tone="violet" label="Most laps"
           value={nameOf(p.most_laps_driver)} driver={driverOf(session, p.most_laps_driver)}
@@ -108,7 +122,14 @@ function Story({ practice, session }: { practice: PracticeSummary; session: Race
               marker={avgLaps ? (avgLaps / maxLaps) * 100 : undefined}
               markerLabel={avgLaps ? `Field average ${avgLaps.toFixed(0)} laps` : undefined}
               hint="More laps means more tyre and setup data — and a better read on race pace." />
-          ) : undefined} />
+          ) : undefined}
+          takeaway="Banked the most running of anyone."
+          detail={
+            <p>
+              Mileage is the currency of a practice session: more laps means more tyre
+              degradation data, more setup iterations and a more confident call on Sunday.
+            </p>
+          } />
 
         <InsightCard icon={<Clock size={14} />} tone="good" label="Most improved"
           value={nameOf(p.most_improved_driver)} driver={driverOf(session, p.most_improved_driver)}
@@ -119,8 +140,14 @@ function Story({ practice, session }: { practice: PracticeSummary; session: Race
               scaleMin="No gain" scaleMax={`−${maxImprovement.toFixed(2)}s`}
               hint="How much quicker their best lap got between their early runs and their last — mostly the track rubbering in." />
           ) : undefined}
-          caption={row(p.most_improved_driver)?.improvement == null
-            ? "Gained the most as the track rubbered in." : undefined} />
+          takeaway="Found the most as the track rubbered in."
+          detail={
+            <p>
+              Measured from their early-run best to their final best. Some of this is the
+              circuit gaining grip, which everyone benefits from — the rest is the driver and
+              the setup changes actually working.
+            </p>
+          } />
 
         <InsightCard icon={<Timer size={14} />} tone={p.track_evolving ? "amber" : "neutral"}
           label="Track evolution" value={p.track_evolving ? "Getting faster" : "Stable"}
@@ -128,9 +155,15 @@ function Story({ practice, session }: { practice: PracticeSummary; session: Race
             label={`of ${p.rows.length} drivers improved`}
             emptyLabel="Nobody found meaningful time"
             meaning="One mark = a driver who found more than two tenths between their first run and their last." />}
-          caption={p.track_evolving
-            ? "Grip built through the session — later runs carried more weight."
-            : "Lap times held steady across the session."} />
+          takeaway={p.track_evolving ? "Later runs carried more weight."
+            : "Lap times held steady all session."}
+          detail={
+            <p>
+              As cars run, rubber builds on the racing line and the circuit speeds up. When that
+              happens, a time set early in the session is worth more than it looks — and the
+              running order at the flag can flatter whoever ran last.
+            </p>
+          } />
       </InsightGrid>
 
       <Timesheet practice={practice} session={session} />

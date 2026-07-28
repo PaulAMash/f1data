@@ -1,6 +1,8 @@
 "use client";
-import { Info } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, Info } from "lucide-react";
 import { IconTile, StatStrip, type VisualTone } from "./Visuals";
+import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
 /* The editorial panel.                                                       */
@@ -40,6 +42,7 @@ export function StoryPanel({
   children?: React.ReactNode;
 }) {
   const [lede, ...rest] = story;
+  const [open, setOpen] = useState(false);
   return (
     <section className="panel overflow-hidden">
       <div className="flex items-center gap-2 px-5 pt-4">
@@ -52,7 +55,7 @@ export function StoryPanel({
             right-hand rail on wide screens instead of leaving dead space beside
             the text — the standard editorial layout, and it puts the figures
             where the eye goes after the headline. */}
-        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_14rem] lg:gap-8">
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:gap-8">
           <div className="min-w-0">
             {title && (
               <h2 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-ink-muted">{title}</h2>
@@ -68,11 +71,29 @@ export function StoryPanel({
               <p className="text-sm text-ink-muted">No summary available for this session.</p>
             )}
 
+            {/* The lede is the session. The supporting beats are the analysis —
+                real value, but nobody should have to read five paragraphs to
+                learn who won. They stay one click away, with the count on the
+                control so the reader knows exactly what they're opening. */}
             {rest.length > 0 && (
-              <div className="mt-4 divide-y divide-white/[0.05] border-t border-white/[0.06]">
-                {rest.map((s, i) => (
-                  <p key={i} className="py-2.5 text-[14.5px] leading-relaxed text-ink-muted">{s}</p>
-                ))}
+              <div className="mt-4 border-t border-white/[0.06]">
+                <p className="py-2.5 text-[14.5px] leading-relaxed text-ink-muted">{rest[0]}</p>
+                {rest.length > 1 && (
+                  <>
+                    {open && (
+                      <div className="animate-fade-in divide-y divide-white/[0.05] border-t border-white/[0.05]">
+                        {rest.slice(1).map((s, i) => (
+                          <p key={i} className="py-2.5 text-[14.5px] leading-relaxed text-ink-muted">{s}</p>
+                        ))}
+                      </div>
+                    )}
+                    <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
+                      className="mt-1 inline-flex items-center gap-1.5 rounded-md py-1 text-[11px] font-semibold text-accent-soft transition-colors hover:text-accent">
+                      {open ? "Show less" : `Read the full analysis · ${rest.length - 1} more`}
+                      <ChevronDown size={12} className={cx("transition-transform", open && "rotate-180")} />
+                    </button>
+                  </>
+                )}
               </div>
             )}
 
@@ -91,7 +112,7 @@ export function StoryPanel({
               wide screens move them alongside as a rail */}
           {highlights && highlights.length > 0 && (
             <aside className="mt-4 border-t border-white/[0.06] pt-3.5 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
-              <StatStrip items={highlights} className="lg:flex-col lg:gap-y-4" />
+              <StatStrip items={highlights} className="lg:grid lg:grid-cols-2 lg:gap-x-4 lg:gap-y-4" />
             </aside>
           )}
         </div>
