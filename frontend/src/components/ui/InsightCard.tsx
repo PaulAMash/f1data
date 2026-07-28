@@ -3,7 +3,7 @@ import { useState } from "react";
 import { ArrowUpRight, ChevronDown } from "lucide-react";
 import type { Driver } from "@/lib/types";
 import { DriverAvatar } from "./DriverBadge";
-import { DisclosureContext, IconTile, TONE_LABEL, type VisualTone } from "./Visuals";
+import { DisclosureContext, IconTile, TONE_LABEL, type IconAnim, type VisualTone } from "./Visuals";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
@@ -29,6 +29,8 @@ import { cx } from "@/lib/format";
 
 export interface InsightCardProps {
   icon: React.ReactNode;
+  /** How the glyph behaves on hover. Defaults to a gentle pulse. */
+  iconAnim?: IconAnim;
   label: React.ReactNode;
   value: React.ReactNode;
   tone?: VisualTone;
@@ -54,7 +56,7 @@ export interface InsightCardProps {
 }
 
 export function InsightCard({
-  icon, label, value, tone = "neutral", sub, visual, takeaway, detail, action,
+  icon, iconAnim = "pulse", label, value, tone = "neutral", sub, visual, takeaway, detail, action,
   driver, swatch, className, feature = false,
 }: InsightCardProps) {
   const [open, setOpen] = useState(false);
@@ -80,7 +82,7 @@ export function InsightCard({
         } : {})}>
 
         <div className="flex items-center gap-2">
-          <IconTile tone={tone} size={26}>{icon}</IconTile>
+          <IconTile tone={tone} size={26} anim={iconAnim}>{icon}</IconTile>
           {/* the label wears the card's own tone: the grid becomes scannable
               without introducing a single colour that wasn't already there */}
           <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wider"

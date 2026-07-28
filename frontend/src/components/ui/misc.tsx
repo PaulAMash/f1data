@@ -1,5 +1,6 @@
 "use client";
 import { AlertTriangle, Inbox } from "lucide-react";
+import { RaceLoader, RaceSpinner } from "./RaceLoader";
 import { cx } from "@/lib/format";
 
 export function Skeleton({ className }: { className?: string }) {
@@ -10,13 +11,9 @@ export function Skeleton({ className }: { className?: string }) {
   );
 }
 
+/** Inline "working" indicator — the loading wheel at button scale. */
 export function Spinner({ size = 18 }: { size?: number }) {
-  return (
-    <span
-      className="inline-block animate-spin rounded-full border-2 border-white/15 border-t-accent"
-      style={{ width: size, height: size }}
-    />
-  );
+  return <RaceSpinner size={size} />;
 }
 
 /**
@@ -27,20 +24,13 @@ export function Spinner({ size = 18 }: { size?: number }) {
 export function LoadingState({
   title = "Fetching session data…",
   hint = "The first load can take up to a minute while we pull and process the lap-by-lap timing data. It's cached and instant after that.",
-  size = 40,
+  size = 116,
 }: { title?: string; hint?: string; size?: number }) {
   return (
     <div role="status" aria-live="polite"
-      className="flex flex-col items-center justify-center gap-4 px-6 py-16 text-center">
-      {/* two rings turning at different speeds: the outer one carries the accent
-          and reads as progress, the inner one keeps the centre alive even when a
-          fetch takes a while. Nothing here is a fake progress bar. */}
-      <span className="relative inline-block" style={{ width: size, height: size }}>
-        <span className="absolute inset-0 animate-spin rounded-full border-2 border-white/10 border-t-accent" />
-        <span className="absolute inset-[7px] animate-spin rounded-full border-2 border-transparent border-b-speed/70"
-          style={{ animationDuration: "1.6s", animationDirection: "reverse" }} />
-      </span>
-      <div>
+      className="flex flex-col items-center justify-center gap-1 px-6 py-14 text-center">
+      <RaceLoader size={size} label={title} />
+      <div className="mt-3">
         <p className="text-sm font-medium text-ink">{title}</p>
         {hint && <p className="mx-auto mt-1.5 max-w-sm text-[12.5px] leading-relaxed text-ink-muted">{hint}</p>}
       </div>

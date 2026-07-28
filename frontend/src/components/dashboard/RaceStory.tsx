@@ -84,7 +84,7 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
 
       {/* answer-first key cards (clickable → the tab with the detail) */}
       <InsightGrid cols={4}>
-        <InsightCard icon={<Crown size={14} />} tone="accent" label="Winner"
+        <InsightCard icon={<Crown size={14} />} iconAnim="shimmer" tone="accent" label="Winner"
           value={winner?.name ?? winner?.driver ?? "—"} sub={winner?.team}
           driver={driverOf(winner?.driver)}
           // a shift of zero isn't a visual — a lights-to-flag win is its own fact
@@ -106,7 +106,7 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
           }
           action={{ label: "See the position chart", onClick: () => onJump?.("charts") }} />
 
-        <InsightCard icon={<TrendingUp size={14} />} tone="speed" label="Best race pace"
+        <InsightCard icon={<TrendingUp size={14} />} iconAnim="rise" tone="speed" label="Best race pace"
           value={driverOf(topPace?.driver)?.name ?? topPace?.driver ?? "—"}
           sub={<>fastest <Term>clean-air pace</Term></>}
           driver={driverOf(topPace?.driver)}
@@ -129,7 +129,7 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
           }
           action={{ label: "Open pace analysis", onClick: () => onJump?.("pace") }} />
 
-        <InsightCard icon={<Flag size={14} />} tone="amber" label="Turning point"
+        <InsightCard icon={<Flag size={14} />} iconAnim="wave" tone="amber" label="Turning point"
           value={turningPoint ? turningPoint.title.split("(")[0].trim() : "—"}
           sub={turningPoint?.lap_range ? `Lap ${turningPoint.lap_range.join("–")}` : undefined}
           visual={turningPoint?.lap_range?.length && session.total_laps ? (
@@ -143,7 +143,7 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
           detail={turningPoint?.detail ? <p>{turningPoint.detail}</p> : undefined}
           action={{ label: "Explain the race", onClick: () => onJump?.("strategy") }} />
 
-        <InsightCard icon={<TrendingDown size={14} />} tone="bad" label="Biggest loss"
+        <InsightCard icon={<TrendingDown size={14} />} iconAnim="fall" tone="bad" label="Biggest loss"
           value={driverOf(loser?.driver)?.name ?? loser?.driver ?? "—"}
           sub={loser?.team}
           driver={driverOf(loser?.driver)}

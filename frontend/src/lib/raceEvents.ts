@@ -1,5 +1,5 @@
-import { Flag, ShieldAlert, Gauge } from "lucide-react";
-import type { RaceSession } from "./types";
+import { Flag, ShieldAlert, Gauge, TrendingDown, TrendingUp, Eye } from "lucide-react";
+import type { RaceSession, StrategySummary, UndercutEvent } from "./types";
 
 /* -------------------------------------------------------------------------- */
 /* One source of truth for race-control events, shared by every chart so a     */
@@ -19,8 +19,137 @@ export const EVENT: Record<EventKind, { code: string; label: string; color: stri
   red:   { code: "RED",   label: "Red flag",    color: "#ff5555", icon: ShieldAlert, blurb: "Session stopped — cars return to the pits and can change tyres." },
 };
 
-// neutral accent for non-neutralisation beats (lap markers / story / finish)
+// neutral accent for structural marks that aren't events at all (lap ticks)
 export const NEUTRAL_ACCENT = "#c3ccdd";
+
+/* -------------------------------------------------------------------------- */
+/* What kind of moment is this, and why does it deserve the reader's time?     */
+/*                                                                            */
+/* Every strategy beat used to be drawn as the same grey dot, which told the   */
+/* reader two untrue things: that an undercut and a tyre gamble are the same   */
+/* sort of event, and that neither matters much. Grey is the colour of chrome; */
+/* the things that decided a Grand Prix should not be wearing it.              */
+/*                                                                            */
+/* So moments are classified by WHAT THEY DID TO THE RACE, not by what         */
+/* mechanism produced them — which is the only classification a reader can use */
+/* at a glance:                                                               */
+/*                                                                            */
+/*   pivot    the race turned here                              amber          */
+/*   gain     a call that won time or places                    speed teal     */
+/*   loss     a call that cost time or places                   rose           */
+/*   read     true and useful, but nobody gained or lost by it  violet         */
+/*                                                                            */
+/* Neutralisations keep their broadcast colours (SC orange, VSC yellow, red    */
+/* flag red) because those are already learned. One table, used by the Position*/
+/* chart, the Race Story timeline and the Strategy page alike, so an undercut  */
+/* is the same colour and the same word wherever the reader meets it.          */
+/* -------------------------------------------------------------------------- */
+
+export type MomentClass = "pivot" | "gain" | "loss" | "read";
+
+export const MOMENT: Record<MomentClass, {
+  label: string; color: string; icon: any;
+  /** Tailwind tone name, for components that style with classes. */
+  tone: "amber" | "speed" | "bad" | "violet";
+}> = {
+  pivot: { label: "Turning point", color: "#ffb020", icon: Flag, tone: "amber" },
+  gain: { label: "Time won", color: "#00e0c6", icon: TrendingUp, tone: "speed" },
+  loss: { label: "Time lost", color: "#fb7185", icon: TrendingDown, tone: "bad" },
+  read: { label: "Worth knowing", color: "#c4b5fd", icon: Eye, tone: "violet" },
+};
+
+/** Insight kind → what it did to the race. Falls back to severity, then read. */
+const KIND_CLASS: Record<string, MomentClass> = {
+  turning_point: "pivot",
+  undercut: "gain", overcut: "gain", best_strategy: "gain", pit_timing: "gain",
+  worst_strategy: "loss", missed_stop: "loss", tyre_risk: "loss",
+  hidden_pace: "read",
+};
+const SEVERITY_CLASS: Record<string, MomentClass> = {
+  key: "pivot", good: "gain", bad: "loss", info: "read",
+};
+
+export function momentClassOf(kind?: string | null, severity?: string | null): MomentClass {
+  return KIND_CLASS[(kind ?? "").toLowerCase()]
+    ?? SEVERITY_CLASS[(severity ?? "").toLowerCase()]
+    ?? "read";
+}
+
+/** Human name for an insight kind — one spelling across the whole product. */
+export const KIND_LABEL: Record<string, string> = {
+  turning_point: "Turning point", best_strategy: "Best call", worst_strategy: "Costly call",
+  pit_timing: "Pit timing", undercut: "Undercut", overcut: "Overcut",
+  missed_stop: "Missed window", tyre_risk: "Tyre risk", hidden_pace: "Hidden pace",
+};
+
+/* -------------------------------------------------------------------------- */
+/* Undercuts, told properly.                                                  */
+/*                                                                            */
+/* "HAM undercut on NOR" states that a thing happened. It does not say whether */
+/* it worked, what it was worth, or why it is on a list of the six moments     */
+/* that decided the race — so the reader has no way to judge it and skims past.*/
+/* Every undercut we surface now carries the consequence, taken from the       */
+/* event's own data: who was jumped, how many places it was worth, and whether */
+/* the driver still held it at the flag.                                      */
+/* -------------------------------------------------------------------------- */
+
+export interface UndercutStory {
+  /** e.g. "HAM undercut NOR" */
+  title: string;
+  /** One line: what it was worth. */
+  outcome: string;
+  /** The mechanism, for the drawer. */
+  detail: string;
+  cls: MomentClass;
+  worked: boolean;
+}
+
+export function undercutStory(
+  u: UndercutEvent,
+  nameOf: (code: string) => string,
+  finishPos?: (code: string) => number | null | undefined,
+): UndercutStory {
+  const a = nameOf(u.attacker), v = nameOf(u.victim);
+  const verb = u.kind === "overcut" ? "overcut" : "undercut";
+  const gained = u.positions_gained ?? 0;
+  const places = `${gained} place${gained === 1 ? "" : "s"}`;
+
+  // did the move still matter at the flag? only claimed when we can check it
+  const pa = finishPos?.(u.attacker), pv = finishPos?.(u.victim);
+  const heldToFlag = pa != null && pv != null ? pa < pv : null;
+
+  let outcome: string;
+  if (!u.gained) {
+    outcome = `It didn't work — ${a} came out behind ${v} anyway.`;
+  } else if (gained > 0) {
+    const tail = heldToFlag === true ? " and was still ahead at the flag."
+      : heldToFlag === false ? `, though ${v} took the place back before the end.`
+        : ".";
+    outcome = `Worth ${places}: ${a} came out ahead of ${v}${tail}`;
+  } else {
+    outcome = `${a} came out ahead of ${v} and held track position.`;
+  }
+
+  const detail = u.kind === "overcut"
+    ? `${a} stayed out while ${v} pitted, banked the clear-air laps, and pitted later — coming out on fresher rubber with the place already made.`
+    : `${a} pitted on lap ${u.pit_lap}, one lap before ${v}. Fresh tyres are worth roughly a second a lap for two laps; ${v} had to answer on old ones and lost the position in the pit cycle.`;
+
+  return {
+    title: `${a} ${verb} ${v}`,
+    outcome,
+    detail,
+    cls: u.gained ? "gain" : "loss",
+    worked: !!u.gained,
+  };
+}
+
+/** The undercuts worth putting on a key-moments list, best first. */
+export function rankedUndercuts(strategy?: StrategySummary | null, limit = 3): UndercutEvent[] {
+  return [...(strategy?.undercuts ?? [])]
+    .sort((a, b) => (Number(b.gained) - Number(a.gained))
+      || ((b.positions_gained ?? 0) - (a.positions_gained ?? 0)))
+    .slice(0, limit);
+}
 
 export interface Win { kind: EventKind; start: number; end: number; cause?: string | null; }
 

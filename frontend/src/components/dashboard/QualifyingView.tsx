@@ -2,7 +2,8 @@
 
 import {
   AlertTriangle, ArrowDownWideNarrow, ArrowUp, Building2, ChevronRight, Flag, Gauge,
-  Gavel, Medal, Ruler, Sparkles, Target, Thermometer, TrendingDown, TrendingUp, User, Zap,
+  Gavel, LineChart,
+  Medal, Ruler, Sparkles, Target, Thermometer, TrendingDown, TrendingUp, User, Zap,
 } from "lucide-react";
 import type { Driver, QualifyingSummary, RaceSession } from "@/lib/types";
 import { useIsSimple } from "@/lib/mode";
@@ -108,7 +109,7 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
       {/* Simple: the six takeaways. Advanced: the full analyst card set.
           Every card carries its number as a shape, not as a sentence. */}
       <InsightGrid cols={3}>
-        <InsightCard feature icon={<Medal size={14} />} tone="accent"
+        <InsightCard feature icon={<Medal size={14} />} iconAnim="shimmer" tone="accent"
           label={<Term term="pole margin">Pole position</Term>}
           value={nameOf(q.pole_driver)} driver={driverOf(session, q.pole_driver)}
           sub={q.pole_lap ? `${fmtLap(q.pole_lap)} · ${rowOf(q.pole_driver)?.team ?? ""}` : undefined}
@@ -623,60 +624,133 @@ function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSessio
     return times.length >= 3 ? times[times.length - 1] - times[0] : null;
   };
 
+  /* The numbers this page is actually about, worked out once so the opener can
+     state them and the sections below can draw them on a shared scale. */
+  const steps = segs.map((s, i) => ({
+    seg: s,
+    time: q.segment_bests[s] as number,
+    drop: i > 0 && q.segment_bests[segs[i - 1]]
+      ? (q.segment_bests[segs[i - 1]] as number) - (q.segment_bests[s] as number) : null,
+    spread: spreadOf(s.toLowerCase() as "q1" | "q2" | "q3"),
+  }));
+  const totalDrop = steps.length > 1 ? steps[0].time - steps[steps.length - 1].time : null;
+  const biggestDrop = Math.max(0.001, ...steps.map((s) => s.drop ?? 0));
+  const biggestStep = steps.filter((s) => s.drop != null)
+    .sort((a, b) => (b.drop ?? 0) - (a.drop ?? 0))[0];
+  const bestGain = Math.max(0.001, ...improvers.map((r) => r.improvement ?? 0));
+  const timed = q.rows.filter((r) => r.best_lap != null).length;
+
+  const lede = totalDrop != null && biggestStep
+    ? `The benchmark fell ${totalDrop.toFixed(3)}s from ${steps[0].seg} to ${steps[steps.length - 1].seg}, and ${biggestStep.drop!.toFixed(3)}s of it arrived in ${biggestStep.seg}.`
+    : q.pole_lap != null
+      ? `Pole was set at ${fmtLap(q.pole_lap)}.`
+      : "Segment times aren't available for this session.";
+
   return (
     <div className="space-y-4">
-      {/* Q1 → Q2 → Q3 as a connected flow, not three lonely tiles */}
+      {/* The page opens the way Race Story and Qualifying Story do: a sentence
+          that says what the timesheet means, with the figures it is claiming
+          alongside it. It used to open with a bare card of three times, which
+          is why it read as a spreadsheet and got skimmed. */}
+      <StoryPanel
+        icon={<LineChart size={14} />} tone="speed"
+        kicker={<Term term="session progression">Lap analysis</Term>}
+        story={[
+          lede,
+          ...(q.track_evolving
+            ? ["Rubber built up on the racing line all session, so the final run in each segment carried the most weight — a lap set early was never going to be the lap that counted."]
+            : []),
+          ...(improvers.length
+            ? [`${improvers[0].name} found the most, taking ${improvers[0].improvement!.toFixed(3)}s off between their first run and their last.`]
+            : []),
+        ]}
+        highlights={[
+          ...(q.pole_lap != null ? [{ label: "Pole lap", value: fmtLap(q.pole_lap), tone: "accent" as const }] : []),
+          ...(totalDrop != null
+            ? [{ label: "Session gain", value: `−${totalDrop.toFixed(3)}s`, tone: "speed" as const,
+                 sub: `${steps[0].seg} to ${steps[steps.length - 1].seg}` }] : []),
+          { label: "Cars timed", value: timed, term: "cars timed" },
+          { label: "Deleted laps", term: "deleted lap",
+            value: q.deleted_laps.length || "None",
+            tone: (q.deleted_laps.length ? "bad" : "good") as VisualTone },
+        ]}
+      />
+
+      {/* Q1 → Q2 → Q3 as a staircase you can SEE descending. Every segment
+          draws its step on one shared scale, so "where did the time arrive?"
+          is answered by the length of a bar rather than by comparing three
+          decimal numbers in your head. */}
       {segs.length > 0 && (
         <Card>
           <CardHeader title={<Term term="session progression">Session progression</Term>}
+            subtitle="The benchmark lap of each knockout segment, and where the time arrived"
             info={<InfoTip text="The best lap of each knockout segment. The benchmark falls through the session as fuel comes down, softer tyres go on and the track gains grip." />} />
           <CardBody>
-            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-              {segs.map((s, i) => (
-                <div key={s} className="flex flex-1 items-center gap-2">
-                  {i > 0 && (
-                    <span className="hidden shrink-0 items-center text-ink-faint sm:flex">
-                      <ChevronRight size={18} />
-                    </span>
-                  )}
-                  <div className="flex-1 rounded-xl border border-white/[0.06] bg-base-800/50 p-4">
-                    <div className="flex items-center justify-between">
-                      <span className="label"><Term term={s.toLowerCase()}>{s}</Term></span>
-                      {i === segs.length - 1 && <Badge tone="good">Decides Pole</Badge>}
+            <div className="grid items-start gap-2.5 sm:grid-cols-3">
+              {steps.map((st, i) => {
+                const last = i === steps.length - 1;
+                const best = biggestStep?.seg === st.seg && st.drop != null;
+                return (
+                  <div key={st.seg}
+                    className={cx("group/seg relative overflow-hidden rounded-xl border p-4 transition-colors duration-200",
+                      best ? "border-speed/35 bg-speed/[0.05]" : "border-white/[0.07] bg-base-800/50")}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                        <Term term={st.seg.toLowerCase()}>{st.seg}</Term>
+                      </span>
+                      {last && <Badge tone="good">Decides Pole</Badge>}
+                      {best && !last && <Badge tone="key">Biggest step</Badge>}
                     </div>
-                    <div className="mt-1 text-2xl font-semibold tabular-nums text-ink">{fmtLap(q.segment_bests[s])}</div>
-                    {i > 0 && q.segment_bests[segs[i - 1]] && (
-                      <div className="mt-0.5 text-xs tabular-nums text-emerald-300">
-                        ▼ {(q.segment_bests[segs[i - 1]] - q.segment_bests[s]).toFixed(3)}s faster than {segs[i - 1]}
+                    <div className="mt-1 text-2xl font-semibold tabular-nums text-ink">{fmtLap(st.time)}</div>
+
+                    {/* the step itself, on the scale of the biggest step in the
+                        session — the descent is a shape, not a sentence */}
+                    {st.drop != null ? (
+                      <div className="mt-2.5">
+                        <Meter label={`Faster than ${steps[i - 1].seg}`} plainLabel
+                          value={`−${st.drop.toFixed(3)}s`} tone="speed"
+                          pct={(st.drop / biggestDrop) * 100}
+                          scaleMin="No gain" scaleMax={`−${biggestDrop.toFixed(2)}s — biggest step`} />
+                      </div>
+                    ) : (
+                      <div className="mt-2.5 text-[12px] leading-relaxed text-ink-muted">
+                        The opening benchmark — everything after this is measured against it.
                       </div>
                     )}
-                    {!simple && (() => {
-                      const sp = spreadOf(s.toLowerCase() as "q1" | "q2" | "q3");
-                      return sp != null && (
-                        <div className="mt-0.5 text-[11px] tabular-nums text-ink-faint">
-                          top runners covered by {sp.toFixed(3)}s
-                        </div>
-                      );
-                    })()}
+
+                    {!simple && st.spread != null && (
+                      <div className="mt-2.5 border-t border-white/[0.06] pt-2 text-[11.5px] tabular-nums text-ink-faint">
+                        Top runners covered by {st.spread.toFixed(3)}s
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
-            {q.track_evolving && (
-              <p className="mt-3 text-sm text-ink-muted">
-                <Term>Track evolution</Term> did part of the work — rubber built up on the racing
-                line all session, so the final runs in each segment carried the most weight.
-              </p>
-            )}
+
             {!simple && q.team_progression.length > 0 && (
-              <div className="mt-4 border-t border-white/[0.05] pt-3">
-                <div className="label mb-2">Constructors that found the most time, Q1 → final segment</div>
-                <div className="flex flex-wrap gap-2">
+              <div className="mt-4 border-t border-white/[0.06] pt-3">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Constructors that found the most, {steps[0]?.seg} → final segment
+                </div>
+                <div className="space-y-2">
                   {q.team_progression.slice(0, 4).map((t) => (
-                    <span key={t.team} className="chip">
-                      <span className="h-2 w-2 rounded-full" style={{ background: t.color }} />
-                      {t.team} <span className="tabular-nums text-emerald-300">−{t.gain.toFixed(3)}s</span>
-                    </span>
+                    <div key={t.team} className="flex items-center gap-2.5">
+                      <span className="flex w-32 shrink-0 items-center gap-2 sm:w-40">
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: t.color }} />
+                        <span className="truncate text-[12.5px] text-ink-muted">{t.team}</span>
+                      </span>
+                      <span className="h-2 flex-1 overflow-hidden rounded-full bg-white/[0.05]">
+                        <span className="block h-full rounded-full transition-[width] duration-700 ease-out"
+                          style={{
+                            width: `${Math.max(6, (t.gain / Math.max(0.001, q.team_progression[0].gain)) * 100)}%`,
+                            background: t.color,
+                          }} />
+                      </span>
+                      <span className="w-16 shrink-0 text-right text-[12px] font-semibold tabular-nums text-emerald-300">
+                        −{t.gain.toFixed(3)}s
+                      </span>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -688,104 +762,140 @@ function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSessio
       {/* pole lap forensics — advanced only */}
       {!simple && (
         <Card>
-          <CardHeader title={<span>Pole lap breakdown</span>}
+          <CardHeader title="Pole lap breakdown"
+            subtitle="The pole sitter's sectors against the best anyone managed"
             info={<InfoTip text="The pole sitter's best sectors against the session-best in each sector. Matching all three would make the pole lap the theoretical perfect lap." />} />
           <CardBody>
             {pb && pb.pole.some(Boolean) ? (
-              <div className="grid items-start gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              <div className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {pb.pole.map((s, i) => {
                   const best = pb.session_best[i];
-                  const isBest = s != null && best != null && s <= best;
+                  const deficit = s != null && best != null ? Math.max(0, s - best) : null;
+                  const isBest = deficit != null && deficit <= 0.0005;
+                  // the deficits are tiny numbers; scaled against the worst of
+                  // the three they become a shape you can rank at a glance
+                  const worst = Math.max(0.001, ...pb.pole.map((v, j) => {
+                    const b = pb.session_best[j];
+                    return v != null && b != null ? Math.max(0, v - b) : 0;
+                  }));
                   return (
-                    <div key={i} className={`rounded-xl border p-4 ${isBest
-                      ? "border-emerald-400/25 bg-emerald-400/[0.05]"
-                      : "border-white/[0.06] bg-base-800/50"}`}>
-                      <div className="label"><Term term="sector">Sector {i + 1}</Term></div>
-                      <div className="mt-1 text-2xl font-semibold tabular-nums text-ink">{s ? s.toFixed(3) : "—"}</div>
-                      {isBest
-                        ? <div className="mt-0.5 text-xs font-medium text-emerald-300">session best</div>
-                        : best != null && s != null && (
-                          <div className="mt-0.5 text-xs tabular-nums text-amber">+{(s - best).toFixed(3)} vs session best</div>
-                        )}
+                    <div key={i}
+                      className={cx("rounded-xl border p-4 transition-colors duration-200",
+                        isBest ? "border-emerald-400/30 bg-emerald-400/[0.06]" : "border-white/[0.07] bg-base-800/50")}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                          <Term term="sector">Sector {i + 1}</Term>
+                        </span>
+                        {isBest && <Badge tone="good">Session best</Badge>}
+                      </div>
+                      <div className="mt-1 text-2xl font-semibold tabular-nums text-ink">
+                        {s ? s.toFixed(3) : "—"}
+                      </div>
+                      {deficit != null && !isBest && (
+                        <div className="mt-2.5">
+                          <Meter label="Lost to the best" plainLabel value={`+${deficit.toFixed(3)}`}
+                            tone="amber" pct={(deficit / worst) * 100}
+                            scaleMin="Matched it" scaleMax={`+${worst.toFixed(3)} — worst sector`} />
+                        </div>
+                      )}
+                      {isBest && (
+                        <div className="mt-2 text-[12px] leading-relaxed text-emerald-300">
+                          Nobody went quicker through here all session.
+                        </div>
+                      )}
                     </div>
                   );
                 })}
                 {theoretical != null && q.pole_lap != null && (
-                  <div className="rounded-xl border border-violet-400/25 bg-violet-400/[0.05] p-4">
-                    <div className="label"><Term term="theoretical lap">Theoretical best</Term></div>
+                  <div className="rounded-xl border border-violet-400/25 bg-violet-400/[0.06] p-4">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-violet-300">
+                      <Term term="theoretical lap">Theoretical best</Term>
+                    </span>
                     <div className="mt-1 text-2xl font-semibold tabular-nums text-ink">{fmtLap(theoretical)}</div>
-                    <div className="mt-0.5 text-xs tabular-nums text-ink-muted">
-                      pole lap left {(q.pole_lap - theoretical) <= 0.001 ? "nothing" : `${(q.pole_lap - theoretical).toFixed(3)}s`} on the table
+                    <div className="mt-2 text-[12.5px] leading-relaxed text-ink-muted">
+                      {(q.pole_lap - theoretical) <= 0.001
+                        ? "The pole lap left nothing on the table — it was the perfect lap."
+                        : `Pole left ${(q.pole_lap - theoretical).toFixed(3)}s out there. Nobody drove this lap; it is the session's best sectors added together.`}
                     </div>
                   </div>
                 )}
               </div>
-            ) : <p className="text-sm text-ink-faint">Sector times aren&apos;t available for this session.</p>}
+            ) : <p className="text-[12.5px] text-ink-muted">Sector times aren&apos;t available for this session.</p>}
           </CardBody>
         </Card>
       )}
 
-      {/* biggest improvements — the same six drivers in both modes; Advanced
-          differs in depth (segment gains, %, teammate delta), not length */}
+      {/* Where the time was found. Every driver's gain is drawn against the
+          biggest gain in the session, so the ranking is visible before it is
+          read — and each row opens for the segment-by-segment breakdown
+          instead of printing it at everyone all the time. */}
       <Card>
-        <CardHeader title="Biggest improvements"
+        <CardHeader title="Where the time was found"
+          subtitle="Each driver's gain from their first run to their final best lap"
           info={<InfoTip text={simple
             ? "How much time each driver found between their early runs and their final best lap."
             : "Session-long gain from first-run best to final best. Percentage is relative to their Q1 time; segment splits show where the time actually arrived; teammate delta contextualizes the machinery."} />} />
         <CardBody>
           {improvers.length ? (
-            <div className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <InsightGrid cols={3}>
               {improvers.map((r, i) => {
                 const pct = r.q1 && r.improvement ? (r.improvement / r.q1) * 100 : null;
                 const gainQ12 = r.q1 && r.q2 ? r.q1 - r.q2 : null;
                 const gainQ23 = r.q2 && r.q3 ? r.q2 - r.q3 : null;
                 return (
-                  <div key={r.driver} className="rounded-xl border border-white/[0.06] bg-base-800/50 p-3.5">
-                    <div className="flex items-center gap-3">
-                      <span className="w-5 shrink-0 text-center text-sm font-bold tabular-nums text-ink-faint">{i + 1}</span>
-                      <DriverAvatar driver={driverOf(session, r.driver)} size={38} />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-semibold text-ink">{r.name}</div>
-                        <div className="truncate text-[11px] text-ink-faint">
-                          {r.team}{r.position ? ` · qualified P${r.position}` : ""}
-                        </div>
-                      </div>
-                      <span className="shrink-0 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-emerald-300">
-                        −{r.improvement!.toFixed(2)}s
-                      </span>
-                    </div>
-                    {!simple && (
-                      <div className="mt-2.5 space-y-1 border-t border-white/[0.05] pt-2 text-[11px] tabular-nums text-ink-muted">
+                  <InsightCard key={r.driver}
+                    icon={<TrendingUp size={14} />} iconAnim="rise" tone={i === 0 ? "speed" : "good"}
+                    label={i === 0 ? "Found the most" : `#${i + 1} improver`}
+                    value={r.name} driver={driverOf(session, r.driver)}
+                    sub={`${r.team}${r.position ? ` · qualified P${r.position}` : ""}`}
+                    visual={
+                      <Meter label="Time found" labelTerm="time found"
+                        value={`−${r.improvement!.toFixed(3)}s`} tone={i === 0 ? "speed" : "good"}
+                        pct={(r.improvement! / bestGain) * 100}
+                        scaleMin="No gain" scaleMax={`−${bestGain.toFixed(2)}s — best in session`}
+                        hint={pct != null ? `That is ${pct.toFixed(1)}% off their opening time.` : undefined} />
+                    }
+                    takeaway={(() => {
+                      // name the step and the number: six drivers all reading
+                      // "most of it arrived early" looks like a bug, and tells
+                      // the reader nothing they couldn't have guessed
+                      if (gainQ12 == null && gainQ23 == null) return "Improved steadily through the session.";
+                      if (gainQ23 == null) return `Found ${gainQ12!.toFixed(3)}s between Q1 and Q2.`;
+                      if (gainQ12 == null) return `Found ${gainQ23.toFixed(3)}s between Q2 and Q3.`;
+                      return gainQ23 > gainQ12
+                        ? `Saved it for Q3 — ${gainQ23.toFixed(3)}s of it came there.`
+                        : `Most of it in Q1 → Q2: ${gainQ12.toFixed(3)}s.`;
+                    })()}
+                    detail={!simple ? (
+                      <div className="space-y-1 tabular-nums">
                         {r.q1 && (r.q3 || r.q2) && (
-                          <div>Q1 {fmtLap(r.q1)} → {r.q3 ? "Q3 " + fmtLap(r.q3) : "Q2 " + fmtLap(r.q2)}
-                            {pct != null && <span className="text-emerald-300"> ({pct.toFixed(1)}%)</span>}
-                          </div>
+                          <p>Q1 {fmtLap(r.q1)} → {r.q3 ? `Q3 ${fmtLap(r.q3)}` : `Q2 ${fmtLap(r.q2)}`}</p>
                         )}
                         {(gainQ12 != null || gainQ23 != null) && (
-                          <div>
+                          <p>
                             Where it came:{" "}
-                            {gainQ12 != null && <span>Q1→Q2 <span className="text-emerald-300">−{gainQ12.toFixed(2)}s</span></span>}
+                            {gainQ12 != null && <>Q1→Q2 <span className="text-emerald-300">−{gainQ12.toFixed(3)}s</span></>}
                             {gainQ12 != null && gainQ23 != null && " · "}
-                            {gainQ23 != null && <span>Q2→Q3 <span className="text-emerald-300">−{gainQ23.toFixed(2)}s</span></span>}
-                          </div>
+                            {gainQ23 != null && <>Q2→Q3 <span className="text-emerald-300">−{gainQ23.toFixed(3)}s</span></>}
+                          </p>
                         )}
                         {r.vs_teammate != null && (
-                          <div>
+                          <p>
                             <Term term="teammate delta">vs teammate</Term>:{" "}
                             <span className={r.vs_teammate < 0 ? "text-emerald-300" : "text-rose-300"}>
                               {r.vs_teammate < 0 ? "−" : "+"}{Math.abs(r.vs_teammate).toFixed(3)}s
                             </span>
-                          </div>
+                          </p>
                         )}
                       </div>
-                    )}
-                  </div>
+                    ) : undefined} />
                 );
               })}
-            </div>
-          ) : <p className="text-sm text-ink-faint">No meaningful in-session improvements detected.</p>}
+            </InsightGrid>
+          ) : <p className="text-[12.5px] text-ink-muted">No meaningful in-session improvements detected.</p>}
         </CardBody>
       </Card>
+
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
         {/* interruptions as explained event cards, not echoed flags */}

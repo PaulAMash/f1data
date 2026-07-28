@@ -1,25 +1,18 @@
 "use client";
 import { useState } from "react";
-import {
-  Award, ChevronDown, Flag, GitBranch, TrendingDown, Zap,
-} from "lucide-react";
+import { ChevronDown, Flag } from "lucide-react";
 import type { RaceInsight, StrategySummary } from "@/lib/types";
-import { Badge } from "@/components/ui/Badge";
-import { IconTile, type VisualTone } from "@/components/ui/Visuals";
+import { KIND_LABEL, MOMENT, momentClassOf } from "@/lib/raceEvents";
 import { cx } from "@/lib/format";
 
-const SEV_STYLE: Record<string, { border: string; icon: React.ReactNode; badge: any; tone: VisualTone }> = {
-  key: { border: "border-amber/30", icon: <Zap size={14} />, badge: "key", tone: "amber" },
-  good: { border: "border-emerald-400/25", icon: <Award size={14} />, badge: "good", tone: "good" },
-  bad: { border: "border-rose-400/25", icon: <TrendingDown size={14} />, badge: "bad", tone: "bad" },
-  info: { border: "border-white/[0.07]", icon: <GitBranch size={14} />, badge: "neutral", tone: "neutral" },
-};
-
-const KIND_LABEL: Record<string, string> = {
-  turning_point: "Turning point", best_strategy: "Best call", worst_strategy: "Costly call",
-  pit_timing: "Pit timing", undercut: "Undercut", overcut: "Overcut", missed_stop: "Missed window",
-  tyre_risk: "Tyre risk", hidden_pace: "Hidden pace",
-};
+/* Every card used to be styled by SEVERITY, and "info" — which is most of them
+   — resolved to a grey border, a grey glyph and a grey badge. A page of grey
+   cards says none of this is important, which is the opposite of what a
+   strategy debrief is for.
+   Cards are now coloured by WHAT THE CALL DID (the shared taxonomy in
+   lib/raceEvents): teal won time, rose cost it, amber turned the race, violet
+   is worth knowing. Same colours, same words, same meaning as the Key Moments
+   on the Position chart and the Race Story timeline. */
 
 export function StrategyExplainer({
   strategy, onFocusDrivers,
@@ -79,20 +72,33 @@ export function StrategyExplainer({
 function StrategyCard({ ins, open, onToggle, onFocus }: {
   ins: RaceInsight; open: boolean; onToggle: () => void; onFocus?: (c: string[]) => void;
 }) {
-  const style = SEV_STYLE[ins.severity] ?? SEV_STYLE.info;
+  const cls = momentClassOf(ins.kind, ins.severity);
+  const meta = MOMENT[cls];
+  const Icon = meta.icon;
+  const c = meta.color;
   return (
-    <div className={cx("rounded-xl border bg-base-850/50 transition-colors", style.border,
-      open && "bg-base-800/60")}>
+    <div className={cx("group/ins relative overflow-hidden rounded-xl border bg-base-850/50",
+      "transition-all duration-200 ease-out hover:-translate-y-px",
+      open && "bg-base-800/60")}
+      style={{ borderColor: open ? `${c}77` : `${c}33` }}>
+      {/* a wash of the card's own colour — the category is legible before a
+          single word is read, and it strengthens when you reach for the card */}
+      <span aria-hidden className="pointer-events-none absolute inset-0 opacity-55 transition-opacity duration-300 group-hover/ins:opacity-100"
+        style={{ background: `radial-gradient(120% 90% at 0% 0%, ${c}16, transparent 58%)` }} />
       <button onClick={onToggle} aria-expanded={open}
-        className="group/ins flex w-full items-center justify-between gap-2 p-4 text-left transition-colors hover:bg-white/[0.02]">
+        className="relative flex w-full items-center justify-between gap-2 p-4 text-left transition-colors hover:bg-white/[0.02]">
         <span className="flex min-w-0 items-center gap-2.5 text-sm font-semibold text-ink">
-          <span className="inline-flex transition-transform duration-300 ease-out group-hover/ins:scale-110">
-            <IconTile tone={style.tone} size={26}>{style.icon}</IconTile>
+          <span className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-lg transition-transform duration-300 ease-out group-hover/ins:scale-110"
+            style={{ background: `${c}22`, color: c, boxShadow: `inset 0 0 0 1px ${c}3a` }}>
+            <Icon size={14} />
           </span>
           <span className="truncate">{ins.title}</span>
         </span>
         <span className="flex shrink-0 items-center gap-2">
-          <Badge tone={style.badge}>{KIND_LABEL[ins.kind] ?? ins.kind}</Badge>
+          <span className="whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold"
+            style={{ background: `${c}1c`, color: c, boxShadow: `inset 0 0 0 1px ${c}3a` }}>
+            {KIND_LABEL[ins.kind] ?? ins.kind}
+          </span>
           <ChevronDown size={15}
             className={cx("text-ink-faint transition-all duration-300 ease-out group-hover/ins:text-ink",
               open && "rotate-180 text-ink")} />
@@ -101,7 +107,7 @@ function StrategyCard({ ins, open, onToggle, onFocus }: {
 
       {/* the panel slides to its own height, so the cards below it move once and
           smoothly rather than jumping the moment the click lands */}
-      <div className={cx("grid transition-[grid-template-rows] duration-300 ease-out",
+      <div className={cx("relative grid transition-[grid-template-rows] duration-300 ease-out",
         open ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
         <div className="overflow-hidden">
         <div className={cx("border-t border-white/[0.05] p-4 pt-3 transition-opacity duration-200",

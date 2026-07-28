@@ -1,13 +1,16 @@
 "use client";
 import { useEffect, useState } from "react";
 import type { Driver } from "@/lib/types";
+import { curatedPortrait } from "@/lib/portraits";
 import { cx } from "@/lib/format";
 
 // A friendly driver identity: the official Formula1.com portrait where the
 // provider resolved one, else a clean team-coloured initials avatar. Used
 // across all views so casual fans see names + teams, not just VER/HAM.
 export function DriverAvatar({ driver, size = 28, ring = true }: { driver?: Driver | null; size?: number; ring?: boolean }) {
-  const url = driver?.headshot_url ?? null;
+  // a hand-shipped portrait wins over a remote one: it's an asset we can see,
+  // cropped to the same framing, and it can't 404 (see lib/portraits)
+  const url = curatedPortrait(driver?.name) ?? driver?.headshot_url ?? null;
   const [broken, setBroken] = useState(false);
   // React reuses component instances across prop changes — without this reset,
   // one broken URL would blank the portrait of the NEXT driver rendered here.

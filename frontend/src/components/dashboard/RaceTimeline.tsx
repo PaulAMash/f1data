@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { MousePointerClick } from "lucide-react";
 import type { RaceBundle } from "@/lib/types";
 import { AXIS_TICK_COLOR } from "@/lib/chartTheme";
+import { MOMENT, rankedUndercuts, undercutStory } from "@/lib/raceEvents";
 import { useIsAdvanced } from "@/lib/mode";
 import { fmtLap } from "@/lib/format";
 
@@ -79,6 +80,19 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
   }, [session]);
   const nameOf = (code: string) =>
     session.drivers.find((d) => d.code === code)?.name ?? code;
+  const posOf = (code: string) =>
+    session.classification.find((c) => c.driver === code)?.position ?? null;
+
+  /* The strategy calls that changed the order. They used to appear only as a
+     grey pit dot — a fact with no stated worth — so they read as noise beside
+     a Safety Car. Each one now carries what it was worth. */
+  const undercuts = useMemo(
+    () => rankedUndercuts(strategy, 3)
+      .filter((u) => u.pit_lap > 1 && u.pit_lap < total)
+      .map((u) => ({ u, story: undercutStory(u, (c) => c, posOf) })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [strategy, total, session.classification],
+  );
 
   const ticks = useMemo(() => {
     const step = total > 50 ? 10 : 5;
@@ -132,7 +146,11 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
             <span><span className="mr-1.5 inline-block h-0 w-0 border-x-[5px] border-b-[8px] border-x-transparent border-b-emerald-400 align-middle" />Lead change</span>}
           {fastest &&
             <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full bg-violet-400 align-middle" />Fastest lap</span>}
-          {tpLap && <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rotate-45 bg-accent-soft align-middle" />Turning point</span>}
+          {undercuts.length > 0 &&
+            <span><span className="mr-1.5 inline-block h-3 w-3 rounded-full border-2 align-middle"
+              style={{ borderColor: MOMENT.gain.color, background: `${MOMENT.gain.color}33` }} />Strategy call</span>}
+          {tpLap && <span><span className="mr-1.5 inline-block h-2.5 w-2.5 rotate-45 align-middle"
+            style={{ background: MOMENT.pivot.color }} />Turning point</span>}
         </span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img"
@@ -212,11 +230,30 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
             onMouseLeave={() => setTip(null)}>
             <rect x={x(tpLap) - 10} y={Y - 28} width={20} height={20} fill="transparent" />
             <rect x={x(tpLap) - 5} y={Y - 25} width={10} height={10} rx={2} pointerEvents="none"
-              transform={`rotate(45 ${x(tpLap)} ${Y - 20})`} fill="#ff6b6b" />
+              transform={`rotate(45 ${x(tpLap)} ${Y - 20})`} fill={MOMENT.pivot.color} />
             <line x1={x(tpLap)} y1={Y - 13} x2={x(tpLap)} y2={Y - 8} pointerEvents="none"
-              stroke="rgba(255,107,107,0.8)" strokeWidth={1.5} />
+              stroke={`${MOMENT.pivot.color}cc`} strokeWidth={1.5} />
           </g>
         )}
+
+        {/* Strategy calls sit ON the strip, on top of the plain pit dot at the
+            same lap — because that is what they are: a stop that turned out to
+            be worth something. Bigger, ringed, and coloured by whether it
+            worked, so the eye separates "a car pitted" from "a car pitted and
+            gained two places" without a legend. */}
+        {undercuts.map(({ u, story }, i) => {
+          const col = MOMENT[story.cls].color;
+          return (
+            <g key={`uc${i}`} className="cursor-help"
+              onMouseMove={(e) => show(e, story.title, [`Lap ${u.pit_lap}`, story.outcome, story.detail])}
+              onMouseLeave={() => setTip(null)}>
+              <circle cx={x(u.pit_lap)} cy={Y} r={12} fill="transparent" />
+              <circle cx={x(u.pit_lap)} cy={Y} r={7.5} pointerEvents="none"
+                fill={`${col}33`} stroke={col} strokeWidth={2} />
+              <circle cx={x(u.pit_lap)} cy={Y} r={2.6} pointerEvents="none" fill={col} />
+            </g>
+          );
+        })}
 
         {/* lap ticks */}
         {ticks.map((l) => (
@@ -230,7 +267,7 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
       </svg>
 
       {tip && typeof document !== "undefined" && createPortal(
-        <div className="pointer-events-none fixed z-50 w-64 rounded-xl border border-white/10 bg-base-900/95 p-3 text-xs shadow-glow"
+        <div className="animate-tip-in pointer-events-none fixed z-50 w-72 rounded-xl border border-white/15 bg-base-900 p-3 text-xs shadow-glow"
           style={{
             left: Math.min(tip.x + 14, (typeof window !== "undefined" ? window.innerWidth : 9999) - 272),
             top: Math.min(tip.y + 14, (typeof window !== "undefined" ? window.innerHeight : 9999) - 140),

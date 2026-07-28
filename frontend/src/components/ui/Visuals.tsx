@@ -508,16 +508,28 @@ export function StatStrip({
 }
 
 /** The tinted glyph tile every card, panel and hero leads with. */
+/**
+ * How a glyph behaves when the reader reaches for its card. Each option is
+ * keyed to what the icon depicts, so the motion carries meaning rather than
+ * decorating: a crown catches the light, a flag waves, an arrow travels, a
+ * gauge sweeps. Nothing moves at rest — an icon that animates unprompted is a
+ * distraction; one that animates when you reach for it is feedback.
+ */
+export type IconAnim = "shimmer" | "wave" | "rise" | "fall" | "sweep" | "drift" | "pulse";
+
 export function IconTile({
-  children, tone = "neutral", size = 28, className,
-}: { children: React.ReactNode; tone?: VisualTone; size?: number; className?: string }) {
+  children, tone = "neutral", size = 28, className, anim,
+}: {
+  children: React.ReactNode; tone?: VisualTone; size?: number; className?: string;
+  anim?: IconAnim;
+}) {
   const c = TONE_COLOR[tone];
   return (
     // the glyph leans in when its card is hovered — the smallest possible cue
     // that the surface under the cursor is one you can act on
     <span className={cx("grid shrink-0 place-items-center rounded-lg transition-transform duration-300 ease-out group-hover/card:scale-110", className)}
       style={{ width: size, height: size, background: `${c}1f`, color: c }}>
-      {children}
+      <span className={cx("inline-flex", anim && `ic-${anim}`)}>{children}</span>
     </span>
   );
 }

@@ -126,6 +126,12 @@ graphic isn't worth making inspectable, it probably isn't worth drawing.
 
 Two rules, and between them they close every cropping bug in the product:
 
+* **A hover card is opaque.** Frosted glass works when the layer beneath is
+  dimmed, and only then. The tyre tooltip floats over a wall of full-saturation
+  yellow, red and white stint bars, where 3% translucency is enough to muddy
+  every line of text on it — so hover cards are `bg-base-900` with no blur, and
+  carry a colour band instead of a colour tint. Content never asks the
+  background for permission to be legible.
 * **Floating layers go through a portal.** `ui/HoverCard` renders into
   `document.body` at viewport coordinates, flipping above or below the anchor and
   clamping to the screen. Every panel worth explaining is rounded, therefore
@@ -191,6 +197,92 @@ surface — legible in a screenshot, tiring over an hour — so it is now `#7d8a
 shade, and the answer to "this should be quieter" is a different *size* or
 *weight*, never less contrast. Chart axes are the same story — `AXIS_TICK_COLOR`
 in `lib/chartTheme`, one value, not six inline declarations.
+
+---
+
+## An event's colour is what it did to the race
+
+Grey is the colour of chrome. A beat that decided a Grand Prix must not wear it,
+and an undercut must not look like the same sort of thing as a tyre gamble.
+`lib/raceEvents` classifies every strategy beat by **consequence**, which is the
+only classification a reader can use at a glance:
+
+| Class | Meaning | Colour |
+|---|---|---|
+| `pivot` | the race turned here | amber |
+| `gain` | a call that won time or places | speed teal |
+| `loss` | a call that cost time or places | rose |
+| `read` | true and useful; nobody gained or lost by it | violet |
+
+Neutralisations keep their learned broadcast colours (SC orange, VSC yellow, red
+flag red). One table drives the Position chart's Key Moments, the Race Story
+timeline and the Strategy page, so an undercut is the same colour and the same
+word wherever you meet it.
+
+**And every moment states its consequence.** "HAM undercut on NOR" says a thing
+happened; it does not say whether it worked, what it was worth, or why it is on
+a list of six moments that decided a race — so the reader has no way to judge it
+and skims past. `undercutStory` builds the line from the event's own data: who
+was jumped, how many places, and whether it still held at the flag. A moment
+that cannot state its consequence does not belong on the list.
+
+---
+
+## Affordance is a promise
+
+A tester in user testing repeatedly clicked things that weren't interactive.
+That is a signalling failure, not a tester failure — and the cause was that
+static cards and pressable cards used the same hover treatment.
+
+* **Lift means press.** `hover:-translate-y-px` + `cursor-pointer` (the
+  `.pressable` / `button.chip` / `.pill-btn` vocabulary) appears on actionable
+  surfaces and nowhere else. V45 removed it from several static cards it had
+  crept onto — the segment tiles, the sector tiles, the weather phases.
+* **Tint means tracking.** A quiet background change with no lift and no cursor
+  change is how a long row says "you are on this line" without claiming to be a
+  button.
+* **`cursor-help` means it explains itself** — the timeline marks, the glossary
+  terms — and never that clicking does something.
+
+---
+
+## Icons move when you reach for them
+
+Never at rest: an icon that animates unprompted is a distraction; one that
+animates when you reach for it is feedback. `IconTile` takes an `anim`, and each
+option is keyed to what the glyph depicts, so the motion means something — a
+crown catches the light, a flag waves, an arrow travels, a gauge sweeps. All of
+them are one-shot, hover-only, and off under `prefers-reduced-motion`.
+
+---
+
+## Loading is the first impression
+
+A generic spinner says "a computer is busy". `RaceLoader` says "you are in a
+Formula 1 product" before a word of the page has rendered, which matters because
+on a cold session it is the first thing anyone sees and they see it for up to a
+minute. Everything in it is a real thing on a real car, drawn in SVG with no
+assets to download: a slick with a coloured tread band, a five-spoke rim, a
+carbon brake glowing through the spokes, tarmac running beneath, speed lines off
+the back. Four motions deliberately out of phase so it never strobes.
+
+---
+
+## Portraits: one provider, one curated exception
+
+The backend resolves every driver from Formula1.com's own driver listing — no
+per-driver code, follows team changes, new drivers appear the moment F1
+publishes them. It can only serve what F1 has published, though, so a driver
+without an asset renders as initials: correct, and still a hole in a grid where
+every other face is there.
+
+`lib/portraits` is that hole filled by hand, and it is checked **first** — a
+curated asset we can see beats a remote one we can't. Anything added there must
+be cropped to the shipped framing (head ≈47% of the frame, ≈7% headroom above
+the hair, shoulders filling the bottom edge — measured off the real assets, not
+guessed) so it is indistinguishable from its neighbours at every size. Keep the
+list short: each entry is a promise to maintain a photo by hand, and it should
+come out the moment F1 publishes theirs.
 
 ---
 

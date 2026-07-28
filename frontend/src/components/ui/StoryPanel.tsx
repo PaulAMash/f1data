@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { ChevronDown, Info } from "lucide-react";
-import { IconTile, StatStrip, type VisualTone } from "./Visuals";
+import { IconTile, StatStrip, type IconAnim, type VisualTone } from "./Visuals";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
@@ -28,9 +28,10 @@ export interface StoryHighlight {
 }
 
 export function StoryPanel({
-  icon, kicker, title, story, highlights, notes, tone = "accent", children,
+  icon, iconAnim = "shimmer", kicker, title, story, highlights, notes, tone = "accent", children,
 }: {
   icon: React.ReactNode;
+  iconAnim?: IconAnim;
   /** Small uppercase line above the headline — the section's identity. */
   kicker: React.ReactNode;
   /** Optional short title when the lede alone needs framing. */
@@ -45,8 +46,10 @@ export function StoryPanel({
   const [open, setOpen] = useState(false);
   return (
     <section className="panel overflow-hidden">
-      <div className="flex items-center gap-2 px-5 pt-4">
-        <IconTile tone={tone} size={26}>{icon}</IconTile>
+      {/* ic-host lets the kicker row drive the glyph's hover animation without
+          making the whole panel look pressable — it isn't */}
+      <div className="ic-host flex w-fit items-center gap-2 px-5 pt-4">
+        <IconTile tone={tone} size={26} anim={iconAnim}>{icon}</IconTile>
         <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{kicker}</span>
       </div>
 

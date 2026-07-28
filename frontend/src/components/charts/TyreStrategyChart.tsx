@@ -167,7 +167,7 @@ function TyreFocusCard({ driver, stints, row, onClear }: {
           <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Compound progression · stint length</div>
           <div className="flex gap-1">
             {ordered.map((s, i) => (
-              <div key={i} className="min-w-0 rounded-md px-2 py-1.5 text-center transition-transform duration-200 hover:-translate-y-px"
+              <div key={i} className="min-w-0 rounded-md px-2 py-1.5 text-center"
                 style={{ flexGrow: s.laps, background: `${COMPOUND_COLOR[s.compound]}22`, boxShadow: `inset 0 -2px 0 0 ${COMPOUND_COLOR[s.compound]}` }}
                 title={compoundKnown(s.compound)
                   ? `${COMPOUND_LABEL[s.compound]} · laps ${s.start_lap}-${s.end_lap}`
@@ -185,45 +185,64 @@ function TyreFocusCard({ driver, stints, row, onClear }: {
   );
 }
 
+/**
+ * The stint tooltip.
+ *
+ * It used to be `bg-base-900/97` + `backdrop-blur`, which is the frosted-glass
+ * treatment the rest of the product uses — and everywhere else it works,
+ * because everywhere else it floats over a dimmed plot. Here it floats over a
+ * wall of full-saturation yellow, red and white tyre bars, and 3% of that is
+ * enough to muddy every line of text on it.
+ *
+ * So: fully opaque, no blur, and a compound-coloured top edge instead. The card
+ * still belongs to the same family — same radius, same shadow, same type scale —
+ * it just stops asking the background for permission to be legible.
+ */
 function StintTooltip({ s, name, x, y }: { s: Stint; name: string; x: number; y: number }) {
   if (typeof document === "undefined") return null;
   const named = compoundKnown(s.compound);
-  const W = 244;
+  const c = COMPOUND_COLOR[s.compound];
+  const W = 248;
   return createPortal(
-    <div className="animate-tip-in pointer-events-none fixed z-50 rounded-xl border border-white/[0.13] bg-base-900/97 p-3 text-xs shadow-glow backdrop-blur-sm"
+    <div className="animate-tip-in pointer-events-none fixed z-50 overflow-hidden rounded-xl border border-white/15 bg-base-900 text-xs shadow-glow"
       style={{
         width: W,
         left: Math.min(x + 14, (typeof window !== "undefined" ? window.innerWidth : 9999) - W - 12),
-        top: Math.min(y + 14, (typeof window !== "undefined" ? window.innerHeight : 9999) - 210),
+        top: Math.min(y + 14, (typeof window !== "undefined" ? window.innerHeight : 9999) - 214),
       }}>
-      {/* the row this bar belongs to — in a twenty-row chart, "whose stint is
-          this?" is the first question the tooltip should answer */}
-      <div className="mb-1.5 truncate text-[13px] font-bold text-ink">{name}</div>
-      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-        {named ? (
-          <span className="rounded px-1.5 py-0.5 text-[11px] font-bold"
-            style={{ background: COMPOUND_COLOR[s.compound], color: "#0b0e16" }}>
-            {COMPOUND_LABEL[s.compound]}
+      {/* the compound as a band across the top: the card is colour-coded to the
+          bar you're pointing at without tinting any of the text */}
+      <span className="block h-[3px] w-full" style={{ background: named ? c : "rgba(255,255,255,.22)" }} />
+      <div className="p-3">
+        {/* the row this bar belongs to — in a twenty-row chart, "whose stint is
+            this?" is the first question the tooltip should answer */}
+        <div className="mb-1.5 truncate text-[13px] font-bold text-ink">{name}</div>
+        <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+          {named ? (
+            <span className="rounded px-1.5 py-0.5 text-[11px] font-bold"
+              style={{ background: c, color: "#0b0e16" }}>
+              {COMPOUND_LABEL[s.compound]}
+            </span>
+          ) : (
+            <span className="rounded border border-white/20 px-1.5 py-0.5 text-[11px] font-semibold text-ink-muted">
+              Tyre not recorded
+            </span>
+          )}
+          <span className="text-[11.5px] text-ink-faint">
+            {named ? `${s.is_new_tyre ? "New set" : "Used set"} · stint ${s.stint}` : `Stint ${s.stint}`}
           </span>
-        ) : (
-          <span className="rounded border border-white/20 px-1.5 py-0.5 text-[11px] font-semibold text-ink-muted">
-            Tyre not recorded
-          </span>
+        </div>
+        <Row k="Laps" v={`${s.start_lap}–${s.end_lap} (${s.laps})`} />
+        <Row k="Avg lap" v={fmtLap(s.avg_lap)} />
+        <Row k="Median lap" v={fmtLap(s.median_lap)} />
+        <Row k="Best lap" v={fmtLap(s.best_lap)} />
+        <Row k="Degradation" v={s.degradation != null ? `${s.degradation >= 0 ? "+" : ""}${s.degradation.toFixed(3)}s/lap` : "—"} />
+        {!named && (
+          <p className="mt-2 border-t border-white/[0.09] pt-2 text-[11.5px] leading-relaxed text-ink-muted">
+            {COMPOUND_MISSING_HINT}
+          </p>
         )}
-        <span className="text-[11.5px] text-ink-faint">
-          {named ? `${s.is_new_tyre ? "New set" : "Used set"} · stint ${s.stint}` : `Stint ${s.stint}`}
-        </span>
       </div>
-      <Row k="Laps" v={`${s.start_lap}–${s.end_lap} (${s.laps})`} />
-      <Row k="Avg lap" v={fmtLap(s.avg_lap)} />
-      <Row k="Median lap" v={fmtLap(s.median_lap)} />
-      <Row k="Best lap" v={fmtLap(s.best_lap)} />
-      <Row k="Degradation" v={s.degradation != null ? `${s.degradation >= 0 ? "+" : ""}${s.degradation.toFixed(3)}s/lap` : "—"} />
-      {!named && (
-        <p className="mt-2 border-t border-white/[0.09] pt-2 text-[11.5px] leading-relaxed text-ink-muted">
-          {COMPOUND_MISSING_HINT}
-        </p>
-      )}
     </div>,
     document.body,
   );

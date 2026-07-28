@@ -7,7 +7,10 @@ import {
 import { Users, X, ArrowUpRight, TrendingUp, TrendingDown, Circle, ChevronDown } from "lucide-react";
 import type { RaceSession, Driver, StrategySummary, Compound, RaceInsight, DriverPaceSummary } from "@/lib/types";
 import { COMPOUND_COLOR, COMPOUND_LABEL, COMPOUND_SHORT } from "@/lib/compounds";
-import { EVENT, NEUTRAL_ACCENT, deriveWindows, lapStatusMap, type EventKind, type Win } from "@/lib/raceEvents";
+import {
+  EVENT, MOMENT, deriveWindows, lapStatusMap, momentClassOf, rankedUndercuts, undercutStory,
+  type EventKind, type MomentClass, type Win,
+} from "@/lib/raceEvents";
 import { AXIS_TICK_COLOR, axisLine, axisTick } from "@/lib/chartTheme";
 import { useIsSimple } from "@/lib/mode";
 import { cx, fmtSec, fmtLap, ordinal } from "@/lib/format";
@@ -47,11 +50,24 @@ interface Moment {
   id: string; lap: number; kind: MomentKind; label: string; insight?: RaceInsight;
   /** Neutralisations span laps; a strategy beat is a single instant. */
   endLap?: number;
+  /** What this did to the race — decides the colour and the badge. */
+  cls?: MomentClass;
+  /** One line stating why this is on a list of the moments that mattered. */
+  outcome?: string;
+  /** Extra prose for the drawer, when the moment brings its own. */
+  extra?: string[];
 }
 interface Mover { code: string; d: number; from: number; to: number; }
 
-const momentColor = (k: MomentKind) => (k in EVENT ? EVENT[k as EventKind].color : NEUTRAL_ACCENT);
-const momentIcon = (k: MomentKind) => (k in EVENT ? EVENT[k as EventKind].icon : Circle);
+/* A moment's colour is what it DID to the race, never a neutral grey: a beat
+   that decided a Grand Prix should not look like chrome. Neutralisations keep
+   their learned broadcast colours; everything else is classified. */
+const momentColor = (m: Pick<Moment, "kind" | "cls">) =>
+  (m.kind in EVENT ? EVENT[m.kind as EventKind].color : MOMENT[m.cls ?? "read"].color);
+const momentIcon = (m: Pick<Moment, "kind" | "cls">) =>
+  (m.kind in EVENT ? EVENT[m.kind as EventKind].icon : MOMENT[m.cls ?? "read"].icon);
+const momentBadge = (m: Pick<Moment, "kind" | "cls">) =>
+  (m.kind in EVENT ? EVENT[m.kind as EventKind].label : MOMENT[m.cls ?? "read"].label);
 
 export function PositionChart({
   session, selected, onSelect, strategy, pace, onDeepDive,
@@ -176,20 +192,41 @@ export function PositionChart({
   const moments = useMemo<Moment[]>(() => {
     const out: Omit<Moment, "id">[] = [];
     for (const w of windows) {
-      out.push({ lap: w.start, kind: w.kind, label: EVENT[w.kind].label, endLap: w.end });
+      out.push({
+        lap: w.start, kind: w.kind, label: EVENT[w.kind].label, endLap: w.end,
+        outcome: w.cause ? `Brought out when ${w.cause}.` : EVENT[w.kind].blurb,
+      });
     }
     const beats: RaceInsight[] = [...(strategy?.turning_points ?? []), ...(strategy?.insights ?? [])];
     for (const b of beats) {
       const lap = b.lap_range?.[0];
       if (lap != null && lap > 1 && lap < total && !out.some((m) => Math.abs(m.lap - lap) < 2))
-        out.push({ lap, kind: "story", label: b.title, insight: b });
+        out.push({
+          lap, kind: "story", label: b.title, insight: b,
+          cls: momentClassOf(b.kind, b.severity),
+          outcome: b.detail || undefined,
+        });
+    }
+    // Undercuts earn a place only if they come with their consequence. An
+    // undercut marker that says a move happened, without saying what it was
+    // worth, is a fact with no reason to be on a list of moments that decided
+    // the race — which is exactly why they used to get skimmed past.
+    const nameOf = (c: string) => driverByCode[c]?.code ?? c;
+    const finishPos = (c: string) => clsByCode[c]?.position ?? null;
+    for (const u of rankedUndercuts(strategy, 3)) {
+      const lap = u.pit_lap;
+      if (lap == null || lap <= 1 || lap >= total) continue;
+      if (out.some((m) => Math.abs(m.lap - lap) < 2)) continue;
+      const st = undercutStory(u, nameOf, finishPos);
+      out.push({ lap, kind: "story", label: st.title, cls: st.cls,
+                 outcome: st.outcome, extra: [st.detail] });
     }
     const seen = new Set<string>();
     return out.filter((m) => { const k = `${m.lap}:${m.kind}`; return !seen.has(k) && seen.add(k); })
       .sort((a, b) => a.lap - b.lap).slice(0, simple ? 6 : 10)
       // a stable, unique id per moment so same-lap events never share selection
       .map((m, i) => ({ ...m, id: `${m.lap}:${m.kind}:${i}` }));
-  }, [windows, strategy, total, simple]);
+  }, [windows, strategy, total, simple, driverByCode, clsByCode]);
 
   const narratives = useMemo(() => {
     const pole = drivers.find((d) => (clsByCode[d.code]?.grid ?? d.grid ?? 99) === 1)?.code ?? null;
@@ -225,8 +262,12 @@ export function PositionChart({
           leadStr ? `${leadStr} as the pack compressed.` : null,
           pitStr ? `${pitStr} — a discounted stop while the field ran slowly.` : "Few took the stop, keeping track position.", upStr, dnStr);
       } else if (m.kind === "story") {
-        S.push(m.insight?.detail ?? m.label, upStr ? `${upStr}.` : dnStr ? `${dnStr}.` : null);
-        A.push(m.insight?.detail ?? m.label, m.insight?.explanation ?? null, upStr, dnStr, pitStr);
+        // the consequence leads, because that is the reason this beat is on
+        // the list at all; the mechanism follows for anyone who wants it
+        S.push(m.outcome ?? m.insight?.detail ?? m.label,
+               upStr ? `${upStr}.` : dnStr ? `${dnStr}.` : null);
+        A.push(m.outcome ?? m.insight?.detail ?? m.label,
+               ...(m.extra ?? []), m.insight?.explanation ?? null, upStr, dnStr, pitStr);
       } else {
         S.push(win ? `${nm(win)} won from ${nm(p2)} and ${nm(p3)}.` : "The chequered flag falls.");
         A.push(win ? `${nm(win)} took the win ahead of ${nm(p2)} and ${nm(p3)}.` : "Race complete.",
@@ -350,7 +391,7 @@ export function PositionChart({
         {(() => {
           const om = openMoment != null ? moments.find((m) => m.id === openMoment) : null;
           if (!om || width === 0) return null;
-          const c = momentColor(om.kind);
+          const c = momentColor(om);
           const x1 = lapToX(om.lap);
           const spans = om.endLap != null && om.endLap > om.lap;
           const x2 = spans ? lapToX(om.endLap!) : x1;
@@ -395,7 +436,7 @@ export function PositionChart({
               {(() => {
                 const om = openMoment != null ? moments.find((m) => m.id === openMoment) : null;
                 return om ? (
-                  <ReferenceLine x={om.lap} stroke={momentColor(om.kind)} strokeOpacity={0.9} strokeWidth={1.8}
+                  <ReferenceLine x={om.lap} stroke={momentColor(om)} strokeOpacity={0.9} strokeWidth={1.8}
                     className="moment-line" ifOverflow="extendDomain" />
                 ) : null;
               })()}
@@ -486,36 +527,54 @@ function KeyMoments({ moments, narratives, open, simple, onToggle, onClose, driv
           clipped along the top edge; padding gives the elevation room */}
       <div className="flex flex-wrap gap-2 px-3 pb-3 pt-1">
         {moments.map((m) => {
-          const on = open === m.id; const c = momentColor(m.kind); const Icon = momentIcon(m.kind);
+          const on = open === m.id; const c = momentColor(m); const Icon = momentIcon(m);
           return (
             // The selected state always wins. Hover may only *reinforce* it —
             // never dim it, never move it — so exploring the chart can't make
             // the thing you deliberately chose look less chosen than its
             // neighbours.
-            // the same card vocabulary as the rest of the product: a tinted
-            // glyph tile, then the identity, then the label — and a selected
-            // state that hover can only ever reinforce
+            //
+            // Three lines, in the order a reader needs them: WHAT KIND of
+            // moment (colour + badge), WHAT happened (the headline), and WHY
+            // IT MATTERED (the consequence). The third line is the one that
+            // turns a marker into something worth opening.
             <button key={m.id} onClick={() => onToggle(m.id)} aria-expanded={on}
-              className={cx("group relative flex min-w-[168px] flex-1 items-center gap-2.5 rounded-xl border p-3 text-left transition-all duration-200",
+              className={cx("group relative flex min-w-[248px] flex-1 basis-[248px] items-start gap-3 overflow-hidden rounded-xl border p-3 text-left",
+                "transition-all duration-200 ease-out",
                 on ? "accent-breathing -translate-y-0.5 bg-white/[0.09] hover:bg-white/[0.12]"
                    : "bg-white/[0.02] hover:-translate-y-0.5 hover:bg-white/[0.05] hover:[box-shadow:0_0_0_1.5px_var(--mc),0_12px_26px_-10px_rgba(0,0,0,.6)]")}
               style={{ ["--mc" as any]: c, borderColor: on ? c : `${c}55`, ...(on ? { ["--pulse" as any]: `${c}66` } : {}) }}>
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-transform duration-200 group-hover:scale-105"
-                style={{ background: `${c}1f`, color: c, boxShadow: on ? `inset 0 0 0 1.5px ${c}66` : undefined }}>
-                <Icon size={15} />
+              {/* a wash of the moment's own colour, so the card is tinted by
+                  what it is rather than relying on one small glyph */}
+              <span aria-hidden className="pointer-events-none absolute inset-0 opacity-60 transition-opacity duration-300 group-hover:opacity-100"
+                style={{ background: `radial-gradient(120% 100% at 0% 0%, ${c}1a, transparent 62%)` }} />
+              <span className="relative grid h-9 w-9 shrink-0 place-items-center rounded-lg transition-transform duration-300 ease-out group-hover:scale-110"
+                style={{ background: `${c}22`, color: c, boxShadow: `inset 0 0 0 1.5px ${c}${on ? "88" : "3a"}` }}>
+                <Icon size={16} />
               </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-[11px] font-bold tabular-nums tracking-wide" style={{ color: c }}>
-                  {m.endLap != null && m.endLap > m.lap ? `LAPS ${m.lap}–${m.endLap}` : `LAP ${m.lap}`}
+              <span className="relative min-w-0 flex-1">
+                <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide" style={{ color: c }}>
+                  <span className="tabular-nums">
+                    {m.endLap != null && m.endLap > m.lap ? `Laps ${m.lap}–${m.endLap}` : `Lap ${m.lap}`}
+                  </span>
+                  <span className="opacity-45">·</span>
+                  <span className="truncate opacity-90">{momentBadge(m)}</span>
                 </span>
-                <span className={cx("block truncate text-[13.5px] font-semibold leading-tight",
+                <span className={cx("mt-0.5 block truncate text-[13.5px] font-semibold leading-tight",
                   on ? "text-ink" : "text-ink-muted group-hover:text-ink")}>
                   {m.label}
                 </span>
+                {m.outcome && (
+                  // two lines, not one: a consequence cut off mid-sentence is
+                  // no more useful than no consequence at all
+                  <span className="mt-1 line-clamp-2 block text-[12px] leading-snug text-ink-faint transition-colors duration-200 group-hover:text-ink-muted">
+                    {m.outcome}
+                  </span>
+                )}
               </span>
               <ChevronDown size={14}
-                className={cx("shrink-0 text-ink-faint transition-transform duration-200",
-                  on && "rotate-180 text-ink-muted")} />
+                className={cx("relative mt-0.5 shrink-0 text-ink-faint transition-all duration-300 ease-out group-hover:text-ink",
+                  on && "rotate-180 text-ink")} />
             </button>
           );
         })}
@@ -523,12 +582,12 @@ function KeyMoments({ moments, narratives, open, simple, onToggle, onClose, driv
       {openM && (
         <div className="animate-fade-in border-t p-4" style={{ borderTopColor: "rgba(255,255,255,0.06)" }}>
           <div className="mb-2.5 flex items-start gap-3">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl" style={{ background: `${momentColor(openM.kind)}1f`, boxShadow: `inset 0 0 0 1.5px ${momentColor(openM.kind)}66` }}>
-              {(() => { const Ic = momentIcon(openM.kind); return <Ic size={18} style={{ color: momentColor(openM.kind) }} />; })()}
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl" style={{ background: `${momentColor(openM)}1f`, boxShadow: `inset 0 0 0 1.5px ${momentColor(openM)}66` }}>
+              {(() => { const Ic = momentIcon(openM); return <Ic size={18} style={{ color: momentColor(openM) }} />; })()}
             </span>
             <div className="min-w-0 flex-1">
               <span className="rounded px-1.5 py-0.5 text-[11px] font-bold tabular-nums"
-                style={{ background: `${momentColor(openM.kind)}22`, color: momentColor(openM.kind) }}>
+                style={{ background: `${momentColor(openM)}22`, color: momentColor(openM) }}>
                 {openM.endLap != null && openM.endLap > openM.lap
                   ? `LAPS ${openM.lap}–${openM.endLap}` : `LAP ${openM.lap}`}
               </span>
@@ -687,7 +746,7 @@ function EventBand({ markers, lapToX, ready, simple, total }: {
                     style={{ borderColor: meta.color, color: meta.color, background: `${meta.color}1a` }}>
                     <Icon size={simple ? 13 : 11} /> {meta.code}
                   </span>
-                  <div className="pointer-events-none absolute bottom-full left-1/2 z-40 mb-1 w-52 -translate-x-1/2 rounded-lg border border-white/10 bg-base-900/97 p-2.5 text-left opacity-0 shadow-glow backdrop-blur-md transition-opacity group-hover/mk:opacity-100">
+                  <div className="pointer-events-none absolute bottom-full left-1/2 z-40 mb-1 w-52 -translate-x-1/2 rounded-lg border border-white/10 bg-base-900 p-2.5 text-left opacity-0 shadow-glow transition-opacity group-hover/mk:opacity-100">
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-ink"><Icon size={12} style={{ color: meta.color }} /> {meta.label}</div>
                     <div className="mt-0.5 text-[11px] text-ink-faint">Lap {m.lap}{m.dur ? ` · ${m.dur} lap${m.dur === 1 ? "" : "s"}` : ""}</div>
                     {m.cause && <div className="mt-1 text-[11px] text-ink-muted">{m.cause}</div>}
@@ -755,7 +814,7 @@ function OrderTooltip({ active, label, info, drivers, visible, focus, simple, la
   // neutralised lap is unmistakable without hunting for the badge
   const sc = status ? EVENT[status] : null;
   return (
-    <div className={cx("overflow-hidden rounded-xl border text-xs backdrop-blur-md bg-base-900/97",
+    <div className={cx("overflow-hidden rounded-xl border bg-base-900 text-xs",
         sc ? "tip-breathing" : "border-white/10 shadow-glow", simple ? "w-[17rem]" : "w-[21rem]")}
       style={sc ? { borderColor: `${sc.color}80`, ["--pulse" as any]: sc.color } : undefined}>
       <div className={cx("flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2")}

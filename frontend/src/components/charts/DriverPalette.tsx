@@ -6,10 +6,26 @@ import { cx } from "@/lib/format";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
 
 /* -------------------------------------------------------------------------- */
-/* Driver browser — scan the grid, don't read a settings list. Teams are laid  */
-/* out as cards, two-up, each pairing its drivers with their portraits and a   */
-/* team-colour spine so the eye recognises the team before it reads a name.    */
-/* One interaction: click a driver → focus and close. Search filters instantly.*/
+/* The driver gallery.                                                        */
+/*                                                                            */
+/* It began as a settings list, became a searchable grid, and is now what it   */
+/* should always have been: a wall of faces you recognise before you read      */
+/* anything. Three decisions carry it.                                        */
+/*                                                                            */
+/* CONSTRUCTOR FIRST. Each team is a card wearing its own colour — a woven     */
+/* carbon texture tinted to the livery, a colour bar down the leading edge, a  */
+/* mark and the name. You know whose garage you are looking at before the      */
+/* first driver's name registers.                                             */
+/*                                                                            */
+/* THE PORTRAIT IS THE ANCHOR. It is the largest thing in a driver tile, the   */
+/* three-letter code is strong secondary branding beneath it, and the full     */
+/* name is quiet support — which is the order people actually recognise a      */
+/* grid in.                                                                   */
+/*                                                                            */
+/* IT HAS TO OUTLIVE THE GRID. Nothing here counts to two: a team card lays    */
+/* its drivers on an auto-fill track, so a third car, a reserve driver or a    */
+/* 24-car grid slots in without touching this file — and a team fielding one   */
+/* entry doesn't leave a hole where the placeholder used to be.                */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -86,82 +102,143 @@ export function DriverPalette({
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-[6vh]"
+    <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-[5vh]"
       role="dialog" aria-modal="true" aria-label="Choose a driver">
-      <div className="absolute inset-0 bg-base-950/72 backdrop-blur-sm animate-fade-in" onClick={onClose} />
-      <div className="relative w-full max-w-4xl animate-fade-in overflow-hidden rounded-2xl border border-white/10 bg-base-850 shadow-glow">
-        {/* title row, then the search field — the instruction used to share a
-            line with the input and wrapped to two ragged lines on narrow modals */}
-        <div className="border-b border-white/[0.07] px-4 pb-3 pt-3.5">
-          <div className="mb-2.5 flex items-center gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-faint">
-              Pick a driver
+      <div className="absolute inset-0 bg-base-950/80 backdrop-blur-sm animate-fade-in" onClick={onClose} />
+      <div className="relative flex max-h-[90vh] w-full max-w-5xl animate-fade-in flex-col overflow-hidden rounded-2xl border border-white/10 bg-base-850 shadow-glow">
+
+        {/* ---- header. Title and search are two different jobs, so they get
+                two rows, their own surface and a rule between them: the eye
+                lands on the title, then the field, then the gallery. ---- */}
+        <div className="shrink-0 border-b border-white/[0.08] bg-base-900/50 px-5 pb-4 pt-4">
+          <div className="mb-3 flex items-center gap-3">
+            <span className="text-[15px] font-bold tracking-tight text-ink">Driver focus</span>
+            <span className="hidden text-[12.5px] text-ink-muted sm:inline">
+              Pick a driver to follow their line on the chart
             </span>
-            <span className="text-[12px] text-ink-faint">· click to focus their line on the chart</span>
             <button onClick={onClose} aria-label="Close"
-              className="ml-auto grid h-6 w-6 place-items-center rounded-full text-ink-faint transition-colors hover:bg-white/[0.06] hover:text-ink">
-              <X size={15} />
+              className="ml-auto grid h-7 w-7 place-items-center rounded-full text-ink-faint transition-all duration-200 hover:bg-white/[0.08] hover:text-ink">
+              <X size={16} />
             </button>
           </div>
-          <div className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-base-900/60 px-2.5 py-2 transition-colors focus-within:border-accent/40">
-            <Search size={15} className="shrink-0 text-ink-faint" />
+          <div className="group/search flex items-center gap-2.5 rounded-xl border border-white/[0.09] bg-base-950/60 px-3 py-2.5 transition-all duration-200 focus-within:border-accent/45 focus-within:bg-base-950 focus-within:shadow-[0_0_0_3px_rgba(255,59,59,0.10)]">
+            <Search size={16} className="shrink-0 text-ink-faint transition-colors duration-200 group-focus-within/search:text-accent-soft" />
             <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)}
               placeholder="Search a driver or constructor…"
               onKeyDown={(e) => { if (e.key === "Enter" && flat[0]) pick(flat[0].code); }}
-              className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint" />
+              className="w-full bg-transparent text-[14px] text-ink outline-none placeholder:text-ink-faint" />
             {q && (
-              <span className="shrink-0 text-[11px] tabular-nums text-ink-faint">
+              <span className="shrink-0 whitespace-nowrap text-[12px] font-medium tabular-nums text-ink-muted">
                 {flat.length} match{flat.length === 1 ? "" : "es"}
               </span>
             )}
           </div>
         </div>
 
-        <div className="max-h-[74vh] overflow-y-auto p-3">
+        {/* ---- the gallery ------------------------------------------------ */}
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {filtered.length === 0 ? (
-            <p className="px-4 py-10 text-center text-sm text-ink-faint">No drivers match “{q}”.</p>
+            <p className="px-4 py-12 text-center text-sm text-ink-muted">No drivers match “{q}”.</p>
           ) : (
-            <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
               {filtered.map(([team, g]) => (
-                <div key={team} className="rounded-xl border p-2.5"
-                  style={{ borderColor: `${g.color}33`, background: `linear-gradient(135deg, ${g.color}12, transparent 55%)` }}>
-                  {/* a constructor mark rather than a bullet: the colour block
-                      carries the initials, so the team is recognisable at a
-                      glance without relying on reading the name */}
-                  <div className="mb-2.5 flex items-center gap-2 px-0.5">
-                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-[11px] font-black tracking-tight"
-                      style={{ background: `${g.color}26`, color: g.color, boxShadow: `inset 0 0 0 1px ${g.color}59` }}>
-                      {teamMark(team)}
-                    </span>
-                    <span className="truncate text-[12px] font-semibold uppercase tracking-[0.12em] text-ink-muted">
-                      {team}
-                    </span>
-                    <span className="ml-auto h-1 w-8 shrink-0 rounded-full" style={{ background: `${g.color}80` }} />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {g.drivers.map((d) => {
-                      const on = focused.includes(d.code);
-                      return (
-                        <button key={d.code} onClick={() => pick(d.code)}
-                          className={cx("group flex h-[54px] items-center gap-2.5 overflow-hidden rounded-lg border px-2 text-left transition-all duration-200",
-                            on ? "border-white/25 bg-white/[0.06]"
-                               : "border-white/[0.05] bg-white/[0.02] hover:-translate-y-px hover:border-white/15 hover:bg-white/[0.05]")}>
-                          <DriverAvatar driver={d} size={34} />
-                          <span className="min-w-0 leading-tight">
-                            <span className="block text-[13px] font-extrabold tabular-nums" style={{ color: d.team_color }}>{d.code}</span>
-                            <span className="block truncate text-[12.5px] text-ink-muted transition-colors group-hover:text-ink">{d.name}</span>
-                          </span>
-                        </button>
-                      );
-                    })}
-                    {g.drivers.length === 1 && <span className="h-[54px] rounded-lg border border-dashed border-white/[0.05]" />}
-                  </div>
-                </div>
+                <ConstructorCard key={team} team={team} color={g.color}
+                  drivers={g.drivers} focused={focused} onPick={pick} />
               ))}
             </div>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+function ConstructorCard({
+  team, color, drivers, focused, onPick,
+}: {
+  team: string; color: string; drivers: Driver[];
+  focused: string[]; onPick: (code: string) => void;
+}) {
+  return (
+    <section className="group/team relative overflow-hidden rounded-xl border transition-all duration-300 ease-out"
+      style={{ borderColor: `${color}2e`, background: `linear-gradient(150deg, ${color}14, transparent 62%)` }}>
+      {/* the livery bar down the leading edge — the fastest possible read of
+          "whose garage is this", and it thickens when you reach for the card */}
+      <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] transition-all duration-300 group-hover/team:w-[5px]"
+        style={{ background: color }} />
+      {/* woven carbon, tinted to the livery. Barely there at rest; a little
+          more present under the cursor, which is all a texture should ever do. */}
+      <span aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-[0.16] transition-opacity duration-300 group-hover/team:opacity-[0.26]"
+        style={{
+          backgroundImage:
+            `repeating-linear-gradient(45deg, ${color} 0 1px, transparent 1px 6px),` +
+            `repeating-linear-gradient(-45deg, ${color} 0 1px, transparent 1px 6px)`,
+        }} />
+
+      <header className="relative flex items-center gap-2.5 px-3.5 pb-2.5 pt-3">
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-[10.5px] font-black tracking-tight transition-transform duration-300 ease-out group-hover/team:scale-110"
+          style={{ background: `${color}2a`, color, boxShadow: `inset 0 0 0 1px ${color}66` }}>
+          {teamMark(team)}
+        </span>
+        <span className="truncate text-[12.5px] font-bold uppercase tracking-[0.13em] text-ink-muted transition-colors duration-200 group-hover/team:text-ink">
+          {team}
+        </span>
+        <span className="ml-auto shrink-0 text-[11px] font-medium tabular-nums text-ink-faint">
+          {drivers.length} {drivers.length === 1 ? "car" : "cars"}
+        </span>
+      </header>
+
+      {/* auto-fill, not two fixed columns: a third entry, a reserve driver or a
+          bigger grid slots in without a redesign */}
+      {/* auto-FIT, not auto-fill: a team running a single car fills its row
+          instead of leaving the empty half a placeholder used to occupy, and a
+          third entry or a bigger grid slots in without touching this file */}
+      <div className="relative grid gap-2 p-2.5 pt-0"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(9.5rem, 1fr))" }}>
+        {drivers.map((d) => (
+          <DriverTile key={d.code} d={d} on={focused.includes(d.code)} onPick={onPick} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+function DriverTile({ d, on, onPick }: { d: Driver; on: boolean; onPick: (c: string) => void }) {
+  const c = d.team_color;
+  return (
+    <button onClick={() => onPick(d.code)} aria-pressed={on}
+      className={cx(
+        "group/drv relative flex flex-col items-center gap-1.5 overflow-hidden rounded-lg border px-2 pb-2.5 pt-3",
+        "transition-all duration-200 ease-out",
+        on
+          ? "-translate-y-0.5 bg-white/[0.07]"
+          : "border-white/[0.06] bg-white/[0.025] hover:-translate-y-0.5 hover:bg-white/[0.06]")}
+      style={{
+        borderColor: on ? `${c}cc` : undefined,
+        boxShadow: on ? `0 0 0 1px ${c}77, 0 10px 26px -12px ${c}` : undefined,
+      }}>
+      {/* the chosen car glows out from under its own portrait, so "which one is
+          selected" is answered from across the dialog */}
+      {on && (
+        <span aria-hidden className="pointer-events-none absolute inset-x-0 -top-6 h-24 opacity-70"
+          style={{ background: `radial-gradient(circle at 50% 60%, ${c}44, transparent 68%)` }} />
+      )}
+      <span className={cx("relative transition-transform duration-300 ease-out",
+        on ? "scale-105" : "group-hover/drv:scale-105")}>
+        <DriverAvatar driver={d} size={52} />
+      </span>
+      {/* the code is the branding; the name is the caption */}
+      <span className="relative block text-[15px] font-extrabold leading-none tracking-tight tabular-nums"
+        style={{ color: c }}>
+        {d.code}
+      </span>
+      <span className={cx("relative block max-w-full truncate text-[11.5px] leading-tight transition-colors duration-200",
+        on ? "text-ink" : "text-ink-muted group-hover/drv:text-ink")}>
+        {d.name}
+      </span>
+    </button>
   );
 }
