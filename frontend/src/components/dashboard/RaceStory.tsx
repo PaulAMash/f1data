@@ -8,6 +8,7 @@ import { StoryPanel, type StoryHighlight } from "@/components/ui/StoryPanel";
 import { Meter, PositionShift } from "@/components/ui/Visuals";
 import { fmtGap } from "@/lib/format";
 import { deriveWindows } from "@/lib/raceEvents";
+import { TrackConditionsPanel } from "@/components/charts/TrackConditions";
 import { RaceOverview } from "./RaceOverview";
 import { RaceTimeline } from "./RaceTimeline";
 
@@ -41,15 +42,26 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
     ? secondPace.clean_air_pace - topPace.clean_air_pace : null;
   const maxNet = Math.max(1, ...[...strategy.biggest_gainers, ...strategy.biggest_losers]
     .map((m: any) => Math.abs(m?.net ?? 0)));
+  // the field's pace spread gives every pace bar on this page one honest scale
+  const paceValues = bundle.pace.map((p) => p.clean_air_pace).filter((v): v is number => v != null);
+  const paceSpread = paceValues.length >= 2
+    ? Math.max(...paceValues) - Math.min(...paceValues) : 0.6;
 
   const highlights: StoryHighlight[] = [
     { label: "Winner", value: lastName(winner?.name ?? winner?.driver ?? "—"), tone: "accent" },
-    ...(runnerUp ? [{ label: "Margin", value: fmtGap(2, runnerUp.gap), tone: "speed" as const }] : []),
-    { label: "Finishers", value: `${finishers}/${cls.length}` },
-    ...(retirements ? [{ label: "Retirements", value: retirements, tone: "bad" as const }] : []),
+    ...(runnerUp
+      ? [{ label: "Margin", term: "margin", value: fmtGap(2, runnerUp.gap),
+           sub: `to ${runnerUp.driver}`, tone: "speed" as const }] : []),
+    { label: "Finishers", term: "finishers", value: `${finishers}/${cls.length}`, sub: "still running at the flag" },
+    ...(retirements
+      ? [{ label: "Retirements", term: "retirements", value: retirements, tone: "bad" as const }] : []),
     {
       label: "Neutralisations",
+      term: "neutralisations",
       value: windows.length || "None",
+      sub: windows.length
+        ? windows.map((w) => `L${w.start}–${w.end}`).slice(0, 2).join(", ")
+        : "green flag throughout",
       tone: (windows.length ? "amber" : "good") as StoryHighlight["tone"],
     },
   ];
@@ -65,6 +77,10 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
       >
         <RaceTimeline bundle={bundle} />
       </StoryPanel>
+
+      {/* Conditions sit in the same place on every session type: the wide panel
+          directly under the story. Nobody should have to re-find them. */}
+      <TrackConditionsPanel session={session} fallback={strategy.weather_summary} />
 
       {/* answer-first key cards (clickable → the tab with the detail) */}
       <InsightGrid cols={4}>
@@ -87,9 +103,11 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
           sub={<>fastest <Term>clean-air pace</Term></>}
           driver={driverOf(topPace?.driver)}
           visual={paceGap != null && secondPace ? (
-            <Meter label={`Clear of ${secondPace.driver}`} tone="speed"
-              value={`${paceGap.toFixed(3)}s`} pct={Math.min(100, (paceGap / 0.6) * 100)}
-              hint="Per lap, once fuel and tyres are corrected." />
+            <Meter label="Clear of the next car" labelTerm="clean-air pace" tone="speed"
+              value={`${paceGap.toFixed(3)}s`}
+              pct={Math.min(100, (paceGap / Math.max(0.001, paceSpread)) * 100)}
+              scaleMin="Level" scaleMax={`${paceSpread.toFixed(2)}s — front to back`}
+              hint={`Per lap versus ${secondPace.driver}, once fuel load and tyre age are corrected for. Drawn against the pace spread of the whole field.`} />
           ) : undefined}
           caption={paceGap == null ? "Quickest once fuel and tyres are accounted for." : undefined}
           onClick={() => onJump?.("pace")} />

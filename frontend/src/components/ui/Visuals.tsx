@@ -1,4 +1,5 @@
 "use client";
+import { GLOSSARY, Term } from "./Term";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
@@ -31,12 +32,42 @@ export const toneText: Record<VisualTone, string> = {
 
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
 
+/**
+ * Micro-learning, applied automatically.
+ *
+ * Any label that happens to be a Formula 1 term picks up the dotted underline
+ * and its definition on hover — so the education is a property of the design
+ * system rather than something each call site has to remember. Wrapping is
+ * opt-out (`plain`) rather than opt-in, because the failure mode we care about
+ * is a jargon term shipping *without* an explanation.
+ */
+export function Explain({
+  children, term, plain = false,
+}: { children: React.ReactNode; term?: string; plain?: boolean }) {
+  if (plain) return <>{children}</>;
+  const key = term ?? (typeof children === "string" ? children : null);
+  if (!key || !GLOSSARY[key.toLowerCase()]) return <>{children}</>;
+  return <Term term={key}>{children}</Term>;
+}
+
 /** The one micro-label used above every visual, so they all read as siblings. */
-export function VisualLabel({ children }: { children: React.ReactNode }) {
+export function VisualLabel({
+  children, term, plain,
+}: { children: React.ReactNode; term?: string; plain?: boolean }) {
   return (
     <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
-      {children}
+      <Explain term={term} plain={plain}>{children}</Explain>
     </span>
+  );
+}
+
+/** The endpoints of a bar, so a filled track is a measurement and not a mood. */
+function Scale({ min, max }: { min?: React.ReactNode; max?: React.ReactNode }) {
+  if (min == null && max == null) return null;
+  return (
+    <div className="mt-1 flex justify-between text-[9.5px] leading-none tabular-nums text-ink-faint/70">
+      <span>{min}</span><span>{max}</span>
+    </div>
   );
 }
 
@@ -47,26 +78,45 @@ export function VisualLabel({ children }: { children: React.ReactNode }) {
  */
 export function Meter({
   label, value, pct, tone = "speed", color, hint, className,
+  scaleMin, scaleMax, marker, markerLabel, labelTerm, plainLabel,
 }: {
   label?: React.ReactNode; value?: React.ReactNode; pct: number;
   tone?: VisualTone; color?: string; hint?: React.ReactNode; className?: string;
+  /** What the two ends of the track mean. Without these a bar is decoration. */
+  scaleMin?: React.ReactNode; scaleMax?: React.ReactNode;
+  /** A reference tick (0–100) — usually the field average, so the fill has a benchmark. */
+  marker?: number; markerLabel?: string;
+  /** Explicit glossary key when the label reads differently from the term. */
+  labelTerm?: string;
+  plainLabel?: boolean;
 }) {
   const c = color ?? TONE_COLOR[tone];
   return (
     <div className={cx("min-w-0", className)}>
       {(label || value) && (
         <div className="mb-1 flex items-baseline gap-2">
-          {label && <VisualLabel>{label}</VisualLabel>}
+          {label && <VisualLabel term={labelTerm} plain={plainLabel}>{label}</VisualLabel>}
           {value != null && (
             <span className="ml-auto text-sm font-bold tabular-nums" style={{ color: c }}>{value}</span>
           )}
         </div>
       )}
-      <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+      <div className="relative h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
         <div className="h-full rounded-full transition-[width] duration-500 ease-out"
           style={{ width: `${Math.max(3, clamp(pct))}%`, background: `linear-gradient(90deg, ${c}59, ${c})` }} />
+        {marker != null && (
+          <span title={markerLabel}
+            className="absolute top-0 h-full w-px bg-white/45"
+            style={{ left: `${clamp(marker)}%` }} />
+        )}
       </div>
-      {hint && <div className="mt-1 text-[10px] leading-snug text-ink-faint">{hint}</div>}
+      <Scale min={scaleMin} max={scaleMax} />
+      {markerLabel && marker != null && (
+        <div className="mt-1 flex items-center gap-1 text-[9.5px] leading-none text-ink-faint/80">
+          <span className="inline-block h-2 w-px bg-white/45" />{markerLabel}
+        </div>
+      )}
+      {hint && <div className="mt-1.5 text-[10px] leading-snug text-ink-faint">{hint}</div>}
     </div>
   );
 }
@@ -110,28 +160,37 @@ export function DeltaBar({
  * the eye counts them faster than it parses "5 red flags".
  */
 export function Tally({
-  count, tone = "amber", label, max = 14, emptyLabel = "None",
+  count, tone = "amber", label, max = 14, emptyLabel = "None", meaning,
 }: {
   count: number; tone?: VisualTone; label?: React.ReactNode; max?: number; emptyLabel?: string;
+  /** What one mark represents — a tally without this is just stripes. */
+  meaning?: React.ReactNode;
 }) {
   const c = TONE_COLOR[tone];
   if (!count) {
     return (
-      <div className="flex items-center gap-2">
-        <span className="h-1.5 w-6 rounded-full bg-white/[0.08]" />
-        <span className="text-[11px] font-medium text-ink-faint">{emptyLabel}</span>
+      <div>
+        <div className="flex items-center gap-2">
+          <span className="h-1.5 w-6 rounded-full bg-white/[0.08]" />
+          <span className="text-[11px] font-medium text-ink-faint">{emptyLabel}</span>
+        </div>
+        {meaning && <div className="mt-1 text-[9.5px] leading-snug text-ink-faint/70">{meaning}</div>}
       </div>
     );
   }
   const shown = Math.min(count, max);
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {Array.from({ length: shown }).map((_, i) => (
-        <span key={i} className="h-3.5 w-1.5 rounded-full"
-          style={{ background: c, opacity: 0.45 + (0.55 * (i + 1)) / shown }} />
-      ))}
-      {count > max && <span className="text-[11px] font-semibold tabular-nums" style={{ color: c }}>+{count - max}</span>}
-      {label && <span className="ml-1 text-[11px] text-ink-faint">{label}</span>}
+    <div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-sm font-bold tabular-nums" style={{ color: c }}>{count}</span>
+        {Array.from({ length: shown }).map((_, i) => (
+          <span key={i} className="h-3.5 w-1.5 rounded-full"
+            style={{ background: c, opacity: 0.45 + (0.55 * (i + 1)) / shown }} />
+        ))}
+        {count > max && <span className="text-[11px] font-semibold tabular-nums" style={{ color: c }}>+{count - max}</span>}
+        {label && <span className="ml-1 text-[11px] text-ink-muted"><Explain>{label}</Explain></span>}
+      </div>
+      {meaning && <div className="mt-1 text-[9.5px] leading-snug text-ink-faint/70">{meaning}</div>}
     </div>
   );
 }
@@ -158,22 +217,44 @@ export function PositionShift({
   );
 }
 
-/** A trend, small enough to live inside a card. Lower-is-better inverts the tone. */
+/**
+ * A trend with its axis. An unlabelled line says "something changed"; the same
+ * line with its endpoints named says what changed, over what, and by how much.
+ */
 export function Sparkline({
-  points, tone = "speed", width = 96, height = 24, lowerIsBetter = true,
-}: { points: number[]; tone?: VisualTone; width?: number; height?: number; lowerIsBetter?: boolean }) {
+  points, labels, tone = "speed", width = 120, height = 28, lowerIsBetter = true, valueFmt,
+}: {
+  points: number[];
+  /** Names for the first and last point, e.g. ["Q1", "Q3"]. */
+  labels?: [string, string];
+  tone?: VisualTone; width?: number; height?: number; lowerIsBetter?: boolean;
+  valueFmt?: (v: number) => string;
+}) {
   if (points.length < 2) return null;
   const lo = Math.min(...points), hi = Math.max(...points);
   const span = hi - lo || 1;
   const step = width / (points.length - 1);
-  const d = points.map((p, i) => `${i === 0 ? "M" : "L"}${(i * step).toFixed(1)},${(height - ((p - lo) / span) * (height - 4) - 2).toFixed(1)}`).join(" ");
-  const improving = lowerIsBetter ? points[points.length - 1] < points[0] : points[points.length - 1] > points[0];
+  const y = (p: number) => height - ((p - lo) / span) * (height - 5) - 2.5;
+  const d = points.map((p, i) => `${i === 0 ? "M" : "L"}${(i * step).toFixed(1)},${y(p).toFixed(1)}`).join(" ");
+  const last = points[points.length - 1];
+  const improving = lowerIsBetter ? last < points[0] : last > points[0];
   const c = improving ? TONE_COLOR.good : TONE_COLOR[tone];
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="overflow-visible" aria-hidden>
-      <path d={d} fill="none" stroke={c} strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={width} cy={height - ((points[points.length - 1] - lo) / span) * (height - 4) - 2} r={2.5} fill={c} />
-    </svg>
+    <div className="min-w-0">
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="overflow-visible" aria-hidden>
+        <path d={`${d} L${width},${height} L0,${height} Z`} fill={c} opacity={0.1} />
+        <path d={d} fill="none" stroke={c} strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx={0} cy={y(points[0])} r={2} fill={c} opacity={0.6} />
+        <circle cx={width} cy={y(last)} r={2.75} fill={c} />
+      </svg>
+      {labels && (
+        <div className="mt-0.5 flex justify-between text-[9.5px] leading-none tabular-nums text-ink-faint/70"
+          style={{ width }}>
+          <span>{labels[0]}{valueFmt ? ` ${valueFmt(points[0])}` : ""}</span>
+          <span>{labels[1]}{valueFmt ? ` ${valueFmt(last)}` : ""}</span>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -200,17 +281,22 @@ export function SectorChips({ owned, total = 3 }: { owned: boolean[]; total?: nu
  */
 export function StatStrip({
   items, className,
-}: { items: { label: React.ReactNode; value: React.ReactNode; tone?: VisualTone }[]; className?: string }) {
+}: {
+  items: { label: React.ReactNode; value: React.ReactNode; tone?: VisualTone;
+           sub?: React.ReactNode; term?: string }[];
+  className?: string;
+}) {
   if (!items.length) return null;
   return (
     <div className={cx("flex flex-wrap gap-x-6 gap-y-3", className)}>
       {items.map((it, i) => (
         <div key={i} className="min-w-0">
-          <VisualLabel>{it.label}</VisualLabel>
+          <VisualLabel term={it.term}>{it.label}</VisualLabel>
           <div className={cx("mt-0.5 text-lg font-bold leading-none tabular-nums tracking-tight",
             it.tone ? toneText[it.tone] : "text-ink")}>
             {it.value}
           </div>
+          {it.sub && <div className="mt-1 text-[10px] leading-none text-ink-faint">{it.sub}</div>}
         </div>
       ))}
     </div>

@@ -42,7 +42,11 @@ interface DriverStat {
   compounds: Compound[]; avgPos?: number | null; ledLaps: number;
 }
 type MomentKind = EventKind | "story" | "finish";
-interface Moment { id: string; lap: number; kind: MomentKind; label: string; insight?: RaceInsight; }
+interface Moment {
+  id: string; lap: number; kind: MomentKind; label: string; insight?: RaceInsight;
+  /** Neutralisations span laps; a strategy beat is a single instant. */
+  endLap?: number;
+}
 interface Mover { code: string; d: number; from: number; to: number; }
 
 const momentColor = (k: MomentKind) => (k in EVENT ? EVENT[k as EventKind].color : NEUTRAL_ACCENT);
@@ -170,7 +174,9 @@ export function PositionChart({
   // panel is reserved for neutralisations and the strategy beats that mattered.
   const moments = useMemo<Moment[]>(() => {
     const out: Omit<Moment, "id">[] = [];
-    for (const w of windows) out.push({ lap: w.start, kind: w.kind, label: EVENT[w.kind].label });
+    for (const w of windows) {
+      out.push({ lap: w.start, kind: w.kind, label: EVENT[w.kind].label, endLap: w.end });
+    }
     const beats: RaceInsight[] = [...(strategy?.turning_points ?? []), ...(strategy?.insights ?? [])];
     for (const b of beats) {
       const lap = b.lap_range?.[0];
@@ -337,17 +343,34 @@ export function PositionChart({
         {/* selecting a Key Moment focuses the chart on that beat the same way
             focusing a driver does: the field recedes and the moment, drawn
             crisply on top, dominates */}
+        {/* A Safety Car is not an instant — it is a stretch of the race where
+            the rules change. Selecting one lights the entire period and breathes
+            it, so the user reads a span of laps rather than a single marker. */}
         {(() => {
           const om = openMoment != null ? moments.find((m) => m.id === openMoment) : null;
           if (!om || width === 0) return null;
           const c = momentColor(om.kind);
+          const x1 = lapToX(om.lap);
+          const spans = om.endLap != null && om.endLap > om.lap;
+          const x2 = spans ? lapToX(om.endLap!) : x1;
+          const w = Math.max(2, x2 - x1);
           return (
             <div className="pointer-events-none absolute z-20"
-              style={{ left: lapToX(om.lap), top: M.top, bottom: M.bottom + 18 }}>
+              style={{ left: x1, width: spans ? w : 0, top: M.top, bottom: M.bottom + 18 }}>
+              {spans && (
+                <span className="moment-band absolute inset-y-0 left-0 rounded-sm"
+                  style={{ width: w, ["--pulse" as any]: c,
+                           background: `linear-gradient(180deg, ${c}33, ${c}1a 60%, ${c}0d)`,
+                           boxShadow: `inset 0 0 0 1px ${c}55` }} />
+              )}
               <span className="moment-line-overlay absolute inset-y-0 -left-px w-0.5 rounded"
                 style={{ background: c, boxShadow: `0 0 12px 0 ${c}` }} />
-              <span className="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rounded-full"
-                style={{ background: c, boxShadow: `0 0 10px 1px ${c}` }} />
+              {spans && (
+                <span className="moment-line-overlay absolute inset-y-0 -right-px w-0.5 rounded"
+                  style={{ background: c, boxShadow: `0 0 12px 0 ${c}` }} />
+              )}
+              <span className="absolute -top-1 h-2 w-2 -translate-x-1/2 rounded-full"
+                style={{ left: 0, background: c, boxShadow: `0 0 10px 1px ${c}` }} />
             </div>
           );
         })()}
@@ -455,14 +478,21 @@ function KeyMoments({ moments, narratives, open, simple, onToggle, onClose, driv
         {moments.map((m) => {
           const on = open === m.id; const c = momentColor(m.kind); const Icon = momentIcon(m.kind);
           return (
+            // The selected state always wins. Hover may only *reinforce* it —
+            // never dim it, never move it — so exploring the chart can't make
+            // the thing you deliberately chose look less chosen than its
+            // neighbours.
             <button key={m.id} onClick={() => onToggle(m.id)} aria-expanded={on}
               className={cx("group relative flex min-w-[150px] flex-1 flex-col gap-1.5 rounded-xl border p-2.5 text-left transition-all duration-200",
-                on ? "accent-breathing bg-white/[0.07] -translate-y-0.5"
+                on ? "accent-breathing -translate-y-0.5 bg-white/[0.09] hover:bg-white/[0.12]"
                    : "bg-white/[0.02] hover:-translate-y-0.5 hover:bg-white/[0.05] hover:[box-shadow:0_0_0_1.5px_var(--mc),0_12px_26px_-10px_rgba(0,0,0,.6)]")}
               style={{ ["--mc" as any]: c, borderColor: on ? c : `${c}55`, ...(on ? { ["--pulse" as any]: `${c}66` } : {}) }}>
               <div className="flex items-center gap-1.5">
                 <Icon size={13} style={{ color: c }} />
-                <span className="rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide" style={{ background: `${c}22`, color: c }}>LAP {m.lap}</span>
+                <span className="rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums tracking-wide"
+                  style={{ background: `${c}22`, color: c }}>
+                  {m.endLap != null && m.endLap > m.lap ? `LAPS ${m.lap}–${m.endLap}` : `LAP ${m.lap}`}
+                </span>
               </div>
               <span className={cx("text-[13px] font-semibold leading-tight", on ? "text-ink" : "text-ink-muted group-hover:text-ink")}>{m.label}</span>
             </button>
@@ -476,8 +506,18 @@ function KeyMoments({ moments, narratives, open, simple, onToggle, onClose, driv
               {(() => { const Ic = momentIcon(openM.kind); return <Ic size={18} style={{ color: momentColor(openM.kind) }} />; })()}
             </span>
             <div className="min-w-0 flex-1">
-              <span className="rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ background: `${momentColor(openM.kind)}22`, color: momentColor(openM.kind) }}>LAP {openM.lap}</span>
+              <span className="rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums"
+                style={{ background: `${momentColor(openM.kind)}22`, color: momentColor(openM.kind) }}>
+                {openM.endLap != null && openM.endLap > openM.lap
+                  ? `LAPS ${openM.lap}–${openM.endLap}` : `LAP ${openM.lap}`}
+              </span>
               <div className="mt-0.5 text-base font-bold text-ink">{openM.label}</div>
+              {openM.endLap != null && openM.endLap > openM.lap && (
+                <div className="mt-0.5 text-[11px] text-ink-faint">
+                  {openM.endLap - openM.lap + 1} laps neutralised — the highlighted band on the chart
+                  is the whole period, not the moment it started.
+                </div>
+              )}
             </div>
             <CloseButton onClick={onClose} label="Collapse moment" />
           </div>

@@ -37,11 +37,17 @@ export interface InsightCardProps {
   info?: string;
   onClick?: () => void;
   className?: string;
+  /**
+   * Widen the card across the grid. A page of identical tiles reads as a
+   * template and invites the eye to skim past it; one card given room to
+   * breathe says "start here" without breaking the alignment.
+   */
+  feature?: boolean;
 }
 
 export function InsightCard({
   icon, label, value, tone = "neutral", sub, visual, caption,
-  driver, swatch, info, onClick, className,
+  driver, swatch, info, onClick, className, feature = false,
 }: InsightCardProps) {
   const interactive = !!onClick;
   const body = (
@@ -56,18 +62,33 @@ export function InsightCard({
 
       {/* the answer — always ink-white, so a driver's name never changes colour
           from one card to the next; tone lives in the glyph and the visual */}
-      <div className="mt-3 flex items-center gap-2.5">
-        {driver !== undefined && driver !== null && <DriverAvatar driver={driver} size={36} />}
-        {swatch && <span className="h-9 w-1.5 shrink-0 rounded-full" style={{ background: swatch }} />}
+      <div className={cx("flex items-center gap-2.5", feature ? "mt-4" : "mt-3")}>
+        {driver !== undefined && driver !== null && (
+          <DriverAvatar driver={driver} size={feature ? 52 : 36} />
+        )}
+        {swatch && (
+          <span className={cx("w-1.5 shrink-0 rounded-full", feature ? "h-12" : "h-9")}
+            style={{ background: swatch }} />
+        )}
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[19px] font-bold leading-tight tracking-tight text-ink">{value}</div>
-          {sub && <div className="mt-0.5 truncate text-xs text-ink-muted">{sub}</div>}
+          <div className={cx("truncate font-bold leading-tight tracking-tight text-ink",
+            feature ? "text-[26px]" : "text-[19px]")}>
+            {value}
+          </div>
+          {sub && (
+            <div className={cx("mt-0.5 truncate text-ink-muted", feature ? "text-sm" : "text-xs")}>
+              {sub}
+            </div>
+          )}
         </div>
       </div>
 
-      {visual && <div className="mt-3">{visual}</div>}
+      {visual && <div className={feature ? "mt-4" : "mt-3"}>{visual}</div>}
+      {/* mt-auto anchors the caption to the bottom, so a row of cards of
+          differing content still reads as one aligned row */}
       {caption && (
-        <div className={cx("text-[11px] leading-snug text-ink-faint", visual ? "mt-2" : "mt-3")}>
+        <div className={cx("mt-auto pt-2 text-[11px] leading-snug text-ink-faint",
+          !visual && "pt-3")}>
           {caption}
         </div>
       )}
@@ -76,6 +97,7 @@ export function InsightCard({
 
   const cls = cx(
     "panel flex flex-col p-4 text-left",
+    feature && "sm:col-span-2 sm:p-5",
     interactive && "panel-hover cursor-pointer",
     className,
   );

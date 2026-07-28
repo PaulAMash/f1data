@@ -45,6 +45,51 @@ export const GLOSSARY: Record<string, string> = {
   "representative lap": "A lap time that reflects genuine pace — not spoiled by traffic, weather or a mistake.",
   "teammate delta": "The gap between two drivers in identical cars — the cleanest measure of driver performance.",
   "session progression": "How the benchmark time falls from Q1 to Q3 as fuel comes down, softer tyres go on and the track gains grip.",
+
+  // --- session-state vocabulary -------------------------------------------
+  // Words the app puts in front of a user as a label or a statistic. Anything
+  // that appears in a card, meter, stat strip or column header belongs here:
+  // the micro-learning system wraps these automatically, so a term that isn't
+  // defined is a term that ships unexplained.
+  stoppage: "A red flag — the session is halted completely and cars return to the pit lane.",
+  stoppages: "Red flags: moments the session was halted completely and cars returned to the pit lane.",
+  neutralisation: "Any period where racing is suspended but the session continues — a Safety Car or a Virtual Safety Car.",
+  neutralisations: "Periods where racing was suspended but the session continued — Safety Cars and Virtual Safety Cars.",
+  neutralization: "Any period where racing is suspended but the session continues — a Safety Car or a Virtual Safety Car.",
+  neutralizations: "Periods where racing was suspended but the session continued — Safety Cars and Virtual Safety Cars.",
+  interruption: "Anything that stops or neutralises the session: a red flag, a Safety Car or a VSC. Local yellow flags are counted separately.",
+  interruptions: "Anything that stopped or neutralised the session: red flags, Safety Cars and VSCs. Local yellow flags are counted separately.",
+  "local yellow": "A yellow flag shown in one sector only. Drivers must slow through that sector, which ruins the lap — but the session keeps running.",
+  "local yellows": "Yellow flags shown in a single sector. Drivers must slow through that sector, ruining the lap — but the session keeps running.",
+  "red flag": "The session is stopped. Cars return to the pit lane and the clock is paused until it restarts.",
+  "cars timed": "How many drivers set a valid lap time. Cars that never ran, or whose only laps were deleted, aren't counted.",
+  retirement: "A car that stopped before the finish — mechanical failure, accident damage or a crash.",
+  retirements: "Cars that stopped before the finish — mechanical failure, accident damage or crashes.",
+  finishers: "Cars still running at the chequered flag, out of the number that started.",
+  margin: "The gap between first and second — how much the leader had in hand.",
+  "closest margin": "The smallest gap between any two neighbouring cars in the top ten — the tightest fight of the session.",
+  "grid penalty": "Places a driver loses on the starting grid as a steward's decision, usually for a component change or an on-track incident.",
+  starts: "The official starting grid position after penalties and steward decisions — which can differ from where a driver qualified.",
+  "pace advantage": "Who was quicker on track over the laps both drivers ran, with pit laps excluded. It measures speed, not the finishing gap.",
+  steadiness: "How tightly a driver's push laps cluster together. A metronomic driver repeats the same lap time; an erratic one doesn't.",
+  "time found": "How much quicker a driver's best lap got between their first run and their last, as the track gained grip and fuel came off.",
+  "track time": "How many laps a driver completed. More laps means more tyre and setup data for the team.",
+  spread: "The difference between the fastest and slowest lap in a set — small spread means consistent, large spread means erratic.",
+  "one-lap pace": "Outright speed over a single flying lap, on low fuel — what qualifying rewards.",
+  "long-run pace": "Median lap time over a driver's longest continuous run — the closest read on race pace available from practice.",
+  constructor: "The team that builds and enters the car. Both of a constructor's drivers use the same machinery, which is why teammate comparisons matter.",
+  constructors: "The teams that build and enter the cars. Both of a constructor's drivers use the same machinery, which is why teammate comparisons matter.",
+  "turning point": "The moment in the session that most changed the outcome — usually a neutralisation, a pit call or an incident.",
+  "lead change": "A lap where the two cars being compared swapped places.",
+  "pit stop": "A stop for fresh tyres. It costs roughly 20 seconds in total, so when you take one matters as much as how quick it is.",
+  "pit-lane loss": "The total time lost driving through the pit lane and standing still, compared with staying out on track.",
+  humidity: "How much moisture is in the air. High humidity reduces engine power slightly and can hint at rain arriving.",
+  wind: "Wind speed and direction. A headwind into a braking zone adds stability; a tailwind makes the car harder to slow.",
+  "air temp": "The ambient air temperature.",
+  "track temp": "The temperature of the tarmac itself, usually well above air temperature. It drives how quickly tyres reach — and pass — their working window.",
+  "working window": "The temperature range where a tyre compound gives its best grip. Too cold and it won't switch on; too hot and it grains or blisters.",
+  "chequered flag": "The flag that ends the session.",
+  "banker lap": "A safe, early lap set to guarantee a time on the board in case a red flag or rain ends the session prematurely.",
 };
 
 export function Term({ children, term }: { children: React.ReactNode; term?: string }) {

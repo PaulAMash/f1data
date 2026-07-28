@@ -19,6 +19,10 @@ export interface StoryHighlight {
   label: React.ReactNode;
   value: React.ReactNode;
   tone?: VisualTone;
+  /** A second line under the figure — the context that stops it being a bare number. */
+  sub?: React.ReactNode;
+  /** Glossary key, when the label reads differently from the term it teaches. */
+  term?: string;
 }
 
 export function StoryPanel({

@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/misc";
 import { InsightCard, InsightGrid } from "@/components/ui/InsightCard";
 import { StoryPanel } from "@/components/ui/StoryPanel";
 import { Meter, Tally } from "@/components/ui/Visuals";
-import { ConditionsCard, readConditions } from "@/components/charts/TrackConditions";
+import { TrackConditionsPanel, readConditions } from "@/components/charts/TrackConditions";
 import { PaceBoard } from "@/components/charts/PaceBoard";
 import { COMPOUND_COLOR, COMPOUND_SHORT } from "@/lib/compounds";
 import { fmtLap } from "@/lib/format";
@@ -35,6 +35,8 @@ function Story({ practice, session }: { practice: PracticeSummary; session: Race
 
   const timed = p.rows.filter((r) => r.best_lap != null);
   const maxLaps = Math.max(1, ...p.rows.map((r) => r.laps_completed));
+  const avgLaps = p.rows.length
+    ? p.rows.reduce((a, r) => a + r.laps_completed, 0) / p.rows.length : null;
   const maxImprovement = Math.max(0.001, ...p.rows.map((r) => r.improvement ?? 0));
   const spread = timed.length >= 2
     ? Math.max(0.001, (timed[timed.length - 1].gap_to_fastest ?? 0)) : null;
@@ -55,12 +57,17 @@ function Story({ practice, session }: { practice: PracticeSummary; session: Race
         highlights={[
           { label: "Fastest", value: lastName(nameOf(p.fastest_driver)), tone: "accent" },
           ...(p.fastest_lap != null ? [{ label: "Best lap", value: fmtLap(p.fastest_lap) }] : []),
-          { label: "Cars timed", value: timed.length },
-          { label: "Laps run", value: p.rows.reduce((s, r) => s + r.laps_completed, 0) },
+          { label: "Cars timed", term: "cars timed", value: timed.length },
+          { label: "Laps run", value: p.rows.reduce((s, r) => s + r.laps_completed, 0),
+            sub: "across the field" },
           ...(conditions?.track != null
-            ? [{ label: "Track", value: `${conditions.track.toFixed(0)}°`, tone: "amber" as const }] : []),
+            ? [{ label: "Track", term: "track temp", value: `${conditions.track.toFixed(0)}°`,
+                 tone: "amber" as const, sub: "at the flag" }] : []),
         ]}
       />
+
+      {/* the same slot as Qualifying and the Race — conditions never move */}
+      <TrackConditionsPanel session={session} />
 
       {/* the same card set, in the same shape, as Qualifying and the Race */}
       <InsightGrid cols={3}>
@@ -68,10 +75,11 @@ function Story({ practice, session }: { practice: PracticeSummary; session: Race
           value={nameOf(p.fastest_driver)} driver={driverOf(session, p.fastest_driver)}
           sub={fmtLap(p.fastest_lap)}
           visual={spread && row(p.fastest_driver) ? (
-            <Meter label="Clear of P2" tone="accent"
+            <Meter label="Clear of P2" labelTerm="one-lap pace" tone="accent"
               value={timed[1]?.gap_to_fastest != null ? `${timed[1].gap_to_fastest!.toFixed(3)}s` : "—"}
               pct={((timed[1]?.gap_to_fastest ?? 0) / spread) * 100}
-              hint="Quickest single lap of the session." />
+              scaleMin="Level" scaleMax={`${spread.toFixed(2)}s — whole field`}
+              hint="How far clear their best lap was, drawn against the spread from first to last." />
           ) : undefined}
           caption={spread ? undefined : "Quickest single lap of the session."} />
 
@@ -81,10 +89,11 @@ function Story({ practice, session }: { practice: PracticeSummary; session: Race
             ? `${fmtLap(row(p.best_long_run_driver)!.long_run_pace)} over ${row(p.best_long_run_driver)!.long_run_laps} laps`
             : undefined}
           visual={longSpread && longs[1]?.long_run_pace != null ? (
-            <Meter label="Clear of next" tone="speed"
+            <Meter label="Clear of next" labelTerm="long-run pace" tone="speed"
               value={`${(longs[1].long_run_pace! - bestLong!).toFixed(3)}s`}
               pct={((longs[1].long_run_pace! - bestLong!) / longSpread) * 100}
-              hint="The best read on race pace, on higher fuel." />
+              scaleMin="Level" scaleMax={`${longSpread.toFixed(2)}s — whole field`}
+              hint="Median pace over their longest run — the closest read on Sunday available from a Friday." />
           ) : undefined}
           caption={longSpread ? undefined : "Best read on race pace, on higher fuel."} />
 
@@ -92,19 +101,23 @@ function Story({ practice, session }: { practice: PracticeSummary; session: Race
           value={nameOf(p.most_laps_driver)} driver={driverOf(session, p.most_laps_driver)}
           sub={row(p.most_laps_driver)?.team}
           visual={row(p.most_laps_driver) ? (
-            <Meter label="Track time" tone="violet"
+            <Meter label="Track time" labelTerm="track time" tone="violet"
               value={`${row(p.most_laps_driver)!.laps_completed} laps`}
               pct={(row(p.most_laps_driver)!.laps_completed / maxLaps) * 100}
-              hint="Most track time — the richest tyre and setup data." />
+              scaleMin="0" scaleMax={`${maxLaps} laps`}
+              marker={avgLaps ? (avgLaps / maxLaps) * 100 : undefined}
+              markerLabel={avgLaps ? `Field average ${avgLaps.toFixed(0)} laps` : undefined}
+              hint="More laps means more tyre and setup data — and a better read on race pace." />
           ) : undefined} />
 
         <InsightCard icon={<Clock size={14} />} tone="good" label="Most improved"
           value={nameOf(p.most_improved_driver)} driver={driverOf(session, p.most_improved_driver)}
           visual={row(p.most_improved_driver)?.improvement != null ? (
-            <Meter label="Time found" tone="good"
+            <Meter label="Time found" labelTerm="time found" tone="good"
               value={`−${row(p.most_improved_driver)!.improvement!.toFixed(2)}s`}
               pct={(row(p.most_improved_driver)!.improvement! / maxImprovement) * 100}
-              hint="Gained the most as the track rubbered in." />
+              scaleMin="No gain" scaleMax={`−${maxImprovement.toFixed(2)}s`}
+              hint="How much quicker their best lap got between their early runs and their last — mostly the track rubbering in." />
           ) : undefined}
           caption={row(p.most_improved_driver)?.improvement == null
             ? "Gained the most as the track rubbered in." : undefined} />
@@ -112,13 +125,12 @@ function Story({ practice, session }: { practice: PracticeSummary; session: Race
         <InsightCard icon={<Timer size={14} />} tone={p.track_evolving ? "amber" : "neutral"}
           label="Track evolution" value={p.track_evolving ? "Getting faster" : "Stable"}
           visual={<Tally count={p.rows.filter((r) => (r.improvement ?? 0) > 0.2).length} tone="amber"
-            label="drivers found real time" emptyLabel="Nobody found meaningful time" />}
+            label={`of ${p.rows.length} drivers improved`}
+            emptyLabel="Nobody found meaningful time"
+            meaning="One mark = a driver who found more than two tenths between their first run and their last." />}
           caption={p.track_evolving
             ? "Grip built through the session — later runs carried more weight."
             : "Lap times held steady across the session."} />
-
-        {/* weather matters most in practice: it sets tyre and long-run reads */}
-        <ConditionsCard session={session} />
       </InsightGrid>
 
       <Timesheet practice={practice} session={session} />

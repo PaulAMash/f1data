@@ -8,7 +8,6 @@ import { DriverAvatar, DriverBadge } from "@/components/ui/DriverBadge";
 import { StatTile } from "@/components/ui/StatTile";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { IconTile, type VisualTone } from "@/components/ui/Visuals";
-import { ConditionsCard } from "@/components/charts/TrackConditions";
 import { cx, fmtGap, fmtLap, fmtSec, netBadge } from "@/lib/format";
 import { derivePenalties, finalPenalties, penaltiesByDriver } from "@/lib/penalties";
 import { PenaltyBadges } from "@/components/ui/PenaltyBadge";
@@ -184,8 +183,6 @@ export function RaceOverview({
             session={session} maxNet={maxNet} />
           <MoverList title="Biggest losers" tone="down" rows={strategy.biggest_losers}
             session={session} maxNet={maxNet} />
-          {/* weather reads exactly as it does on Practice and Qualifying */}
-          <ConditionsCard session={session} fallback={strategy.weather_summary} />
         </div>
       </div>
     </div>

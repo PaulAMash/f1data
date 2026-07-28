@@ -110,6 +110,13 @@ body {
 /* the selected Key-Moment marker, drawn above the dimmed plot */
 @keyframes overlay-breath { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
 .moment-line-overlay { animation: overlay-breath 1.8s ease-in-out infinite; }
+/* A neutralisation spans laps, so the whole region breathes — not just the
+   marker at its start. The pulse is the region telling you it IS a region. */
+@keyframes band-breath {
+  0%, 100% { opacity: .95; box-shadow: inset 0 0 0 1px var(--pulse), 0 0 18px -6px var(--pulse); }
+  50%      { opacity: .55; box-shadow: inset 0 0 0 1px var(--pulse), 0 0 4px -2px var(--pulse); }
+}
+.moment-band { animation: band-breath 2.2s ease-in-out infinite; }
 /* pit-stop markers breathe gently so they're easy to pick out while scanning */
 @keyframes pit-breath { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
 .pit-dot { animation: pit-breath 1.8s ease-in-out infinite; }
@@ -118,5 +125,5 @@ body {
 .badge-breathing { animation: badge-breath 1.9s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
   .moment-line line, .focus-halo path.recharts-curve, .accent-breathing, .pit-dot,
-  .badge-breathing, .tip-breathing, .moment-line-overlay { animation: none; }
+  .badge-breathing, .tip-breathing, .moment-line-overlay, .moment-band { animation: none; }
 }

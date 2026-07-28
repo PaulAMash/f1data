@@ -26,6 +26,69 @@ never in a driver's name — a name must not change colour from one card to the 
 
 ---
 
+## A visual must explain itself
+
+A bar that only shows a fill is decoration. Before shipping any visualisation,
+answer all four:
+
+1. **What is it measuring?** → the label, wired to the glossary.
+2. **Against what?** → `scaleMin` / `scaleMax`. A meter without endpoints is a mood ring.
+3. **Compared with whom?** → `marker` + `markerLabel` (usually the field average).
+4. **Why should the reader care?** → `hint`, one line, in plain English.
+
+`Tally` has the same obligation: `meaning` states what a single mark represents
+("one mark = a sector under yellow"). `Sparkline` takes `labels` so its two ends
+are named. Never present a normalised 0–100 score without saying what 100 is.
+
+---
+
+## Micro-learning is automatic
+
+`Explain` wraps any string that matches the glossary in `ui/Term`, and every
+micro-label in the system (`VisualLabel`, `Meter`, `Tally`, `StatStrip`,
+`InsightCard`) routes through it. Consequently:
+
+* Adding a term to `GLOSSARY` lights it up everywhere it already appears.
+* Wrapping is **opt-out** (`plain`), not opt-in — the failure mode we guard
+  against is jargon shipping without an explanation.
+* When a label reads differently from the term it teaches, pass `term` /
+  `labelTerm` with the glossary key.
+
+If you put a Formula 1 word in front of a user, it belongs in the glossary.
+
+---
+
+## Composition: aligned, not templated
+
+A page of identical tiles reads as a template and invites the eye to skim past
+it. Two devices break the rhythm without breaking the grid:
+
+* **Feature panels** — `TrackConditionsPanel` spans the full width; it is a band,
+  not a tile.
+* **Feature cards** — `<InsightCard feature>` spans two columns with a larger
+  portrait and value, marking where a section starts.
+
+Everything still snaps to the same columns and the same gap. Captions use
+`mt-auto` so a row of cards with different content still bottom-aligns.
+
+**Conditions have exactly one home**: the full-width panel directly beneath the
+story, on Practice, Qualifying, Sprint and the Race. Nobody should re-find the
+same information when they change session.
+
+---
+
+## Selection beats hover
+
+When a user has deliberately selected something, hover may only *reinforce* it —
+never dim it, never move it. Exploring the page must not make the chosen thing
+look less chosen than its neighbours.
+
+Neutralisations are **periods, not instants**: selecting a Safety Car or VSC
+lights the whole lap range (`.moment-band`, which breathes) with both edges
+marked, and every label states the range — `LAPS 34–37`, never `LAP 34`.
+
+---
+
 ## Surfaces
 
 Two levels, and the radius encodes which one you're on:
