@@ -469,3 +469,65 @@ def test_retirement_lap_flows_into_pace_verdict():
     _, pace = analyze(s)
     p = next(x for x in pace if x.driver == "RUS")
     assert p.verdict == "Retired after lap 18"
+
+
+def test_unknown_compound_is_recovered_from_the_laps_that_do_have_one():
+    """A stint's compound comes from the first lap of the stint — which is the
+    out-lap, and out-laps are exactly the laps the timing feeds leave blank. One
+    missing value used to grey out a whole stint and label it "Unknown" while
+    every other lap in it named the tyre."""
+    from app.analysis.normalize import recover_stint_compounds
+    from app.models import Compound, Lap, RaceSession, SessionType, Stint
+
+    session = RaceSession(
+        year=2024, grand_prix="Testing", session_type=SessionType.RACE,
+        category="race", total_laps=10,
+        stints=[
+            # the out-lap had no compound, so the stint was built as UNKNOWN
+            Stint(driver="VER", stint=2, compound=Compound.UNKNOWN,
+                  start_lap=4, end_lap=6, laps=3),
+            # a stint the source genuinely never published a tyre for
+            Stint(driver="NOR", stint=2, compound=Compound.UNKNOWN,
+                  start_lap=4, end_lap=5, laps=2),
+        ],
+        laps=[
+            Lap(driver="VER", lap=4, stint=2, compound=Compound.UNKNOWN, pit_out=True),
+            Lap(driver="VER", lap=5, stint=2, compound=Compound.HARD),
+            Lap(driver="VER", lap=6, stint=2, compound=Compound.HARD),
+            Lap(driver="NOR", lap=4, stint=2, compound=Compound.UNKNOWN),
+            Lap(driver="NOR", lap=5, stint=2, compound=Compound.UNKNOWN),
+        ],
+    )
+
+    recover_stint_compounds(session)
+
+    ver = next(s for s in session.stints if s.driver == "VER")
+    assert ver.compound == Compound.HARD, "stint should adopt the tyre its own laps report"
+    # and the blank out-lap is filled from the stint, so pace analysis (which
+    # skips laps with no compound) sees the whole run
+    assert all(l.compound == Compound.HARD for l in session.laps if l.driver == "VER")
+
+    nor = next(s for s in session.stints if s.driver == "NOR")
+    assert nor.compound == Compound.UNKNOWN, "nothing is invented when nothing was recorded"
+
+
+def test_compound_recovery_takes_the_majority_not_the_first_lap():
+    """One mislabelled lap must not decide what tyre a whole stint was on."""
+    from app.analysis.normalize import recover_stint_compounds
+    from app.models import Compound, Lap, RaceSession, SessionType, Stint
+
+    session = RaceSession(
+        year=2024, grand_prix="Testing", session_type=SessionType.RACE,
+        category="race", total_laps=10,
+        stints=[Stint(driver="LEC", stint=1, compound=Compound.UNKNOWN,
+                      start_lap=1, end_lap=4, laps=4)],
+        laps=[
+            Lap(driver="LEC", lap=1, stint=1, compound=Compound.SOFT),
+            Lap(driver="LEC", lap=2, stint=1, compound=Compound.MEDIUM),
+            Lap(driver="LEC", lap=3, stint=1, compound=Compound.MEDIUM),
+            Lap(driver="LEC", lap=4, stint=1, compound=Compound.MEDIUM),
+        ],
+    )
+
+    recover_stint_compounds(session)
+    assert session.stints[0].compound == Compound.MEDIUM

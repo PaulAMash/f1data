@@ -10,6 +10,10 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { Term } from "@/components/ui/Term";
 import { DriverBadge } from "@/components/ui/DriverBadge";
+import {
+  CHART_MARGIN, GRID_COLOR, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE, TOOLTIP_STYLE,
+  axisLine, axisTick,
+} from "@/lib/chartTheme";
 import { PaceBoard } from "./PaceBoard";
 import { useIsSimple } from "@/lib/mode";
 import { cx, fmtLap } from "@/lib/format";
@@ -233,19 +237,18 @@ export function PaceAnalysis({
             </div>
             <div className="h-[300px] w-full">
               <ResponsiveContainer>
-                <LineChart data={data} margin={{ top: 6, right: 16, bottom: 4, left: 8 }}>
-                  <CartesianGrid strokeDasharray="2 4" />
+                <LineChart data={data} margin={CHART_MARGIN}>
+                  <CartesianGrid strokeDasharray="2 4" stroke={GRID_COLOR} />
                   {session.track_status_windows.map((w, i) => (
                     <ReferenceArea key={i} x1={w.start_lap} x2={w.end_lap} fill="rgba(255,176,32,0.08)" />
                   ))}
                   <XAxis dataKey="lap" type="number" domain={[1, session.total_laps]}
-                    tick={{ fill: "#5f6b84", fontSize: 11 }} tickLine={false}
-                    axisLine={{ stroke: "rgba(255,255,255,0.08)" }} />
+                    tick={axisTick()} tickLine={false} tickMargin={6} height={26} axisLine={axisLine} />
                   <YAxis domain={yDomain} tickFormatter={(v) => fmtLap(v)}
-                    tick={{ fill: "#5f6b84", fontSize: 10 }} width={58} tickLine={false}
-                    axisLine={{ stroke: "rgba(255,255,255,0.08)" }} />
-                  <Tooltip isAnimationActive={false}
-                    contentStyle={{ background: "#0f131d", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, fontSize: 12 }}
+                    tick={axisTick()} width={62} tickLine={false}
+                    padding={{ top: 6, bottom: 4 }} axisLine={axisLine} />
+                  <Tooltip isAnimationActive={false} contentStyle={TOOLTIP_STYLE}
+                    labelStyle={TOOLTIP_LABEL_STYLE} itemStyle={TOOLTIP_ITEM_STYLE}
                     labelFormatter={(l) => `Lap ${l}`} formatter={(v: any, k: any) => [fmtLap(v), k]} />
                   {plot.map((code) => (
                     <Line key={code} dataKey={code} stroke={colorFor(code)} strokeWidth={1.8}
@@ -392,19 +395,18 @@ function TeamTrend({ session, pace, teams }: {
       </div>
       <div className="h-[300px] w-full">
         <ResponsiveContainer>
-          <LineChart data={data} margin={{ top: 6, right: 16, bottom: 4, left: 8 }}>
-            <CartesianGrid strokeDasharray="2 4" />
+          <LineChart data={data} margin={CHART_MARGIN}>
+            <CartesianGrid strokeDasharray="2 4" stroke={GRID_COLOR} />
             {session.track_status_windows.map((w, i) => (
               <ReferenceArea key={i} x1={w.start_lap} x2={w.end_lap} fill="rgba(255,176,32,0.08)" />
             ))}
             <XAxis dataKey="lap" type="number" domain={[1, session.total_laps]}
-              tick={{ fill: "#5f6b84", fontSize: 11 }} tickLine={false}
-              axisLine={{ stroke: "rgba(255,255,255,0.08)" }} />
+              tick={axisTick()} tickLine={false} tickMargin={6} height={26} axisLine={axisLine} />
             <YAxis domain={yDomain} tickFormatter={(v) => fmtLap(v)}
-              tick={{ fill: "#5f6b84", fontSize: 10 }} width={58} tickLine={false}
-              axisLine={{ stroke: "rgba(255,255,255,0.08)" }} />
-            <Tooltip isAnimationActive={false}
-              contentStyle={{ background: "#0f131d", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, fontSize: 12 }}
+              tick={axisTick()} width={62} tickLine={false}
+              padding={{ top: 6, bottom: 4 }} axisLine={axisLine} />
+            <Tooltip isAnimationActive={false} contentStyle={TOOLTIP_STYLE}
+              labelStyle={TOOLTIP_LABEL_STYLE} itemStyle={TOOLTIP_ITEM_STYLE}
               labelFormatter={(l) => `Lap ${l}`} formatter={(v: any, k: any) => [fmtLap(v), k]} />
             {plotTeams.map((t) => (
               <Line key={t.team} dataKey={t.team} stroke={t.color} strokeWidth={1.8}

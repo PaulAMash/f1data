@@ -8,6 +8,7 @@ import { Users, X, ArrowUpRight, TrendingUp, TrendingDown, Circle, ChevronDown }
 import type { RaceSession, Driver, StrategySummary, Compound, RaceInsight, DriverPaceSummary } from "@/lib/types";
 import { COMPOUND_COLOR, COMPOUND_LABEL, COMPOUND_SHORT } from "@/lib/compounds";
 import { EVENT, NEUTRAL_ACCENT, deriveWindows, lapStatusMap, type EventKind, type Win } from "@/lib/raceEvents";
+import { AXIS_TICK_COLOR, axisLine, axisTick } from "@/lib/chartTheme";
 import { useIsSimple } from "@/lib/mode";
 import { cx, fmtSec, fmtLap, ordinal } from "@/lib/format";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
@@ -399,14 +400,17 @@ export function PositionChart({
                 ) : null;
               })()}
               <XAxis dataKey="lap" type="number" domain={[1, total]} allowDecimals={false}
-                tick={{ fill: "#5f6b84", fontSize: simple ? 12 : 11 }} tickLine={false} tickMargin={8}
-                axisLine={{ stroke: "rgba(255,255,255,0.07)" }}
-                label={{ value: "Lap", position: "insideBottom", offset: -14, fill: "#5f6b84", fontSize: 11 }} />
+                tick={axisTick(simple ? 12 : 11)} tickLine={false} tickMargin={8}
+                axisLine={axisLine}
+                label={{ value: "Lap", position: "insideBottom", offset: -14, fill: AXIS_TICK_COLOR, fontSize: 11 }} />
+              {/* padding stops P1 and the last classified car being drawn on the
+                  plot boundary, where half the stroke falls outside the surface */}
               <YAxis type="number" reversed domain={[1, yMax]} interval={0}
                 ticks={Array.from({ length: yMax }, (_, i) => i + 1)}
-                tick={{ fill: "#5f6b84", fontSize: simple ? 12 : 11 }} tickLine={false} tickMargin={6}
-                width={Y_AXIS_W} axisLine={{ stroke: "rgba(255,255,255,0.07)" }}
-                label={{ value: "Position", angle: -90, position: "insideLeft", offset: 4, fill: "#5f6b84", fontSize: 11 }} />
+                tick={axisTick(simple ? 12 : 11)} tickLine={false} tickMargin={6}
+                padding={{ top: 5, bottom: 5 }}
+                width={Y_AXIS_W} axisLine={axisLine}
+                label={{ value: "Position", angle: -90, position: "insideLeft", offset: 4, fill: AXIS_TICK_COLOR, fontSize: 11 }} />
               <Tooltip isAnimationActive={false} allowEscapeViewBox={{ x: false, y: false }}
                 cursor={{ stroke: "rgba(255,255,255,0.18)", strokeWidth: 1 }} wrapperStyle={{ zIndex: 30, outline: "none" }}
                 content={(p: any) => (
@@ -523,7 +527,7 @@ function KeyMoments({ moments, narratives, open, simple, onToggle, onClose, driv
               {(() => { const Ic = momentIcon(openM.kind); return <Ic size={18} style={{ color: momentColor(openM.kind) }} />; })()}
             </span>
             <div className="min-w-0 flex-1">
-              <span className="rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums"
+              <span className="rounded px-1.5 py-0.5 text-[11px] font-bold tabular-nums"
                 style={{ background: `${momentColor(openM.kind)}22`, color: momentColor(openM.kind) }}>
                 {openM.endLap != null && openM.endLap > openM.lap
                   ? `LAPS ${openM.lap}–${openM.endLap}` : `LAP ${openM.lap}`}
@@ -598,7 +602,7 @@ function PositionFocusCard({ driver, stat, pace, stints, posAt, simple, takeaway
           <div className="mt-3 flex items-center gap-1.5">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Tyres</span>
             {stat.compounds.map((c, i) => (
-              <span key={i} className="rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ background: COMPOUND_COLOR[c], color: "#0b0e16" }}>{COMPOUND_LABEL[c]}</span>
+              <span key={i} className="rounded px-1.5 py-0.5 text-[11px] font-bold" style={{ background: COMPOUND_COLOR[c], color: "#0b0e16" }}>{COMPOUND_LABEL[c]}</span>
             ))}
           </div>
         )
@@ -607,7 +611,7 @@ function PositionFocusCard({ driver, stat, pace, stints, posAt, simple, takeaway
           {secondary.some((s) => s.value !== "—") && (
             <div className="flex flex-wrap gap-x-6 gap-y-1.5 border-t border-white/[0.06] pt-3">
               {secondary.map((s) => (
-                <div key={s.label}><span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">{s.label}</span>
+                <div key={s.label}><span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{s.label}</span>
                   <div className="text-sm font-semibold tabular-nums text-ink">{s.value}</div></div>
               ))}
             </div>
@@ -623,7 +627,7 @@ function StintTimeline({ stints, code, posAt }: { stints: RaceSession["stints"];
   const ordered = [...stints].sort((a, b) => a.start_lap - b.start_lap);
   return (
     <div className="border-t border-white/[0.06] pt-3">
-      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Stints · position by stint</div>
+      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Stints · position by stint</div>
       <div className="flex gap-1">
         {ordered.map((s, i) => {
           const laps = s.end_lap - s.start_lap + 1;
@@ -631,8 +635,8 @@ function StintTimeline({ stints, code, posAt }: { stints: RaceSession["stints"];
           return (
             <div key={i} className="min-w-0 rounded-md px-2 py-1.5 text-center" style={{ flexGrow: laps, background: `${COMPOUND_COLOR[s.compound]}22`, boxShadow: `inset 0 -2px 0 0 ${COMPOUND_COLOR[s.compound]}` }}
               title={`${COMPOUND_LABEL[s.compound]} · laps ${s.start_lap}-${s.end_lap}`}>
-              <div className="text-[10px] font-bold" style={{ color: COMPOUND_COLOR[s.compound] }}>{COMPOUND_SHORT[s.compound]} · {laps}L</div>
-              {pStart != null && pEnd != null && <div className="text-[10px] tabular-nums text-ink-muted">P{pStart}→P{pEnd}</div>}
+              <div className="text-[11px] font-bold" style={{ color: COMPOUND_COLOR[s.compound] }}>{COMPOUND_SHORT[s.compound]} · {laps}L</div>
+              {pStart != null && pEnd != null && <div className="text-[11px] tabular-nums text-ink-muted">P{pStart}→P{pEnd}</div>}
             </div>
           );
         })}
@@ -679,7 +683,7 @@ function EventBand({ markers, lapToX, ready, simple, total }: {
               const meta = EVENT[m.kind]; const Icon = meta.icon;
               return (
                 <span key={i} className="group/mk relative">
-                  <span className={cx("flex cursor-default items-center gap-1 rounded-full border font-bold", simple ? "px-2.5 py-1 text-[11px]" : "px-2 py-0.5 text-[10px]")}
+                  <span className={cx("flex cursor-default items-center gap-1 rounded-full border font-bold", simple ? "px-2.5 py-1 text-[11px]" : "px-2 py-0.5 text-[11px]")}
                     style={{ borderColor: meta.color, color: meta.color, background: `${meta.color}1a` }}>
                     <Icon size={simple ? 13 : 11} /> {meta.code}
                   </span>
@@ -693,7 +697,7 @@ function EventBand({ markers, lapToX, ready, simple, total }: {
               );
             })}
           </div>
-          <span className="mt-0.5 text-[10px] tabular-nums text-ink-faint">L{lap}</span>
+          <span className="mt-0.5 text-[11px] tabular-nums text-ink-faint">L{lap}</span>
           <span className="mt-0.5 w-px flex-1" style={{ background: ms[0] ? EVENT[ms[0].kind].color : "#888", opacity: 0.55 }} />
         </div>
       ))}
@@ -757,26 +761,26 @@ function OrderTooltip({ active, label, info, drivers, visible, focus, simple, la
       <div className={cx("flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2")}
         style={sc ? { background: `${sc.color}18` } : undefined}>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Lap</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Lap</span>
           <span className="text-sm font-bold text-ink">{lap}</span>
           {sc && (
-            <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-extrabold"
+            <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-extrabold"
               style={{ background: sc.color, color: "#0b0e16" }}>
               {(() => { const Ic = sc.icon; return <Ic size={11} />; })()} {sc.code}
             </span>
           )}
         </div>
-        <span className="text-[10px] uppercase tracking-wider text-ink-faint">{rows.length} cars</span>
+        <span className="text-[11px] uppercase tracking-wider text-ink-faint">{rows.length} cars</span>
       </div>
       {focus && focusRead && <div className="border-b border-white/[0.06] bg-speed/[0.06] px-3 py-1.5 text-[11px] leading-snug text-ink">{focusRead}</div>}
       {!simple && spread != null && (
-        <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-1 text-[10px] text-ink-faint">
+        <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-1 text-[11px] text-ink-faint">
           <span>Leader <span className="font-semibold text-ink-muted">{leader.d.code}</span></span>
           <span>Field spread <span className="tabular-nums text-ink-muted">{fmtSec(spread)}</span></span>
         </div>
       )}
       {/* column labels — so "M8" reads as compound + age, not a mystery code */}
-      <div className={cx(grid, "px-3 pt-2 pb-1 text-[9px] font-semibold uppercase tracking-wider text-ink-faint/70")}>
+      <div className={cx(grid, "px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-faint")}>
         <span className="text-right">Pos</span><span /><span>{simple ? "Driver" : "Code"}</span>
         {!simple && <span>Driver</span>}<span>Tyre·age</span>{!simple && <span className="text-right">Gap</span>}
       </div>
@@ -797,8 +801,8 @@ function OrderTooltip({ active, label, info, drivers, visible, focus, simple, la
                 </>
               )}
               <span className="flex items-center gap-1">
-                <span className="rounded px-1 text-[10px] font-bold" style={{ background: COMPOUND_COLOR[i!.compound], color: "#0b0e16" }}>{COMPOUND_SHORT[i!.compound]}</span>
-                {i!.tyre_age != null && <span className="text-[10px] tabular-nums text-ink-faint">{i!.tyre_age}</span>}
+                <span className="rounded px-1 text-[11px] font-bold" style={{ background: COMPOUND_COLOR[i!.compound], color: "#0b0e16" }}>{COMPOUND_SHORT[i!.compound]}</span>
+                {i!.tyre_age != null && <span className="text-[11px] tabular-nums text-ink-faint">{i!.tyre_age}</span>}
               </span>
               {!simple && (
                 <span className="text-right text-[11px] tabular-nums">

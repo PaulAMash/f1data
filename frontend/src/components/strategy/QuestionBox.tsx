@@ -216,7 +216,7 @@ function AnswerCard({ a, onAsk }: { a: QuestionAnswer; onAsk?: (q: string) => vo
       {/* the conversation continues: engine-suggested follow-ups, one tap away */}
       {onAsk && (a.follow_ups?.length ?? 0) > 0 && a.kind !== "error" && (
         <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-white/[0.05] pt-2.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Follow up</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Follow up</span>
           {a.follow_ups.slice(0, 3).map((f) => (
             <button key={f} onClick={() => onAsk(f)}
               className="chip text-ink-muted transition-colors hover:border-accent/40 hover:text-ink">

@@ -67,7 +67,7 @@ function TempMeter({ label, value, min = 0, max = 60, icon }: {
     <div className="min-w-0 flex-1">
       <div className="mb-1 flex items-center gap-1.5">
         <span style={{ color: c }}>{icon}</span>
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">{label}</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{label}</span>
         <span className="ml-auto text-sm font-bold tabular-nums" style={{ color: c }}>
           {value.toFixed(0)}°
         </span>
@@ -110,7 +110,7 @@ export function TrackConditions({ session, compact = false }: { session: RaceSes
             <Navigation size={14} className="text-ink-muted transition-transform"
               style={{ transform: `rotate(${(r.windDir ?? 0) + 180}deg)` }} />
             <span className="text-xs font-semibold tabular-nums text-ink-muted">{r.wind.toFixed(1)}</span>
-            <span className="text-[10px] text-ink-faint">km/h</span>
+            <span className="text-[11px] text-ink-faint">km/h</span>
           </div>
         )}
       </div>
@@ -124,7 +124,7 @@ export function TrackConditions({ session, compact = false }: { session: RaceSes
         <div>
           <div className="mb-1 flex items-center gap-1.5">
             <Droplets size={12} className="text-sky-300" />
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Humidity</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Humidity</span>
             <span className="ml-auto text-sm font-bold tabular-nums text-sky-200">{r.humidity.toFixed(0)}%</span>
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">

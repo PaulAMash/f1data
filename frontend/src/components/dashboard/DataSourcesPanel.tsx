@@ -47,7 +47,7 @@ export function DataSourcesPanel({
   const missing: string[] = report?.report?.missing ?? [];
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid items-start gap-4 lg:grid-cols-2">
       <Card>
         <CardHeader title="Where this data came from"
           subtitle={"Which service provided each part of this session."

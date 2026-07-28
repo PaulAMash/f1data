@@ -21,13 +21,19 @@ export function Tabs({
           aria-selected={active === t.id}
           onClick={() => onChange(t.id)}
           className={cx(
-            "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+            "group/tab inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium",
+            "transition-all duration-200 ease-out",
             active === t.id
               ? "bg-accent/15 text-accent-soft ring-1 ring-accent/30"
-              : "text-ink-muted hover:bg-white/[0.04] hover:text-ink",
+              : "text-ink-muted hover:bg-white/[0.05] hover:text-ink",
           )}
         >
-          {t.icon}
+          {/* the icon leads the label into place — a small cue that a tab is a
+              thing you press, not a thing you read */}
+          <span className={cx("inline-flex transition-transform duration-200 ease-out",
+            active === t.id ? "scale-105" : "group-hover/tab:scale-110")}>
+            {t.icon}
+          </span>
           {t.label}
         </button>
       ))}

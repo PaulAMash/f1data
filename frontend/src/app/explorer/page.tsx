@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity, BookOpen, Database, GitCompareArrows, MessageSquareText,
   Gauge, Layers, LineChart, Timer, Wind, Braces, RefreshCw, AlertTriangle,
@@ -115,6 +115,31 @@ export default function ExplorerPage() {
     if (tab !== "data" && !tabs.some((t) => t.id === tab)) setTab(tabs[0].id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, isAdvanced]);
+
+  /* Changing what you're looking at returns you to its Story.
+   *
+   * The tab id was being preserved across sessions because "pace" happens to
+   * exist in all three tab sets — so choosing Qualifying after reading Practice
+   * pace dropped you into a qualifying pace table with no idea what had
+   * happened in the session. Every session is a new narrative and the Story is
+   * its front door; the deeper tabs are things you go to next, not things you
+   * arrive in. The same applies to changing Grand Prix or season, which is a
+   * bigger context switch again.
+   *
+   * The very first render is exempt so a shared ?tab= link still opens where it
+   * points. */
+  const lastSel = useRef<string | null>(null);
+  useEffect(() => {
+    // arm only once the real default has resolved, so resolving it doesn't
+    // itself count as a change and throw away a ?tab= deep link
+    if (!booted) return;
+    const key = `${sel.year}|${sel.gp}|${sel.session}`;
+    if (lastSel.current !== null && lastSel.current !== key) {
+      setTab("story");
+      setChartTab("position");
+    }
+    lastSel.current = key;
+  }, [booted, sel.year, sel.gp, sel.session]);
 
   const subtitle = useMemo(() => {
     if (!session) return "";

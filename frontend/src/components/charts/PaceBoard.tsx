@@ -5,6 +5,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { DriverAvatar, DriverBadge } from "@/components/ui/DriverBadge";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { EmptyState } from "@/components/ui/misc";
+import { useGrowIn } from "@/components/ui/Visuals";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
@@ -70,6 +71,7 @@ export function PaceBoard({
   prominentSwitch?: boolean;
 }) {
   const [active, setActive] = useState(views[0]?.id);
+  const grown = useGrowIn();
   const view = views.find((v) => v.id === active) ?? views[0];
   if (!view) return null;
 
@@ -86,11 +88,11 @@ export function PaceBoard({
       role="tablist" aria-label={`${title} view`}>
       {views.map((v) => (
         <button key={v.id} role="tab" aria-selected={v.id === view.id} onClick={() => setActive(v.id)}
-          className={cx("inline-flex items-center gap-1.5 rounded-md font-medium transition-colors",
+          className={cx("inline-flex items-center gap-1.5 rounded-md font-medium transition-all duration-200 ease-out",
             prominentSwitch ? "px-3 py-1.5" : "px-2.5 py-1",
             v.id === view.id
               ? "bg-accent/15 text-accent-soft ring-1 ring-accent/25"
-              : "text-ink-muted hover:bg-white/[0.04] hover:text-ink")}>
+              : "text-ink-muted hover:bg-white/[0.05] hover:text-ink")}>
           {v.icon} {v.label}
         </button>
       ))}
@@ -107,24 +109,24 @@ export function PaceBoard({
         ) : (
           <>
             {leader && (
-              <div className="mb-1 rounded-xl border border-white/[0.06] bg-base-800/40 p-3">
+              <div className="mb-1 rounded-xl border border-white/[0.07] bg-base-800/50 p-3">
                 <div className="flex items-center gap-3">
                   {leader.driver !== undefined
                     ? <DriverAvatar driver={leader.driver} size={38} />
                     : <span className="h-9 w-1.5 shrink-0 rounded-full" style={{ background: leader.color }} />}
                   <div className="min-w-0">
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-speed/85">
                       {view.heroLabel}
                     </div>
                     <div className="truncate text-sm font-bold text-ink">{leader.name}</div>
-                    {leader.sub && <div className="truncate text-[11px] text-ink-faint">{leader.sub}</div>}
+                    {leader.sub && <div className="truncate text-[11.5px] text-ink-muted">{leader.sub}</div>}
                   </div>
                   <span className="ml-auto shrink-0 text-sm font-semibold tabular-nums text-speed">
                     {leader.value}
                   </span>
                 </div>
                 {view.heroNote && (
-                  <p className="mt-2.5 border-t border-white/[0.05] pt-2.5 text-xs leading-relaxed text-ink-muted">
+                  <p className="mt-2.5 border-t border-white/[0.05] pt-2.5 text-[12.5px] leading-relaxed text-ink-muted">
                     {view.heroNote}
                   </p>
                 )}
@@ -133,7 +135,8 @@ export function PaceBoard({
 
             {/* the hero is #1 — the list continues from #2 rather than repeating them */}
             {rest.map((e, i) => (
-              <div key={e.key} className={cx("flex items-center gap-2.5", e.dim && "opacity-55")}>
+              <div key={e.key} className={cx("group/pace -mx-1 flex items-center gap-2.5 rounded-md px-1 py-0.5",
+                "transition-colors duration-200 hover:bg-white/[0.03]", e.dim && "opacity-60")}>
                 <span className="w-5 shrink-0 text-right text-[11px] tabular-nums text-ink-faint">{i + 2}</span>
                 {/* identity narrows on a phone so the bar and the time still
                     fit on one line instead of pushing the gap off-screen */}
@@ -147,8 +150,15 @@ export function PaceBoard({
                   </span>
                 )}
                 <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-white/[0.05]">
-                  <span className="block h-full rounded-full transition-[width] duration-500 ease-out"
-                    style={{ width: `${Math.max(6, 100 - (e.gap / maxGap) * 72)}%`, background: e.color }} />
+                  {/* every bar in the product measures itself into place on
+                      arrival; a staggered delay makes the board fill like a
+                      timing screen rather than a static table */}
+                  <span className="block h-full rounded-full transition-[width] duration-700 ease-out"
+                    style={{
+                      width: grown ? `${Math.max(6, 100 - (e.gap / maxGap) * 72)}%` : "0%",
+                      background: e.color,
+                      transitionDelay: `${Math.min(i, 14) * 22}ms`,
+                    }} />
                 </span>
                 <span className="w-[4.5rem] shrink-0 text-right text-xs tabular-nums text-ink">{e.value}</span>
                 {/* the note gets its own column so the gap is never displaced —
@@ -158,13 +168,13 @@ export function PaceBoard({
                     {e.note ?? ""}
                   </span>
                 )}
-                <span className="hidden w-16 shrink-0 text-right text-[11px] tabular-nums text-ink-faint sm:inline">
+                <span className="hidden w-16 shrink-0 text-right text-[11px] tabular-nums text-ink-faint transition-colors duration-200 group-hover/pace:text-ink-muted sm:inline">
                   {fmtGap(e.gap, i + 1)}
                 </span>
               </div>
             ))}
             {rest.length === 0 && (
-              <p className="text-xs text-ink-faint">Only one car has a comparable time in this session.</p>
+              <p className="text-[12.5px] text-ink-muted">Only one car has a comparable time in this session.</p>
             )}
           </>
         )}

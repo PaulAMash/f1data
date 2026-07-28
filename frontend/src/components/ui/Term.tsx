@@ -106,18 +106,22 @@ export function Term({ children, term }: { children: React.ReactNode; term?: str
         setPos({ x: r.left, y: r.top });
       }}
       onMouseLeave={() => setPos(null)}>
-      <span className={cx("cursor-help underline decoration-dotted decoration-ink-faint underline-offset-2")}>
+      <span className={cx("cursor-help underline decoration-dotted decoration-ink-faint underline-offset-2 transition-colors duration-200 hover:decoration-accent-soft")}>
         {children}
       </span>
       {pos && typeof document !== "undefined" && createPortal(
-        <span className="pointer-events-none fixed z-[70] block w-60 rounded-lg border border-white/10 bg-base-900 p-2.5 text-xs font-normal leading-relaxed text-ink-muted shadow-glow"
+        // placement transform outside, entry animation inside — a keyframed
+        // transform would otherwise cancel the translateY(-100%)
+        <span className="pointer-events-none fixed z-[70] block w-64"
           style={{
-            left: Math.min(pos.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 260),
+            left: Math.min(Math.max(8, pos.x), (typeof window !== "undefined" ? window.innerWidth : 9999) - 272),
             top: Math.max(8, pos.y - 8),
             transform: "translateY(-100%)",
           }}>
-          <span className="mb-0.5 block font-semibold capitalize text-ink">{key}</span>
-          {def}
+          <span className="animate-tip-in block rounded-xl border border-white/[0.14] bg-base-900 p-3 text-[12.5px] font-normal normal-case leading-relaxed tracking-normal text-ink-muted shadow-glow">
+            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.14em] text-accent-soft">{key}</span>
+            {def}
+          </span>
         </span>,
         document.body,
       )}

@@ -9,11 +9,18 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { RaceBundle } from "@/lib/types";
-import { COMPOUND_COLOR, COMPOUND_SHORT } from "@/lib/compounds";
+import {
+  COMPOUND_COLOR, COMPOUND_LABEL, COMPOUND_MISSING_HINT, COMPOUND_SHORT, compoundKnown,
+} from "@/lib/compounds";
 import { Spinner, ErrorState } from "@/components/ui/misc";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
+import { useGrowIn } from "@/components/ui/Visuals";
 import { deriveWindows, EVENT, type Win } from "@/lib/raceEvents";
+import {
+  CHART_MARGIN, GRID_COLOR, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE, TOOLTIP_STYLE,
+  axisLine, axisTick,
+} from "@/lib/chartTheme";
 import { cx, fmtLap, fmtSec } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
@@ -81,6 +88,9 @@ export function DriverComparison({
   const stopsOf = (code: string) =>
     bundle.session.pit_stops.filter((p) => p.driver === code).map((p) => p.lap);
   const windows = useMemo(() => deriveWindows(bundle.session), [bundle.session]);
+  // teammate duels are the most interesting comparison and the one the colour
+  // scheme can't tell apart on its own — every chart here checks for it
+  const sameLivery = colorOf(a).toLowerCase() === colorOf(b).toLowerCase();
 
   const posAt = (code: string, lap: number) =>
     positionData.find((r) => r.lap === lap)?.[code] ?? null;
@@ -108,31 +118,39 @@ export function DriverComparison({
             <ChartCard title="The battle"
               info="Where each car ran, lap by lap. The shaded band shows who was ahead; markers show the laps the lead changed hands and each driver's pit stops.">
               {positionData.length === 0 ? (
-                <div className="flex h-[260px] items-center justify-center text-center text-xs text-ink-faint">
-                  Position order isn&apos;t tracked in this session (practice and qualifying have no running order).
+                <div className="flex h-[268px] items-center justify-center px-6 text-center text-[12.5px] leading-relaxed text-ink-muted">
+                  Position order isn&apos;t tracked in this session — practice and qualifying have no running order.
                 </div>
               ) : (
                 <>
-                  <div className="h-[260px]">
+                  <div className="h-[268px]">
                     <ResponsiveContainer>
-                      <LineChart data={positionData} margin={{ top: 8, right: 14, bottom: 2, left: -8 }}>
-                        <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                      <LineChart data={positionData} margin={CHART_MARGIN}>
+                        <CartesianGrid strokeDasharray="2 4" stroke={GRID_COLOR} vertical={false} />
                         {/* neutralisations, so a swing under SC reads as one */}
                         {windows.map((w, i) => (
                           <ReferenceArea key={`w${i}`} x1={w.start} x2={w.end}
                             fill={`${EVENT[w.kind].color}1f`} stroke="none" ifOverflow="hidden" />
                         ))}
                         <XAxis dataKey="lap" type="number" domain={[1, bundle.session.total_laps]}
-                          tick={{ fill: "#5f6b84", fontSize: 10 }} tickLine={false}
-                          axisLine={{ stroke: "rgba(255,255,255,0.07)" }} />
+                          tick={axisTick()} tickLine={false} tickMargin={6} height={26}
+                          axisLine={axisLine} />
+                        {/* padding keeps the P1 line off the top edge — a 2.4px
+                            stroke sitting exactly on the boundary is drawn at
+                            half weight and reads as a fainter driver */}
                         <YAxis reversed domain={[1, bundle.session.drivers.length]}
-                          tick={{ fill: "#5f6b84", fontSize: 10 }} width={26} tickLine={false}
-                          axisLine={{ stroke: "rgba(255,255,255,0.07)" }} />
-                        <Tooltip isAnimationActive={false}
-                          contentStyle={{ background: "#0f131d", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, fontSize: 12 }}
+                          tick={axisTick()} width={30} tickLine={false}
+                          padding={{ top: 6, bottom: 6 }} axisLine={axisLine} />
+                        <Tooltip isAnimationActive={false} contentStyle={TOOLTIP_STYLE}
+                          labelStyle={TOOLTIP_LABEL_STYLE} itemStyle={TOOLTIP_ITEM_STYLE}
                           labelFormatter={(l) => `Lap ${l}`} formatter={(v: any, n: any) => [`P${v}`, n]} />
                         <Line dataKey={a} stroke={colorOf(a)} strokeWidth={2.4} dot={false} isAnimationActive={false} connectNulls />
-                        <Line dataKey={b} stroke={colorOf(b)} strokeWidth={2.4} dot={false} isAnimationActive={false} connectNulls />
+                        {/* teammates share a colour, which made this chart a
+                            single indistinguishable line. The second car is
+                            dashed whenever the two would otherwise match. */}
+                        <Line dataKey={b} stroke={colorOf(b)} strokeWidth={2.4} dot={false}
+                          strokeDasharray={sameLivery ? "6 4" : undefined}
+                          isAnimationActive={false} connectNulls />
                         {/* lead changes — the turning points of the duel */}
                         {swings.map((s, i) => (
                           <ReferenceLine key={`s${i}`} x={s.lap} stroke={colorOf(s.leader)}
@@ -149,7 +167,8 @@ export function DriverComparison({
                     </ResponsiveContainer>
                   </div>
                   <ChartLegend items={[
-                    { swatch: colorOf(a), label: a }, { swatch: colorOf(b), label: b },
+                    { swatch: colorOf(a), label: a },
+                    { swatch: colorOf(b), label: b, dashedSwatch: sameLivery },
                     { ring: true, label: "Pit stop" }, { dashed: true, label: "Lead change" },
                     ...(windows.length ? [{ band: EVENT[windows[0].kind].color, label: "Neutralised" }] : []),
                   ]} />
@@ -160,7 +179,7 @@ export function DriverComparison({
             <ChartCard title="Pace advantage"
               info="Cumulative lap-time difference over the laps both drivers ran, with pit laps excluded. This is the pure pace picture — who was quicker on track, independent of strategy and track position. The band takes the colour of whoever is quicker overall at that point.">
               <GapChart data={data.lap_delta} a={a} b={b} colorOf={colorOf}
-                total={bundle.session.total_laps} windows={windows} />
+                total={bundle.session.total_laps} windows={windows} sameLivery={sameLivery} />
             </ChartCard>
           </div>
 
@@ -206,20 +225,25 @@ function HeadToHead({ bundle, data, a, b, drvOf, nameOf, colorOf, swings }: any)
     <div className="panel p-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
         <Side code={a} won={winner === a} />
-        <div className="flex shrink-0 flex-col items-center justify-center px-2 py-1 text-center">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-faint">
-            {paceEdge != null ? "Quicker on track" : "Head to head"}
+        {/* "Quicker on track" read as a verdict, and sat a few centimetres from
+            a Final verdict that named the other driver — two panels appearing to
+            contradict each other. It's a measurement, not a conclusion, so it
+            now says which measurement it is and leaves the verdict to the
+            verdict (true pace corrects for fuel and tyres; this doesn't). */}
+        <div className="flex shrink-0 flex-col items-center justify-center gap-0.5 px-3 py-1 text-center">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-faint">
+            {paceEdge != null ? "Total lap time" : "Head to head"}
           </span>
           <span className="text-sm font-bold tabular-nums text-ink">
             {paceEdge != null && quicker
               ? <><span style={{ color: colorOf(quicker) }}>{quicker}</span> by {Math.abs(paceEdge).toFixed(1)}s</>
               : "vs"}
           </span>
-          {swings.length > 0 && (
-            <span className="mt-0.5 text-[10px] text-ink-faint">
-              {swings.length} lead change{swings.length > 1 ? "s" : ""}
-            </span>
-          )}
+          <span className="text-[11px] text-ink-muted">
+            {swings.length > 0
+              ? `${swings.length} lead change${swings.length > 1 ? "s" : ""}`
+              : "over laps both ran"}
+          </span>
         </div>
         <Side code={b} won={winner === b} />
       </div>
@@ -233,9 +257,9 @@ function HeadToHead({ bundle, data, a, b, drvOf, nameOf, colorOf, swings }: any)
  * shaded in the colour of whoever is ahead, and the axis is labelled in plain
  * words rather than a signed number the reader has to decode.
  */
-function GapChart({ data, a, b, colorOf, total, windows }: any) {
+function GapChart({ data, a, b, colorOf, total, windows, sameLivery }: any) {
   if (!data?.length) {
-    return <div className="flex h-[260px] items-center justify-center text-xs text-ink-faint">
+    return <div className="flex h-[268px] items-center justify-center px-4 text-center text-[12.5px] text-ink-muted">
       No lap timing available for this pair.
     </div>;
   }
@@ -247,9 +271,9 @@ function GapChart({ data, a, b, colorOf, total, windows }: any) {
   }));
   return (
     <>
-      <div className="h-[260px]">
+      <div className="h-[268px]">
         <ResponsiveContainer>
-          <AreaChart data={rows} margin={{ top: 8, right: 14, bottom: 2, left: -4 }} stackOffset="none">
+          <AreaChart data={rows} margin={CHART_MARGIN} stackOffset="none">
             <defs>
               <linearGradient id="gapA" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={colorOf(a)} stopOpacity={0.45} />
@@ -260,20 +284,18 @@ function GapChart({ data, a, b, colorOf, total, windows }: any) {
                 <stop offset="100%" stopColor={colorOf(b)} stopOpacity={0.05} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" vertical={false} />
+            <CartesianGrid strokeDasharray="2 4" stroke={GRID_COLOR} vertical={false} />
             {(windows as Win[]).map((w, i) => (
               <ReferenceArea key={`gw${i}`} x1={w.start} x2={w.end}
                 fill={`${EVENT[w.kind].color}18`} stroke="none" ifOverflow="hidden" />
             ))}
             <XAxis dataKey="lap" type="number" domain={[1, total]}
-              tick={{ fill: "#5f6b84", fontSize: 10 }} tickLine={false}
-              axisLine={{ stroke: "rgba(255,255,255,0.07)" }} />
-            <YAxis tick={{ fill: "#5f6b84", fontSize: 10 }} width={44}
-              tickFormatter={(v) => `${v}s`} tickLine={false}
-              axisLine={{ stroke: "rgba(255,255,255,0.07)" }} />
+              tick={axisTick()} tickLine={false} tickMargin={6} height={26} axisLine={axisLine} />
+            <YAxis tick={axisTick()} width={46} tickFormatter={(v) => `${v}s`}
+              tickLine={false} padding={{ top: 6, bottom: 2 }} axisLine={axisLine} />
             <ReferenceLine y={0} stroke="rgba(255,255,255,0.25)" />
-            <Tooltip isAnimationActive={false}
-              contentStyle={{ background: "#0f131d", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, fontSize: 12 }}
+            <Tooltip isAnimationActive={false} contentStyle={TOOLTIP_STYLE}
+              labelStyle={TOOLTIP_LABEL_STYLE} itemStyle={TOOLTIP_ITEM_STYLE}
               labelFormatter={(l) => `Lap ${l}`}
               formatter={(_v: any, _n: any, p: any) => {
                 const d = p?.payload?.delta ?? 0;
@@ -281,13 +303,14 @@ function GapChart({ data, a, b, colorOf, total, windows }: any) {
                   : [`${Math.abs(d).toFixed(1)}s quicker`, `${d < 0 ? a : b}`];
               }} />
             <Area dataKey="ahead" stroke={colorOf(a)} fill="url(#gapA)" strokeWidth={2} isAnimationActive={false} />
-            <Area dataKey="behind" stroke={colorOf(b)} fill="url(#gapB)" strokeWidth={2} isAnimationActive={false} />
+            <Area dataKey="behind" stroke={colorOf(b)} fill="url(#gapB)" strokeWidth={2}
+              strokeDasharray={sameLivery ? "6 4" : undefined} isAnimationActive={false} />
           </AreaChart>
         </ResponsiveContainer>
       </div>
       <ChartLegend items={[
         { swatch: colorOf(a), label: `${a} quicker` },
-        { swatch: colorOf(b), label: `${b} quicker` },
+        { swatch: colorOf(b), label: `${b} quicker`, dashedSwatch: sameLivery },
       ]} />
     </>
   );
@@ -347,7 +370,7 @@ function MetricDuel({ data, a, b, bundle, colorOf }: any) {
           if (!items.length) return null;
           return (
             <div key={g} className="px-4 py-2.5">
-              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-faint/70">{g}</div>
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{g}</div>
               <div className="space-y-2">
                 {items.map((r) => <MetricRow key={r.key} r={r} a={a} b={b} colorOf={colorOf} />)}
               </div>
@@ -355,10 +378,10 @@ function MetricDuel({ data, a, b, bundle, colorOf }: any) {
           );
         })}
         <div className="px-4 py-2.5">
-          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-faint/70">Tyres</div>
+          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Tyres</div>
           <div className="flex items-center gap-3 text-sm">
             <CompoundSeq seq={data.compound_sequence[a]} />
-            <span className="text-[11px] text-ink-faint">vs</span>
+            <span className="text-[11.5px] text-ink-faint">vs</span>
             <CompoundSeq seq={data.compound_sequence[b]} />
           </div>
         </div>
@@ -376,22 +399,23 @@ function MetricRow({ r, a, b, colorOf }: { r: Cmp; a: string; b: string; colorOf
   let aPct = total > 0 ? ((lowerWins ? (bv ?? 0) : (av ?? 0)) / total) * 100 : 50;
   aPct = Math.max(12, Math.min(88, aPct));
   const Icon = r.icon;
+  const grown = useGrowIn();
   return (
-    <div className="flex items-center gap-2.5">
+    <div className="group/row flex items-center gap-2.5">
       <span className="flex w-[8.5rem] shrink-0 items-center gap-1.5 text-xs text-ink-muted">
-        <Icon size={12} className="shrink-0 text-ink-faint" />
+        <Icon size={12} className="shrink-0 text-ink-faint transition-colors duration-200 group-hover/row:text-ink-muted" />
         <span className="truncate">{r.label}</span>
       </span>
       <span className={cx("w-[4.5rem] shrink-0 text-right text-xs tabular-nums",
-        winner === "a" ? "font-bold text-ink" : "text-ink-faint")}>{r.fmt(av)}</span>
+        winner === "a" ? "font-bold text-ink" : "text-ink-muted")}>{r.fmt(av)}</span>
       <span className="flex h-2 flex-1 overflow-hidden rounded-full bg-white/[0.05]">
-        <span className="h-full transition-all duration-500"
-          style={{ width: `${aPct}%`, background: colorOf(a), opacity: winner === "b" ? 0.35 : 1 }} />
-        <span className="h-full flex-1 transition-all duration-500"
+        <span className="h-full transition-[width,opacity] duration-700 ease-out"
+          style={{ width: grown ? `${aPct}%` : "50%", background: colorOf(a), opacity: winner === "b" ? 0.35 : 1 }} />
+        <span className="h-full flex-1 transition-opacity duration-500"
           style={{ background: colorOf(b), opacity: winner === "a" ? 0.35 : 1 }} />
       </span>
       <span className={cx("w-[4.5rem] shrink-0 text-xs tabular-nums",
-        winner === "b" ? "font-bold text-ink" : "text-ink-faint")}>{r.fmt(bv)}</span>
+        winner === "b" ? "font-bold text-ink" : "text-ink-muted")}>{r.fmt(bv)}</span>
     </div>
   );
 }
@@ -421,7 +445,8 @@ function Verdict({ data, a, b, nameOf, colorOf }: any) {
             return (
               <div key={i} className="py-2.5">
                 {m && (
-                  <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+                  <div className="mb-0.5 text-[11px] font-semibold uppercase tracking-wider"
+                    style={{ color: colorOf(winner) }}>
                     {m[1]}
                   </div>
                 )}
@@ -431,7 +456,7 @@ function Verdict({ data, a, b, nameOf, colorOf }: any) {
           })}
         </div>
       )}
-      <p className="mt-3 text-[11px] text-ink-faint">
+      <p className="mt-3 text-[11.5px] leading-relaxed text-ink-faint">
         Built from this session&apos;s timing, strategy and tyre data — {nameOf(winner)} is the reference.
       </p>
     </div>
@@ -440,13 +465,16 @@ function Verdict({ data, a, b, nameOf, colorOf }: any) {
 
 /* -------------------------------- bits ----------------------------------- */
 function ChartLegend({ items }: {
-  items: { swatch?: string; ring?: boolean; dashed?: boolean; band?: string; label: string }[];
+  items: { swatch?: string; ring?: boolean; dashed?: boolean; band?: string;
+           dashedSwatch?: boolean; label: string }[];
 }) {
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-ink-faint">
+    <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11.5px] text-ink-muted">
       {items.map((it, i) => (
         <span key={i} className="inline-flex items-center gap-1.5">
-          {it.swatch && <span className="inline-block h-0.5 w-4 rounded" style={{ background: it.swatch }} />}
+          {it.swatch && (it.dashedSwatch
+            ? <span className="inline-block h-0 w-4 border-t-2 border-dashed" style={{ borderColor: it.swatch }} />
+            : <span className="inline-block h-0.5 w-4 rounded" style={{ background: it.swatch }} />)}
           {it.ring && <span className="inline-block h-2.5 w-2.5 rounded-full border-2 border-ink-muted bg-base-900" />}
           {it.dashed && <span className="inline-block h-0 w-4 border-t-2 border-dashed border-ink-muted" />}
           {it.band && <span className="inline-block h-3 w-4 rounded-sm" style={{ background: `${it.band}33` }} />}
@@ -461,15 +489,22 @@ function CompoundSeq({ seq }: { seq: string[] }) {
   if (!seq?.length) return <span className="text-xs text-ink-faint">—</span>;
   return (
     <span className="inline-flex items-center gap-0.5">
-      {seq.map((c, i) => (
-        <span key={i} className="inline-flex items-center">
-          {i > 0 && <span className="mx-0.5 text-[10px] text-ink-faint">›</span>}
-          <span className="rounded px-1.5 py-0.5 text-[10px] font-bold"
-            style={{ background: COMPOUND_COLOR[c as keyof typeof COMPOUND_COLOR], color: "#0b0e16" }}>
-            {COMPOUND_SHORT[c as keyof typeof COMPOUND_SHORT]}
+      {seq.map((c, i) => {
+        const key = c as keyof typeof COMPOUND_COLOR;
+        const named = compoundKnown(key);
+        return (
+          <span key={i} className="inline-flex items-center">
+            {i > 0 && <span className="mx-0.5 text-[11px] text-ink-faint">›</span>}
+            <span className="rounded px-1.5 py-0.5 text-[11px] font-bold"
+              title={named ? COMPOUND_LABEL[key] : COMPOUND_MISSING_HINT}
+              style={named
+                ? { background: COMPOUND_COLOR[key], color: "#0b0e16" }
+                : { boxShadow: "inset 0 0 0 1px rgba(255,255,255,.22)", color: "#a8b4cb" }}>
+              {named ? COMPOUND_SHORT[key] : "?"}
+            </span>
           </span>
-        </span>
-      ))}
+        );
+      })}
     </span>
   );
 }

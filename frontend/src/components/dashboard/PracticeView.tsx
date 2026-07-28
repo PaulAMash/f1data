@@ -241,7 +241,7 @@ function Timesheet({ practice, session }: { practice: PracticeSummary; session: 
                   <span className="flex items-center gap-2">
                     <DriverBadge driver={driverOf(session, r.driver)} code={r.driver}
                       name={r.name} team={r.team} teamColor={r.team_color}
-                      size={26} className="w-48 min-w-0" />
+                      size={26} className="w-56 min-w-0" />
                     <span className="w-[5.5rem] shrink-0">
                       {r.low_running && <Badge tone="neutral">low laps</Badge>}
                     </span>
@@ -383,7 +383,7 @@ function Compounds({ list }: { list: string[] }) {
   return (
     <span className="inline-flex gap-0.5">
       {list.map((c) => (
-        <span key={c} className="rounded px-1 text-[10px] font-bold"
+        <span key={c} className="rounded px-1 text-[11px] font-bold"
           style={{ background: COMPOUND_COLOR[c as keyof typeof COMPOUND_COLOR], color: "#0b0e16" }}>
           {COMPOUND_SHORT[c as keyof typeof COMPOUND_SHORT]}
         </span>

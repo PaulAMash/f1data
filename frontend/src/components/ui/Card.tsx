@@ -23,7 +23,7 @@ export function CardHeader({
           <h3 className="truncate text-sm font-semibold text-ink">{title}</h3>
           {info}
         </div>
-        {subtitle && <p className="mt-0.5 text-xs text-ink-muted">{subtitle}</p>}
+        {subtitle && <p className="mt-0.5 text-[12.5px] leading-snug text-ink-muted">{subtitle}</p>}
       </div>
       {right && <div className="shrink-0">{right}</div>}
     </div>

@@ -32,10 +32,17 @@ export function LoadingState({
   return (
     <div role="status" aria-live="polite"
       className="flex flex-col items-center justify-center gap-4 px-6 py-16 text-center">
-      <Spinner size={size} />
+      {/* two rings turning at different speeds: the outer one carries the accent
+          and reads as progress, the inner one keeps the centre alive even when a
+          fetch takes a while. Nothing here is a fake progress bar. */}
+      <span className="relative inline-block" style={{ width: size, height: size }}>
+        <span className="absolute inset-0 animate-spin rounded-full border-2 border-white/10 border-t-accent" />
+        <span className="absolute inset-[7px] animate-spin rounded-full border-2 border-transparent border-b-speed/70"
+          style={{ animationDuration: "1.6s", animationDirection: "reverse" }} />
+      </span>
       <div>
         <p className="text-sm font-medium text-ink">{title}</p>
-        {hint && <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-ink-faint">{hint}</p>}
+        {hint && <p className="mx-auto mt-1.5 max-w-sm text-[12.5px] leading-relaxed text-ink-muted">{hint}</p>}
       </div>
     </div>
   );
@@ -46,9 +53,11 @@ export function EmptyState({
 }: { title: string; hint?: string; icon?: React.ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 px-6 py-12 text-center">
-      <div className="text-ink-faint">{icon ?? <Inbox size={26} />}</div>
-      <p className="text-sm font-medium text-ink-muted">{title}</p>
-      {hint && <p className="max-w-sm text-xs text-ink-faint">{hint}</p>}
+      <div className="grid h-11 w-11 place-items-center rounded-full bg-white/[0.04] text-ink-faint">
+        {icon ?? <Inbox size={22} />}
+      </div>
+      <p className="mt-0.5 text-sm font-semibold text-ink">{title}</p>
+      {hint && <p className="max-w-sm text-[12.5px] leading-relaxed text-ink-muted">{hint}</p>}
     </div>
   );
 }
@@ -56,8 +65,10 @@ export function EmptyState({
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
-      <div className="text-amber"><AlertTriangle size={26} /></div>
-      <p className="max-w-md text-sm text-ink-muted">{message}</p>
+      <div className="grid h-11 w-11 place-items-center rounded-full bg-amber/10 text-amber ring-1 ring-amber/25">
+        <AlertTriangle size={22} />
+      </div>
+      <p className="max-w-md text-[13.5px] leading-relaxed text-ink-muted">{message}</p>
       {onRetry && (
         <button className="pill-btn" onClick={onRetry}>Retry</button>
       )}

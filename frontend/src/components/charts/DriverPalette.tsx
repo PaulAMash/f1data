@@ -129,7 +129,7 @@ export function DriverPalette({
                       carries the initials, so the team is recognisable at a
                       glance without relying on reading the name */}
                   <div className="mb-2.5 flex items-center gap-2 px-0.5">
-                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-[10px] font-black tracking-tight"
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-[11px] font-black tracking-tight"
                       style={{ background: `${g.color}26`, color: g.color, boxShadow: `inset 0 0 0 1px ${g.color}59` }}>
                       {teamMark(team)}
                     </span>

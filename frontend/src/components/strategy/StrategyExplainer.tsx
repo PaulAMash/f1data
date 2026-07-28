@@ -84,20 +84,28 @@ function StrategyCard({ ins, open, onToggle, onFocus }: {
     <div className={cx("rounded-xl border bg-base-850/50 transition-colors", style.border,
       open && "bg-base-800/60")}>
       <button onClick={onToggle} aria-expanded={open}
-        className="flex w-full items-center justify-between gap-2 p-4 text-left transition-colors hover:bg-white/[0.02]">
+        className="group/ins flex w-full items-center justify-between gap-2 p-4 text-left transition-colors hover:bg-white/[0.02]">
         <span className="flex min-w-0 items-center gap-2.5 text-sm font-semibold text-ink">
-          <IconTile tone={style.tone} size={26}>{style.icon}</IconTile>
+          <span className="inline-flex transition-transform duration-300 ease-out group-hover/ins:scale-110">
+            <IconTile tone={style.tone} size={26}>{style.icon}</IconTile>
+          </span>
           <span className="truncate">{ins.title}</span>
         </span>
         <span className="flex shrink-0 items-center gap-2">
           <Badge tone={style.badge}>{KIND_LABEL[ins.kind] ?? ins.kind}</Badge>
           <ChevronDown size={15}
-            className={cx("text-ink-faint transition-transform", open && "rotate-180")} />
+            className={cx("text-ink-faint transition-all duration-300 ease-out group-hover/ins:text-ink",
+              open && "rotate-180 text-ink")} />
         </span>
       </button>
 
-      {open && (
-        <div className="animate-fade-in border-t border-white/[0.05] p-4 pt-3">
+      {/* the panel slides to its own height, so the cards below it move once and
+          smoothly rather than jumping the moment the click lands */}
+      <div className={cx("grid transition-[grid-template-rows] duration-300 ease-out",
+        open ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
+        <div className="overflow-hidden">
+        <div className={cx("border-t border-white/[0.05] p-4 pt-3 transition-opacity duration-200",
+          open ? "opacity-100" : "opacity-0")}>
           <p className="text-sm leading-relaxed text-ink-muted">{ins.detail}</p>
           {ins.explanation && (
             <div className="mt-2.5 rounded-lg border border-white/[0.05] bg-base-900/40 p-3">
@@ -114,12 +122,13 @@ function StrategyCard({ ins, open, onToggle, onFocus }: {
                 Show on position chart
               </button>
             )}
-            <span className="ml-auto text-[10px] uppercase tracking-wider text-ink-faint">
+            <span className="ml-auto text-[11px] uppercase tracking-wider text-ink-faint">
               {ins.confidence} confidence
             </span>
           </div>
         </div>
-      )}
+        </div>
+      </div>
     </div>
   );
 }

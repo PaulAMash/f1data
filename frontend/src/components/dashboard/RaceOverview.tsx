@@ -59,7 +59,7 @@ export function RaceOverview({
       {/* headline tiles + strategy verdicts are analyst material — Advanced only
           (Winner already appears in the key cards above and is never repeated) */}
       {!simple && (
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid items-start gap-3 sm:grid-cols-3">
           <StatTile label="Standout drive" tone="accent" icon={<Award size={14} />}
             value={
               <span className="flex items-center gap-2.5">
@@ -92,7 +92,7 @@ export function RaceOverview({
 
       {/* strategy verdicts — cards with no data are hidden, never shown empty */}
       {!simple && (
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid items-start gap-3 md:grid-cols-3">
           {strategy.best_strategy && (
             <VerdictCard tone="good" icon={<Award size={15} />} title="Best strategy"
               driver={strategy.best_strategy.driver} detail={strategy.best_strategy.detail} />
@@ -109,7 +109,7 @@ export function RaceOverview({
       )}
 
       {/* classification + movers */}
-      <div className="grid gap-4 lg:grid-cols-[1.7fr_1fr]">
+      <div className="grid items-start gap-4 lg:grid-cols-[1.7fr_1fr]">
         <Card>
           <CardHeader title="Final classification"
             info={<InfoTip label={simple ? "Reading the results" : "Grid → Finish"} text={simple
@@ -145,7 +145,7 @@ export function RaceOverview({
                               clean column regardless of name length */}
                           <DriverBadge driver={session.drivers.find((d) => d.code === c.driver)}
                             code={c.driver} name={c.name} team={c.team} teamColor={c.team_color}
-                            size={26} className="w-48 min-w-0" />
+                            size={26} className="w-56 min-w-0" />
                           {c.retired && <DnfBadge row={c} />}
                           <PenaltyBadges penalties={penaltyMap.get(c.driver)} />
                         </span>
@@ -292,7 +292,7 @@ function MoverList({
                   up ? "text-emerald-300" : "text-rose-300")}>
                   {up ? "▲" : "▼"} {Math.abs(r.net)}
                 </div>
-                <div className="mt-1 text-[10px] tabular-nums text-ink-faint">P{r.grid}→P{r.finish}</div>
+                <div className="mt-1 text-[11px] tabular-nums text-ink-faint">P{r.grid}→P{r.finish}</div>
               </div>
             </div>
           ))}

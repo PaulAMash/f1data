@@ -64,7 +64,7 @@ export function RaceSelector({
         <span className="label flex items-center gap-1"><Calendar size={13} /> Season</span>
         <span className="flex h-[38px] items-center text-lg font-semibold tabular-nums tracking-tight text-ink">
           {value.year}
-          <span className="ml-2 rounded-md bg-white/[0.05] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-faint">
+          <span className="ml-2 rounded-md bg-white/[0.05] px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
             current
           </span>
         </span>

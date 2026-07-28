@@ -1,6 +1,7 @@
 "use client";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { GLOSSARY, Term } from "./Term";
+import { HoverCard } from "./HoverCard";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
@@ -29,6 +30,27 @@ export const toneText: Record<VisualTone, string> = {
   accent: "text-accent-soft", speed: "text-speed", amber: "text-amber",
   good: "text-emerald-300", bad: "text-rose-300", violet: "text-violet-300",
   sky: "text-sky-300", neutral: "text-ink-muted",
+};
+
+/**
+ * Micro-label colours — the tone, pulled toward ink until it is comfortably
+ * readable at 11px.
+ *
+ * Every card already carries its tone in the glyph tile, then printed its label
+ * in the same grey as every other card's, so a page of cards gave the eye
+ * nothing to sort by. Tinting the label to the glyph beside it introduces no
+ * new colour and makes a grid scannable in one pass. All eight clear 4.5:1 on
+ * the panel surface.
+ */
+export const TONE_LABEL: Record<VisualTone, string> = {
+  accent: "#ffa89c",
+  speed: "#6fe3d4",
+  amber: "#f3c778",
+  good: "#8bd9bd",
+  bad: "#f5a6b5",
+  violet: "#cbc0fa",
+  sky: "#a4daf6",
+  neutral: "#8b98b2",
 };
 
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
@@ -104,10 +126,11 @@ export function Explain({
 
 /** The one micro-label used above every visual, so they all read as siblings. */
 export function VisualLabel({
-  children, term, plain,
-}: { children: React.ReactNode; term?: string; plain?: boolean }) {
+  children, term, plain, tone,
+}: { children: React.ReactNode; term?: string; plain?: boolean; tone?: VisualTone }) {
   return (
-    <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+    <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint"
+      style={tone ? { color: TONE_LABEL[tone] } : undefined}>
       <Explain term={term} plain={plain}>{children}</Explain>
     </span>
   );
@@ -117,7 +140,7 @@ export function VisualLabel({
 function Scale({ min, max }: { min?: React.ReactNode; max?: React.ReactNode }) {
   if (min == null && max == null) return null;
   return (
-    <div className="mt-1 flex justify-between text-[11px] leading-none tabular-nums text-ink-faint/80">
+    <div className="mt-1 flex justify-between text-[11px] leading-none tabular-nums text-ink-faint">
       <span>{min}</span><span>{max}</span>
     </div>
   );
@@ -169,12 +192,12 @@ export function Meter({
       </div>
       <Scale min={scaleMin} max={scaleMax} />
       {markerLabel && marker != null && (
-        <div className="mt-1 flex items-center gap-1 text-[11px] leading-none text-ink-faint/80">
+        <div className="mt-1 flex items-center gap-1 text-[11px] leading-none text-ink-faint">
           <span className="inline-block h-2 w-px bg-white/45" />{markerLabel}
         </div>
       )}
       {hint && showProse && (
-        <div className="mt-1.5 text-[12px] leading-relaxed text-ink-faint">{hint}</div>
+        <div className="mt-1.5 text-[12.5px] leading-relaxed text-ink-muted">{hint}</div>
       )}
     </div>
   );
@@ -218,13 +241,13 @@ export function DeltaBar({
         <span className="flex-1 rounded-full" style={{ background: `${rightColor}40` }} />
       </div>
       {(leftSub || rightSub) && (
-        <div className="mt-1 flex justify-between gap-2 text-[11px] leading-none tabular-nums text-ink-faint/80">
+        <div className="mt-1 flex justify-between gap-2 text-[11px] leading-none tabular-nums text-ink-faint">
           <span className="truncate">{leftSub}</span>
           <span className="truncate text-right">{rightSub}</span>
         </div>
       )}
       {caption && showProse && (
-        <div className="mt-1.5 text-[12px] leading-relaxed text-ink-faint">{caption}</div>
+        <div className="mt-1.5 text-[12.5px] leading-relaxed text-ink-muted">{caption}</div>
       )}
     </div>
   );
@@ -251,7 +274,7 @@ export function Tally({
           <span className="text-[12px] font-medium text-ink-muted">{emptyLabel}</span>
         </div>
         {meaning && showProse && (
-          <div className="mt-1 text-[11.5px] leading-snug text-ink-faint">{meaning}</div>
+          <div className="mt-1 text-[12.5px] leading-snug text-ink-muted">{meaning}</div>
         )}
       </div>
     );
@@ -269,7 +292,7 @@ export function Tally({
         {label && <span className="ml-1 text-[12px] text-ink-muted"><Explain>{label}</Explain></span>}
       </div>
       {meaning && showProse && (
-        <div className="mt-1 text-[11.5px] leading-snug text-ink-faint">{meaning}</div>
+        <div className="mt-1 text-[12.5px] leading-snug text-ink-muted">{meaning}</div>
       )}
     </div>
   );
@@ -345,13 +368,17 @@ function SparkBody({
   width: number; height: number; lowerIsBetter: boolean; valueFmt?: (v: number) => string;
   meta?: SparkPoint[]; unit?: string;
 }) {
-  const [hover, setHover] = useState<number | null>(null);
+  const [hover, setHover] = useState<{ i: number; x: number; y: number } | null>(null);
   const grown = useGrowIn();
   if (points.length < 2) return null;
   const lo = Math.min(...points), hi = Math.max(...points);
   const span = hi - lo || 1;
   const step = width / (points.length - 1);
-  const y = (p: number) => height - ((p - lo) / span) * (height - 5) - 2.5;
+  // PAD keeps the stroke, its round caps and the hover ring inside the box: a
+  // single deep trough used to be sliced flat against the bottom edge, which
+  // read as missing data rather than as the lowest reading of the session.
+  const PAD = 5;
+  const y = (p: number) => height - PAD - ((p - lo) / span) * (height - PAD * 2);
   const d = points.map((p, i) => `${i === 0 ? "M" : "L"}${(i * step).toFixed(1)},${y(p).toFixed(1)}`).join(" ");
   const last = points[points.length - 1];
   const improving = lowerIsBetter ? last < points[0] : last > points[0];
@@ -363,10 +390,11 @@ function SparkBody({
 
   const onMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
-    setHover(Math.max(0, Math.min(points.length - 1, Math.round((e.clientX - r.left) / step))));
+    const i = Math.max(0, Math.min(points.length - 1, Math.round((e.clientX - r.left) / step)));
+    setHover({ i, x: r.left + i * step, y: r.top + y(points[i]) });
   };
-  const hv = hover != null ? points[hover] : null;
-  const hm = hover != null ? meta?.[hover] : undefined;
+  const hv = hover ? points[hover.i] : null;
+  const hm = hover ? meta?.[hover.i] : undefined;
 
   return (
     <div className="min-w-0">
@@ -375,7 +403,7 @@ function SparkBody({
         <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}
           className="overflow-visible" aria-hidden>
           <line x1={0} y1={y0} x2={width} y2={y0} stroke="currentColor"
-            className="text-ink-faint/35" strokeWidth={1} strokeDasharray="2 3" />
+            className="text-ink-faint/45" strokeWidth={1} strokeDasharray="2 3" />
           <path d={`${d} L${width},${height} L0,${height} Z`} fill={c}
             opacity={grown ? 0.1 : 0} style={{ transition: "opacity .7s ease" }} />
           {/* the line draws itself in — the chart arrives rather than appearing */}
@@ -387,44 +415,28 @@ function SparkBody({
             }} />
           <circle cx={0} cy={y(points[0])} r={2} fill={c} opacity={0.6} />
           <circle cx={width} cy={y(last)} r={2.75} fill={c} />
-          {hover != null && (
+          {hover && (
             <>
-              <line x1={hover * step} y1={0} x2={hover * step} y2={height}
+              <line x1={hover.i * step} y1={0} x2={hover.i * step} y2={height}
                 stroke={c} strokeWidth={1} opacity={0.45} />
-              <circle cx={hover * step} cy={y(points[hover])} r={3.5} fill="#0b0e16"
+              <circle cx={hover.i * step} cy={y(points[hover.i])} r={3.5} fill="#0b0e16"
                 stroke={c} strokeWidth={2} />
             </>
           )}
         </svg>
-
-        {hover != null && hv != null && (
-          <div className="pointer-events-none absolute bottom-full z-40 mb-2 w-max min-w-[7.5rem] max-w-[14rem] rounded-lg border border-white/10 bg-base-900/95 p-2.5 shadow-glow backdrop-blur-sm"
-            style={{
-              left: Math.min(Math.max(hover * step, 0), Math.max(0, width - 40)),
-              transform: hover * step > width * 0.6 ? "translateX(-88%)" : "translateX(-12%)",
-            }}>
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-              {hm?.label ?? `Point ${hover + 1}`}
-            </div>
-            <div className="mt-0.5 text-base font-bold tabular-nums" style={{ color: c }}>
-              {fmt(hv)}{unit ?? ""}
-            </div>
-            {hm?.rows?.length ? (
-              <div className="mt-1.5 space-y-0.5 border-t border-white/[0.07] pt-1.5">
-                {hm.rows.map((r, i) => (
-                  <div key={i} className="flex justify-between gap-3 text-[12px] leading-snug">
-                    <span className="text-ink-faint">{r.k}</span>
-                    <span className="tabular-nums text-ink">{r.v}</span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        )}
       </div>
 
+      {/* portalled: the panels these sit in are rounded, therefore clipped, and
+          a card that gets sliced in half is worse than no card */}
+      {hover && hv != null && (
+        <HoverCard x={hover.x} y={hover.y} accent={c} width={198}
+          title={hm?.label ?? `Point ${hover.i + 1}`}
+          value={`${fmt(hv)}${unit ?? ""}`}
+          rows={hm?.rows?.map((r) => ({ k: r.k, v: r.v }))} />
+      )}
+
       {labels && (
-        <div className="mt-1 flex justify-between text-[11px] leading-none tabular-nums text-ink-faint/80"
+        <div className="mt-1 flex justify-between text-[11px] leading-none tabular-nums text-ink-faint"
           style={{ width }}>
           <span>{labels[0]}{valueFmt ? ` ${valueFmt(points[0])}` : ""}</span>
           <span>{labels[1]}{valueFmt ? ` ${valueFmt(last)}` : ""}</span>
@@ -450,14 +462,14 @@ export function SectorChips({
           <div key={i} className="min-w-0 flex-1">
             <span
               title={owned[i] ? `Session best in sector ${i + 1}` : `Sector ${i + 1}`}
-              className={cx("block rounded-md border px-1.5 py-1 text-center text-[10px] font-bold tabular-nums",
+              className={cx("block rounded-md border px-1.5 py-1 text-center text-[11px] font-bold tabular-nums transition-colors duration-200",
                 owned[i]
                   ? "border-emerald-400/35 bg-emerald-400/10 text-emerald-300"
                   : "border-white/[0.06] bg-white/[0.02] text-ink-faint")}>
               S{i + 1}
             </span>
             <div className={cx("mt-1 text-center text-[11px] leading-none tabular-nums",
-              owned[i] ? "text-emerald-300/80" : "text-ink-faint/70")}>
+              owned[i] ? "text-emerald-300" : "text-ink-faint")}>
               {d == null ? "—" : d <= 0.0005 ? "best" : `+${d.toFixed(3)}`}
             </div>
           </div>
@@ -483,12 +495,12 @@ export function StatStrip({
     <div className={cx("flex flex-wrap gap-x-6 gap-y-3", className)}>
       {items.map((it, i) => (
         <div key={i} className="min-w-0">
-          <VisualLabel term={it.term}>{it.label}</VisualLabel>
+          <VisualLabel term={it.term} tone={it.tone}>{it.label}</VisualLabel>
           <div className={cx("mt-0.5 text-lg font-bold leading-none tabular-nums tracking-tight",
             it.tone ? toneText[it.tone] : "text-ink")}>
             {it.value}
           </div>
-          {it.sub && <div className="mt-1 text-[10px] leading-none text-ink-faint">{it.sub}</div>}
+          {it.sub && <div className="mt-1.5 text-[11px] leading-none text-ink-faint">{it.sub}</div>}
         </div>
       ))}
     </div>
@@ -501,9 +513,26 @@ export function IconTile({
 }: { children: React.ReactNode; tone?: VisualTone; size?: number; className?: string }) {
   const c = TONE_COLOR[tone];
   return (
-    <span className={cx("grid shrink-0 place-items-center rounded-lg", className)}
+    // the glyph leans in when its card is hovered — the smallest possible cue
+    // that the surface under the cursor is one you can act on
+    <span className={cx("grid shrink-0 place-items-center rounded-lg transition-transform duration-300 ease-out group-hover/card:scale-110", className)}
       style={{ width: size, height: size, background: `${c}1f`, color: c }}>
       {children}
+    </span>
+  );
+}
+
+/**
+ * A live status dot: a still centre with a ring breathing out of it. Used
+ * wherever something is genuinely happening — data loading, a session in
+ * progress — never as decoration on a static value.
+ */
+export function LiveDot({ tone = "speed", size = 7 }: { tone?: VisualTone; size?: number }) {
+  const c = TONE_COLOR[tone];
+  return (
+    <span className="relative inline-flex shrink-0" style={{ width: size, height: size }}>
+      <span className="animate-ping-soft absolute inset-0 rounded-full" style={{ background: c }} />
+      <span className="relative inline-flex h-full w-full rounded-full" style={{ background: c }} />
     </span>
   );
 }

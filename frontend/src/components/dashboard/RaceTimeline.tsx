@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { MousePointerClick } from "lucide-react";
 import type { RaceBundle } from "@/lib/types";
+import { AXIS_TICK_COLOR } from "@/lib/chartTheme";
 import { useIsAdvanced } from "@/lib/mode";
 import { fmtLap } from "@/lib/format";
 
@@ -221,11 +222,11 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
         {ticks.map((l) => (
           <g key={l} pointerEvents="none">
             <line x1={x(l)} y1={Y + 8} x2={x(l)} y2={Y + 12} stroke="rgba(255,255,255,0.18)" />
-            <text x={x(l)} y={Y + 24} textAnchor="middle" fill="#5f6b84" fontSize={10}>{l}</text>
+            <text x={x(l)} y={Y + 24} textAnchor="middle" fill={AXIS_TICK_COLOR} fontSize={11}>{l}</text>
           </g>
         ))}
-        <text x={PAD} y={Y + 24} textAnchor="start" fill="#5f6b84" fontSize={10}>L1</text>
-        <text x={W - PAD} y={Y + 24} textAnchor="end" fill="#5f6b84" fontSize={10}>L{total}</text>
+        <text x={PAD} y={Y + 24} textAnchor="start" fill={AXIS_TICK_COLOR} fontSize={11}>L1</text>
+        <text x={W - PAD} y={Y + 24} textAnchor="end" fill={AXIS_TICK_COLOR} fontSize={11}>L{total}</text>
       </svg>
 
       {tip && typeof document !== "undefined" && createPortal(

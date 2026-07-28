@@ -445,7 +445,7 @@ function StrategyScene({ v }: { v: number }) {
         <div className="pointer-events-none absolute bottom-[-4px] top-0 rounded-md border-2 border-dashed border-amber bg-amber/[0.07]"
           style={{ left: `calc(3rem + (100% - 3rem) * ${s.window.left})`,
                    width: `calc((100% - 3rem) * ${s.window.width})` }}>
-          <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 rounded-sm bg-base-950 px-1 text-[9px] font-bold tracking-wider text-amber">
+          <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 rounded-sm bg-base-950 px-1 text-[11px] font-bold tracking-wider text-amber">
             {s.window.tag}
           </span>
         </div>

@@ -40,7 +40,7 @@ export function FocusCardShell({
             <DriverAvatar driver={driver} size={big ? 56 : 50} ring={false} />
           </span>
           <div className="min-w-0">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: tc }}>{eyebrow}</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: tc }}>{eyebrow}</div>
             <div className={cx("truncate font-extrabold leading-tight tracking-tight", big ? "text-[26px]" : "text-2xl")}>{driver.name}</div>
             <div className="mt-0.5 flex items-center gap-1.5 text-xs font-medium text-ink-muted">
               <span className="h-2 w-2 rounded-full" style={{ background: tc }} /> {driver.team}
@@ -50,7 +50,7 @@ export function FocusCardShell({
         <div className="flex flex-1 flex-wrap items-stretch gap-2">
           {tiles.map((t) => (
             <div key={t.label} className="flex-1 min-w-[74px] rounded-xl border border-white/[0.07] bg-base-950/40 px-3 py-2 text-center">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">{t.label}</div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{t.label}</div>
               <div className={cx("mt-0.5 font-bold tabular-nums", big ? "text-2xl" : "text-lg",
                 t.tone === "good" ? "text-speed" : t.tone === "bad" ? "text-accent-soft" : "text-ink")}>{t.value}</div>
             </div>

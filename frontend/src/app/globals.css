@@ -79,6 +79,17 @@ body {
   .grid-lines { background-size: 100% 2rem; }
 }
 
+/* A stint whose tyre the timing feed never published. Drawn as a hatch rather
+   than a solid block: a flat grey bar looks like a compound we chose not to
+   name, a hatch looks like the hole in the data that it actually is. */
+.tyre-unrecorded {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.16) 0 3px,
+    transparent 3px 7px
+  );
+}
+
 /* recharts dark polish */
 .recharts-cartesian-grid line { stroke: rgba(255, 255, 255, 0.05); }
 .recharts-tooltip-wrapper:focus { outline: none; }

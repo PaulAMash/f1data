@@ -3,7 +3,7 @@ import { useState } from "react";
 import { ArrowUpRight, ChevronDown } from "lucide-react";
 import type { Driver } from "@/lib/types";
 import { DriverAvatar } from "./DriverBadge";
-import { DisclosureContext, IconTile, type VisualTone } from "./Visuals";
+import { DisclosureContext, IconTile, TONE_LABEL, type VisualTone } from "./Visuals";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
@@ -81,16 +81,19 @@ export function InsightCard({
 
         <div className="flex items-center gap-2">
           <IconTile tone={tone} size={26}>{icon}</IconTile>
-          <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+          {/* the label wears the card's own tone: the grid becomes scannable
+              without introducing a single colour that wasn't already there */}
+          <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wider"
+            style={{ color: TONE_LABEL[tone] }}>
             {label}
           </span>
           {/* the one affordance, in the one place, on every card that has depth */}
           {expandable && (
             <span aria-hidden
               className={cx("ml-auto grid h-5 w-5 shrink-0 place-items-center rounded-full",
-                "text-ink-faint transition-all duration-200",
-                "group-hover/card:bg-white/[0.06] group-hover/card:text-ink-muted",
-                open && "rotate-180 bg-white/[0.06] text-ink-muted")}>
+                "text-ink-faint transition-all duration-300 ease-out",
+                "group-hover/card:bg-white/[0.06] group-hover/card:text-ink",
+                open && "rotate-180 bg-white/[0.06] text-ink")}>
               <ChevronDown size={13} />
             </span>
           )}
@@ -123,22 +126,33 @@ export function InsightCard({
 
         {/* one line. mt-auto keeps a row of uneven cards bottom-aligned. */}
         {takeaway && (
-          <div className="mt-auto pt-2.5 text-[11.5px] font-medium leading-snug text-ink-muted">
+          <div className="mt-auto pt-2.5 text-[12.5px] font-medium leading-snug text-ink-muted">
             {takeaway}
           </div>
         )}
 
-        {open && (detail || action) && (
-          <div className="animate-fade-in mt-3 space-y-2 border-t border-white/[0.07] pt-3
-                          text-[11.5px] leading-relaxed text-ink-faint">
-            {detail}
-            {action && (
-              <button type="button"
-                onClick={(e) => { e.stopPropagation(); action.onClick(); }}
-                className="inline-flex items-center gap-1 rounded-md text-[11px] font-semibold text-accent-soft transition-colors hover:text-accent">
-                {action.label} <ArrowUpRight size={12} />
-              </button>
-            )}
+        {/* The drawer slides rather than snaps, using the 0fr→1fr grid trick so
+            the browser can interpolate a height nobody had to measure. Its own
+            card grows; nothing around it moves (see InsightGrid). */}
+        {(detail || action) && (
+          <div className={cx("grid transition-[grid-template-rows] duration-300 ease-out",
+            open ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
+            <div className="overflow-hidden">
+              <div className={cx("mt-3 space-y-2 border-t border-white/[0.08] pt-3",
+                "text-[12.5px] leading-relaxed text-ink-muted transition-opacity duration-200",
+                open ? "opacity-100" : "opacity-0")}>
+                {detail}
+                {action && (
+                  <button type="button" tabIndex={open ? 0 : -1}
+                    onClick={(e) => { e.stopPropagation(); action.onClick(); }}
+                    className="group/act inline-flex items-center gap-1 rounded-md text-[12px] font-semibold text-accent-soft transition-colors hover:text-accent">
+                    {action.label}
+                    <ArrowUpRight size={13}
+                      className="transition-transform duration-200 group-hover/act:-translate-y-px group-hover/act:translate-x-px" />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -146,12 +160,20 @@ export function InsightCard({
   );
 }
 
-/** The grid every card set sits in — one column rhythm across the product. */
+/**
+ * The grid every card set sits in — one column rhythm across the product.
+ *
+ * `items-start` is the important part. Grid items stretch by default, so
+ * opening one card dragged every card in its row to the same new height and
+ * left them with a void under their last line — the reader's eye was pulled to
+ * empty space in a card they hadn't touched. Each card now owns its own height:
+ * the one you opened grows, and nothing else on the page moves.
+ */
 export function InsightGrid({
   children, cols = 3, className,
 }: { children: React.ReactNode; cols?: 2 | 3 | 4; className?: string }) {
   const c = cols === 2 ? "sm:grid-cols-2"
     : cols === 4 ? "sm:grid-cols-2 lg:grid-cols-4"
       : "sm:grid-cols-2 lg:grid-cols-3";
-  return <div className={cx("grid gap-3", c, className)}>{children}</div>;
+  return <div className={cx("grid items-start gap-3", c, className)}>{children}</div>;
 }

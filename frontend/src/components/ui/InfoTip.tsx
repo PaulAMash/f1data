@@ -1,38 +1,44 @@
 "use client";
 import { Info } from "lucide-react";
 import { useState } from "react";
+import { HoverCard } from "./HoverCard";
 
 /**
  * Small "why this matters" tooltip. Every advanced metric in the app is paired
  * with one of these so a new fan can learn what they're looking at.
+ *
+ * It renders through the shared HoverCard, which puts it in a portal. It used
+ * to be an absolutely-positioned span, so any `overflow-hidden` panel it sat in
+ * sliced it off — and the panels most in need of explanation (Head-to-head
+ * metrics, Track conditions, every story) are exactly the rounded, clipped ones.
  */
 export function InfoTip({ text, label }: { text: string; label?: string }) {
-  const [open, setOpen] = useState(false);
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+
+  const show = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    setAt({ x: r.left + r.width / 2, y: r.top - 4 });
+  };
+
   return (
-    <span
-      className="relative inline-flex items-center"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onClick={() => setOpen((o) => !o)}
-    >
-      <button
-        type="button"
-        aria-label={label || "More info"}
-        className="text-ink-faint transition-colors hover:text-ink-muted"
-      >
+    <span className="relative inline-flex items-center"
+      onMouseEnter={(e) => show(e.currentTarget)}
+      onMouseLeave={() => setAt(null)}>
+      <button type="button" aria-label={label || "More info"}
+        aria-expanded={at != null}
+        onClick={(e) => { e.stopPropagation(); at ? setAt(null) : show(e.currentTarget); }}
+        className="text-ink-faint transition-colors duration-200 hover:text-ink">
         <Info size={13} />
       </button>
-      {open && (
-        <span
-          role="tooltip"
-          // normal-case / tracking-normal / font-normal / normal whitespace reset
-          // the header's uppercase + letter-spacing so the copy wraps inside the
-          // box instead of overflowing it and bleeding onto the text behind.
-          className="absolute left-1/2 top-5 z-50 w-64 max-w-[min(16rem,80vw)] -translate-x-1/2 whitespace-normal break-words rounded-lg border border-white/10 bg-base-900 p-3 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-ink-muted shadow-glow"
-        >
-          {label && <span className="mb-1 block font-semibold text-ink">{label}</span>}
-          {text}
-        </span>
+      {at && (
+        <HoverCard x={at.x} y={at.y} width={264}
+          title={label}
+          footer={undefined}>
+          {/* normal-case resets the uppercase headers these usually sit in */}
+          <p className="whitespace-normal break-words text-left text-[12.5px] font-normal normal-case leading-relaxed tracking-normal text-ink-muted">
+            {text}
+          </p>
+        </HoverCard>
       )}
     </span>
   );

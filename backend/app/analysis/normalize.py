@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from ..models import PitStop, RaceSession, Stint
+from ..models import Compound, PitStop, RaceSession, Stint
 
 # A plausible on-track gap ceiling (seconds). Anything larger is almost certainly
 # cumulative time, not a gap — so we drop it rather than display nonsense.
@@ -325,6 +325,67 @@ def reconcile_stints_and_stops(session: RaceSession) -> None:
             c.pit_stops = stops_from_list.get(c.driver, c.pit_stops)
 
 
+def recover_stint_compounds(session: RaceSession) -> None:
+    """Fill in tyre compounds the source actually recorded but our derivation lost.
+
+    A stint's compound is usually taken from the first lap of that stint — which
+    is the out-lap, and out-laps are exactly the laps the timing feeds most often
+    leave blank. One missing value therefore turned a whole stint grey and
+    labelled it "Unknown" even though every other lap in it named the tyre. The
+    same gap hides laps from long-run pace analysis, which skips laps with no
+    compound.
+
+    Both directions are repaired here, from the session's own data only — nothing
+    is inferred from what a driver "probably" fitted:
+
+    1. a stint with no compound adopts the compound its own laps report;
+    2. a lap with no compound adopts the compound of the stint it ran in.
+
+    Whatever is still unknown afterwards genuinely was not recorded, and the UI
+    says so in those words.
+    """
+    known = lambda c: c is not None and c != Compound.UNKNOWN   # noqa: E731
+
+    # 1) stint ← its laps. Lap membership is by stint number where the source
+    #    provides one, and by lap range otherwise (the two disagree on sessions
+    #    where a red flag restarts the numbering).
+    laps_by_stint: dict[tuple[str, int], list] = {}
+    laps_by_driver: dict[str, list] = {}
+    for l in session.laps:
+        laps_by_driver.setdefault(l.driver, []).append(l)
+        if l.stint is not None:
+            laps_by_stint.setdefault((l.driver, l.stint), []).append(l)
+
+    for st in session.stints:
+        if known(st.compound):
+            continue
+        pool = laps_by_stint.get((st.driver, st.stint)) or [
+            l for l in laps_by_driver.get(st.driver, [])
+            if st.start_lap <= l.lap <= st.end_lap
+        ]
+        counts: dict[Compound, int] = {}
+        for l in pool:
+            if known(l.compound):
+                counts[l.compound] = counts.get(l.compound, 0) + 1
+        if counts:
+            # most-reported wins; a stray mislabelled lap can't outvote the rest
+            st.compound = max(counts.items(), key=lambda kv: kv[1])[0]
+
+    # 2) lap ← its stint, so pace analysis sees every lap the driver ran on a
+    #    known tyre rather than dropping the out-lap and any blank alongside it.
+    by_key = {(s.driver, s.stint): s for s in session.stints if known(s.compound)}
+    for l in session.laps:
+        if known(l.compound):
+            continue
+        st = by_key.get((l.driver, l.stint)) if l.stint is not None else None
+        if st is None:
+            st = next((s for s in session.stints
+                       if s.driver == l.driver and known(s.compound)
+                       and s.start_lap <= l.lap <= s.end_lap), None)
+        if st is not None:
+            l.compound = st.compound
+
+
 def normalize_session(session: RaceSession) -> None:
     """In-place: fix gaps, fill derivable per-driver stats, and flag pit-data
     reliability so the UI never fabricates '0-stop race' claims or absurd gaps."""
@@ -337,6 +398,9 @@ def normalize_session(session: RaceSession) -> None:
     # Remove phantom stints / retirement pit entries and make per-driver stop
     # counts agree with the stints actually run, before anything reads them.
     reconcile_stints_and_stops(session)
+    # Recover compounds the source recorded but the first-lap-wins derivation
+    # dropped, so "Unknown" only ever means genuinely unrecorded.
+    recover_stint_compounds(session)
     reliable = pit_data_reliable(session)
     session.pit_data_reliable = reliable
 

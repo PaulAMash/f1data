@@ -7,6 +7,10 @@ import { CloudRain, Flag, Gauge, ShieldAlert, TriangleAlert, Wind } from "lucide
 import type { RaceSession } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { flagKindOf } from "@/lib/raceEvents";
+import {
+  CHART_MARGIN, GRID_COLOR, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE, TOOLTIP_STYLE,
+  axisLine, axisTick,
+} from "@/lib/chartTheme";
 import { TrackConditions } from "./TrackConditions";
 import { cx } from "@/lib/format";
 
@@ -36,7 +40,7 @@ export function RaceControlWeather({ session }: { session: RaceSession }) {
         {weatherData.length ? (
           <div className="h-[210px] w-full">
             <ResponsiveContainer>
-              <AreaChart data={weatherData} margin={{ top: 6, right: 10, bottom: 2, left: -6 }}>
+              <AreaChart data={weatherData} margin={CHART_MARGIN}>
                 <defs>
                   <linearGradient id="track" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#ff6a5a" stopOpacity={0.4} />
@@ -47,14 +51,13 @@ export function RaceControlWeather({ session }: { session: RaceSession }) {
                     <stop offset="100%" stopColor="#00e0c6" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="2 4" />
+                <CartesianGrid strokeDasharray="2 4" stroke={GRID_COLOR} />
                 <XAxis dataKey="x" type="number" domain={[1, session.total_laps]}
-                  tick={{ fill: "#5f6b84", fontSize: 10 }} tickLine={false}
-                  axisLine={{ stroke: "rgba(255,255,255,0.08)" }} />
-                <YAxis tick={{ fill: "#5f6b84", fontSize: 10 }} width={34} tickLine={false}
-                  axisLine={{ stroke: "rgba(255,255,255,0.08)" }} unit="°" />
-                <Tooltip isAnimationActive={false}
-                  contentStyle={{ background: "#0f131d", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, fontSize: 12 }}
+                  tick={axisTick()} tickLine={false} tickMargin={6} height={26} axisLine={axisLine} />
+                <YAxis tick={axisTick()} width={38} tickLine={false}
+                  padding={{ top: 6, bottom: 2 }} axisLine={axisLine} unit="°" />
+                <Tooltip isAnimationActive={false} contentStyle={TOOLTIP_STYLE}
+                  labelStyle={TOOLTIP_LABEL_STYLE} itemStyle={TOOLTIP_ITEM_STYLE}
                   labelFormatter={(l) => `Lap ${l}`} />
                 <Area name="Track" dataKey="track" stroke="#ff6a5a" fill="url(#track)" strokeWidth={2} isAnimationActive={false} />
                 <Area name="Air" dataKey="air" stroke="#00e0c6" fill="url(#air)" strokeWidth={2} isAnimationActive={false} />

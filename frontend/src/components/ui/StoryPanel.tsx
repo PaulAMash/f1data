@@ -80,17 +80,23 @@ export function StoryPanel({
                 <p className="py-2.5 text-[14.5px] leading-relaxed text-ink-muted">{rest[0]}</p>
                 {rest.length > 1 && (
                   <>
-                    {open && (
-                      <div className="animate-fade-in divide-y divide-white/[0.05] border-t border-white/[0.05]">
-                        {rest.slice(1).map((s, i) => (
-                          <p key={i} className="py-2.5 text-[14.5px] leading-relaxed text-ink-muted">{s}</p>
-                        ))}
+                    {/* slides open on its own height rather than appearing —
+                        the reader keeps their place in the paragraph above */}
+                    <div className={cx("grid transition-[grid-template-rows] duration-300 ease-out",
+                      open ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
+                      <div className="overflow-hidden">
+                        <div className={cx("divide-y divide-white/[0.05] border-t border-white/[0.05] transition-opacity duration-200",
+                          open ? "opacity-100" : "opacity-0")}>
+                          {rest.slice(1).map((s, i) => (
+                            <p key={i} className="py-2.5 text-[14.5px] leading-relaxed text-ink-muted">{s}</p>
+                          ))}
+                        </div>
                       </div>
-                    )}
+                    </div>
                     <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
-                      className="mt-1 inline-flex items-center gap-1.5 rounded-md py-1 text-[11px] font-semibold text-accent-soft transition-colors hover:text-accent">
+                      className="mt-1 inline-flex items-center gap-1.5 rounded-md py-1 text-[12px] font-semibold text-accent-soft transition-colors hover:text-accent">
                       {open ? "Show less" : `Read the full analysis · ${rest.length - 1} more`}
-                      <ChevronDown size={12} className={cx("transition-transform", open && "rotate-180")} />
+                      <ChevronDown size={12} className={cx("transition-transform duration-300", open && "rotate-180")} />
                     </button>
                   </>
                 )}
@@ -100,8 +106,8 @@ export function StoryPanel({
             {notes && notes.length > 0 && (
               <div className="mt-3 flex flex-col gap-1.5">
                 {notes.map((n, i) => (
-                  <p key={i} className="flex items-start gap-1.5 rounded-lg border border-amber/20 bg-amber/[0.05] px-2.5 py-1.5 text-[11px] leading-snug text-amber/90">
-                    <Info size={12} className="mt-px shrink-0" />{n}
+                  <p key={i} className="flex items-start gap-1.5 rounded-lg border border-amber/20 bg-amber/[0.05] px-2.5 py-1.5 text-[12px] leading-snug text-amber">
+                    <Info size={12} className="mt-0.5 shrink-0" />{n}
                   </p>
                 ))}
               </div>

@@ -30,7 +30,7 @@ export function PenaltyBadge({ penalty }: { penalty: Penalty }) {
       onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
       <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
         aria-label={`${meta.title}: ${penalty.detail}`}
-        className={cx("inline-flex cursor-help items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wide", TONE[meta.tone])}>
+        className={cx("inline-flex cursor-help items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-bold tracking-wide", TONE[meta.tone])}>
         <Gavel size={10} /> {penalty.label}
       </button>
       {open && (

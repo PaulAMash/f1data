@@ -234,7 +234,7 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
                     <div className="text-sm font-bold tabular-nums text-emerald-300">
                       −{(segs[0] - segs[segs.length - 1]).toFixed(3)}s
                     </div>
-                    <div className="text-[9.5px] leading-none text-ink-faint/70">benchmark fell</div>
+                    <div className="text-[9.5px] leading-none text-ink-faint">benchmark fell</div>
                   </div>
                 </div>
               ) : undefined}
@@ -346,14 +346,19 @@ function mateBar(q: QualifyingSummary, code: string | null | undefined, spread: 
   if (!me || !mate || me.vs_teammate == null) return undefined;
   const gap = Math.abs(me.vs_teammate);
   const ahead = me.vs_teammate < 0;
+  const k = Math.min(0.4, (gap / (spread || 1)) * 0.5);
+  // The card's subject always holds the left of its own bar, and the lean says
+  // whether they won or lost it. Putting the quicker driver on the left
+  // regardless meant "Biggest disappointment: Lance Stroll" opened with
+  // Alonso's name and an identical-looking bar to the Surprise card beside it.
   return (
     <DeltaBar
-      left={ahead ? me.driver : mate.driver}
-      right={ahead ? mate.driver : me.driver}
-      leftColor={ahead ? me.team_color : "#5f6b84"}
-      rightColor="#5f6b84"
-      lean={0.5 + Math.min(0.4, (gap / (spread || 1)) * 0.5)}
-      value={`${gap.toFixed(3)}s`}
+      left={me.driver} right={mate.driver}
+      leftColor={ahead ? me.team_color : "#6b7794"}
+      rightColor={ahead ? "#6b7794" : mate.team_color}
+      lean={ahead ? 0.5 + k : 0.5 - k}
+      value={`${gap.toFixed(3)}s`} unit={ahead ? "quicker" : "slower"}
+      leftSub={posLabel(q, me.driver)} rightSub={posLabel(q, mate.driver)}
       caption={`Against ${mate.name} in the same car${mate.position ? `, who qualified P${mate.position}` : ""}.`}
     />
   );
@@ -559,7 +564,7 @@ function GridTable({ q, session, simple }: { q: QualifyingSummary; session: Race
                   <span className="flex items-center gap-2">
                     <DriverBadge driver={driverOf(session, r.driver)} code={r.driver}
                       name={r.name} team={r.team} teamColor={r.team_color}
-                      size={26} className="w-48 min-w-0" />
+                      size={26} className="w-56 min-w-0" />
                     <span className="w-[5.5rem] shrink-0">
                       {r.knocked_out_in && (
                         <Term term={`out in ${r.knocked_out_in.toLowerCase()}`}>
@@ -687,7 +692,7 @@ function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSessio
             info={<InfoTip text="The pole sitter's best sectors against the session-best in each sector. Matching all three would make the pole lap the theoretical perfect lap." />} />
           <CardBody>
             {pb && pb.pole.some(Boolean) ? (
-              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              <div className="grid items-start gap-3 sm:grid-cols-3 lg:grid-cols-4">
                 {pb.pole.map((s, i) => {
                   const best = pb.session_best[i];
                   const isBest = s != null && best != null && s <= best;
@@ -729,7 +734,7 @@ function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSessio
             : "Session-long gain from first-run best to final best. Percentage is relative to their Q1 time; segment splits show where the time actually arrived; teammate delta contextualizes the machinery."} />} />
         <CardBody>
           {improvers.length ? (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {improvers.map((r, i) => {
                 const pct = r.q1 && r.improvement ? (r.improvement / r.q1) * 100 : null;
                 const gainQ12 = r.q1 && r.q2 ? r.q1 - r.q2 : null;
@@ -782,7 +787,7 @@ function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSessio
         </CardBody>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid items-start gap-4 lg:grid-cols-2">
         {/* interruptions as explained event cards, not echoed flags */}
         <Card>
           <CardHeader title="Interruptions"

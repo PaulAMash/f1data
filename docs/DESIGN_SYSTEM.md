@@ -69,6 +69,11 @@ Learn one card, you've learned all of them:
   does the same thing.
 * **Dotted underline** means a definition on hover, everywhere in the product.
 * **Selection beats hover**, always (see below).
+* **Changing session returns you to its Story.** Practice → Qualifying → Race are
+  three narratives, not three views of one; the Story is the front door and the
+  deeper tabs are where you go next. Carrying "Pace" across dropped the reader
+  into a table with no idea what had happened. Changing Grand Prix or season
+  resets the same way; a `?tab=` deep link still opens where it points.
 
 The `StoryPanel` follows the same contract: lede plus one beat, then
 *"Read the full analysis · N more"*.
@@ -91,9 +96,16 @@ UI — the data layer should never hand the interface a disordered story.
 Movement earns its place by carrying information:
 
 * **Bars grow into place** on mount (`useGrowIn`) — a measurement being taken.
+  A pace board staggers its rows by ~22ms so it fills like a timing screen.
 * **Sparklines draw themselves in** left to right.
 * **Selected states breathe** in their own accent colour.
 * **Glyph tiles lift** slightly on hover, so what is interactive says so.
+* **Hover cards arrive** (`animate-tip-in`) from the direction they belong to
+  rather than blinking on top of what you were reading.
+* **`LiveDot`** is a still centre with a ring breathing out of it, for things
+  that are genuinely happening — never decoration on a static value. The loading
+  spinner is two rings at different speeds and directions; it is honest about
+  progress it cannot measure, so it never fakes a progress bar.
 
 Every animation is disabled under `prefers-reduced-motion: reduce`. Nothing loops
 faster than ~1.8s; nothing moves that the reader didn't cause or that isn't
@@ -110,11 +122,89 @@ graphic isn't worth making inspectable, it probably isn't worth drawing.
 
 ---
 
+## Nothing is clipped by the thing it lives in
+
+Two rules, and between them they close every cropping bug in the product:
+
+* **Floating layers go through a portal.** `ui/HoverCard` renders into
+  `document.body` at viewport coordinates, flipping above or below the anchor and
+  clamping to the screen. Every panel worth explaining is rounded, therefore
+  `overflow-hidden`, so an absolutely-positioned tooltip inside one is a crop
+  waiting to happen — that is how the Track Conditions sparkline lost the top
+  half of its card. `Sparkline`, `InfoTip` and `Term` all route through it.
+* **Chart margins are never negative.** A negative `left` claws back the gutter
+  Recharts leaves for the axis by pulling the plot *outside* the SVG viewport,
+  which crops the axis and the first data point. `CHART_MARGIN` is the shared
+  value; if a chart needs to sit tighter, the axis `width` comes down instead.
+  Y axes carry `padding` so a 2.4px line on P1 isn't drawn at half weight on the
+  boundary.
+
+One trap worth writing down: a keyframe that animates `transform` **overrides an
+inline `transform`**. Placement and entry animation must therefore live on
+different elements — outer div positions, inner div animates. Combining them
+silently drops the flip and opens the card off the bottom of the screen.
+
+---
+
+## Opening something moves only that thing
+
+`InsightGrid` is `items-start`. Grid items stretch by default, so expanding one
+card dragged its whole row to the new height and left the untouched cards with a
+void under their last line — the reader's eye pulled to empty space in a card
+they hadn't clicked.
+
+Every drawer in the product opens on the `grid-template-rows: 0fr → 1fr`
+transition (`InsightCard`, `StoryPanel`, `StrategyExplainer`), so the browser
+interpolates a height nobody had to measure and the content below moves once,
+smoothly, instead of jumping.
+
+---
+
+## Absence is a finding, not a placeholder
+
+"Unknown", "Unknown Type" and `?` are the vocabulary of the implementation, not
+of the reader. Two obligations follow:
+
+1. **Try to recover it first.** Most placeholders are our derivation losing data
+   the source did publish. A stint's compound was read off the first lap of the
+   stint — the out-lap, the lap timing feeds most often leave blank — so one gap
+   greyed out a whole stint. `recover_stint_compounds` fills the stint from its
+   own laps and the laps from their stint, majority-wins, inventing nothing.
+2. **Say what's missing, in their words.** What survives recovery genuinely was
+   not recorded, so it reads "Not recorded", draws as a hatch rather than a solid
+   grey block, carries a sentence explaining that the laps are real and the
+   compound simply wasn't published, and is excluded from counts like "how many
+   different tyres did they run?".
+
+---
+
 ## Type: information-dense, still comfortable
 
 Nothing meaningful renders below **11px**. Uppercase micro-labels sit at 11px;
 scales and captions at 11–12px; supporting prose and drawer content at 12–13px.
 A dashboard is read for hours, not glanced at once.
+
+Contrast is held to the same standard. `ink-faint` carries every micro-label,
+scale and caption in the product; at `#5f6b84` it measured **3.6:1** on the panel
+surface — legible in a screenshot, tiring over an hour — so it is now `#7d8aa5`
+(**5.5:1**). There is no fourth, quieter grey: `text-ink-faint/70` is a shade of a
+shade, and the answer to "this should be quieter" is a different *size* or
+*weight*, never less contrast. Chart axes are the same story — `AXIS_TICK_COLOR`
+in `lib/chartTheme`, one value, not six inline declarations.
+
+---
+
+## Colour carries hierarchy; grey carries everything else
+
+A grid of cards whose glyphs were eight different colours printed all eight
+labels in the same grey, so the eye had nothing to sort by. A card's micro-label
+now takes `TONE_LABEL[tone]` — the tone it already wears, pulled toward ink until
+it clears 4.5:1.
+
+The rule this follows: **introduce no colour that isn't already on the surface.**
+Tinting a label to match the glyph beside it costs nothing in noise and buys a
+page you can scan in one pass. Inventing a ninth accent to "add interest" does
+the opposite.
 
 ---
 
