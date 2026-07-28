@@ -11,6 +11,7 @@ language on top of these facts.
 """
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 
 from ..models import (
@@ -243,6 +244,12 @@ def _story(session, classified, winner, gainers, losers, best_strategy, worst_st
         strat = (f", running a {win.pit_stops}-stop race"
                  if session.pit_data_reliable and win.pit_stops > 0 else "")
         s.append(f"{win.name} won the {session.grand_prix}{from_grid}{strat}.")
+        # The line under the headline must be ABOUT the headline. Jumping
+        # straight to another driver's strategy read as a non-sequitur: the
+        # reader is told who won, then immediately handed someone else.
+        expand = _winner_expansion(session, classified, win)
+        if expand:
+            s.append(expand)
     if best_strategy:
         s.append(best_strategy["detail"])
     if worst_strategy:
@@ -258,6 +265,42 @@ def _story(session, classified, winner, gainers, losers, best_strategy, worst_st
     if weather_summary:
         s.append(f"Conditions: {weather_summary}.")
     return s[:5]
+
+
+def _winner_expansion(session, classified, win) -> str | None:
+    """How the winner actually won it — laps led and the final margin.
+
+    This is the sentence directly beneath the headline, so it has to stay on the
+    headline's subject. Secondary stories come after the panel is expanded.
+    """
+    total = session.total_laps or 0
+    led = sum(1 for p in session.positions if p.driver == win.driver and p.position == 1)
+    p2 = next((c for c in classified if c.position == 2), None)
+
+    bits: list[str] = []
+    if led and total:
+        bits.append("led every lap" if led >= total
+                    else f"led {plural(led, 'lap')} of the {total}")
+    if p2:
+        gap = _gap_seconds(getattr(p2, "gap", None))
+        who = p2.name or p2.driver
+        bits.append(f"took the flag {gap:.1f}s clear of {who}" if gap is not None
+                    else f"came home ahead of {who}")
+    if not bits:
+        return None
+    first = win.name.split()[-1] if win.name else win.driver
+    return f"{first} " + " and ".join(bits) + "."
+
+
+def _gap_seconds(gap) -> float | None:
+    """The P2 gap as a number, or None when the source didn't give a usable one."""
+    if gap is None:
+        return None
+    m = re.search(r"([-+]?\d+(?:\.\d+)?)", str(gap))
+    if not m:
+        return None
+    v = float(m.group(1))
+    return v if 0 < v < 300 else None
 
 
 def _fmt_laptime(sec: float | None) -> str:

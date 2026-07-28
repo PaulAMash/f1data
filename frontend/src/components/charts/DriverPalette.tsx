@@ -12,6 +12,35 @@ import { DriverAvatar } from "@/components/ui/DriverBadge";
 /* One interaction: click a driver → focus and close. Search filters instantly.*/
 /* -------------------------------------------------------------------------- */
 
+/**
+ * A short, legible constructor mark. Real logos aren't in our asset pipeline, so
+ * rather than approximate them we build an honest one from the team's own colour
+ * and initials — recognisable at a glance, and never a wrong logo.
+ */
+const TEAM_MARK: Record<string, string> = {
+  // initials alone collide for these two, and a mark that identifies the wrong
+  // team is worse than no mark at all
+  "red bull racing": "RBR",
+  "racing bulls": "RB",
+  "kick sauber": "SAU",
+  "haas f1 team": "HAA",
+  "aston martin": "AM",
+  "alpine": "ALP",
+  "williams": "WIL",
+  "mclaren": "MCL",
+  "mercedes": "MER",
+  "ferrari": "FER",
+  "audi": "AUD",
+  "cadillac": "CAD",
+};
+function teamMark(team: string): string {
+  const known = TEAM_MARK[team.trim().toLowerCase()];
+  if (known) return known;
+  const words = team.replace(/\bF1 Team\b/gi, "").trim().split(/\s+/);
+  if (words.length === 1) return words[0].slice(0, 3).toUpperCase();
+  return words.slice(0, 3).map((w) => w[0]).join("").toUpperCase();
+}
+
 export function DriverPalette({
   open, onClose, drivers, finishOrder, focused, onFocus,
 }: {
@@ -61,14 +90,31 @@ export function DriverPalette({
       role="dialog" aria-modal="true" aria-label="Choose a driver">
       <div className="absolute inset-0 bg-base-950/72 backdrop-blur-sm animate-fade-in" onClick={onClose} />
       <div className="relative w-full max-w-4xl animate-fade-in overflow-hidden rounded-2xl border border-white/10 bg-base-850 shadow-glow">
-        <div className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-3">
-          <Search size={16} className="shrink-0 text-ink-faint" />
-          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)}
-            placeholder="Search a driver or constructor…"
-            onKeyDown={(e) => { if (e.key === "Enter" && flat[0]) pick(flat[0].code); }}
-            className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint" />
-          <span className="hidden text-[11px] text-ink-faint sm:inline">Click a driver to focus</span>
-          <button onClick={onClose} aria-label="Close" className="text-ink-faint hover:text-ink"><X size={16} /></button>
+        {/* title row, then the search field — the instruction used to share a
+            line with the input and wrapped to two ragged lines on narrow modals */}
+        <div className="border-b border-white/[0.07] px-4 pb-3 pt-3.5">
+          <div className="mb-2.5 flex items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-faint">
+              Pick a driver
+            </span>
+            <span className="text-[12px] text-ink-faint">· click to focus their line on the chart</span>
+            <button onClick={onClose} aria-label="Close"
+              className="ml-auto grid h-6 w-6 place-items-center rounded-full text-ink-faint transition-colors hover:bg-white/[0.06] hover:text-ink">
+              <X size={15} />
+            </button>
+          </div>
+          <div className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-base-900/60 px-2.5 py-2 transition-colors focus-within:border-accent/40">
+            <Search size={15} className="shrink-0 text-ink-faint" />
+            <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)}
+              placeholder="Search a driver or constructor…"
+              onKeyDown={(e) => { if (e.key === "Enter" && flat[0]) pick(flat[0].code); }}
+              className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint" />
+            {q && (
+              <span className="shrink-0 text-[11px] tabular-nums text-ink-faint">
+                {flat.length} match{flat.length === 1 ? "" : "es"}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="max-h-[74vh] overflow-y-auto p-3">
@@ -79,26 +125,36 @@ export function DriverPalette({
               {filtered.map(([team, g]) => (
                 <div key={team} className="rounded-xl border p-2.5"
                   style={{ borderColor: `${g.color}33`, background: `linear-gradient(135deg, ${g.color}12, transparent 55%)` }}>
-                  <div className="mb-2 flex items-center gap-2 px-0.5">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: g.color }} />
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted">{team}</span>
+                  {/* a constructor mark rather than a bullet: the colour block
+                      carries the initials, so the team is recognisable at a
+                      glance without relying on reading the name */}
+                  <div className="mb-2.5 flex items-center gap-2 px-0.5">
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-[10px] font-black tracking-tight"
+                      style={{ background: `${g.color}26`, color: g.color, boxShadow: `inset 0 0 0 1px ${g.color}59` }}>
+                      {teamMark(team)}
+                    </span>
+                    <span className="truncate text-[12px] font-semibold uppercase tracking-[0.12em] text-ink-muted">
+                      {team}
+                    </span>
+                    <span className="ml-auto h-1 w-8 shrink-0 rounded-full" style={{ background: `${g.color}80` }} />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     {g.drivers.map((d) => {
                       const on = focused.includes(d.code);
                       return (
                         <button key={d.code} onClick={() => pick(d.code)}
-                          className={cx("group flex items-center gap-2.5 overflow-hidden rounded-lg border py-1.5 pl-1.5 pr-2 text-left transition-all",
-                            on ? "border-white/25 bg-white/[0.06]" : "border-white/[0.05] bg-white/[0.02] hover:-translate-y-px hover:border-white/15 hover:bg-white/[0.05]")}>
+                          className={cx("group flex h-[54px] items-center gap-2.5 overflow-hidden rounded-lg border px-2 text-left transition-all duration-200",
+                            on ? "border-white/25 bg-white/[0.06]"
+                               : "border-white/[0.05] bg-white/[0.02] hover:-translate-y-px hover:border-white/15 hover:bg-white/[0.05]")}>
                           <DriverAvatar driver={d} size={34} />
                           <span className="min-w-0 leading-tight">
                             <span className="block text-[13px] font-extrabold tabular-nums" style={{ color: d.team_color }}>{d.code}</span>
-                            <span className="block truncate text-xs text-ink-muted group-hover:text-ink">{d.name}</span>
+                            <span className="block truncate text-[12.5px] text-ink-muted transition-colors group-hover:text-ink">{d.name}</span>
                           </span>
                         </button>
                       );
                     })}
-                    {g.drivers.length === 1 && <span className="rounded-lg border border-dashed border-white/[0.05]" />}
+                    {g.drivers.length === 1 && <span className="h-[54px] rounded-lg border border-dashed border-white/[0.05]" />}
                   </div>
                 </div>
               ))}

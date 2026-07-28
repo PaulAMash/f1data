@@ -1,5 +1,7 @@
 "use client";
-import { Clock, Gauge, Repeat, Sparkles, Timer, TrendingUp } from "lucide-react";
+import {
+  Building2, Clock, Gauge, Repeat, Sparkles, Target, Timer, TrendingUp, User,
+} from "lucide-react";
 import type { Driver, PracticeSummary, RaceSession } from "@/lib/types";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -37,6 +39,8 @@ function Story({ practice, session }: { practice: PracticeSummary; session: Race
   const maxLaps = Math.max(1, ...p.rows.map((r) => r.laps_completed));
   const avgLaps = p.rows.length
     ? p.rows.reduce((a, r) => a + r.laps_completed, 0) / p.rows.length : null;
+  const improvedCount = p.rows.filter((r) => (r.improvement ?? 0) > 0.2).length;
+  const paceAgrees = !!p.fastest_driver && p.fastest_driver === p.best_long_run_driver;
   const maxImprovement = Math.max(0.001, ...p.rows.map((r) => r.improvement ?? 0));
   const spread = timed.length >= 2
     ? Math.max(0.001, (timed[timed.length - 1].gap_to_fastest ?? 0)) : null;
@@ -151,10 +155,13 @@ function Story({ practice, session }: { practice: PracticeSummary; session: Race
 
         <InsightCard icon={<Timer size={14} />} tone={p.track_evolving ? "amber" : "neutral"}
           label="Track evolution" value={p.track_evolving ? "Getting faster" : "Stable"}
-          visual={<Tally count={p.rows.filter((r) => (r.improvement ?? 0) > 0.2).length} tone="amber"
-            label={`of ${p.rows.length} drivers improved`}
-            emptyLabel="Nobody found meaningful time"
-            meaning="One mark = a driver who found more than two tenths between their first run and their last." />}
+          visual={
+            <Meter label="Drivers who went faster" tone="amber" plainLabel
+              value={`${improvedCount} of ${p.rows.length}`}
+              pct={(improvedCount / Math.max(1, p.rows.length)) * 100}
+              scaleMin="Nobody" scaleMax="Every car"
+              hint="Counted as any driver who found more than two tenths between their first run and their last." />
+          }
           takeaway={p.track_evolving ? "Later runs carried more weight."
             : "Lap times held steady all session."}
           detail={
@@ -162,6 +169,43 @@ function Story({ practice, session }: { practice: PracticeSummary; session: Race
               As cars run, rubber builds on the racing line and the circuit speeds up. When that
               happens, a time set early in the session is worth more than it looks — and the
               running order at the flag can flatter whoever ran last.
+            </p>
+          } />
+        {/* six cards fill the 3-column grid exactly — five left a hole that read
+            as an unfinished layout. This one is also the most useful thing a
+            Friday can tell you: whether one-lap and race pace agree. */}
+        <InsightCard icon={<Target size={14} />}
+          tone={paceAgrees ? "good" : "amber"} label="Friday verdict"
+          value={paceAgrees ? "Pace agrees" : "Split picture"}
+          visual={
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-2">
+                <span className="w-[4.75rem] shrink-0 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  One lap
+                </span>
+                <span className="truncate text-[13px] font-semibold text-ink">
+                  {lastName(nameOf(p.fastest_driver))}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-[4.75rem] shrink-0 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Long run
+                </span>
+                <span className="truncate text-[13px] font-semibold text-ink">
+                  {lastName(nameOf(p.best_long_run_driver))}
+                </span>
+              </div>
+            </div>
+          }
+          takeaway={paceAgrees
+            ? "The same car leads both measures."
+            : "Saturday and Sunday may reward different cars."}
+          detail={
+            <p>
+              One-lap pace is what qualifying rewards; long-run pace is what the race
+              rewards. When the same driver tops both, a Friday is about as conclusive as
+              it gets. When they split, the weekend usually turns on strategy rather than
+              outright speed.
             </p>
           } />
       </InsightGrid>
@@ -272,49 +316,65 @@ function Pace({ practice, session }: { practice: PracticeSummary; session: RaceS
   );
 }
 
+/**
+ * Runs & tyres, on the same board as Pace.
+ *
+ * These used to be two standalone charts sitting side by side, which meant the
+ * Practice pages taught a different interaction from every other analytics page
+ * in the product. Now they are one panel with a Drivers / Constructors toggle —
+ * the same control, in the same place, doing the same thing.
+ */
 function Runs({ practice, session }: { practice: PracticeSummary; session: RaceSession }) {
   const maxLaps = Math.max(1, ...practice.rows.map((r) => r.laps_completed));
+  const byTeam = new Map<string, { color: string; laps: number; drivers: string[] }>();
+  for (const r of practice.rows) {
+    const t = byTeam.get(r.team) ?? { color: r.team_color, laps: 0, drivers: [] };
+    t.laps += r.laps_completed; t.drivers.push(r.driver);
+    byTeam.set(r.team, t);
+  }
+  const teams = [...byTeam.entries()].sort((a, b) => b[1].laps - a[1].laps);
+  const maxTeamLaps = Math.max(1, ...teams.map(([, t]) => t.laps));
+
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card>
-        <CardHeader title="Constructor pace ranking"
-          subtitle="Ranked by each constructor's quickest car."
-          info={<InfoTip text="Constructors ranked by their quickest car's best lap." />} />
-        <CardBody className="space-y-1.5">
-          {practice.team_ranking.map((t, i) => (
-            <div key={t.team} className="flex items-center gap-3 tile px-3 py-2">
-              <span className="w-4 tabular-nums text-ink-faint">{i + 1}</span>
-              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: t.color }} />
-              <span className="flex-1 truncate text-sm">{t.team}</span>
-              <span className="shrink-0 text-xs tabular-nums text-ink-muted">
-                {i === 0 ? "quickest" : `+${t.gap.toFixed(3)}s`}
-              </span>
-            </div>
-          ))}
-        </CardBody>
-      </Card>
-      <Card>
-        <CardHeader title="Running & tyres"
-          subtitle="How much track time each driver banked, and on what."
-          info={<InfoTip text="Laps completed and compounds each driver ran." />} />
-        <CardBody className="space-y-2">
-          {practice.rows.map((r) => (
-            <div key={r.driver} className="flex items-center gap-2.5 text-sm">
-              <DriverBadge driver={driverOf(session, r.driver)} code={r.driver}
-                name={r.name} team={r.team} teamColor={r.team_color}
-                size={24} className="w-40 shrink-0" />
-              {/* laps as a bar: the eye ranks running programmes instantly */}
-              <span className="h-2 flex-1 overflow-hidden rounded-full bg-white/[0.05]">
-                <span className="block h-full rounded-full transition-[width] duration-500"
-                  style={{ width: `${Math.max(5, (r.laps_completed / maxLaps) * 100)}%`, background: r.team_color }} />
-              </span>
-              <span className="w-14 shrink-0 text-right text-xs tabular-nums text-ink-muted">{r.laps_completed}L</span>
-              <span className="w-16 shrink-0"><Compounds list={r.compounds} /></span>
-            </div>
-          ))}
-        </CardBody>
-      </Card>
-    </div>
+    <PaceBoard
+      title="Runs & tyres"
+      prominentSwitch
+      showNotes
+      views={[
+        {
+          id: "drivers", label: "Drivers", icon: <User size={13} />,
+          heroLabel: "Most track time",
+          measures: "Laps completed by each driver — the mileage behind every other number.",
+          info: "How many laps each driver ran. Mileage is the currency of a practice session: more laps means more tyre-degradation data and a more confident call on Sunday.",
+          entries: [...practice.rows]
+            .sort((a, b) => b.laps_completed - a.laps_completed)
+            .map((r) => ({
+              key: r.driver, name: r.name, sub: r.team, color: r.team_color,
+              driver: driverOf(session, r.driver),
+              value: `${r.laps_completed}L`,
+              // the board draws bars from a gap-to-leader, so mileage inverts:
+              // the leader is 0 "behind", everyone else trails them
+              gap: maxLaps - r.laps_completed,
+              note: <Compounds list={r.compounds} />,
+            })),
+          formatGap: (g) => (g === 0 ? "most" : `−${g}L`),
+          emptyTitle: "No running recorded",
+        },
+        {
+          id: "constructors", label: "Constructors", icon: <Building2 size={13} />,
+          heroLabel: "Most laps banked",
+          measures: "Total laps run by each constructor across both cars.",
+          info: "Combined mileage for both of a constructor's cars — a read on which teams prioritised programme work over one-lap headlines.",
+          entries: teams.map(([team, t]) => ({
+            key: team, name: team, color: t.color,
+            value: `${t.laps}L`, gap: maxTeamLaps - t.laps,
+            note: t.drivers.join("+"),
+          })),
+          formatGap: (g) => (g === 0 ? "most" : `−${g}L`),
+          emptyTitle: "No running recorded",
+        },
+      ]}
+    />
   );
 }
 

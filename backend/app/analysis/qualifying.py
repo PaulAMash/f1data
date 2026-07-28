@@ -423,6 +423,37 @@ def _race_word(session: RaceSession) -> str:
     return "Sprint" if session.category == "sprint_qualifying" else "race"
 
 
+def _pole_expansion(q: QualifyingSummary) -> str | None:
+    """How pole was built: which segments they topped, and the time they found."""
+    row = next((r for r in q.rows if r.driver == q.pole_driver), None)
+    if not row:
+        return None
+    topped = [seg for seg in ("Q1", "Q2", "Q3")
+              if q.segment_bests.get(seg) is not None
+              and getattr(row, seg.lower(), None) is not None
+              and abs(getattr(row, seg.lower()) - q.segment_bests[seg]) < 0.0005]
+    last = row.name.split()[-1] if row.name else row.driver
+
+    bits: list[str] = []
+    if len(topped) >= 3:
+        bits.append("topped every segment")
+    elif len(topped) == 2:
+        bits.append(f"was quickest in {topped[0]} and {topped[1]} as well")
+    elif topped == ["Q3"]:
+        bits.append("saved their best for the final shootout")
+    elif topped:
+        bits.append(f"was quickest in {topped[0]}")
+    if row.improvement:
+        bits.append(f"finding {row.improvement:.3f}s between their first run and their last")
+    if row.vs_teammate is not None and row.vs_teammate < -0.05:
+        mate = next((o for o in q.rows if o.team == row.team and o.driver != row.driver), None)
+        if mate:
+            bits.append(f"and out-qualified {mate.driver} by {abs(row.vs_teammate):.3f}s")
+    if not bits:
+        return None
+    return f"{last} " + ", ".join(bits) + "."
+
+
 def _cut_margin(q: QualifyingSummary, seg: str) -> float | None:
     """How close the knockout was: the gap between the slowest car to survive a
     segment and the fastest car eliminated in it.
@@ -500,6 +531,10 @@ def _with_stories(session: RaceSession, q: QualifyingSummary) -> QualifyingSumma
         margin = (f" — just {q.pole_margin:.3f}s ahead of the next car"
                   if q.pole_margin is not None else "")
         s.append(f"{n(q.pole_driver)} was the fastest of anyone and starts first{margin}.")
+        # the sentence under the headline stays on the headline's subject
+        expand = _pole_expansion(q)
+        if expand:
+            s.append(expand)
     if q.track_evolving:
         s.append("The track kept gaining grip all session, so the times that counted came "
                  "late — anyone forced to run early was chasing a moving target.")

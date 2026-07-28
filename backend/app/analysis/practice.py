@@ -11,6 +11,8 @@ from __future__ import annotations
 import statistics
 from collections import defaultdict
 
+from .text import plural
+
 from ..models import (
     Lap,
     PracticeDriverRow,
@@ -172,6 +174,17 @@ def _story(session, rows, fastest, best_long, most_improved) -> list[str]:
         top = rows[0]
         s.append(f"{name_of(fastest)} set the pace in {session.session_type}, a "
                  f"{_fmt(top.best_lap)} best lap on the {(top.compounds or ['?'])[-1].lower()}.")
+        # stay on the headline driver before handing over to anyone else
+        second = rows[1] if len(rows) > 1 else None
+        last = (name_of(fastest) or "").split()[-1]
+        bits = []
+        if second and second.gap_to_fastest:
+            bits.append(f"finished {second.gap_to_fastest:.3f}s clear of "
+                        f"{(second.name or second.driver).split()[-1]}")
+        if top.laps_completed:
+            bits.append(f"over {plural(top.laps_completed, 'lap')} of running")
+        if bits:
+            s.append(f"{last} " + " ".join(bits) + ".")
     if best_long and fastest:
         if best_long.driver != fastest:
             # the genuinely interesting case: one-lap and race-pace disagree

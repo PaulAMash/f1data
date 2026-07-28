@@ -4,7 +4,7 @@ import {
   CartesianGrid, Line, LineChart, ReferenceArea, ReferenceDot, ReferenceLine,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import { Users, X, ArrowUpRight, TrendingUp, TrendingDown, Circle } from "lucide-react";
+import { Users, X, ArrowUpRight, TrendingUp, TrendingDown, Circle, ChevronDown } from "lucide-react";
 import type { RaceSession, Driver, StrategySummary, Compound, RaceInsight, DriverPaceSummary } from "@/lib/types";
 import { COMPOUND_COLOR, COMPOUND_LABEL, COMPOUND_SHORT } from "@/lib/compounds";
 import { EVENT, NEUTRAL_ACCENT, deriveWindows, lapStatusMap, type EventKind, type Win } from "@/lib/raceEvents";
@@ -374,8 +374,12 @@ export function PositionChart({
             </div>
           );
         })()}
-        <div className={cx("w-full select-none transition-opacity duration-300",
-          simple ? "h-[420px]" : "h-[440px]", openMoment != null && "opacity-[0.45]")}>
+        {/* dim the PLOT, never the chrome: the opacity used to sit on this
+            container, which also holds the Recharts tooltip — so hovering inside
+            a selected Safety Car period faded the information card you were
+            trying to read. Selected content stays the clearest thing on screen. */}
+        <div className={cx("w-full select-none",
+          simple ? "h-[420px]" : "h-[440px]", openMoment != null && "plot-dimmed")}>
           <ResponsiveContainer>
             <LineChart data={data} margin={M}>
               {!simple && <CartesianGrid stroke="rgba(255,255,255,0.035)" strokeDasharray="1 6" vertical={false} />}
@@ -468,9 +472,11 @@ function KeyMoments({ moments, narratives, open, simple, onToggle, onClose, driv
 
   return (
     <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-base-900/40">
-      <div className="flex items-center gap-2 px-4 pb-2 pt-3.5">
+      <div className="flex items-center gap-2 px-4 pb-2.5 pt-4">
         <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-faint">Key moments</span>
-        <span className="text-[11px] text-ink-faint/70">· {simple ? "tap a beat for the story" : "tap a beat for the analysis"}</span>
+        <span className="text-[12px] text-ink-faint">
+          · {simple ? "tap a beat for the story" : "tap a beat for the analysis"}
+        </span>
       </div>
       {/* flex-wrap (not a scroll container) so a hover/selected card is never
           clipped along the top edge; padding gives the elevation room */}
@@ -482,19 +488,30 @@ function KeyMoments({ moments, narratives, open, simple, onToggle, onClose, driv
             // never dim it, never move it — so exploring the chart can't make
             // the thing you deliberately chose look less chosen than its
             // neighbours.
+            // the same card vocabulary as the rest of the product: a tinted
+            // glyph tile, then the identity, then the label — and a selected
+            // state that hover can only ever reinforce
             <button key={m.id} onClick={() => onToggle(m.id)} aria-expanded={on}
-              className={cx("group relative flex min-w-[150px] flex-1 flex-col gap-1.5 rounded-xl border p-2.5 text-left transition-all duration-200",
+              className={cx("group relative flex min-w-[168px] flex-1 items-center gap-2.5 rounded-xl border p-3 text-left transition-all duration-200",
                 on ? "accent-breathing -translate-y-0.5 bg-white/[0.09] hover:bg-white/[0.12]"
                    : "bg-white/[0.02] hover:-translate-y-0.5 hover:bg-white/[0.05] hover:[box-shadow:0_0_0_1.5px_var(--mc),0_12px_26px_-10px_rgba(0,0,0,.6)]")}
               style={{ ["--mc" as any]: c, borderColor: on ? c : `${c}55`, ...(on ? { ["--pulse" as any]: `${c}66` } : {}) }}>
-              <div className="flex items-center gap-1.5">
-                <Icon size={13} style={{ color: c }} />
-                <span className="rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums tracking-wide"
-                  style={{ background: `${c}22`, color: c }}>
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-transform duration-200 group-hover:scale-105"
+                style={{ background: `${c}1f`, color: c, boxShadow: on ? `inset 0 0 0 1.5px ${c}66` : undefined }}>
+                <Icon size={15} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[11px] font-bold tabular-nums tracking-wide" style={{ color: c }}>
                   {m.endLap != null && m.endLap > m.lap ? `LAPS ${m.lap}–${m.endLap}` : `LAP ${m.lap}`}
                 </span>
-              </div>
-              <span className={cx("text-[13px] font-semibold leading-tight", on ? "text-ink" : "text-ink-muted group-hover:text-ink")}>{m.label}</span>
+                <span className={cx("block truncate text-[13.5px] font-semibold leading-tight",
+                  on ? "text-ink" : "text-ink-muted group-hover:text-ink")}>
+                  {m.label}
+                </span>
+              </span>
+              <ChevronDown size={14}
+                className={cx("shrink-0 text-ink-faint transition-transform duration-200",
+                  on && "rotate-180 text-ink-muted")} />
             </button>
           );
         })}
@@ -513,7 +530,7 @@ function KeyMoments({ moments, narratives, open, simple, onToggle, onClose, driv
               </span>
               <div className="mt-0.5 text-base font-bold text-ink">{openM.label}</div>
               {openM.endLap != null && openM.endLap > openM.lap && (
-                <div className="mt-0.5 text-[11px] text-ink-faint">
+                <div className="mt-1 text-[12.5px] leading-relaxed text-ink-faint">
                   {openM.endLap - openM.lap + 1} laps neutralised — the highlighted band on the chart
                   is the whole period, not the moment it started.
                 </div>

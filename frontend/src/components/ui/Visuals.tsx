@@ -55,6 +55,20 @@ function useShowProse() {
   return !inPanel || expanded;
 }
 
+/**
+ * Flips true one frame after mount, so a CSS transition has something to animate
+ * from. Used by every bar in the product: the fill grows into place, which makes
+ * the dashboard feel like it is reading the data rather than reciting it.
+ */
+export function useGrowIn() {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setOn(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  return on;
+}
+
 /** Width of an element, for visuals that should fill whatever column they land in. */
 export function useMeasuredWidth<T extends HTMLElement>() {
   const ref = useRef<T | null>(null);
@@ -93,7 +107,7 @@ export function VisualLabel({
   children, term, plain,
 }: { children: React.ReactNode; term?: string; plain?: boolean }) {
   return (
-    <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+    <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
       <Explain term={term} plain={plain}>{children}</Explain>
     </span>
   );
@@ -103,7 +117,7 @@ export function VisualLabel({
 function Scale({ min, max }: { min?: React.ReactNode; max?: React.ReactNode }) {
   if (min == null && max == null) return null;
   return (
-    <div className="mt-1 flex justify-between text-[9.5px] leading-none tabular-nums text-ink-faint/70">
+    <div className="mt-1 flex justify-between text-[11px] leading-none tabular-nums text-ink-faint/80">
       <span>{min}</span><span>{max}</span>
     </div>
   );
@@ -130,6 +144,9 @@ export function Meter({
 }) {
   const c = color ?? TONE_COLOR[tone];
   const showProse = useShowProse();
+  // a bar that grows into place reads as a measurement being taken; one that is
+  // simply *there* reads as a static graphic
+  const grown = useGrowIn();
   return (
     <div className={cx("min-w-0", className)}>
       {(label || value) && (
@@ -141,8 +158,9 @@ export function Meter({
         </div>
       )}
       <div className="relative h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-        <div className="h-full rounded-full transition-[width] duration-500 ease-out"
-          style={{ width: `${Math.max(3, clamp(pct))}%`, background: `linear-gradient(90deg, ${c}59, ${c})` }} />
+        <div className="h-full rounded-full transition-[width] duration-700 ease-out"
+          style={{ width: grown ? `${Math.max(3, clamp(pct))}%` : "0%",
+                   background: `linear-gradient(90deg, ${c}59, ${c})` }} />
         {marker != null && (
           <span title={markerLabel}
             className="absolute top-0 h-full w-px bg-white/45"
@@ -151,12 +169,12 @@ export function Meter({
       </div>
       <Scale min={scaleMin} max={scaleMax} />
       {markerLabel && marker != null && (
-        <div className="mt-1 flex items-center gap-1 text-[9.5px] leading-none text-ink-faint/80">
+        <div className="mt-1 flex items-center gap-1 text-[11px] leading-none text-ink-faint/80">
           <span className="inline-block h-2 w-px bg-white/45" />{markerLabel}
         </div>
       )}
       {hint && showProse && (
-        <div className="mt-1.5 text-[10px] leading-snug text-ink-faint">{hint}</div>
+        <div className="mt-1.5 text-[12px] leading-relaxed text-ink-faint">{hint}</div>
       )}
     </div>
   );
@@ -182,6 +200,7 @@ export function DeltaBar({
 }) {
   const pct = clamp(lean * 100);
   const showProse = useShowProse();
+  const grown = useGrowIn();
   return (
     <div className="min-w-0">
       <div className="mb-1 flex items-baseline gap-2">
@@ -194,18 +213,18 @@ export function DeltaBar({
         <span className="ml-auto truncate text-xs font-semibold text-ink-faint">{right}</span>
       </div>
       <div className="flex h-1.5 gap-0.5 overflow-hidden rounded-full">
-        <span className="rounded-full transition-[width] duration-500 ease-out"
-          style={{ width: `${pct}%`, background: leftColor }} />
+        <span className="rounded-full transition-[width] duration-700 ease-out"
+          style={{ width: grown ? `${pct}%` : "50%", background: leftColor }} />
         <span className="flex-1 rounded-full" style={{ background: `${rightColor}40` }} />
       </div>
       {(leftSub || rightSub) && (
-        <div className="mt-1 flex justify-between gap-2 text-[9.5px] leading-none tabular-nums text-ink-faint/80">
+        <div className="mt-1 flex justify-between gap-2 text-[11px] leading-none tabular-nums text-ink-faint/80">
           <span className="truncate">{leftSub}</span>
           <span className="truncate text-right">{rightSub}</span>
         </div>
       )}
       {caption && showProse && (
-        <div className="mt-1.5 text-[10px] leading-snug text-ink-faint">{caption}</div>
+        <div className="mt-1.5 text-[12px] leading-relaxed text-ink-faint">{caption}</div>
       )}
     </div>
   );
@@ -229,10 +248,10 @@ export function Tally({
       <div>
         <div className="flex items-center gap-2">
           <span className="h-1.5 w-6 rounded-full bg-white/[0.08]" />
-          <span className="text-[11px] font-medium text-ink-faint">{emptyLabel}</span>
+          <span className="text-[12px] font-medium text-ink-muted">{emptyLabel}</span>
         </div>
         {meaning && showProse && (
-          <div className="mt-1 text-[9.5px] leading-snug text-ink-faint/70">{meaning}</div>
+          <div className="mt-1 text-[11.5px] leading-snug text-ink-faint">{meaning}</div>
         )}
       </div>
     );
@@ -247,10 +266,10 @@ export function Tally({
             style={{ background: c, opacity: 0.45 + (0.55 * (i + 1)) / shown }} />
         ))}
         {count > max && <span className="text-[11px] font-semibold tabular-nums" style={{ color: c }}>+{count - max}</span>}
-        {label && <span className="ml-1 text-[11px] text-ink-muted"><Explain>{label}</Explain></span>}
+        {label && <span className="ml-1 text-[12px] text-ink-muted"><Explain>{label}</Explain></span>}
       </div>
       {meaning && showProse && (
-        <div className="mt-1 text-[9.5px] leading-snug text-ink-faint/70">{meaning}</div>
+        <div className="mt-1 text-[11.5px] leading-snug text-ink-faint">{meaning}</div>
       )}
     </div>
   );
@@ -279,19 +298,33 @@ export function PositionShift({
 }
 
 /**
- * A trend with its axis. An unlabelled line says "something changed"; the same
- * line with its endpoints named says what changed, over what, and by how much.
+ * A trend with its axis — and, on hover, its data.
+ *
+ * These small charts sit beside the big ones, so they are held to the same
+ * standard: a guide line follows the cursor, the nearest point lifts, and a
+ * floating card names what you are pointing at. A miniature of the primary
+ * analytics, not a decorative graphic.
  */
+export interface SparkPoint {
+  /** Heading of the hover card, e.g. "Lap 34" or "Q2". */
+  label: string;
+  /** Rows of the hover card. */
+  rows?: { k: string; v: string }[];
+}
+
 export function Sparkline({
-  points, labels, tone = "speed", width, height = 28, lowerIsBetter = true, valueFmt, fluid = false,
+  points, labels, tone = "speed", width, height = 28, lowerIsBetter = true, valueFmt,
+  fluid = false, meta, unit,
 }: {
   points: number[];
-  /** Names for the first and last point, e.g. ["Q1", "Q3"]. */
   labels?: [string, string];
   tone?: VisualTone; width?: number; height?: number; lowerIsBetter?: boolean;
   valueFmt?: (v: number) => string;
   /** Grow to fill the container — for a trend that is the point of its panel. */
   fluid?: boolean;
+  /** Per-point detail for the hover card. Without it the chart isn't inspectable. */
+  meta?: SparkPoint[];
+  unit?: string;
 }) {
   // measured rather than percentage-scaled, so the dots stay round and the
   // stroke keeps its weight however wide the column happens to be
@@ -300,17 +333,20 @@ export function Sparkline({
   return (
     <div ref={boxRef} className={fluid ? "w-full min-w-0" : undefined}>
       <SparkBody points={points} labels={labels} tone={tone} width={w} height={height}
-        lowerIsBetter={lowerIsBetter} valueFmt={valueFmt} />
+        lowerIsBetter={lowerIsBetter} valueFmt={valueFmt} meta={meta} unit={unit} />
     </div>
   );
 }
 
 function SparkBody({
-  points, labels, tone, width, height, lowerIsBetter, valueFmt,
+  points, labels, tone, width, height, lowerIsBetter, valueFmt, meta, unit,
 }: {
   points: number[]; labels?: [string, string]; tone: VisualTone;
   width: number; height: number; lowerIsBetter: boolean; valueFmt?: (v: number) => string;
+  meta?: SparkPoint[]; unit?: string;
 }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const grown = useGrowIn();
   if (points.length < 2) return null;
   const lo = Math.min(...points), hi = Math.max(...points);
   const span = hi - lo || 1;
@@ -323,18 +359,72 @@ function SparkBody({
   // a horizon line at the starting value turns "a wiggly line" into "it went
   // below where it began" — direction you can read without a legend
   const y0 = y(points[0]);
+  const fmt = valueFmt ?? ((v: number) => v.toFixed(2));
+
+  const onMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setHover(Math.max(0, Math.min(points.length - 1, Math.round((e.clientX - r.left) / step))));
+  };
+  const hv = hover != null ? points[hover] : null;
+  const hm = hover != null ? meta?.[hover] : undefined;
+
   return (
     <div className="min-w-0">
-      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="overflow-visible" aria-hidden>
-        <line x1={0} y1={y0} x2={width} y2={y0} stroke="currentColor"
-          className="text-ink-faint/35" strokeWidth={1} strokeDasharray="2 3" />
-        <path d={`${d} L${width},${height} L0,${height} Z`} fill={c} opacity={0.1} />
-        <path d={d} fill="none" stroke={c} strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" />
-        <circle cx={0} cy={y(points[0])} r={2} fill={c} opacity={0.6} />
-        <circle cx={width} cy={y(last)} r={2.75} fill={c} />
-      </svg>
+      <div className="relative cursor-crosshair" style={{ width, height }}
+        onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+        <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}
+          className="overflow-visible" aria-hidden>
+          <line x1={0} y1={y0} x2={width} y2={y0} stroke="currentColor"
+            className="text-ink-faint/35" strokeWidth={1} strokeDasharray="2 3" />
+          <path d={`${d} L${width},${height} L0,${height} Z`} fill={c}
+            opacity={grown ? 0.1 : 0} style={{ transition: "opacity .7s ease" }} />
+          {/* the line draws itself in — the chart arrives rather than appearing */}
+          <path d={d} fill="none" stroke={c} strokeWidth={1.75}
+            strokeLinecap="round" strokeLinejoin="round"
+            style={{
+              strokeDasharray: width * 2.5, strokeDashoffset: grown ? 0 : width * 2.5,
+              transition: "stroke-dashoffset 1.1s ease-out",
+            }} />
+          <circle cx={0} cy={y(points[0])} r={2} fill={c} opacity={0.6} />
+          <circle cx={width} cy={y(last)} r={2.75} fill={c} />
+          {hover != null && (
+            <>
+              <line x1={hover * step} y1={0} x2={hover * step} y2={height}
+                stroke={c} strokeWidth={1} opacity={0.45} />
+              <circle cx={hover * step} cy={y(points[hover])} r={3.5} fill="#0b0e16"
+                stroke={c} strokeWidth={2} />
+            </>
+          )}
+        </svg>
+
+        {hover != null && hv != null && (
+          <div className="pointer-events-none absolute bottom-full z-40 mb-2 w-max min-w-[7.5rem] max-w-[14rem] rounded-lg border border-white/10 bg-base-900/95 p-2.5 shadow-glow backdrop-blur-sm"
+            style={{
+              left: Math.min(Math.max(hover * step, 0), Math.max(0, width - 40)),
+              transform: hover * step > width * 0.6 ? "translateX(-88%)" : "translateX(-12%)",
+            }}>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+              {hm?.label ?? `Point ${hover + 1}`}
+            </div>
+            <div className="mt-0.5 text-base font-bold tabular-nums" style={{ color: c }}>
+              {fmt(hv)}{unit ?? ""}
+            </div>
+            {hm?.rows?.length ? (
+              <div className="mt-1.5 space-y-0.5 border-t border-white/[0.07] pt-1.5">
+                {hm.rows.map((r, i) => (
+                  <div key={i} className="flex justify-between gap-3 text-[12px] leading-snug">
+                    <span className="text-ink-faint">{r.k}</span>
+                    <span className="tabular-nums text-ink">{r.v}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+
       {labels && (
-        <div className="mt-0.5 flex justify-between text-[9.5px] leading-none tabular-nums text-ink-faint/70"
+        <div className="mt-1 flex justify-between text-[11px] leading-none tabular-nums text-ink-faint/80"
           style={{ width }}>
           <span>{labels[0]}{valueFmt ? ` ${valueFmt(points[0])}` : ""}</span>
           <span>{labels[1]}{valueFmt ? ` ${valueFmt(last)}` : ""}</span>
@@ -366,7 +456,7 @@ export function SectorChips({
                   : "border-white/[0.06] bg-white/[0.02] text-ink-faint")}>
               S{i + 1}
             </span>
-            <div className={cx("mt-0.5 text-center text-[9.5px] leading-none tabular-nums",
+            <div className={cx("mt-1 text-center text-[11px] leading-none tabular-nums",
               owned[i] ? "text-emerald-300/80" : "text-ink-faint/70")}>
               {d == null ? "—" : d <= 0.0005 ? "best" : `+${d.toFixed(3)}`}
             </div>

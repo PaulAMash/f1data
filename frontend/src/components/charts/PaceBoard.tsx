@@ -35,7 +35,7 @@ export interface PaceEntry {
   /** Gap to the benchmark in seconds; 0 for the leader. */
   gap: number;
   /** Optional trailing detail, shown in Advanced only. */
-  note?: string;
+  note?: React.ReactNode;
   /** Rows whose value isn't comparable (retired, too few laps). */
   dim?: boolean;
 }
@@ -154,7 +154,7 @@ export function PaceBoard({
                 {/* the note gets its own column so the gap is never displaced —
                     both numbers matter, and they must line up down the list */}
                 {hasNotes && (
-                  <span className="hidden w-9 shrink-0 text-right text-[11px] tabular-nums text-ink-faint sm:inline">
+                  <span className="hidden w-16 shrink-0 text-right text-[11px] tabular-nums text-ink-faint sm:inline">
                     {e.note ?? ""}
                   </span>
                 )}

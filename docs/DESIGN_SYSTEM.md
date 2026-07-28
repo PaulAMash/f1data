@@ -75,6 +75,49 @@ The `StoryPanel` follows the same contract: lede plus one beat, then
 
 ---
 
+## The headline owns the sentence beneath it
+
+The first supporting line of any session story must expand on the subject of the
+lede. A headline about one driver followed by a paragraph about someone else
+reads as a non-sequitur and costs the reader the thread. Secondary stories come
+after the panel is expanded. Enforced in the backend narrative builders
+(`_winner_expansion`, `_pole_expansion`, and the practice equivalent), not in the
+UI — the data layer should never hand the interface a disordered story.
+
+---
+
+## Motion: alive, never busy
+
+Movement earns its place by carrying information:
+
+* **Bars grow into place** on mount (`useGrowIn`) — a measurement being taken.
+* **Sparklines draw themselves in** left to right.
+* **Selected states breathe** in their own accent colour.
+* **Glyph tiles lift** slightly on hover, so what is interactive says so.
+
+Every animation is disabled under `prefers-reduced-motion: reduce`. Nothing loops
+faster than ~1.8s; nothing moves that the reader didn't cause or that isn't
+telling them something.
+
+---
+
+## Mini charts are charts
+
+A small visualisation is held to the same standard as a large one. `Sparkline`
+takes `meta` and renders a guide line, a lifted point and a floating card with
+real rows — lap number, air and track temperature, trend, conditions. If a
+graphic isn't worth making inspectable, it probably isn't worth drawing.
+
+---
+
+## Type: information-dense, still comfortable
+
+Nothing meaningful renders below **11px**. Uppercase micro-labels sit at 11px;
+scales and captions at 11–12px; supporting prose and drawer content at 12–13px.
+A dashboard is read for hours, not glanced at once.
+
+---
+
 ## A visual must explain itself
 
 A bar that only shows a fill is decoration. Before shipping any visualisation,

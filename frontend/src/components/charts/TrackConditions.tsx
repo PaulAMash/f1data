@@ -217,9 +217,29 @@ export function TrackConditionsPanel({
   const Sky = r.wet ? CloudRain : (r.humidity ?? 0) > 65 ? CloudSun : Sun;
   const skyTone = r.wet ? "sky" : (r.humidity ?? 0) > 65 ? "neutral" : "amber";
   const verdict = r.track != null ? trackVerdict(r.track) : null;
-  // the session's own temperature trend, drawn rather than described
-  const trackSeries = session.weather
-    .map((w) => w.track_temp).filter((v): v is number => v != null);
+  // the session's own temperature trend, drawn rather than described — and
+  // inspectable, so a reading is a data point rather than a shape
+  const readings = session.weather.filter((w) => w.track_temp != null);
+  const trackSeries = readings.map((w) => w.track_temp as number);
+  const trackMeta = readings.map((w, i) => {
+    const prev = i > 0 ? (readings[i - 1].track_temp as number) : null;
+    const d = prev == null ? null : (w.track_temp as number) - prev;
+    return {
+      label: w.lap != null ? `Lap ${w.lap}` : `Reading ${i + 1}`,
+      rows: [
+        ...(w.air_temp != null ? [{ k: "Air", v: `${w.air_temp.toFixed(1)}°C` }] : []),
+        ...(w.humidity != null ? [{ k: "Humidity", v: `${w.humidity.toFixed(0)}%` }] : []),
+        ...(w.wind_speed != null ? [{ k: "Wind", v: `${w.wind_speed.toFixed(1)} km/h` }] : []),
+        {
+          k: "Trend",
+          v: d == null ? "first reading"
+            : d > 0.2 ? `warming +${d.toFixed(1)}°`
+              : d < -0.2 ? `cooling ${d.toFixed(1)}°` : "steady",
+        },
+        { k: "Conditions", v: w.rainfall ? "Rain falling" : "Dry" },
+      ],
+    };
+  });
 
   return (
     <section className="panel overflow-hidden">
@@ -245,7 +265,7 @@ export function TrackConditionsPanel({
             </div>
           )}
           {verdict && (
-            <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">{verdict.detail}</p>
+            <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-faint">{verdict.detail}</p>
           )}
         </div>
 
@@ -272,9 +292,10 @@ export function TrackConditionsPanel({
               <VisualLabel term="track temp">Track through the session</VisualLabel>
               <div className="mt-1.5">
                 <Sparkline points={trackSeries} tone="amber" lowerIsBetter={false} fluid
-                  labels={["Start", "End"]} valueFmt={(v) => `${v.toFixed(0)}°`} height={46} />
+                  labels={["Start", "End"]} valueFmt={(v) => `${v.toFixed(0)}°`} height={46}
+                  meta={trackMeta} unit="C track" />
               </div>
-              <p className="mt-1.5 text-[10px] leading-snug text-ink-faint">
+              <p className="mt-1.5 text-[12px] leading-relaxed text-ink-faint">
                 {trackSeries[trackSeries.length - 1] > trackSeries[0] + 1
                   ? "The tarmac warmed up — tyres ran hotter as the session went on."
                   : trackSeries[trackSeries.length - 1] < trackSeries[0] - 1
@@ -288,7 +309,7 @@ export function TrackConditionsPanel({
               <div className="mt-1 text-lg font-bold tabular-nums text-ink">
                 {r.trackMin.toFixed(0)}–{r.trackMax.toFixed(0)}°C
               </div>
-              <p className="mt-1 text-[10px] leading-snug text-ink-faint">
+              <p className="mt-1 text-[12px] leading-relaxed text-ink-faint">
                 The span the tarmac covered across the session.
               </p>
             </>
@@ -322,7 +343,7 @@ export function TrackConditionsPanel({
                       style={{ transform: `rotate(${r.windDir + 180}deg)` }} />
                   </span>
                 )}
-                <span className="text-[10px] leading-snug text-ink-faint">
+                <span className="text-[12px] leading-relaxed text-ink-faint">
                   {r.windDir != null
                     ? `Blowing from the ${compassOf(r.windDir)}. A headwind into a braking zone steadies the car; a tailwind makes it harder to slow.`
                     : r.wind < 5
