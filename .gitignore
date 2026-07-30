@@ -38,3 +38,9 @@ yarn-error.log*
 # TS incremental build cache
 frontend/tsconfig.tsbuildinfo
 *.tsbuildinfo
+
+# --- release bundles ---
+# Each `pitwalliqv<N>.bundle` is a git bundle of this very repository, produced
+# for delivery. Committing one would nest a copy of the history inside the
+# history it was made from, and add ~1 MB per version forever.
+*.bundle
