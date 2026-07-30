@@ -531,3 +531,100 @@ def test_compound_recovery_takes_the_majority_not_the_first_lap():
 
     recover_stint_compounds(session)
     assert session.stints[0].compound == Compound.MEDIUM
+
+
+# --------------------------------------------------------------------------- #
+# Source diagnostics
+#
+# The archive probe used to walk nine seasons and report one generic
+# "host blocked?" sentence for every possible failure, and the UI printed the
+# word "unreachable" without it. An HTTP 403 (host up, refusing us) and a DNS
+# failure (nothing to do with F1) were indistinguishable — which is how two days
+# passed without knowing which one was happening.
+# --------------------------------------------------------------------------- #
+class _Resp:
+    def __init__(self, status, payload=None, body=b"{}"):
+        self.status_code, self._payload, self.content = status, payload, body
+        self.encoding = None
+
+    def json(self):
+        if self._payload is None:
+            raise ValueError("not json")
+        return self._payload
+
+
+def _probe_with(monkeypatch, result):
+    """Run pitwall_adapter.probe() with a stubbed HTTP layer."""
+    import pitwall
+    from app.adapters import pitwall_adapter
+
+    def fake_get(url, **kw):
+        if isinstance(result, Exception):
+            raise result
+        return result
+    monkeypatch.setattr(pitwall._http, "get", fake_get)
+    return pitwall_adapter.probe()
+
+
+def test_probe_reports_a_403_as_a_refusal_not_an_outage(monkeypatch):
+    ok, detail = _probe_with(monkeypatch, _Resp(403))
+    assert ok is False
+    # the distinction that matters: the host answered, so it is not down
+    assert "403" in detail
+    assert "up but refused" in detail
+    assert "User-Agent" in detail
+
+
+def test_probe_reports_a_404_as_a_moved_path(monkeypatch):
+    ok, detail = _probe_with(monkeypatch, _Resp(404))
+    assert ok is False and "404" in detail and "moved" in detail
+
+
+def test_probe_reports_rate_limiting_distinctly(monkeypatch):
+    ok, detail = _probe_with(monkeypatch, _Resp(429))
+    assert ok is False and "rate limited" in detail.lower()
+
+
+def test_probe_separates_transport_failures_from_http_answers(monkeypatch):
+    ok, detail = _probe_with(monkeypatch, OSError("Name or service not known"))
+    assert ok is False and "DNS" in detail
+
+    ok, detail = _probe_with(monkeypatch, OSError("proxy CONNECT tunnel failed"))
+    assert ok is False and "proxy" in detail
+
+    ok, detail = _probe_with(monkeypatch, OSError("certificate verify failed"))
+    assert ok is False and "TLS" in detail
+
+
+def test_probe_success_reports_what_it_found(monkeypatch):
+    ok, detail = _probe_with(monkeypatch, _Resp(200, {"Meetings": [{}, {}, {}]}))
+    assert ok is True and "3 meetings" in detail
+
+
+def test_probe_catches_a_200_that_is_not_the_index(monkeypatch):
+    """A CDN error page served with a 200 must not read as healthy."""
+    ok, detail = _probe_with(monkeypatch, _Resp(200, None))
+    assert ok is False and "layout may have changed" in detail
+
+
+def test_archive_requests_do_not_use_the_bare_library_user_agent():
+    """livetiming.formula1.com is behind a CDN with bot rules; the package's
+    default "Pitwall/1.0" is exactly the kind of agent those rules reject."""
+    import pitwall
+    from app.adapters import pitwall_adapter  # noqa: F401  (import applies the header)
+    ua = pitwall._http.headers.get("User-Agent", "")
+    assert ua and ua != "Pitwall/1.0"
+
+
+def test_health_lists_the_archive_once_under_the_host_it_probes(monkeypatch):
+    """It used to appear twice — as "fastf1", plus a "pitwall" row saying it
+    "uses FastF1" — two rows for one host, each describing the other."""
+    from app.adapters import data_source_manager as dsm
+    monkeypatch.setattr(dsm.openf1_adapter, "probe", lambda: (True, "reachable"))
+    monkeypatch.setattr(dsm.jolpica_adapter, "probe", lambda: (True, "reachable"))
+    monkeypatch.setattr(dsm.fastf1, "probe", lambda: (False, "HTTP 403 — the host is up but refused this request."))
+    names = [p.name for p in dsm.data_source_health()]
+    assert "f1-archive" in names
+    assert "fastf1" not in names and "pitwall" not in names
+    row = next(p for p in dsm.data_source_health() if p.name == "f1-archive")
+    assert row.detail and "403" in row.detail

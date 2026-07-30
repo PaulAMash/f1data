@@ -66,7 +66,9 @@ def test_data_sources_health_endpoint():
     r = client.get("/api/health/data-sources")
     assert r.status_code == 200
     names = {p["name"] for p in r.json()["probes"]}
-    assert {"openf1", "jolpica", "fastf1", "cache"} <= names
+    # the archive row is named after the host it probes (livetiming.formula1.com)
+    # rather than after FastF1, the library that happens to read it
+    assert {"openf1", "jolpica", "f1-archive", "cache"} <= names
 
 
 def test_grid_changes_report_drops_promotions_and_pit_lane_starts(monkeypatch):

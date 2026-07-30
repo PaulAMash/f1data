@@ -30,6 +30,20 @@ class Settings(BaseSettings):
 
     fetch_timeout: int = int(os.getenv("PITWALL_IQ_FETCH_TIMEOUT", "30"))
 
+    # How we introduce ourselves to F1's archive CDN.
+    #
+    # livetiming.formula1.com sits behind a CDN with bot rules, and the `pitwall`
+    # package ships a bare "Pitwall/1.0" agent. A tightened rule on that agent
+    # rejects every request with a 403 while the host is perfectly healthy —
+    # which looks exactly like an outage and is not one. A browser-shaped agent
+    # is the ordinary fix; it is overridable so it can be changed without a
+    # release when their rules move again.
+    archive_user_agent: str = os.getenv(
+        "PITWALL_IQ_ARCHIVE_UA",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    )
+
     # --- cache ------------------------------------------------------------ #
     cache_dir: Path = Path(os.getenv("PITWALL_IQ_CACHE_DIR", str(_BACKEND_DIR / "data" / "cache")))
     cache_ttl_hours: int = int(os.getenv("PITWALL_IQ_CACHE_TTL_HOURS", "720"))  # 30 days

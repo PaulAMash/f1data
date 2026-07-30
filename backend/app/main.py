@@ -74,6 +74,61 @@ def health_data_sources():
     return {"probes": [p.model_dump() for p in probes]}
 
 
+@app.get("/api/debug/archive")
+def debug_archive():
+    """Settle "is the F1 archive down, or is it us?" in one request.
+
+    The Live source status row can only ever say pass/fail. This returns the raw
+    evidence: the exact URL, the HTTP status, the User-Agent we sent, the timing,
+    and — crucially — the same request with the library's default agent, so a
+    WAF rule on the agent shows up as one passing and one failing. If both
+    return the same non-200 the host really is refusing everyone.
+    """
+    import time
+    import requests
+    import pitwall
+    from .config import get_settings as _gs
+
+    url = f"{pitwall.STATIC_BASE}/{pitwall_probe_year()}/Index.json"
+
+    def attempt(label: str, ua: str) -> dict:
+        t0 = time.perf_counter()
+        try:
+            resp = requests.get(url, headers={"User-Agent": ua},
+                                timeout=_gs().fetch_timeout)
+            return {"as": label, "user_agent": ua[:60], "status": resp.status_code,
+                    "ms": round((time.perf_counter() - t0) * 1000),
+                    "bytes": len(resp.content),
+                    "verdict": "ok" if resp.status_code == 200
+                               else "refused (host is up)" if resp.status_code in (401, 403)
+                               else f"HTTP {resp.status_code}"}
+        except Exception as exc:  # noqa: BLE001
+            return {"as": label, "user_agent": ua[:60], "status": None,
+                    "ms": round((time.perf_counter() - t0) * 1000),
+                    "error": f"{type(exc).__name__}: {exc}"[:200],
+                    "verdict": "no HTTP response — transport failure"}
+
+    ours = attempt("configured", _gs().archive_user_agent)
+    theirs = attempt("library default", "Pitwall/1.0")
+    both_fail = ours.get("status") != 200 and theirs.get("status") != 200
+    ua_rule = ours.get("status") == 200 and theirs.get("status") in (401, 403)
+    return {
+        "url": url,
+        "attempts": [ours, theirs],
+        "conclusion": (
+            "A bot rule on the User-Agent — the host is healthy and answers a "
+            "browser-shaped request. Keep PITWALL_IQ_ARCHIVE_UA set." if ua_rule
+            else "Both agents were refused or failed. The problem is not our "
+                 "User-Agent — check the transport errors above." if both_fail
+            else "The archive is answering normally."),
+    }
+
+
+def pitwall_probe_year() -> int:
+    from .adapters.pitwall_adapter import _probe_year
+    return _probe_year()
+
+
 @app.get("/api/debug/headshots")
 def debug_headshots(year: int = Query(...), gp: str = Query(...),
                     session: str = Query("Race"), mock: bool = Query(False)):

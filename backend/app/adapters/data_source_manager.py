@@ -221,6 +221,53 @@ def _merge_missing_facets(session: RaceSession, primary: str) -> None:
             log.info("jolpica classification merge failed: %s", exc)
 
 
+#: Facets the F1 live-timing archive carries that Jolpica does not. Jolpica is a
+#: results archive — it has no tyre stints, no weather trace and no race-control
+#: log — so these were the facets nothing ever backfilled.
+_ARCHIVE_FACETS = ("stints", "race_control", "weather")
+
+
+def _merge_from_archive(session: RaceSession, primary: str) -> None:
+    """Fill the facets only the F1 archive has.
+
+    The archive was wired as a *fallback* — used when OpenF1 fails entirely —
+    and never as an *enrichment* source. So when OpenF1 answered but returned an
+    empty stint list (or no weather, or no race control), those facets stayed in
+    `missing`, `partial` went true, and every single session wore the "Partial
+    data" chip. The archive was sitting there with exactly that data and was
+    never asked for it.
+
+    Only runs when something is actually missing, only asks for the facets that
+    are missing, and never overwrites data the primary source did supply.
+    """
+    if primary == "f1-archive" or not session.source_report:
+        return
+    wanted = [f for f in _ARCHIVE_FACETS if f in session.source_report.missing]
+    if not wanted:
+        return
+    try:
+        other = fastf1.fetch_session(session.year, session.grand_prix, session.session_type)
+    except Exception as exc:  # noqa: BLE001
+        log.info("archive facet merge unavailable: %s", exc)
+        return
+
+    if "stints" in wanted and other.stints and not session.stints:
+        session.stints = other.stints
+        _set_facet(session, "stints", "f1-archive", "high",
+                   "Tyre stints from the F1 live-timing archive.")
+    if "race_control" in wanted and other.race_control and not session.race_control:
+        session.race_control = other.race_control
+        # the derived neutralisation windows come from the same feed
+        if other.track_status_windows and not session.track_status_windows:
+            session.track_status_windows = other.track_status_windows
+        _set_facet(session, "race_control", "f1-archive", "high",
+                   "Official race-control log from the F1 live-timing archive.")
+    if "weather" in wanted and other.weather and not session.weather:
+        session.weather = other.weather
+        _set_facet(session, "weather", "f1-archive", "high",
+                   "Weather trace from the F1 live-timing archive.")
+
+
 def _enrich_retirements(session: RaceSession, primary: str) -> None:
     """Copy across what live timing lacks from the official archive: retirement
     reasons ("Hydraulics", "Collision", ...) for the DNF badge, and the FIA
@@ -328,6 +375,9 @@ def _post_process(session: RaceSession, primary: str) -> None:
 
     # fill hollow facets from other sources before any analysis-dependent steps
     _merge_missing_facets(session, primary)
+    # …including the stints / race control / weather that only the F1 archive
+    # has. Skipping this step is why every session reported partial data.
+    _merge_from_archive(session, primary)
 
     # retirement reasons for the DNF badge (jolpica has them, live timing doesn't)
     _enrich_retirements(session, primary)
@@ -408,13 +458,13 @@ def data_source_health() -> list[SourceProbe]:
     probes.append(SourceProbe(name="openf1", reachable=ok, detail=detail))
     ok, detail = jolpica_adapter.probe()
     probes.append(SourceProbe(name="jolpica", reachable=ok, detail=detail))
-    # FastF1 / pitwall share the F1 archive host
-    try:
-        fastf1.list_seasons()
-        probes.append(SourceProbe(name="fastf1", reachable=True, detail="reachable"))
-    except Exception as exc:  # noqa: BLE001
-        probes.append(SourceProbe(name="fastf1", reachable=False, detail=str(exc)[:120]))
-    probes.append(SourceProbe(name="pitwall", reachable=None, detail="uses FastF1 / F1 archive"))
+    # The F1 live-timing archive (livetiming.formula1.com), reached through
+    # pitwall's static helpers and read by FastF1 when it's installed. It used to
+    # be listed as "fastf1" with a separate "pitwall" row underneath saying it
+    # "uses FastF1" — two rows for one host, each describing the other. One row,
+    # named after the thing being probed.
+    ok, detail = fastf1.probe()
+    probes.append(SourceProbe(name="f1-archive", reachable=ok, detail=detail))
     probes.append(SourceProbe(name="cache", reachable=True,
                               detail=str(get_settings().cache_dir)))
     return probes

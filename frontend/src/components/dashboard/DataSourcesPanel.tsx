@@ -8,7 +8,12 @@ import { Spinner } from "@/components/ui/misc";
 import { cx } from "@/lib/format";
 
 const SOURCE_NAMES: Record<string, string> = {
-  openf1: "OpenF1", fastf1: "FastF1", jolpica: "Jolpica / Ergast",
+  openf1: "OpenF1",
+  // named after the host we actually probe, not the library that reads it —
+  // "FastF1 unreachable" sent everyone looking at the wrong thing
+  "f1-archive": "F1 live-timing archive",
+  fastf1: "F1 live-timing archive",
+  jolpica: "Jolpica / Ergast",
   pitwall: "pitwall", cache: "Local cache", mock: "Demo generator",
 };
 
@@ -79,15 +84,32 @@ export function DataSourcesPanel({
             {probes.length === 0 && (
               <p className="text-sm text-ink-faint">Press “Check now” to test each F1 data source.</p>
             )}
+            {/* The failure case is the ONLY case where the reader needs detail,
+                and it was the one case that threw it away: a failed probe
+                printed the literal word "unreachable" and hid the backend's
+                diagnosis in a title attribute. Two days of "unreachable" told
+                nobody whether F1 was down, our request was refused, or DNS had
+                broken. The reason is now on the page. */}
             {probes.map((p) => (
-              <div key={p.name} className="flex items-center gap-2 text-sm">
-                {p.reachable === true ? <CheckCircle2 size={15} className="text-emerald-400" />
-                  : p.reachable === false ? <XCircle size={15} className="text-rose-400" />
-                    : <CircleHelp size={15} className="text-ink-faint" />}
-                <span className="flex-1">{SOURCE_NAMES[p.name] ?? p.name}</span>
-                <span className="max-w-[45%] truncate text-xs text-ink-faint" title={p.detail}>
-                  {p.reachable === true ? "reachable" : p.reachable === false ? "unreachable" : (p.detail ?? "n/a")}
-                </span>
+              <div key={p.name} className="text-sm">
+                <div className="flex items-center gap-2">
+                  {p.reachable === true ? <CheckCircle2 size={15} className="shrink-0 text-emerald-400" />
+                    : p.reachable === false ? <XCircle size={15} className="shrink-0 text-rose-400" />
+                      : <CircleHelp size={15} className="shrink-0 text-ink-faint" />}
+                  <span className="flex-1 truncate">{SOURCE_NAMES[p.name] ?? p.name}</span>
+                  <span className={cx("shrink-0 text-xs font-medium",
+                    p.reachable === true ? "text-emerald-300"
+                      : p.reachable === false ? "text-rose-300" : "text-ink-faint")}>
+                    {p.reachable === true ? "reachable"
+                      : p.reachable === false ? "not answering" : "not probed"}
+                  </span>
+                </div>
+                {p.detail && (
+                  <p className={cx("ml-[23px] mt-0.5 text-[11.5px] leading-snug",
+                    p.reachable === false ? "text-rose-200/80" : "text-ink-faint")}>
+                    {p.detail}
+                  </p>
+                )}
               </div>
             ))}
           </CardBody>

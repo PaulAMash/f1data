@@ -52,6 +52,40 @@ class FetchError(RuntimeError):
 
 
 # --------------------------------------------------------------------------- #
+# How we introduce ourselves to F1's archive.
+#
+# `pitwall` sets a bare `User-Agent: Pitwall/1.0` on its shared session.
+# livetiming.formula1.com is behind a CDN with bot rules, and a tightened rule on
+# an unrecognised agent returns 403 for every request while the host itself is
+# perfectly healthy — indistinguishable from an outage unless the probe reports
+# the status code (it now does).
+#
+# Patching the session at import is deliberate: `pitwall._http` is a module-level
+# singleton every one of its helpers uses, so this is the only place that reaches
+# all of them, and it keeps the workaround in one documented spot instead of at
+# every call site.
+# --------------------------------------------------------------------------- #
+def _brand_http_session() -> None:
+    try:
+        import pitwall
+        ua = get_settings().archive_user_agent
+        if ua:
+            pitwall._http.headers.update({
+                "User-Agent": ua,
+                # the archive is a plain JSON/static host; asking for what we can
+                # actually parse keeps us out of "compressed stream" surprises
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "en-GB,en;q=0.9",
+            })
+    except Exception:  # noqa: BLE001
+        # never let branding stop the app from starting
+        pass
+
+
+_brand_http_session()
+
+
+# --------------------------------------------------------------------------- #
 # Compound / track-status normalization
 # --------------------------------------------------------------------------- #
 _COMPOUND_MAP = {
@@ -109,15 +143,91 @@ def _sec(td) -> float | None:
 def list_seasons() -> list[Season]:
     import pitwall
     seasons: list[Season] = []
+    errors: list[str] = []
     for year in range(2018, datetime.now().year + 1):
         try:
             n = len(pitwall._get_json(f"{year}/Index.json").get("Meetings", []))
             seasons.append(Season(year=year, events=n))
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            # keep the reason. Swallowing these was how a WAF rejection, a
+            # renamed path and a DNS failure all became the same sentence.
+            errors.append(f"{year}: {type(exc).__name__}: {exc}"[:120])
             continue
     if not seasons:
-        raise FetchError("Could not reach the F1 season index (host blocked?).")
+        raise FetchError(
+            "Could not reach the F1 season index. "
+            + (errors[-1] if errors else "no attempts were made."))
     return seasons
+
+
+# --------------------------------------------------------------------------- #
+# Reachability probe
+#
+# This is what the Data Sources panel's archive row actually tests. It used to
+# call list_seasons(), which walks 2018→now — nine sequential requests at a
+# 15s timeout — and then reported one generic "host blocked?" sentence whatever
+# had gone wrong. That is why an outage and a rejected User-Agent looked
+# identical for two days.
+#
+# One request, and the verdict names the cause: a 403 is a very different
+# problem from a DNS failure, and only one of them is F1's fault.
+# --------------------------------------------------------------------------- #
+def probe() -> tuple[bool, str]:
+    import pitwall
+    url = f"{pitwall.STATIC_BASE}/{_probe_year()}/Index.json"
+    try:
+        resp = pitwall._http.get(url, timeout=get_settings().fetch_timeout)
+    except Exception as exc:  # noqa: BLE001
+        return False, _transport_detail(exc)
+
+    code = resp.status_code
+    if code == 200:
+        try:
+            resp.encoding = "utf-8-sig"
+            meetings = resp.json().get("Meetings", [])
+        except Exception:  # noqa: BLE001
+            return False, ("host answered 200 but the season index wasn't JSON — "
+                           "the archive layout may have changed")
+        return True, f"reachable · {len(meetings)} meetings in the index"
+
+    # An HTTP answer means the host is UP and talking to us. Saying
+    # "unreachable" here would be a lie, and it is the lie that cost two days.
+    if code in (401, 403):
+        return False, (f"HTTP {code} — the host is up but refused this request. "
+                       "Usually a bot/WAF rule on the User-Agent, not an outage.")
+    if code == 404:
+        return False, (f"HTTP {code} — the host is up but this path is gone; "
+                       "the archive index may have moved.")
+    if code == 429:
+        return False, f"HTTP {code} — rate limited. Back off and retry."
+    if 500 <= code < 600:
+        return False, f"HTTP {code} — the host is up but erroring. Their side."
+    return False, f"HTTP {code} from {pitwall.STATIC_BASE}"
+
+
+def _probe_year() -> int:
+    """A season the archive definitely has. January would otherwise probe a year
+    with no index published yet and call a healthy host broken."""
+    now = datetime.now(timezone.utc)
+    return now.year if now.month >= 4 else now.year - 1
+
+
+def _transport_detail(exc: Exception) -> str:
+    """Name the transport failure. These are genuinely different problems and
+    the reader can only act on them if we say which one happened."""
+    name = type(exc).__name__
+    msg = str(exc).lower()
+    if "timed out" in msg or "timeout" in name.lower():
+        return f"timed out after {get_settings().fetch_timeout}s — host slow or dropping packets"
+    if "name or service not known" in msg or "nodename" in msg or "getaddrinfo" in msg:
+        return "DNS could not resolve livetiming.formula1.com — a resolver problem on this machine"
+    if "certificate" in msg or "ssl" in msg:
+        return "TLS handshake failed — a proxy or certificate problem on this machine, not F1"
+    if "proxy" in msg or "407" in msg or "tunnel" in msg:
+        return "blocked by an HTTP proxy before the request reached F1"
+    if "refused" in msg:
+        return "connection refused"
+    return f"{name}: {exc}"[:160]
 
 
 def list_grands_prix(year: int) -> list[GrandPrix]:
