@@ -39,18 +39,33 @@ async function handle<T>(res: Response, path: string): Promise<T> {
   throw new ApiError(`API error ${res.status} on ${path}`, res.status, res.status >= 500);
 }
 
-async function get<T>(path: string, params?: Record<string, any>): Promise<T> {
+/**
+ * `timeoutMs` gives a call its own ceiling. Without one, a request that never
+ * answers hangs until the browser's own (very long, unknowable) limit, and the
+ * only thing the user sees is a button that stays busy forever. A bounded call
+ * fails in a knowable time and can say something useful.
+ */
+async function get<T>(path: string, params?: Record<string, any>,
+                      opts?: { timeoutMs?: number }): Promise<T> {
   const url = new URL(API_BASE + path);
   if (params) {
     for (const [k, v] of Object.entries(params)) {
       if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
     }
   }
+  const ctl = opts?.timeoutMs ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), opts!.timeoutMs) : null;
   let res: Response;
   try {
-    res = await fetch(url.toString(), { cache: "no-store" });
+    res = await fetch(url.toString(), { cache: "no-store", signal: ctl?.signal });
   } catch {
-    throw new ApiError(`Cannot reach the API at ${API_BASE}. Is the backend running?`, 0, true);
+    // An abort and a dead server are different problems with different fixes,
+    // so they must not share one message.
+    throw ctl?.signal.aborted
+      ? new ApiError(`The API didn't answer within ${Math.round(opts!.timeoutMs! / 1000)}s.`, 0, true)
+      : new ApiError(`Cannot reach the API at ${API_BASE}. Is the backend running?`, 0, true);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
   return handle<T>(res, path);
 }
@@ -85,8 +100,11 @@ export const api = {
     get<{ year: number; gp: string | null; session: string; seasons: number[] }>("/api/current"),
   sessionsAvailable: (year: number, gp: string) =>
     get<{ source: string; sessions: string[] }>("/api/sessions/available", { year, gp }),
+  // The backend caps every probe and runs them together, so this answers in
+  // seconds or not at all — 20s is generous headroom, not a target.
   dataSourceHealth: () =>
-    get<{ probes: { name: string; reachable: boolean | null; detail?: string }[] }>("/api/health/data-sources"),
+    get<{ probes: { name: string; reachable: boolean | null; detail?: string }[] }>(
+      "/api/health/data-sources", undefined, { timeoutMs: 20_000 }),
   sourceReport: (year: number, gp: string, session: string) =>
     get<any>("/api/session/source-report", { year, gp, session }),
   clearCache: (year?: number, gp?: string, session?: string) =>

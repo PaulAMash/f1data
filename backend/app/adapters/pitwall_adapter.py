@@ -26,6 +26,7 @@ import math
 from datetime import datetime, timezone
 
 from ..config import get_settings
+from . import probe_detail
 from ..models import (
     Circuit,
     ClassificationRow,
@@ -176,7 +177,7 @@ def probe() -> tuple[bool, str]:
     import pitwall
     url = f"{pitwall.STATIC_BASE}/{_probe_year()}/Index.json"
     try:
-        resp = pitwall._http.get(url, timeout=get_settings().fetch_timeout)
+        resp = pitwall._http.get(url, timeout=get_settings().probe_timeout)
     except Exception as exc:  # noqa: BLE001
         return False, _transport_detail(exc)
 
@@ -192,17 +193,7 @@ def probe() -> tuple[bool, str]:
 
     # An HTTP answer means the host is UP and talking to us. Saying
     # "unreachable" here would be a lie, and it is the lie that cost two days.
-    if code in (401, 403):
-        return False, (f"HTTP {code} — the host is up but refused this request. "
-                       "Usually a bot/WAF rule on the User-Agent, not an outage.")
-    if code == 404:
-        return False, (f"HTTP {code} — the host is up but this path is gone; "
-                       "the archive index may have moved.")
-    if code == 429:
-        return False, f"HTTP {code} — rate limited. Back off and retry."
-    if 500 <= code < 600:
-        return False, f"HTTP {code} — the host is up but erroring. Their side."
-    return False, f"HTTP {code} from {pitwall.STATIC_BASE}"
+    return False, probe_detail.http_detail(code, "livetiming.formula1.com")
 
 
 def _probe_year() -> int:
@@ -213,21 +204,9 @@ def _probe_year() -> int:
 
 
 def _transport_detail(exc: Exception) -> str:
-    """Name the transport failure. These are genuinely different problems and
-    the reader can only act on them if we say which one happened."""
-    name = type(exc).__name__
-    msg = str(exc).lower()
-    if "timed out" in msg or "timeout" in name.lower():
-        return f"timed out after {get_settings().fetch_timeout}s — host slow or dropping packets"
-    if "name or service not known" in msg or "nodename" in msg or "getaddrinfo" in msg:
-        return "DNS could not resolve livetiming.formula1.com — a resolver problem on this machine"
-    if "certificate" in msg or "ssl" in msg:
-        return "TLS handshake failed — a proxy or certificate problem on this machine, not F1"
-    if "proxy" in msg or "407" in msg or "tunnel" in msg:
-        return "blocked by an HTTP proxy before the request reached F1"
-    if "refused" in msg:
-        return "connection refused"
-    return f"{name}: {exc}"[:160]
+    """Named the same failures as OpenF1 and Jolpica, in its own private copy —
+    so a phrasing fix landed on one source's row and not the other two."""
+    return probe_detail.transport_detail(exc, "livetiming.formula1.com")
 
 
 def list_grands_prix(year: int) -> list[GrandPrix]:
@@ -362,7 +341,7 @@ def _fetch_via_fastf1(year: int, gp: str, session_type: str) -> RaceSession:
             # FastF1 gives no stop duration; pit-lane time is enriched later
             # (Jolpica) or estimated by PitStopDataService — no scary note needed.
             pit_stops.append(PitStop(
-                driver=code, lap=lap_no, source="fastf1", confidence="low",
+                driver=code, lap=lap_no, source="f1-archive", confidence="low",
                 compound_before=_compound_before(stints, code, lap_no),
                 compound_after=_compound_after(stints, code, lap_no)))
 
@@ -408,10 +387,14 @@ def _compound_after(stints, code, lap):
 def _fastf1_report(laps, stints, pit_stops, weather, race_control):
     from ..models import FacetSource, SourceReport
     def f(name, present, conf="high", detail=None):
-        return FacetSource(facet=name, source="fastf1" if present else "none",
+        return FacetSource(facet=name, source="f1-archive" if present else "none",
                            confidence=conf if present else "low", detail=detail)
     facets = [
-        f("laps", bool(laps)), f("tyres", bool(stints)),
+        # "stints" — the same name OpenF1 and the merge step use. Three adapters
+        # once called this facet three things ("stints", "tyres",
+        # "tyres/compounds"), so a backfill keyed on one name silently never ran
+        # for a session reported under another.
+        f("laps", bool(laps)), f("stints", bool(stints)),
         f("pit_stops", bool(pit_stops), conf="low",
           detail="FastF1 has no stop duration; enriched from Jolpica / estimated."),
         f("weather", bool(weather)), f("race_control", bool(race_control)),

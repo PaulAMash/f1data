@@ -258,6 +258,10 @@ class SourceReport(BaseModel):
     facets: list[FacetSource] = Field(default_factory=list)
     probes: list[SourceProbe] = Field(default_factory=list)
     missing: list[str] = Field(default_factory=list)
+    # Why the missing facets are missing, in plain language. "Partial data" that
+    # can't say what went wrong reads as a defect in the app; the same chip that
+    # says a source wasn't answering reads as the truth about the session.
+    missing_reason: Optional[str] = None
     partial: bool = False
     cache_key: Optional[str] = None
 

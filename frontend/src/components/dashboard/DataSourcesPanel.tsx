@@ -18,9 +18,13 @@ const SOURCE_NAMES: Record<string, string> = {
 };
 
 const FACET_LABEL: Record<string, string> = {
-  results: "Results & classification", laps: "Lap times", tyres: "Tyres & stints",
+  results: "Results & classification", laps: "Lap times", stints: "Tyres & stints",
   pit_stops: "Pit stops", overtakes: "Overtakes", weather: "Weather",
   race_control: "Race control", positions: "Position history", drivers: "Drivers",
+  sectors: "Sector times",
+  // legacy names for the same facet — sessions cached before the adapters agreed
+  // on one spelling still carry them, and an unlabelled facet reads as a bug
+  tyres: "Tyres & stints", "tyres/compounds": "Tyres & stints",
 };
 
 export function DataSourcesPanel({
@@ -30,6 +34,7 @@ export function DataSourcesPanel({
   const [probes, setProbes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [probing, setProbing] = useState(false);
+  const [probeError, setProbeError] = useState<string | null>(null);
   const [cleared, setCleared] = useState<number | null>(null);
 
   useEffect(() => {
@@ -38,9 +43,21 @@ export function DataSourcesPanel({
       .then(setReport).catch(() => setReport(null)).finally(() => setLoading(false));
   }, [year, gp, session]);
 
+  // A source check that fails is itself a finding, and the panel whose entire
+  // job is reporting reachability was the one place that couldn't survive an
+  // unreachable thing: no .catch() meant the rejected promise escaped as an
+  // unhandled rejection and Next.js threw a full-screen error overlay over the
+  // app. The answer belongs in the card, next to the other answers.
   function checkHealth() {
     setProbing(true);
-    api.dataSourceHealth().then((r) => setProbes(r.probes)).finally(() => setProbing(false));
+    setProbeError(null);
+    api.dataSourceHealth()
+      .then((r) => { setProbes(r.probes); setProbeError(null); })
+      .catch((e: any) => {
+        setProbes([]);
+        setProbeError(e?.message || "The source check couldn't complete.");
+      })
+      .finally(() => setProbing(false));
   }
 
   async function clearCache() {
@@ -50,6 +67,7 @@ export function DataSourcesPanel({
 
   const facets = report?.report?.facets ?? [];
   const missing: string[] = report?.report?.missing ?? [];
+  const missingReason: string | null = report?.report?.missing_reason ?? null;
 
   return (
     <div className="grid items-start gap-4 lg:grid-cols-2">
@@ -68,9 +86,14 @@ export function DataSourcesPanel({
             </div>
           ))}
           {missing.length > 0 && (
-            <p className="pt-1 text-xs text-amber">
-              Not available for this session: {missing.map((m) => FACET_LABEL[m] ?? m).join(", ")}.
-            </p>
+            <div className="pt-1 text-xs">
+              <p className="text-amber">
+                Not available for this session: {missing.map((m) => FACET_LABEL[m] ?? m).join(", ")}.
+              </p>
+              {missingReason && (
+                <p className="mt-1 leading-snug text-ink-muted">{missingReason}</p>
+              )}
+            </div>
           )}
         </CardBody>
       </Card>
@@ -81,8 +104,24 @@ export function DataSourcesPanel({
             right={<button className="pill-btn h-8 text-xs" onClick={checkHealth} disabled={probing}>
               {probing ? <Spinner size={12} /> : <RefreshCw size={12} />} Check now</button>} />
           <CardBody className="space-y-2">
-            {probes.length === 0 && (
+            {probes.length === 0 && !probeError && !probing && (
               <p className="text-sm text-ink-faint">Press “Check now” to test each F1 data source.</p>
+            )}
+            {probing && probes.length === 0 && (
+              <p className="text-sm text-ink-muted">Testing each source…</p>
+            )}
+            {probeError && (
+              <div className="flex items-start gap-2 rounded-lg border border-rose-400/20 bg-rose-400/[0.05] px-3 py-2">
+                <XCircle size={15} className="mt-px shrink-0 text-rose-400" />
+                <div className="min-w-0 text-sm">
+                  <p className="font-medium text-rose-200">Couldn’t run the check</p>
+                  <p className="mt-0.5 text-[11.5px] leading-snug text-rose-200/75">{probeError}</p>
+                  <p className="mt-1 text-[11.5px] leading-snug text-ink-faint">
+                    This is Pitwall IQ’s own backend, not an F1 source — the sources above
+                    weren’t reached at all.
+                  </p>
+                </div>
+              </div>
             )}
             {/* The failure case is the ONLY case where the reader needs detail,
                 and it was the one case that threw it away: a failed probe

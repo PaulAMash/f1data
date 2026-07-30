@@ -30,6 +30,13 @@ class Settings(BaseSettings):
 
     fetch_timeout: int = int(os.getenv("PITWALL_IQ_FETCH_TIMEOUT", "30"))
 
+    # Reachability checks are not data fetches and must not use the data-fetch
+    # timeout. Three probes at 30s each, run one after another, is a 90-second
+    # endpoint behind a button — long enough that the browser gives up and
+    # reports "cannot reach the API", which is how a slow probe came to look
+    # like a dead backend. A probe either answers quickly or it has answered.
+    probe_timeout: int = int(os.getenv("PITWALL_IQ_PROBE_TIMEOUT", "6"))
+
     # How we introduce ourselves to F1's archive CDN.
     #
     # livetiming.formula1.com sits behind a CDN with bot rules, and the `pitwall`

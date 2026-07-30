@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 import requests
 
 from ..config import get_settings
+from . import probe_detail
 from ..models import (
     Circuit,
     ClassificationRow,
@@ -41,6 +42,7 @@ from ..models import (
 )
 
 BASE = "https://api.openf1.org/v1"
+_HOST = "api.openf1.org"
 
 _COMPOUND = {
     "SOFT": Compound.SOFT, "MEDIUM": Compound.MEDIUM, "HARD": Compound.HARD,
@@ -52,9 +54,10 @@ class OpenF1Error(RuntimeError):
     pass
 
 
-def _get(path: str, **params) -> list[dict]:
+def _get(path: str, *, _timeout: float | None = None, **params) -> list[dict]:
     url = f"{BASE}/{path}"
-    resp = requests.get(url, params=params, timeout=get_settings().fetch_timeout)
+    resp = requests.get(url, params=params,
+                        timeout=_timeout or get_settings().fetch_timeout)
     resp.raise_for_status()
     data = resp.json()
     if isinstance(data, dict):  # error payloads come back as objects
@@ -63,11 +66,21 @@ def _get(path: str, **params) -> list[dict]:
 
 
 def probe() -> tuple[bool, str]:
+    """Ask for one known-good session and report the answer in plain language."""
+    import time as _time
+    started = _time.monotonic()
     try:
-        _get("sessions", year=2024, session_name="Race", country_name="Bahrain")
-        return True, "reachable"
+        rows = _get("sessions", _timeout=get_settings().probe_timeout,
+                    year=2024, session_name="Race", country_name="Bahrain")
+    except requests.HTTPError as exc:  # answered, just not with data
+        code = exc.response.status_code if exc.response is not None else 0
+        return False, probe_detail.http_detail(code, _HOST)
     except Exception as exc:  # noqa: BLE001
-        return False, str(exc)[:160]
+        return False, probe_detail.transport_detail(exc, _HOST)
+    ms = int((_time.monotonic() - started) * 1000)
+    if not rows:
+        return False, f"{_HOST} answered but returned nothing for a session it should know"
+    return True, f"reachable · answered in {ms} ms"
 
 
 # --------------------------------------------------------------------------- #

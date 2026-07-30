@@ -45,7 +45,8 @@ export interface FacetSource { facet: string; source: string; confidence: string
 export interface SourceProbe { name: string; reachable?: boolean | null; detail?: string | null; }
 export interface SourceReport {
   data_source: DataSource; fetched_at?: string | null; facets: FacetSource[];
-  probes: SourceProbe[]; missing: string[]; partial: boolean; cache_key?: string | null;
+  probes: SourceProbe[]; missing: string[]; missing_reason?: string | null;
+  partial: boolean; cache_key?: string | null;
 }
 export interface RaceControlEvent {
   lap?: number | null; time?: string | null; category: string; flag?: string | null;

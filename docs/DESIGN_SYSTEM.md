@@ -443,3 +443,57 @@ stay as the sources define them.
 Animations are defined in `globals.css` and every one is disabled under
 `prefers-reduced-motion: reduce`. Focus rings are global (`:focus-visible`). Meters and bars
 animate width only, never layout.
+
+---
+
+## Diagnostics are a product surface
+
+The panel that reports whether things are working is held to the same standard as the rest
+of the app — arguably a higher one, because it is read when something is already wrong.
+
+**Every failure is a result, never a crash.** The one card whose job is reporting
+unreachable things was the one card that couldn't survive an unreachable thing: a missing
+`.catch()` turned a failed probe into an unhandled rejection and a full-screen framework
+error overlay. A failed check renders *in the card*, next to the checks that succeeded, and
+says whose fault it is — Pitwall IQ's own backend, or an F1 source.
+
+**A diagnostic must answer faster than the thing it is diagnosing.** Probes run
+concurrently and on their own short timeout (`probe_timeout`, not `fetch_timeout`): the
+endpoint costs the slowest single source, not the sum of all of them. Three 30-second
+probes in sequence is a 90-second endpoint behind a button, and a browser that gives up
+first reports "cannot reach the API" — which is how a slow probe came to look like a dead
+backend.
+
+**Say what failed, in a sentence a person can act on.** `adapters/probe_detail.py` is the
+single vocabulary for every source. `HTTPSConnectionPool(host='api.openf1.org', port=443):
+Max retries exceeded (Caused by Pr` — truncated mid-word — is a stack-trace fragment shown
+to an end user. "blocked by an HTTP proxy before the request reached api.openf1.org" names
+the cause *and* who can fix it. An HTTP status means the host is up and talking to us;
+calling that "unreachable" is a lie, and it is the lie that cost two days of hunting an
+outage that was really a bot rule on a User-Agent.
+
+---
+
+## "Partial data" has to be able to be false
+
+A warning that is always on carries no information. Three separate causes had it lit on
+essentially every session:
+
+1. **Category errors.** A qualifying hour has no overtakes, no strategy pit stops and no
+   lap-by-lap position trace. `_FACET_APPLIES` prunes facets a session type cannot have —
+   they were never data we failed to get.
+2. **A facet nobody backfilled.** Tyre stints, weather and race control exist only in the
+   F1 live-timing archive, which was wired as a fallback and never as an enrichment source.
+3. **Frozen verdicts.** The cache is thirty days deep, so a session fetched during an
+   outage kept reporting that outage for a month. Cached sessions are healed on load and
+   re-saved only when something is actually gained.
+
+When data really is missing, the chip explains **why** (`SourceReport.missing_reason`):
+a source that wasn't answering, or a year F1 never published that feed for. "Partial data"
+with no cause reads as a defect in the app; the same chip naming the source reads as the
+truth about the session.
+
+**Optional enrichment must stay optional.** A source that has just failed twice is skipped
+for ten minutes (`_Breaker`) rather than re-asked on every page view. The session is already
+loaded before the ask, so the entire cost of a dead host would otherwise be paid by the
+user, repeatedly, for the same answer.

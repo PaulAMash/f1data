@@ -197,6 +197,12 @@ export default function ExplorerPage() {
             The sources couldn&apos;t provide{" "}
             {session.source_report!.missing.slice(0, 6).map(humanFacet).join(", ")} for this
             session — the tabs that need them will be limited.{" "}
+            {/* When the backend knows *why*, say why. "Partial data" with no
+                cause reads as a fault in the app; naming the source that
+                wasn't answering makes it a fact about the session. */}
+            {session.source_report?.missing_reason ? (
+              <span className="text-sky-200/75">{session.source_report.missing_reason} </span>
+            ) : null}
             <button onClick={() => setTab("data")} className="underline decoration-dotted">
               See exactly what&apos;s available
             </button>
@@ -368,6 +374,9 @@ const FACET_HUMAN: Record<string, string> = {
   laps: "lap times", positions: "position history", pit_stops: "pit stops",
   stints: "tyre stints", weather: "weather", race_control: "race control",
   results: "results", overtakes: "overtakes", drivers: "the driver list",
+  sectors: "sector times",
+  // legacy spellings still present in sessions cached before the adapters agreed
+  tyres: "tyre stints", "tyres/compounds": "tyre stints",
 };
 function humanFacet(key: string) {
   return FACET_HUMAN[key] ?? key.replace(/_/g, " ");

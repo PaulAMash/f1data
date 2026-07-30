@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 import requests
 
 from ..config import get_settings
+from . import probe_detail
 from ..models import (
     Circuit,
     ClassificationRow,
@@ -34,6 +35,7 @@ from ..models import (
 )
 
 BASE = "https://api.jolpi.ca/ergast/f1"
+_HOST = "api.jolpi.ca"
 
 # team → broadcast colour (Ergast has no colours)
 TEAM_COLORS = {
@@ -47,18 +49,25 @@ class JolpicaError(RuntimeError):
     pass
 
 
-def _get(path: str, **params) -> dict:
-    resp = requests.get(f"{BASE}/{path}", params=params, timeout=get_settings().fetch_timeout)
+def _get(path: str, *, _timeout: float | None = None, **params) -> dict:
+    resp = requests.get(f"{BASE}/{path}", params=params,
+                        timeout=_timeout or get_settings().fetch_timeout)
     resp.raise_for_status()
     return resp.json()
 
 
 def probe() -> tuple[bool, str]:
+    """Ask for one known-good race result and report the answer in plain language."""
+    import time as _time
+    started = _time.monotonic()
     try:
-        _get("2024/1/results.json", limit=1)
-        return True, "reachable"
+        _get("2024/1/results.json", _timeout=get_settings().probe_timeout, limit=1)
+    except requests.HTTPError as exc:  # answered, just not with data
+        code = exc.response.status_code if exc.response is not None else 0
+        return False, probe_detail.http_detail(code, _HOST)
     except Exception as exc:  # noqa: BLE001
-        return False, str(exc)[:160]
+        return False, probe_detail.transport_detail(exc, _HOST)
+    return True, f"reachable · answered in {int((_time.monotonic() - started) * 1000)} ms"
 
 
 def _races(path: str, **params):
@@ -264,7 +273,7 @@ def fetch_session(year: int, gp: str, session_type: str) -> RaceSession:
 
     facets = [FacetSource(facet="results", source="jolpica", confidence="high"),
               FacetSource(facet="drivers", source="jolpica", confidence="high")]
-    missing = ["tyres/compounds", "weather", "sectors", "race_control"]
+    missing = ["stints", "weather", "sectors", "race_control"]
 
     laps: list[Lap] = []
     positions: list[PositionPoint] = []

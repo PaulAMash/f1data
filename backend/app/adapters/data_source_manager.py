@@ -14,6 +14,7 @@ which facet came from where. Mock is used only on total failure or when forced.
 from __future__ import annotations
 
 import logging
+import time
 
 from .. import cache
 from ..analysis.events import infer_overtakes
@@ -40,7 +41,7 @@ log = logging.getLogger("pitwall_iq.dsm")
 def _chain(year: int):
     """Ordered list of (name, fetch_callable) real sources for a year."""
     openf1_src = ("openf1", openf1_adapter.fetch_session)
-    fastf1_src = ("fastf1", fastf1.fetch_session)
+    fastf1_src = ("f1-archive", fastf1.fetch_session)
     jolpica_src = ("jolpica", jolpica_adapter.fetch_session)
     if year >= 2023:
         return [openf1_src, fastf1_src, jolpica_src]
@@ -143,6 +144,16 @@ def load_session(year: int, gp: str, session_type: str,
                         cache.save(cached)
                 except Exception as exc:  # noqa: BLE001
                     log.info("cached headshot enrich failed: %s", exc)
+                # A session cached while a source was down is cached *incomplete*,
+                # and the cache is thirty days deep — so one bad afternoon would
+                # keep showing "partial data" for a month after the source came
+                # back. Retry the still-missing facets (the breaker makes a
+                # still-dead host free) and re-save only if we actually gained.
+                try:
+                    if _heal_cached(cached):
+                        cache.save(cached)
+                except Exception as exc:  # noqa: BLE001
+                    log.info("cached facet heal failed: %s", exc)
             return cached
 
     attempts: list[dict] = []
@@ -227,6 +238,72 @@ def _merge_missing_facets(session: RaceSession, primary: str) -> None:
 _ARCHIVE_FACETS = ("stints", "race_control", "weather")
 
 
+class _Breaker:
+    """Stop asking a source that has just told us, repeatedly, that it is down.
+
+    Enrichment is optional by definition: the session is already loaded and
+    usable before we ask. So the cost of asking a dead host is paid entirely by
+    the user, in seconds, on every single session they open — and the answer is
+    the same every time. After a couple of consecutive failures we take the host
+    at its word and skip it, re-testing once the cooldown expires so recovery is
+    automatic and needs no restart.
+
+    Deliberately not thread-safe beyond CPython's own atomicity: the worst race
+    is one extra attempt, which is exactly what the cooldown probe does anyway.
+    """
+
+    def __init__(self, threshold: int, cooldown: float) -> None:
+        self.threshold, self.cooldown = threshold, cooldown
+        self.failures = 0
+        self.opened_at = 0.0
+        self.detail: str | None = None
+
+    @property
+    def open(self) -> bool:
+        return self.failures >= self.threshold and (
+            time.monotonic() - self.opened_at) < self.cooldown
+
+    def allows(self) -> bool:
+        if self.open:
+            return False
+        if self.failures >= self.threshold:
+            self.failures = 0        # cooldown expired — let one request re-test
+        return True
+
+    def succeeded(self) -> None:
+        self.failures, self.detail = 0, None
+
+    def failed(self, detail: str) -> None:
+        self.failures += 1
+        self.opened_at = time.monotonic()
+        self.detail = detail[:160]
+
+
+#: Two strikes, then ten minutes of silence. Long enough that a sustained outage
+#: costs one wasted request per ten minutes instead of one per page view; short
+#: enough that a recovered host is back within a coffee break.
+_archive_breaker = _Breaker(threshold=2, cooldown=600.0)
+
+#: F1's live-timing archive starts here. Before it, tyre stints, weather traces
+#: and race-control logs were never published in a machine-readable form by
+#: anyone — the data doesn't exist rather than being unavailable to us.
+_ARCHIVE_FIRST_YEAR = 2018
+
+_ARCHIVE_DOWN_NOTE = ("The F1 live-timing archive isn't answering, so the tyre, "
+                      "race-control and weather feeds it provides couldn't be loaded. "
+                      "Everything else on this session is real and complete.")
+
+_PRE_ARCHIVE_NOTE = (f"F1 only published lap-by-lap tyre, weather and race-control "
+                     f"data from {_ARCHIVE_FIRST_YEAR} onwards, so those parts of this "
+                     "session were never recorded — results and lap times are complete.")
+
+
+def _note_missing_reason(session: RaceSession, reason: str) -> None:
+    """Attach the first explanation we have; never overwrite a more specific one."""
+    if session.source_report and not session.source_report.missing_reason:
+        session.source_report.missing_reason = reason
+
+
 def _merge_from_archive(session: RaceSession, primary: str) -> None:
     """Fill the facets only the F1 archive has.
 
@@ -240,16 +317,35 @@ def _merge_from_archive(session: RaceSession, primary: str) -> None:
     Only runs when something is actually missing, only asks for the facets that
     are missing, and never overwrites data the primary source did supply.
     """
-    if primary == "f1-archive" or not session.source_report:
+    # "fastf1" is the legacy name for the same host; asking the archive to
+    # backfill a session the archive itself provided is a wasted round trip.
+    if primary in ("f1-archive", "fastf1") or not session.source_report:
+        return
+    # F1's live-timing archive begins in 2018. A 1995 race has no stints there
+    # and never will — asking is a guaranteed failure, and one that would drag
+    # the breaker down and hide a genuinely healthy host from later sessions.
+    if session.year < _ARCHIVE_FIRST_YEAR:
+        _note_missing_reason(session, _PRE_ARCHIVE_NOTE)
         return
     wanted = [f for f in _ARCHIVE_FACETS if f in session.source_report.missing]
     if not wanted:
+        return
+    if not _archive_breaker.allows():
+        log.info("archive facet merge skipped — circuit open (%s)", _archive_breaker.detail)
+        _note_missing_reason(session, _ARCHIVE_DOWN_NOTE)
         return
     try:
         other = fastf1.fetch_session(session.year, session.grand_prix, session.session_type)
     except Exception as exc:  # noqa: BLE001
         log.info("archive facet merge unavailable: %s", exc)
+        category, _retryable = _classify(exc)
+        # "this session isn't in the archive" is a fact about the session and
+        # says nothing about the host — it must not count towards the breaker.
+        if category != "not_available":
+            _archive_breaker.failed(f"{type(exc).__name__}: {exc}")
+            _note_missing_reason(session, _ARCHIVE_DOWN_NOTE)
         return
+    _archive_breaker.succeeded()
 
     if "stints" in wanted and other.stints and not session.stints:
         session.stints = other.stints
@@ -266,6 +362,33 @@ def _merge_from_archive(session: RaceSession, primary: str) -> None:
         session.weather = other.weather
         _set_facet(session, "weather", "f1-archive", "high",
                    "Weather trace from the F1 live-timing archive.")
+
+
+def _heal_cached(session: RaceSession) -> bool:
+    """Bring a cached session up to what today's pipeline would have produced.
+
+    Two things go stale in a thirty-day cache: facets that were missing only
+    because a source was down at fetch time, and facets a newer release no
+    longer considers missing at all. Both were frozen into the file, so a
+    session kept showing "Partial data" long after the reason had gone.
+
+    Returns True only when something actually changed, so a still-unreachable
+    archive never triggers a pointless cache write.
+    """
+    report = session.source_report
+    if not report:
+        return False
+    before = list(report.missing)
+    _prune_inapplicable_facets(session)
+    if any(f in report.missing for f in _ARCHIVE_FACETS):
+        _merge_from_archive(session, primary="cache")
+    if report.missing == before:
+        return False
+    report.partial = bool(report.missing)
+    if not report.missing:
+        report.missing_reason = None
+    session.partial = report.partial
+    return True
 
 
 def _enrich_retirements(session: RaceSession, primary: str) -> None:
@@ -369,6 +492,39 @@ def _enrich_quali_segments(session: RaceSession, primary: str) -> None:
                 c.position = s.get("position")
 
 
+#: Which session categories a facet can meaningfully exist for.
+#:
+#: A qualifying hour has no overtakes, no strategy pit stops and no lap-by-lap
+#: position trace; a practice hour has none of them either. The adapters recorded
+#: all three as *missing* anyway, so every qualifying and practice session was
+#: flagged partial on arrival — which is a category error dressed up as honesty,
+#: and it is why the "Partial data" chip was lit on essentially everything.
+#: A warning that is always on carries no information at all.
+_FACET_APPLIES: dict[str, set[str]] = {
+    "overtakes": {"race", "sprint"},
+    "pit_stops": {"race", "sprint"},
+    "positions": {"race", "sprint"},
+}
+
+
+def _prune_inapplicable_facets(session: RaceSession) -> None:
+    """Drop facets this kind of session was never going to have.
+
+    Only "none" rows are dropped: if a qualifying session really did record pit
+    stops, that is a real fact and it stays on the report.
+    """
+    report = session.source_report
+    if not report:
+        return
+    cat = session.category or ""
+    drop = {f for f, cats in _FACET_APPLIES.items() if cat not in cats}
+    if not drop:
+        return
+    report.missing = [m for m in report.missing if m not in drop]
+    report.facets = [f for f in report.facets
+                     if not (f.facet in drop and f.source == "none")]
+
+
 def _post_process(session: RaceSession, primary: str) -> None:
     """Enrich a freshly-fetched real session and finalize its source report."""
     session.category = session.category or session_category(session.session_type)
@@ -404,8 +560,14 @@ def _post_process(session: RaceSession, primary: str) -> None:
     except Exception as exc:  # noqa: BLE001
         log.info("headshot enrich failed: %s", exc)
 
+    # a facet a session type cannot have is not a gap in our data
+    _prune_inapplicable_facets(session)
+
     if session.source_report:
         session.source_report.partial = bool(session.source_report.missing)
+        if not session.source_report.missing:
+            # a later step filled everything in — the explanation is now stale
+            session.source_report.missing_reason = None
         session.source_report.cache_key = cache.cache_key(
             session.year, session.grand_prix, session.session_type)
     session.partial = bool(session.source_report and session.source_report.missing)
@@ -453,18 +615,44 @@ def get_grands_prix(year: int) -> tuple[list[GrandPrix], DataSource]:
 # health / diagnostics
 # --------------------------------------------------------------------------- #
 def data_source_health() -> list[SourceProbe]:
+    """Probe every real source — concurrently, and with a hard ceiling.
+
+    These ran one after another at the 30s data-fetch timeout, so one slow host
+    made the whole endpoint take as long as all of them added together. Behind a
+    button that is indistinguishable from a dead backend: the browser gives up
+    and reports "cannot reach the API", which is exactly what it did.
+
+    Now they run at the same time and each is capped, so the endpoint costs the
+    slowest single probe rather than their sum, and always answers.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    cap = get_settings().probe_timeout + 4   # request timeout + a little slack
+
+    def run(name: str, fn) -> SourceProbe:
+        try:
+            ok, detail = fn()
+            return SourceProbe(name=name, reachable=ok, detail=detail)
+        except Exception as exc:  # noqa: BLE001
+            # a probe that throws is a failed probe, never a failed endpoint
+            return SourceProbe(name=name, reachable=False,
+                               detail=f"probe error — {type(exc).__name__}: {exc}"[:160])
+
+    jobs = [
+        ("openf1", openf1_adapter.probe),
+        ("jolpica", jolpica_adapter.probe),
+        ("f1-archive", fastf1.probe),
+    ]
     probes: list[SourceProbe] = []
-    ok, detail = openf1_adapter.probe()
-    probes.append(SourceProbe(name="openf1", reachable=ok, detail=detail))
-    ok, detail = jolpica_adapter.probe()
-    probes.append(SourceProbe(name="jolpica", reachable=ok, detail=detail))
-    # The F1 live-timing archive (livetiming.formula1.com), reached through
-    # pitwall's static helpers and read by FastF1 when it's installed. It used to
-    # be listed as "fastf1" with a separate "pitwall" row underneath saying it
-    # "uses FastF1" — two rows for one host, each describing the other. One row,
-    # named after the thing being probed.
-    ok, detail = fastf1.probe()
-    probes.append(SourceProbe(name="f1-archive", reachable=ok, detail=detail))
+    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+        futures = [(name, pool.submit(run, name, fn)) for name, fn in jobs]
+        for name, fut in futures:
+            try:
+                probes.append(fut.result(timeout=cap))
+            except Exception:  # noqa: BLE001
+                probes.append(SourceProbe(
+                    name=name, reachable=False,
+                    detail=f"no answer within {cap}s — host is not responding at all"))
     probes.append(SourceProbe(name="cache", reachable=True,
                               detail=str(get_settings().cache_dir)))
     return probes

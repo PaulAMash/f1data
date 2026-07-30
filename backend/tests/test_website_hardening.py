@@ -628,3 +628,313 @@ def test_health_lists_the_archive_once_under_the_host_it_probes(monkeypatch):
     assert "fastf1" not in names and "pitwall" not in names
     row = next(p for p in dsm.data_source_health() if p.name == "f1-archive")
     assert row.detail and "403" in row.detail
+
+
+# --------------------------------------------------------------------------- #
+# Enrichment must not make every page pay for one dead host.
+#
+# V46 started asking the F1 archive to backfill stints/weather/race-control.
+# That is right when the archive answers and badly wrong when it doesn't: the
+# enrichment is optional, the session is already loaded, and yet every single
+# session view would sit through the same doomed request. These tests pin the
+# breaker's behaviour — skip a host that just failed, keep asking one that
+# works, and never count "this session isn't in the archive" as an outage.
+# --------------------------------------------------------------------------- #
+def _archive_session():
+    """A real-shaped session that is missing exactly the archive's facets."""
+    from app.models import RaceSession, SourceReport
+    return RaceSession(
+        year=2025, grand_prix="Bahrain", session_type="Race", category="race",
+        source_report=SourceReport(missing=["stints", "weather"]),
+    )
+
+
+def _fresh_breaker(monkeypatch, **kw):
+    from app.adapters import data_source_manager as dsm
+    b = dsm._Breaker(threshold=kw.get("threshold", 2), cooldown=kw.get("cooldown", 600.0))
+    monkeypatch.setattr(dsm, "_archive_breaker", b)
+    return b
+
+
+def test_a_dead_archive_is_asked_twice_then_left_alone(monkeypatch):
+    from app.adapters import data_source_manager as dsm
+    _fresh_breaker(monkeypatch)
+    calls = []
+
+    def boom(*a, **kw):
+        calls.append(a)
+        raise OSError("connection refused")
+    monkeypatch.setattr(dsm.fastf1, "fetch_session", boom)
+
+    for _ in range(5):
+        dsm._merge_from_archive(_archive_session(), primary="openf1")
+    # two strikes and it stops — not five, not one per page view
+    assert len(calls) == 2
+
+
+def test_the_archive_is_retried_once_the_cooldown_expires(monkeypatch):
+    from app.adapters import data_source_manager as dsm
+    _fresh_breaker(monkeypatch, threshold=1, cooldown=0.0)
+    calls = []
+
+    def boom(*a, **kw):
+        calls.append(a)
+        raise OSError("connection refused")
+    monkeypatch.setattr(dsm.fastf1, "fetch_session", boom)
+
+    dsm._merge_from_archive(_archive_session(), primary="openf1")
+    dsm._merge_from_archive(_archive_session(), primary="openf1")
+    # a zero cooldown means every call re-tests: recovery needs no restart
+    assert len(calls) == 2
+
+
+def test_a_session_absent_from_the_archive_does_not_trip_the_breaker(monkeypatch):
+    """"No session found" describes the session, not the host. Counting it would
+    let one obscure practice session blind the app to a perfectly healthy CDN."""
+    from app.adapters import data_source_manager as dsm
+    breaker = _fresh_breaker(monkeypatch)
+    monkeypatch.setattr(dsm.fastf1, "fetch_session",
+                        lambda *a, **kw: (_ for _ in ()).throw(ValueError("no session matches")))
+    for _ in range(4):
+        dsm._merge_from_archive(_archive_session(), primary="openf1")
+    assert breaker.failures == 0
+
+
+def test_a_successful_merge_clears_earlier_failures(monkeypatch):
+    from app.adapters import data_source_manager as dsm
+    from app.models import Stint
+    breaker = _fresh_breaker(monkeypatch)
+    breaker.failed("earlier outage")
+
+    other = _archive_session()
+    other.stints = [Stint(driver="VER", stint=1, compound="SOFT", start_lap=1, end_lap=20, laps=20)]
+    monkeypatch.setattr(dsm.fastf1, "fetch_session", lambda *a, **kw: other)
+
+    session = _archive_session()
+    dsm._merge_from_archive(session, primary="openf1")
+    assert breaker.failures == 0 and breaker.detail is None
+    assert session.stints and "stints" not in session.source_report.missing
+
+
+def test_partial_data_says_which_source_was_down(monkeypatch):
+    """"Partial data" with no cause reads as a bug in the app. Naming the source
+    turns it into a fact about the session."""
+    from app.adapters import data_source_manager as dsm
+    _fresh_breaker(monkeypatch)
+    monkeypatch.setattr(dsm.fastf1, "fetch_session",
+                        lambda *a, **kw: (_ for _ in ()).throw(OSError("connection refused")))
+    session = _archive_session()
+    dsm._merge_from_archive(session, primary="openf1")
+    reason = session.source_report.missing_reason
+    assert reason and "archive" in reason.lower()
+
+
+def test_a_session_cached_during_an_outage_heals_when_the_source_returns(monkeypatch):
+    """The cache is thirty days deep. Without this, one bad afternoon would show
+    "partial data" for a month after F1 came back."""
+    from app.adapters import data_source_manager as dsm
+    from app.models import Stint
+    _fresh_breaker(monkeypatch)
+    cached = _archive_session()          # cached while the archive was down
+
+    healed = _archive_session()
+    healed.stints = [Stint(driver="VER", stint=1, compound="MEDIUM", start_lap=1, end_lap=25, laps=25)]
+    monkeypatch.setattr(dsm.fastf1, "fetch_session", lambda *a, **kw: healed)
+
+    assert dsm._heal_cached(cached) is True     # gained something -> worth re-saving
+    assert cached.stints
+    assert dsm._heal_cached(cached) is False    # nothing left to gain -> no cache write
+
+
+def test_a_still_dead_archive_never_rewrites_the_cache(monkeypatch):
+    from app.adapters import data_source_manager as dsm
+    _fresh_breaker(monkeypatch)
+    monkeypatch.setattr(dsm.fastf1, "fetch_session",
+                        lambda *a, **kw: (_ for _ in ()).throw(OSError("connection refused")))
+    assert dsm._heal_cached(_archive_session()) is False
+
+
+# --------------------------------------------------------------------------- #
+# The health endpoint is a diagnostic. It has to answer even when everything
+# it is diagnosing is broken — three 30s probes run back-to-back took long
+# enough that the browser gave up and reported "cannot reach the API", which is
+# how a slow probe came to look like a dead backend.
+# --------------------------------------------------------------------------- #
+def test_probes_use_the_probe_timeout_not_the_fetch_timeout():
+    from app.config import get_settings
+    s = get_settings()
+    assert s.probe_timeout < s.fetch_timeout
+
+
+def test_one_hanging_probe_does_not_hold_up_the_others(monkeypatch):
+    import time as _time
+    from app.adapters import data_source_manager as dsm
+    monkeypatch.setattr(dsm.openf1_adapter, "probe", lambda: (True, "reachable"))
+    monkeypatch.setattr(dsm.jolpica_adapter, "probe", lambda: (True, "reachable"))
+
+    def slow():
+        _time.sleep(1.0)
+        return False, "timed out"
+    monkeypatch.setattr(dsm.fastf1, "probe", slow)
+
+    started = _time.monotonic()
+    probes = dsm.data_source_health()
+    # concurrent: the cost is the slowest probe, not the sum of all three
+    assert _time.monotonic() - started < 2.5
+    assert {p.name for p in probes} >= {"openf1", "jolpica", "f1-archive", "cache"}
+
+
+def test_a_probe_that_raises_is_a_failed_probe_not_a_failed_endpoint(monkeypatch):
+    from app.adapters import data_source_manager as dsm
+    monkeypatch.setattr(dsm.openf1_adapter, "probe",
+                        lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(dsm.jolpica_adapter, "probe", lambda: (True, "reachable"))
+    monkeypatch.setattr(dsm.fastf1, "probe", lambda: (True, "reachable"))
+    row = next(p for p in dsm.data_source_health() if p.name == "openf1")
+    assert row.reachable is False and "boom" in (row.detail or "")
+
+
+def test_health_endpoint_answers_promptly_even_when_sources_are_down(monkeypatch):
+    from app.adapters import data_source_manager as dsm
+    monkeypatch.setattr(dsm.openf1_adapter, "probe", lambda: (False, "unreachable"))
+    monkeypatch.setattr(dsm.jolpica_adapter, "probe", lambda: (False, "unreachable"))
+    monkeypatch.setattr(dsm.fastf1, "probe", lambda: (False, "unreachable"))
+    r = client.get("/api/health/data-sources")
+    assert r.status_code == 200
+    assert [p for p in r.json()["probes"] if p["name"] == "cache"][0]["reachable"] is True
+
+
+def test_every_adapter_names_the_tyre_facet_the_same_thing():
+    """Three adapters called one facet three things — "stints", "tyres" and
+    "tyres/compounds". A backfill keyed on one name silently never ran for a
+    session reported under another, and the UI printed the raw key it had no
+    label for."""
+    import inspect
+    from app.adapters import jolpica_adapter, openf1_adapter, pitwall_adapter
+    for mod in (openf1_adapter, pitwall_adapter, jolpica_adapter):
+        # comments are allowed to mention the old names; code is not
+        code = "\n".join(ln for ln in inspect.getsource(mod).splitlines()
+                         if not ln.lstrip().startswith("#"))
+        assert '"tyres"' not in code and '"tyres/compounds"' not in code, mod.__name__
+
+
+def test_a_pre_2018_race_never_asks_the_archive(monkeypatch):
+    """F1's live timing starts in 2018. Asking it about 1995 always fails, and
+    the failure would open the breaker and hide a healthy host from 2025."""
+    from app.adapters import data_source_manager as dsm
+    breaker = _fresh_breaker(monkeypatch)
+    called = []
+    monkeypatch.setattr(dsm.fastf1, "fetch_session", lambda *a, **kw: called.append(a))
+
+    old = _archive_session()
+    old.year = 1995
+    dsm._merge_from_archive(old, primary="jolpica")
+    assert called == [] and breaker.failures == 0
+    # and it says so, rather than leaving a bare "Partial data" chip
+    assert "2018" in (old.source_report.missing_reason or "")
+
+
+def test_the_archive_is_not_asked_to_backfill_its_own_session(monkeypatch):
+    from app.adapters import data_source_manager as dsm
+    _fresh_breaker(monkeypatch)
+    called = []
+    monkeypatch.setattr(dsm.fastf1, "fetch_session", lambda *a, **kw: called.append(a))
+    for primary in ("f1-archive", "fastf1"):
+        dsm._merge_from_archive(_archive_session(), primary=primary)
+    assert called == []
+
+
+def test_every_source_explains_a_failure_in_the_same_plain_language(monkeypatch):
+    """One panel used to speak two languages: the archive said "blocked by an
+    HTTP proxy", while OpenF1 and Jolpica pasted a truncated urllib3 traceback
+    at the reader. Stack-trace fragments are exactly the implementation detail
+    the app promises never to show."""
+    from app.adapters import jolpica_adapter, openf1_adapter
+    from app.adapters import pitwall_adapter
+
+    proxy_error = OSError("HTTPSConnectionPool(host='x', port=443): Max retries "
+                          "exceeded (Caused by ProxyError('Unable to connect'))")
+    monkeypatch.setattr(openf1_adapter, "_get",
+                        lambda *a, **kw: (_ for _ in ()).throw(proxy_error))
+    monkeypatch.setattr(jolpica_adapter, "_get",
+                        lambda *a, **kw: (_ for _ in ()).throw(proxy_error))
+
+    for probe, host in ((openf1_adapter.probe, "api.openf1.org"),
+                        (jolpica_adapter.probe, "api.jolpi.ca")):
+        ok, detail = probe()
+        assert ok is False
+        assert "blocked by an HTTP proxy" in detail and host in detail
+        assert "HTTPSConnectionPool" not in detail and "Traceback" not in detail
+
+    ok, detail = _probe_with(monkeypatch, proxy_error)
+    assert ok is False and "blocked by an HTTP proxy" in detail
+    assert pitwall_adapter._transport_detail(proxy_error).startswith("blocked by")
+
+
+def test_a_reachable_source_says_how_fast_it_answered(monkeypatch):
+    """"reachable" alone can't tell a healthy source from one that took nine
+    seconds — which is the shape of the next outage."""
+    from app.adapters import jolpica_adapter, openf1_adapter
+    monkeypatch.setattr(openf1_adapter, "_get", lambda *a, **kw: [{"session_key": 1}])
+    monkeypatch.setattr(jolpica_adapter, "_get", lambda *a, **kw: {"MRData": {}})
+    for probe in (openf1_adapter.probe, jolpica_adapter.probe):
+        ok, detail = probe()
+        assert ok is True and "ms" in detail
+
+
+# --------------------------------------------------------------------------- #
+# "Partial data" has to mean something. It was lit on every session in the app,
+# largely because a qualifying hour was marked as missing its overtakes.
+# --------------------------------------------------------------------------- #
+def _report_with(missing, category):
+    from app.models import RaceSession, SourceReport
+    from app.models import FacetSource
+    return RaceSession(
+        year=2025, grand_prix="Bahrain", session_type="Qualifying", category=category,
+        source_report=SourceReport(
+            missing=list(missing),
+            facets=[FacetSource(facet=m, source="none", confidence="low") for m in missing]),
+    )
+
+
+def test_qualifying_is_not_partial_for_lacking_overtakes():
+    """A qualifying hour has no overtakes, no strategy pit stops and no position
+    trace. Reporting those as missing is a category error, and it made the
+    "Partial data" chip permanent — a warning that is always on says nothing."""
+    from app.adapters import data_source_manager as dsm
+    s = _report_with(["overtakes", "pit_stops", "positions"], "qualifying")
+    dsm._prune_inapplicable_facets(s)
+    assert s.source_report.missing == []
+    assert s.source_report.facets == []
+
+
+def test_a_race_missing_its_overtakes_is_still_partial():
+    """The prune must not become a way to hide real gaps."""
+    from app.adapters import data_source_manager as dsm
+    s = _report_with(["overtakes", "weather"], "race")
+    dsm._prune_inapplicable_facets(s)
+    assert set(s.source_report.missing) == {"overtakes", "weather"}
+
+
+def test_pruning_keeps_facets_a_session_actually_recorded():
+    """If a qualifying session really did record pit stops, that is a fact and
+    it stays on the report — only the empty "none" rows are dropped."""
+    from app.adapters import data_source_manager as dsm
+    from app.models import FacetSource
+    s = _report_with(["overtakes"], "qualifying")
+    s.source_report.facets.append(
+        FacetSource(facet="pit_stops", source="openf1", confidence="high"))
+    dsm._prune_inapplicable_facets(s)
+    assert [f.facet for f in s.source_report.facets] == ["pit_stops"]
+
+
+def test_a_cached_session_stops_claiming_a_gap_a_newer_release_fixed(monkeypatch):
+    """Old cache files froze the old verdict, so sessions kept showing "Partial
+    data" for a reason the app no longer believes in."""
+    from app.adapters import data_source_manager as dsm
+    _fresh_breaker(monkeypatch)
+    s = _report_with(["overtakes"], "qualifying")
+    s.partial = True
+    s.source_report.partial = True
+    assert dsm._heal_cached(s) is True
+    assert s.partial is False and s.source_report.partial is False
