@@ -11,10 +11,11 @@ import requests
 
 from ..config import get_settings
 from ..models import DataSource
+from .pitwall_runtime import load_pitwall
 
 
 def _jolpica(path: str) -> dict:
-    import pitwall
+    pitwall = load_pitwall()
     url = f"{pitwall.JOLPICA}/{path}"
     resp = requests.get(url, timeout=get_settings().fetch_timeout)
     resp.raise_for_status()
@@ -63,7 +64,7 @@ def get_circuit_winners(circuit: str) -> tuple[list[dict], DataSource]:
     settings = get_settings()
     if not settings.mock_mode and settings.enable_live_fetch:
         try:
-            import pitwall
+            pitwall = load_pitwall()
             cid = pitwall._resolve_circuit_id(circuit)
             if cid:
                 data = _jolpica(f"circuits/{cid}/results/1.json?limit=30")

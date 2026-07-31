@@ -1,6 +1,11 @@
 # Pitwall IQ backend
 # Real F1 data comes through pitwall (f1pitwall) + FastF1 + Jolpica/Ergast.
-f1pitwall[full]>=1.1.0    # pitwall MCP data layer + FastF1 full engine (pandas, numpy…)
+# f1pitwall ships as a single-file MCP *server* script, so it declares mcp>=1.0.0.
+# We only read F1's static JSON archive through its helpers and never run a
+# server, so app/adapters/pitwall_runtime.py stubs that SDK when it is absent —
+# a partial install of this line degrades gracefully instead of taking the tyre,
+# weather and race-control data down with it.
+f1pitwall[full]>=1.1.0    # pitwall data layer + FastF1 full engine (pandas, numpy…)
 fastapi>=0.110
 uvicorn[standard]>=0.27
 pydantic>=2.6

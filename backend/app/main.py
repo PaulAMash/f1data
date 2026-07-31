@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from . import cache, service
 from .adapters import data_source_manager, history_adapter, historical, pitstop_service
 from .adapters.data_source_manager import DataUnavailableError
+from .adapters.pitwall_runtime import load_pitwall
 from .analysis.engine import analyze, compare_drivers
 from .analysis.practice import compute_practice
 from .analysis.qualifying import compute_qualifying
@@ -86,7 +87,7 @@ def debug_archive():
     """
     import time
     import requests
-    import pitwall
+    pitwall = load_pitwall()
     from .config import get_settings as _gs
 
     url = f"{pitwall.STATIC_BASE}/{pitwall_probe_year()}/Index.json"

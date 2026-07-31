@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { CheckCircle2, CircleHelp, Database, RefreshCw, Trash2, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Database, RefreshCw, Trash2, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -129,23 +129,29 @@ export function DataSourcesPanel({
                 diagnosis in a title attribute. Two days of "unreachable" told
                 nobody whether F1 was down, our request was refused, or DNS had
                 broken. The reason is now on the page. */}
+            {/* Three states, not two, because they need three different actions.
+                Red means the source is down: wait. Amber means we never got as
+                far as asking — a broken install here — and only you can fix it;
+                showing that in neutral grey as "not probed" is how a missing
+                Python package spent two days looking like an F1 outage. */}
             {probes.map((p) => (
               <div key={p.name} className="text-sm">
                 <div className="flex items-center gap-2">
                   {p.reachable === true ? <CheckCircle2 size={15} className="shrink-0 text-emerald-400" />
                     : p.reachable === false ? <XCircle size={15} className="shrink-0 text-rose-400" />
-                      : <CircleHelp size={15} className="shrink-0 text-ink-faint" />}
+                      : <AlertTriangle size={15} className="shrink-0 text-amber" />}
                   <span className="flex-1 truncate">{SOURCE_NAMES[p.name] ?? p.name}</span>
                   <span className={cx("shrink-0 text-xs font-medium",
                     p.reachable === true ? "text-emerald-300"
-                      : p.reachable === false ? "text-rose-300" : "text-ink-faint")}>
+                      : p.reachable === false ? "text-rose-300" : "text-amber")}>
                     {p.reachable === true ? "reachable"
-                      : p.reachable === false ? "not answering" : "not probed"}
+                      : p.reachable === false ? "not answering" : "couldn’t check"}
                   </span>
                 </div>
                 {p.detail && (
                   <p className={cx("ml-[23px] mt-0.5 text-[11.5px] leading-snug",
-                    p.reachable === false ? "text-rose-200/80" : "text-ink-faint")}>
+                    p.reachable === false ? "text-rose-200/80"
+                      : p.reachable === true ? "text-ink-faint" : "text-amber/85")}>
                     {p.detail}
                   </p>
                 )}

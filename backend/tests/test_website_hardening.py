@@ -938,3 +938,112 @@ def test_a_cached_session_stops_claiming_a_gap_a_newer_release_fixed(monkeypatch
     s.source_report.partial = True
     assert dsm._heal_cached(s) is True
     assert s.partial is False and s.source_report.partial is False
+
+
+# --------------------------------------------------------------------------- #
+# The archive "outage" that was ours all along.
+#
+# `pitwall` ships as a single-file MCP *server script*: its module body runs
+# `from mcp.server.fastmcp import FastMCP` and builds a server. So `import
+# pitwall` needs an entire MCP SDK to read static JSON from F1, and on a machine
+# where that package is missing every archive call raised ModuleNotFoundError —
+# surfaced to the user as "F1 live-timing archive: not answering".
+# --------------------------------------------------------------------------- #
+class _BlockMcp:
+    """Import hook that hides a package, the way a partial install does."""
+
+    def __init__(self, *names):
+        self.names = names
+
+    def find_module(self, name, path=None):
+        return self if name in self.names or any(
+            name.startswith(n + ".") for n in self.names) else None
+
+    def load_module(self, name):
+        raise ModuleNotFoundError(f"No module named '{name}'", name=name)
+
+
+def _without(monkeypatch, *packages):
+    """Run with `packages` unimportable and pitwall_runtime's cache cleared."""
+    import sys
+    from app.adapters import pitwall_runtime
+    monkeypatch.setattr(pitwall_runtime, "_module", None)
+    hidden = {k: v for k, v in sys.modules.items()
+              if k in packages or any(k.startswith(p + ".") for p in packages)}
+    for k in hidden:
+        monkeypatch.delitem(sys.modules, k, raising=False)
+    hook = _BlockMcp(*packages)
+    monkeypatch.setattr(sys, "meta_path", [hook] + list(sys.meta_path))
+
+
+def test_the_archive_client_loads_without_the_mcp_sdk(monkeypatch):
+    """The whole bug. We read static JSON over HTTPS; we do not run an MCP
+    server, so an MCP server SDK must not be on that critical path."""
+    from app.adapters.pitwall_runtime import load_pitwall
+    _without(monkeypatch, "mcp")
+    pw = load_pitwall()
+    assert pw.STATIC_BASE.startswith("https://")
+    # every helper the adapter actually calls has to survive the stub
+    for name in ("_http", "_get_json", "_find_session", "_driver_map", "_get_keyframe",
+                 "_parse_stream_line", "_deep_merge", "_resolve_circuit_id", "get_lap_times"):
+        assert getattr(pw, name, None) is not None, name
+
+
+def test_the_real_mcp_sdk_is_preferred_when_present():
+    """The stub is a fallback, never a replacement — we must not shadow a real
+    module with a fake one and silently change pitwall's behaviour."""
+    import sys
+    from app.adapters.pitwall_runtime import _install_mcp_stub
+    try:
+        import mcp.server.fastmcp as real
+    except Exception:  # pragma: no cover - depends on the environment
+        return
+    assert _install_mcp_stub() is False
+    assert sys.modules["mcp.server.fastmcp"] is real
+
+
+def test_an_unloadable_client_is_not_reported_as_an_f1_outage(monkeypatch):
+    """"not answering" sends the reader to F1's status page for a problem that
+    lives in their own virtualenv. It is a third state, not a red one."""
+    from app.adapters import data_source_manager as dsm
+    _without(monkeypatch, "mcp", "pitwall")
+    row = next(p for p in dsm.data_source_health() if p.name == "f1-archive")
+    assert row.reachable is None                 # never got as far as asking
+    assert "pip install" in (row.detail or "")   # and it names the fix
+    assert "Traceback" not in (row.detail or "")
+
+
+def test_a_missing_package_explains_itself_instead_of_raising_a_traceback():
+    from app.adapters.pitwall_runtime import explain_import
+    detail = explain_import(ModuleNotFoundError("No module named 'mcp'", name="mcp"))
+    assert "'mcp'" in detail and "pip install" in detail
+    assert "ModuleNotFoundError" not in detail
+
+
+def test_partial_data_blames_the_install_not_formula_one(monkeypatch):
+    """When our own client can't load, "the archive isn't answering" is false."""
+    from app.adapters import data_source_manager as dsm
+    from app.adapters.pitwall_runtime import ArchiveClientUnavailable
+    _fresh_breaker(monkeypatch)
+    monkeypatch.setattr(dsm.fastf1, "fetch_session", lambda *a, **kw: (_ for _ in ()).throw(
+        ArchiveClientUnavailable("the F1 archive client needs the 'mcp' package")))
+    session = _archive_session()
+    dsm._merge_from_archive(session, primary="openf1")
+    reason = session.source_report.missing_reason or ""
+    assert "can't load its F1 archive client" in reason
+    assert "not because F1 is down" in reason
+
+
+def test_pitwall_is_never_imported_directly(monkeypatch):
+    """Nine bare `import pitwall` statements gave one failure nine shapes and no
+    single place to fix it. Every one goes through load_pitwall() now."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent / "app"
+    offenders = []
+    for path in root.rglob("*.py"):
+        if path.name == "pitwall_runtime.py":
+            continue
+        for i, line in enumerate(path.read_text().splitlines(), 1):
+            if line.strip() in ("import pitwall", "import pitwall as pw"):
+                offenders.append(f"{path.relative_to(root)}:{i}")
+    assert not offenders, f"bare pitwall imports: {offenders}"

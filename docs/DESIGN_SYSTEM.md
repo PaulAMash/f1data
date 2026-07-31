@@ -497,3 +497,39 @@ truth about the session.
 for ten minutes (`_Breaker`) rather than re-asked on every page view. The session is already
 loaded before the ask, so the entire cost of a dead host would otherwise be paid by the
 user, repeatedly, for the same answer.
+
+---
+
+## A data layer carries no server framework
+
+`pitwall` is distributed as a single-file MCP **server script**. Its module body runs
+`from mcp.server.fastmcp import FastMCP` and constructs a server, so a bare `import
+pitwall` requires the entire MCP SDK — to read static JSON files over HTTPS. We are not
+running a server; we are reading files.
+
+On a machine where that SDK was missing, every archive call raised `ModuleNotFoundError`,
+and the app reported **"F1 live-timing archive: not answering."** The host was fine. The
+bug was ours, in our own import, for two days.
+
+`adapters/pitwall_runtime.py` is the single owner of that import. It prefers the real SDK
+whenever it loads and otherwise installs a stub covering exactly the import-time surface
+the script touches. Every `import pitwall` in the app goes through `load_pitwall()` — there
+were nine bare ones, which is why the same failure had nine shapes and no single place to
+fix it. A test asserts none come back.
+
+**A dependency that isn't there is a different colour from a host that won't answer.**
+The status panel has three states because they need three different actions:
+
+| | means | who fixes it |
+|---|---|---|
+| green — *reachable* | the source answered | nobody |
+| red — *not answering* | the source is down or refusing us | wait, or check their status |
+| amber — *couldn't check* | we never got as far as asking | **you**, here, now |
+
+Amber always names the command. Rendering that third case in neutral grey as "not probed"
+is precisely how a missing Python package spent two days impersonating an F1 outage.
+
+**The server never boots silently into a degraded state.** If the archive client can't
+load, startup logs a warning saying which data will be missing from every session —
+because an app that starts cleanly while a whole source is dead teaches its operator that
+"partial data" is normal.

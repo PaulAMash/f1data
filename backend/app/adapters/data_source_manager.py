@@ -31,6 +31,7 @@ from ..models import (
 )
 from . import headshots, jolpica_adapter, mock_adapter, openf1_adapter, pitstop_service
 from . import pitwall_adapter as fastf1
+from .pitwall_runtime import ArchiveClientUnavailable, explain_import
 
 log = logging.getLogger("pitwall_iq.dsm")
 
@@ -293,6 +294,10 @@ _ARCHIVE_DOWN_NOTE = ("The F1 live-timing archive isn't answering, so the tyre, 
                       "race-control and weather feeds it provides couldn't be loaded. "
                       "Everything else on this session is real and complete.")
 
+_ARCHIVE_CLIENT_NOTE = ("The tyre, race-control and weather feeds are unavailable because "
+                        "this install can't load its F1 archive client — not because F1 is "
+                        "down. Fix: ")
+
 _PRE_ARCHIVE_NOTE = (f"F1 only published lap-by-lap tyre, weather and race-control "
                      f"data from {_ARCHIVE_FIRST_YEAR} onwards, so those parts of this "
                      "session were never recorded — results and lap times are complete.")
@@ -336,6 +341,14 @@ def _merge_from_archive(session: RaceSession, primary: str) -> None:
         return
     try:
         other = fastf1.fetch_session(session.year, session.grand_prix, session.session_type)
+    except (ImportError, ArchiveClientUnavailable) as exc:
+        # Our own client won't load. Nothing is wrong with F1, and no amount of
+        # retrying will change that — say what to install instead of blaming a
+        # host we never contacted.
+        log.warning("archive client unavailable: %s", exc)
+        _archive_breaker.failed(str(exc))
+        _note_missing_reason(session, _ARCHIVE_CLIENT_NOTE + explain_import(exc) + ".")
+        return
     except Exception as exc:  # noqa: BLE001
         log.info("archive facet merge unavailable: %s", exc)
         category, _retryable = _classify(exc)
@@ -633,10 +646,16 @@ def data_source_health() -> list[SourceProbe]:
         try:
             ok, detail = fn()
             return SourceProbe(name=name, reachable=ok, detail=detail)
+        except (ImportError, ArchiveClientUnavailable) as exc:
+            # A package that won't load is not a host that won't answer. Marking
+            # it "not answering" sent a reader to F1's status page for a problem
+            # living in their own virtualenv — reachable=None says, correctly,
+            # that we never got as far as asking.
+            return SourceProbe(name=name, reachable=None, detail=explain_import(exc))
         except Exception as exc:  # noqa: BLE001
             # a probe that throws is a failed probe, never a failed endpoint
             return SourceProbe(name=name, reachable=False,
-                               detail=f"probe error — {type(exc).__name__}: {exc}"[:160])
+                               detail=f"the check itself failed — {type(exc).__name__}: {exc}"[:160])
 
     jobs = [
         ("openf1", openf1_adapter.probe),

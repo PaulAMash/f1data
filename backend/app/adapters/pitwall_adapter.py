@@ -22,11 +22,13 @@ No secret or token is ever required for this open data.
 """
 from __future__ import annotations
 
+import logging
 import math
 from datetime import datetime, timezone
 
 from ..config import get_settings
 from . import probe_detail
+from .pitwall_runtime import ArchiveClientUnavailable, load_pitwall
 from ..models import (
     Circuit,
     ClassificationRow,
@@ -68,7 +70,7 @@ class FetchError(RuntimeError):
 # --------------------------------------------------------------------------- #
 def _brand_http_session() -> None:
     try:
-        import pitwall
+        pitwall = load_pitwall()
         ua = get_settings().archive_user_agent
         if ua:
             pitwall._http.headers.update({
@@ -78,6 +80,13 @@ def _brand_http_session() -> None:
                 "Accept": "application/json, text/plain, */*",
                 "Accept-Language": "en-GB,en;q=0.9",
             })
+    except ArchiveClientUnavailable as exc:
+        # Never block startup — but never start silently either. A server that
+        # boots cleanly while a whole data source is dead is how "partial data"
+        # became the normal state of the app for days.
+        logging.getLogger("pitwall_iq.archive").warning(
+            "F1 archive client unavailable — tyre, weather and race-control data "
+            "will be missing from every session. %s", exc)
     except Exception:  # noqa: BLE001
         # never let branding stop the app from starting
         pass
@@ -142,7 +151,7 @@ def _sec(td) -> float | None:
 # Calendar / browsing (pitwall static + Jolpica)
 # --------------------------------------------------------------------------- #
 def list_seasons() -> list[Season]:
-    import pitwall
+    pitwall = load_pitwall()
     seasons: list[Season] = []
     errors: list[str] = []
     for year in range(2018, datetime.now().year + 1):
@@ -173,8 +182,16 @@ def list_seasons() -> list[Season]:
 # One request, and the verdict names the cause: a 403 is a very different
 # problem from a DNS failure, and only one of them is F1's fault.
 # --------------------------------------------------------------------------- #
-def probe() -> tuple[bool, str]:
-    import pitwall
+def probe() -> tuple[bool | None, str]:
+    """(reachable, detail). `None` means we never got as far as asking F1.
+
+    A client that won't import is not an outage, and reporting it as one sends
+    the reader to F1's status page for a problem that lives in this virtualenv.
+    """
+    try:
+        pitwall = load_pitwall()
+    except ArchiveClientUnavailable as exc:
+        return None, str(exc)
     url = f"{pitwall.STATIC_BASE}/{_probe_year()}/Index.json"
     try:
         resp = pitwall._http.get(url, timeout=get_settings().probe_timeout)
@@ -210,7 +227,7 @@ def _transport_detail(exc: Exception) -> str:
 
 
 def list_grands_prix(year: int) -> list[GrandPrix]:
-    import pitwall
+    pitwall = load_pitwall()
     try:
         meetings = pitwall._get_json(f"{year}/Index.json").get("Meetings", [])
     except Exception as exc:  # noqa: BLE001
@@ -233,7 +250,7 @@ def list_grands_prix(year: int) -> list[GrandPrix]:
 # --------------------------------------------------------------------------- #
 def _jolpica_grid(year: int, gp_name: str) -> dict[str, int]:
     """Return {driver_code: grid_position} from Jolpica qualifying/grid, best-effort."""
-    import pitwall
+    pitwall = load_pitwall()
     try:
         circuit = pitwall._resolve_circuit_id(gp_name) if gp_name else None
         url = (f"{pitwall.JOLPICA}/{year}/circuits/{circuit}/results.json?limit=40"
@@ -494,7 +511,7 @@ def _weather_from_fastf1(session) -> list[WeatherPoint]:
 # pitwall static-API path (fallback when FastF1 unavailable)
 # --------------------------------------------------------------------------- #
 def _fetch_via_static(year: int, gp: str, session_type: str) -> RaceSession:
-    import pitwall
+    pitwall = load_pitwall()
     path, race_name = pitwall._find_session(year, gp, session_type)
     if not path:
         raise FetchError(f"No '{session_type}' session found for '{gp}' in {year}.")
@@ -827,6 +844,7 @@ def fetch_session(year: int, gp: str, session_type: str) -> RaceSession:
     """Fetch and normalize a real session. Raises FetchError on any failure."""
     settings = get_settings()
     errors: list[str] = []
+    fastf1_missing = False
 
     if settings.use_fastf1:
         try:
@@ -835,12 +853,20 @@ def fetch_session(year: int, gp: str, session_type: str) -> RaceSession:
         except FetchError as exc:
             errors.append(f"FastF1: {exc}")
         except ImportError:
+            fastf1_missing = True
             errors.append("FastF1 not installed (pip install 'f1pitwall[full]').")
         except Exception as exc:  # noqa: BLE001
             errors.append(f"FastF1 unexpected: {exc}")
 
     try:
         return _fetch_via_static(year, gp, session_type)
+    except ArchiveClientUnavailable as exc:
+        # Neither route to the archive could even be loaded. That is a complete,
+        # actionable diagnosis — an incomplete install — and it must not be
+        # flattened into a generic fetch failure that reads like an F1 outage.
+        if fastf1_missing:
+            raise
+        errors.append(f"static-API: {exc}")
     except Exception as exc:  # noqa: BLE001
         errors.append(f"static-API: {exc}")
 
