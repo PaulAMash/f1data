@@ -3,7 +3,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Check, MessageSquareText, Timer, Trophy } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
-import { HeroVisual } from "@/components/landing/HeroVisual";
+import { HeroField } from "@/components/landing/HeroField";
+import { SampleStory } from "@/components/landing/SampleStory";
 import { Flag, Gauge, LineChart, Sparkles } from "@/components/ui/MotionIcon";
 import { usePrefs, type Mode } from "@/lib/prefs";
 import { useReveal } from "@/lib/useReveal";
@@ -49,65 +50,70 @@ export default function Landing() {
       <NavBar active="home" />
 
       {/* ---- 1. the shot ------------------------------------------------ */}
-      <section className="relative">
-        <div className="mx-auto max-w-7xl px-4 pb-10 pt-14 sm:px-6 sm:pb-14 sm:pt-20">
-          <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-14">
-            <div>
-              <p className="stagger-1 flex items-center gap-2 text-[11.5px] font-semibold uppercase tracking-[0.26em] text-accent-soft">
-                <span className="h-px w-8 bg-accent-soft/60" />
-                Formula 1 race intelligence
-              </p>
-              {/* Oversized and tight. A headline at this weight is the single
-                  cheapest way to say "somebody designed this" — and the tighter
-                  tracking is what stops it reading as merely large. */}
-              <h1 className="stagger-2 mt-5 text-[3rem] font-bold leading-[0.98] tracking-[-0.04em] sm:text-[4.5rem]">
-                Every lap
-                <br />
-                tells a{" "}
-                <span className="relative whitespace-nowrap text-accent">
-                  story
-                  <span aria-hidden className="absolute -inset-x-2 -inset-y-1 -z-10 rounded-2xl"
-                    style={{ background: "radial-gradient(closest-side, rgb(var(--accent) / .18), transparent)" }} />
-                </span>
-                .
-              </h1>
-              <p className="stagger-3 mt-6 max-w-md text-[17px] leading-relaxed text-ink-muted">
-                Pitwall IQ reads the lap-by-lap timing data and tells you what
-                actually decided the Grand Prix — not just who finished where.
-              </p>
-              <div className="stagger-4 mt-8 flex flex-wrap items-center gap-3">
-                <Link href="/explorer"
-                  className="pressable-glow group/cta inline-flex items-center gap-2 rounded-xl bg-accent px-6 py-3.5 text-sm font-semibold text-pure"
-                  style={{ boxShadow: "0 10px 34px -12px rgb(var(--accent) / .8)" }}>
-                  Start exploring
-                  <ArrowRight size={16} className="transition-transform duration-200 group-hover/cta:translate-x-0.5" />
-                </Link>
-                <a href="#mode"
-                  className="pressable inline-flex items-center gap-2 rounded-xl border border-white/10 bg-base-850/70 px-5 py-3.5 text-sm font-medium text-ink-muted">
-                  See how it works
-                </a>
-              </div>
+      {/* Full bleed. The race is not inside a card beside the words — it is the
+          surface the words are printed on, and a single blurred pane between
+          the two carries the focal falloff from the headline out to the sharp
+          right-hand edge. */}
+      <section className="relative isolate min-h-[74vh] overflow-hidden sm:min-h-[80vh]">
+        <HeroField />
+
+        <div className="relative mx-auto flex min-h-[74vh] max-w-7xl items-center px-4 py-16 sm:min-h-[80vh] sm:px-6">
+          <div className="max-w-2xl">
+            <p className="stagger-1 flex items-center gap-2.5 text-[11.5px] font-semibold uppercase tracking-[0.26em] text-accent-soft">
+              <span className="h-px w-8 bg-accent-soft/60" />
+              Formula 1 race intelligence
+            </p>
+            <h1 className="stagger-2 mt-5 text-[3.1rem] font-bold leading-[0.95] tracking-[-0.045em] sm:text-[5.2rem]">
+              Every lap
+              <br />
+              tells a{" "}
+              <span className="relative whitespace-nowrap text-accent">
+                story
+                <span aria-hidden className="absolute -inset-x-3 -inset-y-2 -z-10 rounded-3xl"
+                  style={{ background: "radial-gradient(closest-side, rgb(var(--accent) / .22), transparent)" }} />
+              </span>
+              .
+            </h1>
+            <p className="stagger-3 mt-7 max-w-lg text-[17.5px] leading-relaxed text-ink-muted">
+              Pitwall IQ reads the lap-by-lap timing data and tells you what
+              actually decided the Grand Prix — not just who finished where.
+            </p>
+            <div className="stagger-4 mt-9 flex flex-wrap items-center gap-3">
+              <Link href="/explorer"
+                className="pressable-glow group/cta inline-flex items-center gap-2 rounded-xl bg-accent px-6 py-3.5 text-sm font-semibold text-pure"
+                style={{ boxShadow: "0 12px 40px -12px rgb(var(--accent) / .85)" }}>
+                Start exploring
+                <ArrowRight size={16} className="transition-transform duration-200 group-hover/cta:translate-x-0.5" />
+              </Link>
+              {/* The second button demonstrates instead of navigating — see
+                  SampleStory. "See how it works" scrolled the page, which is
+                  not worth a hero button. */}
+              <SampleStory />
             </div>
-
-            <HeroVisual className="stagger-3 aspect-[16/10] w-full lg:aspect-[16/11]" />
           </div>
+        </div>
 
-          {/* ---- 2. the scale -------------------------------------------- */}
-          <div ref={statBand.ref}
-            className={cx("mt-12 flex flex-wrap items-center gap-x-9 gap-y-5 border-t border-white/[0.06] pt-7 sm:mt-16",
-              statBand.className)}>
-            <Stat icon={<Flag size={15} />} value={2026} label="Season" plain />
-            <Stat icon={<Trophy size={15} />} value={24} label="Races" />
-            <Stat icon={<Gauge size={15} />} value={500} suffix="+" label="Drivers" />
-            <Stat icon={<Timer size={15} />} value={75} label="Years of history" />
-            <Stat icon={<LineChart size={15} />} value={0} literal="Millions" label="Laps analysed" />
-          </div>
+        {/* the fade into the next chapter, so the hero ends rather than stops */}
+        <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-28"
+          style={{ background: "linear-gradient(to bottom, transparent, rgb(var(--base-950)))" }} />
+      </section>
+
+      {/* ---- 2. the scale ------------------------------------------------ */}
+      <section className="mx-auto max-w-7xl px-4 sm:px-6">
+        <div ref={statBand.ref}
+          className={cx("flex flex-wrap items-center gap-x-9 gap-y-5 border-b border-white/[0.06] pb-8",
+            statBand.className)}>
+          <Stat icon={<Flag size={15} />} value={2026} label="Season" plain />
+          <Stat icon={<Trophy size={15} />} value={24} label="Races" />
+          <Stat icon={<Gauge size={15} />} value={500} suffix="+" label="Drivers" />
+          <Stat icon={<Timer size={15} />} value={75} label="Years of history" />
+          <Stat icon={<LineChart size={15} />} value={0} literal="Millions" label="Laps analysed" />
         </div>
       </section>
 
       {/* ---- 3. the choice --------------------------------------------- */}
       <section id="mode" ref={modeBand.ref}
-        className={cx("mx-auto max-w-7xl scroll-mt-20 px-4 pb-4 pt-6 sm:px-6", modeBand.className)}>
+        className={cx("mx-auto max-w-7xl scroll-mt-20 px-4 pb-4 pt-16 sm:px-6 sm:pt-20", modeBand.className)}>
         <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-[26px] font-bold tracking-tight sm:text-[32px]">Choose your experience</h2>

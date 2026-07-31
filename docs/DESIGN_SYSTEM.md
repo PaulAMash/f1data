@@ -822,3 +822,56 @@ Decoration is allowed to not happen. It is never allowed to make the product lie
 The same rule caught a second bug in the same file: the hero traces referenced `--t-accent`
 and friends, which were never declared anywhere, so every stroke resolved to `none` and only
 the white highlight was visible. Colours now bind to palette variables that exist.
+
+---
+
+## The hero is a race, not a drawing
+
+V52's hero was five hand-written bezier paths that drew themselves once and then held still
+forever. It looked good for about fifteen seconds — exactly as long as it takes to notice
+that nothing is ever going to change.
+
+`HeroField` is a small race simulation instead. It keeps a running order, drifts it, and
+every 3.4 seconds advances a lap: the field flows leftward, a new column of positions is
+generated on the right, cars occasionally trade places, lap times move, and race-control
+events are born and expire. It is a state machine, not a loop, so the order after five
+minutes is genuinely different from the order at load.
+
+The flow is one translation of exactly one column per tick, on the same beat the data shifts
+by one column — matching distance and period is what makes it stream rather than step.
+
+**Seed deterministically.** The opening grid was seeded with `Math.random()`, so the server
+rendered one set of lap times and the client rendered another: a hydration mismatch, which
+React repairs by throwing the server's markup away. Every seed value is now a pure function
+of the car's index. All variation enters from the first tick, which is after hydration.
+
+**Depth of field, not a card.** The race spans the full width *behind* the copy, and one
+`backdrop-filter` pane sits between them, masked so it is opaque behind the headline and
+gone by the right-hand edge. The mask decides how much of the pane exists at each x, so the
+blur itself falls off across the page — text floating in front of a living visualisation
+rather than a bordered panel beside it.
+
+---
+
+## A hero button has to be worth pressing
+
+"See how it works" scrolled the page down one section. `SampleStory` answers a real question
+instead, the way the product does: evidence arrives one beat at a time, each line landing as
+the analysis reaches it, and the verdict only once the working is on screen. Twenty seconds,
+no narration, and at the end the reader has *watched* Pitwall IQ do the thing it claims to
+do rather than read a promise that it can.
+
+---
+
+## Settings previews itself
+
+Every control on that page changes the product, and the only way to see what a choice did
+was to leave the page and go look. The control centre puts navigation on the left, controls
+in the middle, and a **live preview on the right that is a real Pitwall IQ panel** rendered
+with the current preferences: Simple/Advanced rewrites it, the accent recolours it, the theme
+relights it, larger text enlarges it — while the reader is still deciding.
+
+**Nothing on that page is a switch that does nothing.** The sections a bigger product would
+carry (Account, Data, Notifications) are deliberately absent rather than present and dead, and
+"larger text" scales the root font size so the whole ramp grows proportionally — labels and
+figures included — rather than enlarging body copy and leaving the interface behind.

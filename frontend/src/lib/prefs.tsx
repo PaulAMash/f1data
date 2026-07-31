@@ -38,6 +38,8 @@ export interface Prefs {
   theme: Theme;
   motion: MotionPref;
   accent: AccentKey;
+  /** Scales the whole type ramp. A real accessibility control, not a toggle. */
+  textScale: "normal" | "large";
   /** Has the reader been through the landing choice? Gates the walkthrough. */
   onboarded: boolean;
 }
@@ -45,7 +47,8 @@ export interface Prefs {
 export const PREFS_KEY = "pitwall-iq:prefs";
 
 export const DEFAULT_PREFS: Prefs = {
-  mode: "simple", theme: "dark", motion: "full", accent: "f1", onboarded: false,
+  mode: "simple", theme: "dark", motion: "full", accent: "f1",
+  textScale: "normal", onboarded: false,
 };
 
 /**
@@ -67,6 +70,7 @@ export const NO_FLASH_SCRIPT = `
     var sysCalm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     root.dataset.motion = p.motion || (sysCalm ? "calm" : "full");
     if (p.accent) root.dataset.accent = p.accent;
+    if (p.textScale) root.dataset.text = p.textScale;
   } catch (e) {
     document.documentElement.dataset.theme = "dark";
   }
@@ -102,6 +106,7 @@ function resolveInitial(): Prefs {
     theme: stored.theme ?? DEFAULT_PREFS.theme,
     motion: stored.motion ?? (sysCalm ? "calm" : "full"),
     accent: (stored.accent && stored.accent in ACCENTS ? stored.accent : DEFAULT_PREFS.accent) as AccentKey,
+    textScale: stored.textScale ?? DEFAULT_PREFS.textScale,
     onboarded: stored.onboarded ?? false,
   };
 }
@@ -136,6 +141,7 @@ export function PrefsProvider({ children }: { children: React.ReactNode }) {
     root.dataset.theme = prefs.theme;
     root.dataset.motion = prefs.motion;
     root.dataset.accent = prefs.accent;
+    root.dataset.text = prefs.textScale;
     // written as variables rather than as a stylesheet rule per accent: five
     // accents times two themes would be ten rules that all have to stay in step
     const a = ACCENTS[prefs.accent] ?? ACCENTS.f1;

@@ -110,7 +110,13 @@ html,
 body {
   background-color: rgb(var(--base-950));
   color: rgb(var(--ink));
+  /* Scaling the root is what makes "larger text" real: every size in the
+     product is in rem or in a px value derived from this ramp, so one number
+     enlarges the whole interface proportionally instead of enlarging body copy
+     and leaving the labels behind. */
+  transition: background-color var(--dur-4, 520ms) ease, color var(--dur-4, 520ms) ease;
 }
+:root[data-text="large"] { font-size: 112.5%; }
 
 body {
   background-image:
@@ -712,3 +718,69 @@ html.theme-sweep::view-transition-new(root) {
 
 @media (prefers-reduced-motion: reduce) { .build > * { animation: none; } }
 :root[data-motion="calm"] .build > * { animation: none; }
+
+
+/* ---------------------------------------------------------------------------
+   The hero field.
+
+   The flow is one translation of exactly one column per tick, linear and
+   infinite, on the same beat the data shifts by one column. Because both the
+   distance and the period match, the race streams continuously — there is no
+   frame where it steps.
+   --------------------------------------------------------------------------- */
+.hf-flow { animation: hf-flow var(--hf-tick, 3400ms) linear infinite; }
+@keyframes hf-flow {
+  from { transform: translateX(0); }
+  to   { transform: translateX(calc(var(--hf-step) * -1)); }
+}
+
+.hero-glow {
+  background:
+    radial-gradient(46% 62% at 18% 42%, rgb(var(--accent) / .16), transparent 72%),
+    radial-gradient(40% 54% at 62% 26%, rgb(var(--speed) / .13), transparent 72%),
+    radial-gradient(44% 50% at 84% 78%, rgb(var(--amber) / .09), transparent 74%);
+  animation: hero-glow 26s ease-in-out infinite alternate;
+}
+@keyframes hero-glow {
+  from { opacity: .8; transform: translate3d(-1.2%, .8%, 0) scale(1.03); }
+  to   { opacity: 1;  transform: translate3d(1.2%, -.8%, 0) scale(1.07); }
+}
+
+/* The depth of field.
+
+   `backdrop-filter` blurs whatever is behind this pane, and the mask decides
+   HOW MUCH of the pane exists at each x — so the blur itself falls off across
+   the page instead of stopping at an edge. The gradient underneath darkens the
+   same region, which is what keeps the headline at full contrast without
+   putting a card behind it. */
+.hero-dof {
+  backdrop-filter: blur(15px) saturate(115%);
+  -webkit-backdrop-filter: blur(15px) saturate(115%);
+  background: linear-gradient(
+    100deg,
+    rgb(var(--base-950) / .94) 0%,
+    rgb(var(--base-950) / .88) 26%,
+    rgb(var(--base-950) / .55) 48%,
+    rgb(var(--base-950) / .12) 68%,
+    transparent 82%
+  );
+  -webkit-mask-image: linear-gradient(100deg, #000 0%, #000 40%, rgba(0,0,0,.55) 62%, transparent 84%);
+  mask-image: linear-gradient(100deg, #000 0%, #000 40%, rgba(0,0,0,.55) 62%, transparent 84%);
+}
+
+/* the standings rows and race-control markers arrive rather than blink */
+.hf-row { animation: rise-in var(--dur-4) var(--ease-out) both; }
+.hf-marker { animation: hf-marker 13s var(--ease-out) both; }
+@keyframes hf-marker {
+  0%   { opacity: 0; transform: translateY(8px) scale(.94); }
+  6%   { opacity: 1; transform: none; }
+  86%  { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(-6px) scale(.98); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hf-flow, .hero-glow, .hf-row { animation: none; }
+  .hf-marker { animation: none; opacity: 1; }
+}
+:root[data-motion="calm"] .hf-flow,
+:root[data-motion="calm"] .hero-glow { animation: none; }
