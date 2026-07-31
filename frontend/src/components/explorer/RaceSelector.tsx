@@ -2,7 +2,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Calendar, ChevronDown, History, RefreshCw } from "lucide-react";
-import { ModeToggle } from "@/components/layout/NavBar";
 import { api } from "@/lib/api";
 import type { GrandPrix } from "@/lib/types";
 import { cx } from "@/lib/format";
@@ -12,10 +11,9 @@ const SESSION_TYPES = ["Practice 1", "Practice 2", "Practice 3", "Qualifying", "
 export interface Selection { year: number; gp: string; session: string; }
 
 export function RaceSelector({
-  value, onChange, onRefresh, loading, showModeToggle = true,
+  value, onChange, onRefresh, loading,
 }: {
   value: Selection; onChange: (s: Selection) => void; onRefresh: () => void; loading: boolean;
-  showModeToggle?: boolean;
 }) {
   const [races, setRaces] = useState<GrandPrix[]>([]);
 
@@ -85,9 +83,6 @@ export function RaceSelector({
         <RefreshCw size={14} className={cx(loading && "animate-spin")} /> Refresh
       </button>
 
-      {showModeToggle && (
-        <span className="self-end"><ModeToggle /></span>
-      )}
 
       <Link href="/history"
         className="pill-btn h-[38px] self-end text-ink-muted hover:text-ink sm:ml-auto"

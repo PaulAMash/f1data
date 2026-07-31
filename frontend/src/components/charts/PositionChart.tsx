@@ -316,13 +316,29 @@ export function PositionChart({
     return drivers.filter((d) => keep.has(d.code));
   }, [drivers, finishOrder, preset, selected]);
 
+  /* Two filters can be active at once, and both have to stay visible.
+   *
+   * Opening a moment used to dim the whole plot surface — the focused driver's
+   * line and its halo included — so choosing a driver and then a moment made the
+   * driver silently disappear. One selection was overriding the other, and the
+   * reader had no way to know two filters were even on.
+   *
+   * The rule now: a moment dims the CONTEXT, never the selection. A focused
+   * driver keeps full strength and its glow whatever else is chosen; only the
+   * cars nobody asked about recede further to let the moment's band read. */
   function emphasis(code: string) {
     const isFocus = selected.includes(code);
+    // how far the unfocused field recedes while a moment is open
+    const ctx = openMoment != null ? 0.45 : 1;
     if (hover === code) return { op: 1, w: simple ? 3.4 : 3, rank: 5, glow: true };
-    if (anyFocus) return isFocus ? { op: 1, w: 3, rank: 4, glow: true } : { op: 0.12, w: 1.25, rank: 0, glow: false };
-    if (hover) return { op: 0.14, w: 1.25, rank: 0, glow: false };
-    if (podiumSet.has(code)) return { op: 1, w: simple ? 2.6 : 2.2, rank: 3, glow: false };
-    return { op: simple ? 0.36 : 0.5, w: 1.5, rank: 1, glow: false };
+    if (anyFocus) {
+      return isFocus
+        ? { op: 1, w: 3, rank: 4, glow: true }
+        : { op: 0.12 * ctx, w: 1.25, rank: 0, glow: false };
+    }
+    if (hover) return { op: 0.14 * ctx, w: 1.25, rank: 0, glow: false };
+    if (podiumSet.has(code)) return { op: 1 * ctx, w: simple ? 2.6 : 2.2, rank: 3, glow: false };
+    return { op: (simple ? 0.36 : 0.5) * ctx, w: 1.5, rank: 1, glow: false };
   }
   const drawOrder = useMemo(() => [...visible].sort((a, b) => emphasis(a.code).rank - emphasis(b.code).rank),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -444,8 +460,10 @@ export function PositionChart({
             container, which also holds the Recharts tooltip — so hovering inside
             a selected Safety Car period faded the information card you were
             trying to read. Selected content stays the clearest thing on screen. */}
-        <div className={cx("w-full select-none",
-          simple ? "h-[420px]" : "h-[440px]", openMoment != null && "plot-dimmed")}>
+        {/* No blanket dim on the surface: it faded the focused driver too. The
+            recession is per line (see emphasis) so a chosen driver and a chosen
+            moment can both be lit at the same time. */}
+        <div className={cx("w-full select-none", simple ? "h-[420px]" : "h-[440px]")}>
           <ResponsiveContainer>
             <LineChart data={data} margin={M}>
               {!simple && <CartesianGrid stroke="rgba(255,255,255,0.035)" strokeDasharray="1 6" vertical={false} />}

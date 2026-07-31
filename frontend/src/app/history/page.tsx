@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Trophy, Users } from "lucide-react";
-import { ModeToggle, NavBar } from "@/components/layout/NavBar";
+import { NavBar } from "@/components/layout/NavBar";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Tabs } from "@/components/ui/Tabs";
 import { Skeleton, EmptyState } from "@/components/ui/misc";
@@ -51,7 +51,6 @@ export default function History() {
               Real results, qualifying and standings from 1950 to today.
             </p>
           </div>
-          <ModeToggle />
         </div>
 
         {/* Functional data explorer: year → Grand Prix → session → results */}

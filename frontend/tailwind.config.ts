@@ -5,31 +5,41 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // "Pit wall at night" palette — deep slate with an F1 accent.
+        /* Every colour is a CSS variable, which is what makes a theme possible
+           at all: `bg-base-900` resolves through `--base-900`, so one attribute
+           on <html> re-skins 43 components without touching one of them. */
         base: {
-          950: "#07090f",
-          900: "#0b0e16",
-          850: "#0f131d",
-          800: "#141926",
-          700: "#1c2333",
-          600: "#28324a",
+          950: "rgb(var(--base-950) / <alpha-value>)",
+          900: "rgb(var(--base-900) / <alpha-value>)",
+          850: "rgb(var(--base-850) / <alpha-value>)",
+          800: "rgb(var(--base-800) / <alpha-value>)",
+          700: "rgb(var(--base-700) / <alpha-value>)",
+          600: "rgb(var(--base-600) / <alpha-value>)",
         },
-        // Three levels of ink, and every one of them is comfortable to read.
-        // `faint` used to be #5f6b84 — 3.6:1 on the panel surface, which passes
-        // "technically legible" and fails "pleasant for an hour". It carries the
-        // uppercase micro-labels, every scale and every caption in the product,
-        // so it is now 5.5:1. Hierarchy still reads; eye strain doesn't.
         ink: {
-          DEFAULT: "#e8ecf5",
-          muted: "#a8b4cb",
-          faint: "#7d8aa5",
+          DEFAULT: "rgb(var(--ink) / <alpha-value>)",
+          muted: "rgb(var(--ink-muted) / <alpha-value>)",
+          faint: "rgb(var(--ink-faint) / <alpha-value>)",
         },
         accent: {
-          DEFAULT: "#ff3b3b", // F1 red
-          soft: "#ff6a5a",
+          DEFAULT: "rgb(var(--accent) / <alpha-value>)",
+          soft: "rgb(var(--accent-soft) / <alpha-value>)",
         },
-        speed: "#00e0c6",
-        amber: "#ffb020",
+        speed: "rgb(var(--speed) / <alpha-value>)",
+        amber: "rgb(var(--amber) / <alpha-value>)",
+
+        /* The single highest-leverage line in this file.
+
+           137 hairlines and washes across the app are written `white/[0.06]`,
+           which on a light background is invisible. Rather than rewrite every
+           one of them, `white` itself becomes a variable: it stays white in the
+           dark theme and becomes near-black in the light one, so every border,
+           every hover wash and every divider inverts for free and stays exactly
+           as subtle as it was designed to be. */
+        white: "rgb(var(--tint) / <alpha-value>)",
+        /* …which leaves the handful of places that mean *actually* white — text
+           on the red button, a code on a livery shield — needing a way to say so. */
+        pure: "#ffffff",
       },
       fontFamily: {
         sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],

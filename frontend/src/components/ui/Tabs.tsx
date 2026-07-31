@@ -4,10 +4,14 @@ import { cx } from "@/lib/format";
 export interface TabItem { id: string; label: string; icon?: React.ReactNode; }
 
 export function Tabs({
-  items, active, onChange, className,
-}: { items: TabItem[]; active: string; onChange: (id: string) => void; className?: string }) {
+  items, active, onChange, className, ...rest
+}: {
+  items: TabItem[]; active: string; onChange: (id: string) => void; className?: string;
+  // Omit onChange: ours takes a tab id, the DOM's takes a FormEvent, and
+  // letting them merge types the callback as both.
+} & Omit<React.HTMLAttributes<HTMLDivElement>, "onChange">) {
   return (
-    <div role="tablist" aria-label="Sections"
+    <div role="tablist" aria-label="Sections" {...rest}
       className={cx(
         // one clean scrollable row on phones instead of wrapping into a blob
         "flex gap-1 overflow-x-auto rounded-xl border border-white/[0.06] bg-base-850/60 p-1",

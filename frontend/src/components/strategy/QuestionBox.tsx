@@ -70,7 +70,7 @@ export function QuestionBox({
           className="min-w-0 flex-1 bg-transparent py-1.5 text-sm text-ink outline-none placeholder:text-ink-faint"
         />
         <button onClick={() => ask(q)} disabled={thinking || !q.trim()}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40">
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-pure disabled:opacity-40">
           <CornerDownLeft size={14} /> <span className="hidden sm:inline">Ask</span>
         </button>
       </div>

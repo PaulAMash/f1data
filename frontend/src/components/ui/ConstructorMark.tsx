@@ -81,7 +81,7 @@ export function ConstructorMark({
         <path d="M15 0.8 L28.4 5.2 V17 C28.4 24.6 22.6 29.6 15 32.2 C7.4 29.6 1.6 24.6 1.6 17 V5.2 Z"
           fill="none" stroke="#fff" strokeOpacity="0.28" strokeWidth="1" />
       </svg>
-      <span className="relative font-black leading-none tracking-tight text-white"
+      <span className="relative font-black leading-none tracking-tight text-pure"
         style={{ fontSize: Math.max(8, size * 0.32), textShadow: "0 1px 2px rgba(0,0,0,.55)" }}>
         {id.code}
       </span>

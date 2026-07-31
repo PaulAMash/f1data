@@ -5,6 +5,7 @@ import {
   Gauge, Layers, LineChart, Timer, Wind, Braces, RefreshCw, AlertTriangle,
 } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
+import { Walkthrough, type Step } from "@/components/ui/Walkthrough";
 import { RaceSelector, type Selection } from "@/components/explorer/RaceSelector";
 import { Tabs } from "@/components/ui/Tabs";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
@@ -56,6 +57,20 @@ const PRACTICE_TABS = [
 // Compare/Sources render one view; Ask carries its own per-answer toggle.
 // Practice sessions are fully mode-free.
 const MODE_AWARE_TABS = new Set(["story", "charts", "pace"]);
+
+/* Four steps, one line each, every one pointing at something already on screen
+   with the reader's own race in it. Anything that needs a paragraph is a sign
+   the interface underneath needs the work instead. */
+const TOUR: Step[] = [
+  { target: "[data-tour='selector']", title: "Pick any session",
+    body: "Season, Grand Prix and session — practice and qualifying included. It opens on the most recent completed race." },
+  { target: "[data-tour='tabs']", title: "One race, several readings",
+    body: "Story is the recap. The others go deeper into the charts, the strategy calls, the pace and the tyres." },
+  { target: "[data-tour='sources']", title: "Always checkable",
+    body: "Every number says which F1 source it came from, and what wasn't available. Nothing here is invented." },
+  { target: "[data-tour='mode']", title: "Change the depth whenever",
+    body: "Simple reads like a commentator; Advanced shows every measurement. Your choice is remembered." },
+];
 
 export default function ExplorerPage() {
   const { mode } = useMode();
@@ -149,6 +164,9 @@ export default function ExplorerPage() {
   return (
     <div className="min-h-screen">
       <NavBar active="explorer" />
+      {/* Only once the session is actually on screen: a tour that spotlights a
+          skeleton teaches the shape of a loading state. */}
+      <Walkthrough steps={TOUR} enabled={!!bundle && !loading} />
       <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-6">
         {/* clean header — the race is the hero */}
         <div className="mb-5">
@@ -165,15 +183,9 @@ export default function ExplorerPage() {
         </div>
 
         {/* compact controls, grouped so they read as one unit */}
-        <div className="mb-4 rounded-xl border border-white/[0.05] bg-base-850/40 p-3">
+        <div data-tour="selector" className="mb-4 rounded-xl border border-white/[0.05] bg-base-850/40 p-3">
           <RaceSelector value={sel} onChange={setSel} loading={loading}
-            onRefresh={() => setRefreshKey((k) => k + 1)}
-            // Races: Story/Charts(Position)/Pace respond to the mode.
-            // Qualifying: Story and Lap Analysis have full Simple/Advanced
-            // renditions. Practice stays single-view.
-            showModeToggle={(isRaceLike && MODE_AWARE_TABS.has(tab)
-              && (tab !== "charts" || chartTab === "position"))
-              || (isQuali && (tab === "story" || tab === "laps"))} />
+            onRefresh={() => setRefreshKey((k) => k + 1)} />
         </div>
 
         {currentSeason && sel.year < currentSeason && (
@@ -211,9 +223,9 @@ export default function ExplorerPage() {
 
         {(bundle || loading) && (
           <div className="mb-5 flex items-center gap-2">
-            <Tabs items={tabs} active={tab} onChange={setTab} className="min-w-0 flex-1" />
+            <Tabs items={tabs} active={tab} onChange={setTab} className="min-w-0 flex-1" data-tour="tabs" />
             {/* Data provenance lives apart from the analysis tabs on purpose */}
-            <button onClick={() => setTab(tab === "data" ? tabs[0].id : "data")}
+            <button data-tour="sources" onClick={() => setTab(tab === "data" ? tabs[0].id : "data")}
               title="Where this session's data comes from"
               className={cx("inline-flex h-[42px] shrink-0 items-center gap-1.5 rounded-xl border px-3 text-sm transition-colors",
                 tab === "data"

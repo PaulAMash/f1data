@@ -2,21 +2,93 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/* ---------------------------------------------------------------------------
+   Two themes, one set of names.
+
+   Every colour token in tailwind.config.ts resolves through a variable declared
+   here, so the entire product re-skins from one attribute on <html> and no
+   component knows a theme exists.
+
+   `--tint` is the load-bearing one. 137 hairlines, washes and dividers across
+   the app are written `white/[0.06]`; on a light background every one of them
+   would be invisible. Because Tailwind's `white` now resolves through --tint,
+   they all invert automatically and keep exactly the weight they were tuned to.
+   --------------------------------------------------------------------------- */
+:root,
+:root[data-theme="dark"] {
   --font-sans: "Inter", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --base-950: 7 9 15;
+  --base-900: 11 14 22;
+  --base-850: 15 19 29;
+  --base-800: 20 25 38;
+  --base-700: 28 35 51;
+  --base-600: 40 50 74;
+
+  --ink: 232 236 245;
+  --ink-muted: 168 180 203;
+  --ink-faint: 125 138 165;
+
+  --accent: 255 59 59;
+  --accent-soft: 255 106 90;
+  --speed: 0 224 198;
+  --amber: 255 176 32;
+
+  --tint: 255 255 255;
+  /* the ambient wash behind the page — a pit wall at night */
+  --glow-a: rgba(255, 59, 59, 0.10);
+  --glow-b: rgba(0, 224, 198, 0.06);
+  --shadow-strong: rgba(0, 0, 0, 0.6);
+  --shadow-card: rgba(0, 0, 0, 0.8);
+  color-scheme: dark;
+}
+
+/* Daylight, not a photo negative.
+
+   The light theme is built by ROLE rather than by inverting the numbers: 950 is
+   the page, 900 is a panel, and the raised steps get lighter as they rise — the
+   same relationships the dark theme has, so `bg-base-800` still means "one step
+   proud of the panel" in both. A pure-white panel on a pure-white page would
+   lose that, which is why the page is a warm grey and panels are white. */
+:root[data-theme="light"] {
+  --base-950: 240 242 246;
+  --base-900: 255 255 255;
+  --base-850: 250 251 253;
+  --base-800: 244 246 250;
+  --base-700: 232 236 243;
+  --base-600: 214 220 231;
+
+  --ink: 13 21 34;
+  --ink-muted: 71 83 107;
+  --ink-faint: 104 116 138;
+
+  /* the broadcast red is tuned for a dark surface; on white it vibrates, so
+     the light theme uses F1's deeper print red */
+  --accent: 217 4 0;
+  --accent-soft: 194 26 15;
+  /* likewise, #00e0c6 on white is barely a colour at all */
+  --speed: 0 150 132;
+  --amber: 176 108 4;
+
+  --tint: 15 23 42;
+  --glow-a: rgba(217, 4, 0, 0.07);
+  --glow-b: rgba(0, 150, 132, 0.05);
+  --shadow-strong: rgba(15, 23, 42, 0.16);
+  --shadow-card: rgba(15, 23, 42, 0.10);
+  color-scheme: light;
 }
 
 html,
 body {
-  background-color: #07090f;
-  color: #e8ecf5;
+  background-color: rgb(var(--base-950));
+  color: rgb(var(--ink));
 }
 
 body {
   background-image:
-    radial-gradient(900px 500px at 85% -10%, rgba(255, 59, 59, 0.10), transparent 60%),
-    radial-gradient(700px 500px at 5% 0%, rgba(0, 224, 198, 0.06), transparent 55%);
+    radial-gradient(900px 500px at 85% -10%, var(--glow-a), transparent 60%),
+    radial-gradient(700px 500px at 5% 0%, var(--glow-b), transparent 55%);
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
 }
@@ -24,17 +96,17 @@ body {
 /* thin custom scrollbars */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #28324a transparent;
+  scrollbar-color: rgb(var(--base-600)) transparent;
 }
 *::-webkit-scrollbar { height: 8px; width: 8px; }
-*::-webkit-scrollbar-thumb { background: #28324a; border-radius: 8px; }
+*::-webkit-scrollbar-thumb { background: rgb(var(--base-600)); border-radius: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }
 
 /* selection + keyboard focus: visible, consistent, on-brand */
-::selection { background: rgba(255, 59, 59, 0.28); }
+::selection { background: rgb(var(--accent) / 0.28); }
 :focus { outline: none; }
 :focus-visible {
-  outline: 2px solid rgba(255, 107, 107, 0.7);
+  outline: 2px solid rgb(var(--accent-soft) / 0.75);
   outline-offset: 2px;
   border-radius: 6px;
 }
@@ -211,72 +283,88 @@ body {
 /* ---------------------------------------------------------------------------
    The loading wheel.
 
-   The old version turned everything at one constant rate forever, which is how
-   a machine moves, not a car. Every period below is different and none of them
-   divide into each other, so the loop never lands on itself and never strobes.
+   V49 gave it a four-second spin curve with accel and decel baked into the
+   keyframes, and it stuttered. The reason is worth writing down: an easing
+   function applies to EVERY keyframe segment, not to the animation as a whole.
+   Five keyframes meant the wheel eased in and out five separate times per loop,
+   and because the last segment eased *out*, it decelerated to a stop and jumped
+   back to full speed at the loop boundary. Four times a minute, visibly.
 
-   The spin curve is the important one. A wheel has mass: it takes time to come
-   up to speed, holds there, and eases as the car lifts. Feeding that same
-   four-second phrase to the blur, the brake glow, the smoke and the road is
-   what makes the parts read as one object rather than five animations sharing
-   a canvas. ----------------------------------------------------------------- */
+   A rolling wheel turns at constant angular velocity. So the steady state here
+   is exactly one `linear` rotation, forever — it cannot stutter, because there
+   is nothing in it to stutter.
 
-/* one revolution, but paced: slow off the mark, flat out through the middle,
-   trailing off at the end. `cubic-bezier` cannot express that alone, so the
-   phrasing lives in the keyframe percentages. */
-@keyframes rl-roll {
-  0%   { transform: rotate(0deg); }
-  22%  { transform: rotate(120deg); }
-  55%  { transform: rotate(560deg); }
-  82%  { transform: rotate(980deg); }
-  100% { transform: rotate(1080deg); }
-}
-@keyframes rl-roll-fast {
-  0%   { transform: rotate(0deg); }
-  22%  { transform: rotate(210deg); }
-  55%  { transform: rotate(1000deg); }
-  82%  { transform: rotate(1760deg); }
-  100% { transform: rotate(1944deg); }
-}
-/* The smear builds with the speed and clears with it.
-   CSS, not an SVG filter primitive: `stdDeviation` is an attribute rather than
-   a CSS property, so a @keyframes block naming it silently animates nothing.
-   `filter: blur()` is a real CSS property and applies cleanly to an SVG group. */
-@keyframes rl-smear { 0% { filter: blur(0); } 22% { filter: blur(.35px); } 55% { filter: blur(1.6px); } 82% { filter: blur(.7px); } 100% { filter: blur(0); } }
-@keyframes rl-smear-soft { 0% { filter: blur(0); } 22% { filter: blur(.2px); } 55% { filter: blur(.9px); } 82% { filter: blur(.4px); } 100% { filter: blur(0); } }
-/* suspension travel, damped — it settles rather than bouncing evenly */
-@keyframes rl-susp { 0%, 100% { transform: translateY(0); } 18% { transform: translateY(-1.6px); } 38% { transform: translateY(.9px); } 60% { transform: translateY(-.5px); } 80% { transform: translateY(.3px); } }
-/* the contact patch widens and flattens as the wheel loads onto it */
-@keyframes rl-patch { 0%, 100% { transform: scale(1, 1); opacity: .55; } 38% { transform: scale(1.1, .72); opacity: .7; } }
+   Momentum is expressed once, at the start, by a second rotation nested inside
+   the first: it begins held back and eases to zero, so the wheel appears to
+   spin up and then blends seamlessly into the constant roll. It ends at
+   identity, which is why the loop stays perfect no matter how long it runs.
+
+   Everything else — brake heat, suspension, smoke, sparks — runs on its own
+   period, none of which divide into the others, so the composition breathes
+   without any single part fighting the roll. -------------------------------- */
+
+/* the steady state: one turn, linear, no easing anywhere near it */
+@keyframes rl-roll { to { transform: rotate(360deg); } }
+/* momentum, once: held back at first, caught up by the end */
+@keyframes rl-launch { from { transform: rotate(-520deg); } to { transform: rotate(0deg); } }
+/* the smear arrives with the speed and then simply stays, because a wheel at
+   constant speed has constant blur */
+@keyframes rl-blur-in { from { filter: blur(0); } to { filter: blur(1.5px); } }
+@keyframes rl-blur-in-soft { from { filter: blur(0); } to { filter: blur(.75px); } }
+
 @keyframes rl-road { to { transform: translateX(-24px); } }
 @keyframes rl-seams { to { transform: translateX(-18px); } }
-@keyframes rl-brake { 0%, 100% { opacity: .45; } 30% { opacity: .7; } 58% { opacity: 1; } 84% { opacity: .8; } }
-@keyframes rl-speed { 0%, 100% { opacity: .3; transform: translateX(2px); } 55% { opacity: 1; transform: translateX(-5px); } }
-/* rubber smoke: leaves the patch, rises, spreads, thins to nothing */
+/* the disc breathes on a period that shares no factor with the roll */
+@keyframes rl-brake { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
+/* damped travel — it settles rather than bouncing evenly */
+@keyframes rl-susp { 0%, 100% { transform: translateY(0); } 22% { transform: translateY(-1.5px); } 45% { transform: translateY(.8px); } 68% { transform: translateY(-.4px); } 86% { transform: translateY(.2px); } }
+@keyframes rl-patch { 0%, 100% { transform: scale(1, 1); opacity: .5; } 45% { transform: scale(1.12, .7); opacity: .68; } }
+@keyframes rl-speed { 0%, 100% { opacity: .25; transform: translateX(3px); } 50% { opacity: 1; transform: translateX(-6px); } }
+/* rubber smoke: off the patch, rising, spreading, gone */
 @keyframes rl-puff {
-  0%   { transform: translate(0, 0) scale(.35); opacity: 0; }
-  12%  { opacity: .75; }
-  100% { transform: translate(-26px, -20px) scale(1.9); opacity: 0; }
+  0%   { transform: translate(0, 0) scale(.3); opacity: 0; }
+  14%  { opacity: .7; }
+  100% { transform: translate(-30px, -22px) scale(2); opacity: 0; }
 }
+/* debris off the contact patch — short, fast, gravity-bent */
+@keyframes rl-spark {
+  0%   { transform: translate(0, 0) scale(1); opacity: 0; }
+  8%   { opacity: 1; }
+  100% { transform: translate(-34px, -13px) scale(.35); opacity: 0; }
+}
+/* heat rising off the disc, seen through the spokes */
+@keyframes rl-haze { 0% { transform: translateY(0) scaleY(1); opacity: 0; } 30% { opacity: .5; } 100% { transform: translateY(-14px) scaleY(1.5); opacity: 0; } }
+/* a specular highlight travelling around the rim */
+@keyframes rl-gleam { to { transform: rotate(360deg); } }
 
-.rl-spin { animation: rl-roll 4s cubic-bezier(.42,0,.58,1) infinite; }
-.rl-spin-fast { animation: rl-roll-fast 4s cubic-bezier(.42,0,.58,1) infinite; }
-.rl-smear { animation: rl-smear 4s cubic-bezier(.42,0,.58,1) infinite; }
-.rl-smear-soft { animation: rl-smear-soft 4s cubic-bezier(.42,0,.58,1) infinite; }
-.rl-susp { animation: rl-susp 1.45s cubic-bezier(.36,.66,.3,1) infinite; }
-.rl-patch { animation: rl-patch 1.45s cubic-bezier(.36,.66,.3,1) infinite; }
-.rl-road { animation: rl-road .5s linear infinite; }
-.rl-seams { animation: rl-seams .3s linear infinite; }
-.rl-brake { animation: rl-brake 4s ease-in-out infinite; }
+.rl-roll { animation: rl-roll 1.15s linear infinite; }
+.rl-roll-fast { animation: rl-roll .62s linear infinite; }
+.rl-launch { animation: rl-launch 1.5s cubic-bezier(.16,.72,.28,1) both; }
+.rl-smear { animation: rl-blur-in .9s ease-out both; }
+.rl-smear-soft { animation: rl-blur-in-soft .9s ease-out both; }
+.rl-road { animation: rl-road .26s linear infinite; }
+.rl-seams { animation: rl-seams .2s linear infinite; }
+.rl-brake { animation: rl-brake 2.3s ease-in-out infinite; }
+.rl-susp { animation: rl-susp 1.37s cubic-bezier(.36,.66,.3,1) infinite; }
+.rl-patch { animation: rl-patch 1.37s cubic-bezier(.36,.66,.3,1) infinite; }
 .rl-speed { animation: rl-speed 1.1s ease-in-out infinite; }
-.rl-puff { opacity: 0; }
-.rl-puff-1 { animation: rl-puff 2.1s ease-out infinite; }
-.rl-puff-2 { animation: rl-puff 2.1s ease-out .7s infinite; }
-.rl-puff-3 { animation: rl-puff 2.1s ease-out 1.4s infinite; }
+.rl-gleam { animation: rl-gleam 2.9s linear infinite; }
+.rl-puff, .rl-spark, .rl-haze { opacity: 0; }
+.rl-puff-1 { animation: rl-puff 1.9s ease-out infinite; }
+.rl-puff-2 { animation: rl-puff 1.9s ease-out .63s infinite; }
+.rl-puff-3 { animation: rl-puff 1.9s ease-out 1.26s infinite; }
+.rl-spark-1 { animation: rl-spark .74s cubic-bezier(.3,.6,.5,1) infinite; }
+.rl-spark-2 { animation: rl-spark .74s cubic-bezier(.3,.6,.5,1) .29s infinite; }
+.rl-spark-3 { animation: rl-spark .74s cubic-bezier(.3,.6,.5,1) .51s infinite; }
+.rl-haze-1 { animation: rl-haze 1.7s ease-out infinite; }
+.rl-haze-2 { animation: rl-haze 1.7s ease-out .85s infinite; }
 
+/* Under reduced motion the wheel stops but stays *drawn* — a loading state that
+   vanishes tells the reader less than one that simply holds still. */
 @media (prefers-reduced-motion: reduce) {
-  .rl-spin, .rl-spin-fast, .rl-smear, .rl-smear-soft, .rl-susp, .rl-patch,
-  .rl-road, .rl-seams, .rl-brake, .rl-speed, .rl-puff { animation: none; }
+  .rl-roll, .rl-roll-fast, .rl-launch, .rl-smear, .rl-smear-soft, .rl-susp,
+  .rl-patch, .rl-road, .rl-seams, .rl-brake, .rl-speed, .rl-gleam,
+  .rl-puff, .rl-spark, .rl-haze { animation: none; }
 }
 
 /* A stint whose tyre the timing feed never published. Drawn as a hatch rather
@@ -338,7 +426,9 @@ body {
    faded the Recharts tooltip, so exploring a selected Safety Car period made
    the card you were reading harder to read — the selected state must always be
    the clearest thing on screen. */
-.plot-dimmed .recharts-surface { opacity: .42; transition: opacity .3s ease; }
+/* `.plot-dimmed` is gone: fading the whole surface faded the focused driver
+   along with the field, so choosing a driver and then a moment made the driver
+   vanish. Recession is per line now — see emphasis() in PositionChart. */
 .recharts-surface { transition: opacity .3s ease; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -350,4 +440,80 @@ body {
   .pressable:hover, .pressable-glow:hover { transform: none; }
   .pressable .icon-lift, .pressable-glow .icon-lift { transition: none; }
   .pressable:hover .icon-lift, .pressable-glow:hover .icon-lift { transform: none; }
+}
+
+
+/* ---------------------------------------------------------------------------
+   Changing theme.
+
+   A theme swap that repaints instantly reads as a bug — the eye catches the
+   jump and nothing explains it. The View Transitions API gives us the whole
+   old frame as an image to wipe away, so the new theme arrives as a circle
+   growing out of the switch the reader just pressed: cause and effect, in one
+   gesture, in under half a second.
+
+   Browsers without the API get the plain swap. Nothing is conditional on it.
+   --------------------------------------------------------------------------- */
+::view-transition-old(root),
+::view-transition-new(root) {
+  /* both frames are painted at full strength; the reveal does the work, and
+     cross-fading underneath it only makes the wipe look muddy */
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) { z-index: 1; }
+::view-transition-new(root) { z-index: 2; }
+
+html.theme-sweep::view-transition-new(root) {
+  animation: theme-sweep 0.52s cubic-bezier(0.32, 0.72, 0.24, 1) both;
+}
+@keyframes theme-sweep {
+  from { clip-path: circle(0% at var(--sweep-x, 50%) var(--sweep-y, 0%)); }
+  to   { clip-path: circle(150% at var(--sweep-x, 50%) var(--sweep-y, 0%)); }
+}
+
+/* ---------------------------------------------------------------------------
+   Animation intensity.
+
+   `prefers-reduced-motion` is the operating system's answer and is always
+   obeyed. This is the reader's own answer for when the OS setting is not what
+   they want here specifically — same effect, chosen rather than inherited.
+   --------------------------------------------------------------------------- */
+:root[data-motion="calm"] *,
+:root[data-motion="calm"] *::before,
+:root[data-motion="calm"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.06s !important;
+}
+:root[data-motion="calm"]::view-transition-new(root),
+:root[data-motion="calm"]::view-transition-old(root) { animation: none !important; }
+
+
+/* ---------------------------------------------------------------------------
+   The landing sequence.
+
+   A hero that arrives all at once is a screenshot. Four elements entering a
+   beat apart is a shot — the eye is led from the kicker to the headline to the
+   sentence to the button, which is the order they need to be read in.
+
+   The trace draws once and stops. A background that keeps looping competes for
+   attention with the text sitting on top of it, which is the whole reason
+   ambient motion usually ruins a hero. ---------------------------------------- */
+@keyframes hero-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.stagger-1, .stagger-2, .stagger-3, .stagger-4 { animation: hero-in .7s cubic-bezier(.22,1,.36,1) both; }
+.stagger-1 { animation-delay: .05s; }
+.stagger-2 { animation-delay: .13s; }
+.stagger-3 { animation-delay: .23s; }
+.stagger-4 { animation-delay: .33s; }
+
+@keyframes hero-trace { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+.hero-trace {
+  stroke-dasharray: 100;
+  animation: hero-trace 2.1s cubic-bezier(.35,.6,.25,1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stagger-1, .stagger-2, .stagger-3, .stagger-4 { animation: none; }
+  .hero-trace { animation: none; stroke-dasharray: none; }
 }

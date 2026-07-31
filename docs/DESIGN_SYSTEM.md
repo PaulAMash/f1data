@@ -618,3 +618,100 @@ an `onError` fallback loses the race and the browser's broken-image glyph plus i
 end up in the layout. Loading it detached means a missing asset is simply never shown. Add a
 licensed file at that path and it is used immediately, exactly the way the curated driver
 portrait works.
+
+---
+
+## Two themes, one set of names
+
+Every colour token resolves through a CSS variable, so the whole product re-skins from one
+attribute on `<html>` and no component knows a theme exists.
+
+The load-bearing line is in `tailwind.config.ts`:
+
+```ts
+white: "rgb(var(--tint) / <alpha-value>)"
+```
+
+137 hairlines, washes and dividers are written `white/[0.06]`. On a light background every
+one would be invisible. Redefining what `white` *means* per theme inverts all of them at
+once, at exactly the weight they were tuned to — instead of 137 edits that would each need
+re-tuning. The handful of places that mean *actually* white use `text-pure`.
+
+The light theme is built **by role, not by inverting numbers**: 950 is the page, 900 is a
+panel, and the raised steps get lighter as they rise — so `bg-base-800` still means "one
+step proud of the panel" in both. A pure-white panel on a pure-white page would lose that,
+which is why the page is a warm grey. Accent and speed are re-picked, not reused: `#ff3b3b`
+vibrates on white and `#00e0c6` is barely a colour there.
+
+**Theme is not read from the OS.** Motion is — reduced motion is an accessibility need, and
+the OS is where people state it once for everything. Colour scheme is a taste, and Pitwall
+IQ was designed dark, so a first visit opens in the identity it was built in. One click
+changes it for good.
+
+**No flash.** A blocking script in `<head>` applies the stored theme before first paint.
+Reading it in an effect paints the default first and corrects a frame later, which is the
+most common way a themed app gives itself away.
+
+**Switching is a reveal, not a repaint.** The View Transitions API gives us the old frame as
+an image, so the new theme grows as a circle out of the control that was pressed — cause and
+effect in one gesture. Browsers without it get the plain swap; nothing is conditional on it.
+
+---
+
+## A rolling wheel turns at constant speed
+
+V49's loader varied its speed across the loop and stuttered. The cause is worth keeping:
+**an easing function applies to every keyframe segment, not to the animation as a whole.**
+Five keyframes meant five separate ease-in-outs per loop, and because the last one eased
+*out*, the wheel decelerated to a stop and snapped back to full speed at the boundary.
+
+So the steady state is exactly one `linear` rotation — it cannot stutter, because there is
+nothing in it to stutter. Momentum is expressed **once**, by a second rotation nested inside
+the first that starts held back and eases to identity: the wheel spins up and then blends
+into the constant roll, and because it ends at identity the loop stays perfect however long
+it runs. Everything else (brake heat, suspension, smoke, sparks, rim gleam) runs on its own
+period, none of which divide into the others.
+
+---
+
+## The landing page is three beats
+
+Not a feature list. **What it is** — one line over a telemetry trace that draws itself once
+and stops, because a looping background competes with the text on top of it. **How you want
+it** — the mode choice, made by looking at two live previews of the actual panels rather
+than reading two descriptions. **Where to go** — three doors, one line each.
+
+The mode choice is the point of the page. It used to be a toggle repeated on every screen,
+which asked the reader to guess what "Advanced" meant and then forgot the answer on refresh.
+
+**Preferences are one store.** Mode, theme, motion and whether the walkthrough has run live
+in `lib/prefs.tsx`, persist to `localStorage`, and apply globally. Settings is their
+permanent home, and every option there is a **choice** — two cards stating what each gives
+you — rather than a switch that asks the reader to guess.
+
+---
+
+## The walkthrough points at real things
+
+Four steps, one line each, each spotlighting an element already on screen with the reader's
+own session in it. A modal describing the tabs teaches nothing; a hole cut around the actual
+tabs teaches by pointing. If a step needs a paragraph, the interface underneath it needs the
+work instead.
+
+It is trivial to leave (Escape, the backdrop, a permanent Skip), never runs twice unless
+asked for again from Settings, and skips any step whose target isn't on screen rather than
+spotlighting nothing.
+
+---
+
+## Two selections can be active at once
+
+Opening a Key Moment used to dim the whole plot surface — including the focused driver's
+line and its halo — so choosing a driver and then a moment made the driver silently
+disappear. One selection was overriding the other and nothing told the reader two filters
+were even on.
+
+**A moment dims the context, never the selection.** A focused driver keeps full strength and
+its glow whatever else is chosen; only the cars nobody asked about recede further. The rule
+generalises: when two filters are active, they compose — the one applied most recently never
+cancels the other.

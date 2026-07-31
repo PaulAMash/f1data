@@ -1,528 +1,294 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import {
-  ArrowRight, BookOpen, CalendarRange, Database, Flag, FlaskConical, Gauge,
-  Layers, MessageSquareText, Pause, Play, Timer, Trophy,
-} from "lucide-react";
+import { ArrowRight, Check, MessageSquareText, Timer, Trophy } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
-import { COMPOUND_COLOR } from "@/lib/compounds";
+import { usePrefs, type Mode } from "@/lib/prefs";
+import { cx } from "@/lib/format";
 
-const FEATURES = [
-  { icon: BookOpen, title: "Race Story", href: "/explorer",
-    body: "Who won, why, the turning point, and who gained or lost — the whole race in a plain-English recap." },
-  { icon: Timer, title: "Strategy timeline", href: "/explorer?tab=strategy",
-    body: "Tyre stints, pit windows and undercuts laid out visually, with the decisive calls explained." },
-  { icon: MessageSquareText, title: "Ask the race", href: "/explorer?tab=ask",
-    body: "“Why did Leclerc lose places?” “What could Max have done better?” Answered from the real data." },
-  { icon: Trophy, title: "Historical archive", href: "/history",
-    body: "Look up official results, qualifying and championship standings from 1950 to today." },
-];
+/* -------------------------------------------------------------------------- */
+/* The landing experience.                                                    */
+/*                                                                            */
+/* The old one led with a rotating feature showcase, four feature cards, a     */
+/* stats strip and two buttons — a product explaining itself in paragraphs,    */
+/* which is what a page writes when it isn't sure of itself. This is three     */
+/* beats and nothing else:                                                    */
+/*                                                                            */
+/*   1. WHAT IT IS      one line, over a telemetry trace that draws itself.   */
+/*   2. HOW YOU WANT IT the mode choice, made by looking at two live previews  */
+/*                      rather than by reading two descriptions.               */
+/*   3. WHERE TO GO     three ways in, one line each.                          */
+/*                                                                            */
+/* The mode choice is the point of the page. It used to be a two-state toggle  */
+/* repeated on every screen, which asked the reader to guess what "Advanced"   */
+/* meant and then forgot their answer on refresh. Here it is a decision made   */
+/* once, by seeing the actual difference, and it persists.                     */
+/* -------------------------------------------------------------------------- */
 
 export default function Landing() {
+  const { prefs, set, ready } = usePrefs();
+  const [picked, setPicked] = useState(false);
+
+  function choose(m: Mode) {
+    set("mode", m);
+    setPicked(true);
+  }
+
   return (
     <div className="min-h-screen">
       <NavBar active="home" />
 
-      {/* Hero */}
+      {/* ---- 1. what it is --------------------------------------------- */}
       <section className="relative overflow-hidden">
-        <div className="mx-auto max-w-7xl px-4 pb-12 pt-16 sm:px-6 sm:pt-24">
-          <div className="animate-fade-in">
-            <h1 className="max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">
-              Understand any <span className="text-accent-soft">F1 race</span>.
-            </h1>
-            <p className="mt-4 max-w-xl text-lg leading-relaxed text-ink-muted">
-              Pick a race, read the story, and ask why it unfolded that way — from real Formula 1 data.
-            </p>
-            <div className="mt-7 flex flex-wrap items-center gap-3">
-              <Link href="/explorer"
-                className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-white shadow-glow transition-transform hover:-translate-y-0.5">
-                Analyze a race <ArrowRight size={16} />
-              </Link>
-              <Link href="/history"
-                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-base-800 px-5 py-3 text-sm font-medium text-ink hover:border-white/20">
-                <Trophy size={16} /> Explore F1 history
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
+        <TelemetryBackdrop />
+        <div className="relative mx-auto max-w-7xl px-4 pb-16 pt-20 sm:px-6 sm:pb-24 sm:pt-28">
+          <p className="stagger-1 text-[12px] font-semibold uppercase tracking-[0.24em] text-accent-soft">
+            Formula 1 race intelligence
+          </p>
+          <h1 className="stagger-2 mt-4 max-w-4xl text-[2.6rem] font-bold leading-[1.02] tracking-[-0.03em] sm:text-7xl">
+            Every race
+            <br />
+            <span className="bg-gradient-to-br from-ink via-ink to-ink-faint bg-clip-text text-transparent">
+              has a reason.
+            </span>
+          </h1>
+          <p className="stagger-3 mt-6 max-w-lg text-[17px] leading-relaxed text-ink-muted">
+            Pitwall IQ reads the lap-by-lap timing data and tells you what
+            actually decided the Grand Prix — not just who finished where.
+          </p>
 
-      {/* Self-demonstrating product tour + credibility highlights */}
-      <section className="mx-auto max-w-7xl px-4 pb-4 sm:px-6">
-        <ProductShowcase />
-        <StatHighlights />
-      </section>
-
-      {/* Features */}
-      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6">
-        <div className="mb-6">
-          <div className="label mb-2">What you can do</div>
-          <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-            The race, explained — for fans and analysts alike.
-          </h2>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {FEATURES.map((f) => (
-            <Link key={f.title} href={f.href} className="card card-hover group p-5">
-              <div className="mb-3 grid h-9 w-9 place-items-center rounded-lg bg-white/[0.04] ring-1 ring-white/10">
-                <f.icon size={17} className="text-accent-soft" />
-              </div>
-              <h3 className="flex items-center gap-1 text-sm font-semibold text-ink">
-                {f.title}
-                <ArrowRight size={13} className="opacity-0 transition-opacity group-hover:opacity-70" />
-              </h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">{f.body}</p>
+          <div className="stagger-4 mt-9 flex flex-wrap items-center gap-3">
+            <Link href="/explorer"
+              className="pressable-glow group/cta inline-flex items-center gap-2 rounded-xl bg-accent px-6 py-3.5 text-sm font-semibold text-pure shadow-glow">
+              Open the latest race
+              <ArrowRight size={16} className="transition-transform duration-200 group-hover/cta:translate-x-0.5" />
             </Link>
-          ))}
-        </div>
-        <div className="mt-6 flex items-center gap-2 text-xs text-ink-faint">
-          <Database size={13} /> Real data from OpenF1, FastF1 and Jolpica · no API key needed · not affiliated with Formula 1.
+            <a href="#mode"
+              className="pressable inline-flex items-center gap-2 rounded-xl border border-white/10 bg-base-850/70 px-5 py-3.5 text-sm font-medium text-ink-muted transition-colors hover:border-white/20 hover:text-ink">
+              Choose how you read it
+            </a>
+          </div>
         </div>
       </section>
 
-      <footer className="border-t border-white/[0.06] py-8">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 text-xs text-ink-faint sm:flex-row sm:px-6">
-          <span>Pitwall IQ · understand any F1 race.</span>
-          <Link href="/explorer" className="hover:text-ink">Analyze a race →</Link>
+      {/* ---- 2. how you want it ---------------------------------------- */}
+      <section id="mode" className="mx-auto max-w-7xl scroll-mt-20 px-4 pb-6 sm:px-6">
+        <div className="mb-5 flex flex-wrap items-end gap-x-4 gap-y-1">
+          <h2 className="text-[22px] font-bold tracking-tight sm:text-[26px]">Pick your depth</h2>
+          <p className="text-sm text-ink-muted">
+            Same data, two readings. Change it any time in Settings.
+          </p>
         </div>
-      </footer>
-    </div>
-  );
-}
 
-/* ------------------------------------------------------------------ */
-/* Credibility highlights — product facts, styled as first-class stats */
-/* ------------------------------------------------------------------ */
-const STATS = [
-  { icon: CalendarRange, tone: "text-accent-soft bg-accent/10 ring-accent/25",
-    value: "1950 → today", label: "Every F1 season covered" },
-  { icon: Flag, tone: "text-speed bg-speed/10 ring-speed/25",
-    value: "1,100+", label: "Grands Prix on record" },
-  { icon: Timer, tone: "text-amber bg-amber/10 ring-amber/25",
-    value: "Lap-by-lap", label: "Timing detail for recent seasons" },
-  { icon: Layers, tone: "text-accent-soft bg-accent/10 ring-accent/25",
-    value: "8 modules", label: "Story, pace, strategy, Ask & more" },
-];
+        <div className="grid gap-4 lg:grid-cols-2">
+          <ModeCard
+            id="simple" on={ready && prefs.mode === "simple"} onPick={choose}
+            title="Simple" tag="Storytelling first"
+            line="The race explained the way a good commentator would."
+            preview={<SimplePreview />} />
+          <ModeCard
+            id="advanced" on={ready && prefs.mode === "advanced"} onPick={choose}
+            title="Advanced" tag="Everything, measured"
+            line="Full field, clean-air pace, stint deltas and pit economics."
+            preview={<AdvancedPreview />} />
+        </div>
 
-function StatHighlights() {
-  return (
-    <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-      {STATS.map((s) => (
-        <div key={s.label}
-          className="flex items-center gap-3.5 rounded-xl border border-white/[0.06] bg-base-850/60 px-4 py-3.5">
-          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg ring-1 ${s.tone}`}>
-            <s.icon size={18} />
+        {/* the confirmation nudges onward; it never blocks the page */}
+        <div aria-live="polite"
+          className={cx("mt-4 flex flex-wrap items-center gap-2 text-sm transition-all duration-300",
+            picked ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-1 opacity-0")}>
+          <Check size={15} className="text-emerald-400" />
+          <span className="text-ink-muted">
+            Saved. Every page will use {prefs.mode === "simple" ? "Simple" : "Advanced"} from now on.
           </span>
-          <span className="min-w-0">
-            <span className="block truncate text-lg font-semibold tracking-tight text-ink sm:text-xl">
-              {s.value}
-            </span>
-            <span className="block text-xs leading-snug text-ink-muted">{s.label}</span>
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Product showcase — one card that rotates through the core modules   */
-/* so a first-time visitor sees the whole product in ~30 seconds.      */
-/* ------------------------------------------------------------------ */
-const SCENE_MS = 6500;
-
-const SCENES = [
-  { id: "story", label: "Race Story", icon: BookOpen, href: "/explorer", cta: "Read a race story" },
-  { id: "ask", label: "Ask", icon: MessageSquareText, href: "/explorer?tab=ask", cta: "Ask about a race" },
-  { id: "pace", label: "Pace", icon: Gauge, href: "/explorer?tab=pace", cta: "Open pace analysis" },
-  { id: "strategy", label: "Strategy", icon: Timer, href: "/explorer?tab=strategy", cta: "Explain the strategy" },
-  { id: "history", label: "History", icon: Trophy, href: "/history", cta: "Browse 75 seasons" },
-] as const;
-
-// how many sample variants each scene can draw from (index-aligned with SCENES)
-const VARIANT_COUNTS = [3, 3, 3, 2, 3];
-
-function ProductShowcase() {
-  const [idx, setIdx] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const [variants, setVariants] = useState<number[]>([0, 0, 0, 0, 0]);
-  const scene = SCENES[idx];
-
-  // every visit to a scene shows a different race — never the same one twice
-  const goTo = (next: number) => {
-    setVariants((v) => {
-      const copy = [...v];
-      const count = VARIANT_COUNTS[next] ?? 1;
-      if (count > 1) {
-        let r = Math.floor(Math.random() * count);
-        if (r === copy[next]) r = (r + 1) % count;
-        copy[next] = r;
-      }
-      return copy;
-    });
-    setIdx(next);
-  };
-
-  // auto-advance is controlled ONLY by the Play/Pause button — hovering to
-  // read a scene doesn't silently stop the tour
-  useEffect(() => {
-    if (paused) return;
-    const t = setTimeout(() => goTo((idx + 1) % SCENES.length), SCENE_MS);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx, paused]);
-
-  const v = variants[idx];
-
-  return (
-    <div className="card overflow-hidden p-1.5">
-      <div className="rounded-xl bg-base-950/60 p-4 sm:p-6">
-        {/* scene tabs — every module of the product, one click (or wait) away */}
-        <div className="flex flex-wrap items-center gap-1" role="tablist" aria-label="Product tour">
-          {SCENES.map((s, i) => (
-            <button key={s.id} role="tab" aria-selected={i === idx} onClick={() => goTo(i)}
-              className={`relative inline-flex items-center gap-1.5 overflow-hidden rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors sm:px-3 sm:text-sm ${
-                i === idx ? "bg-white/[0.06] text-ink" : "text-ink-muted hover:text-ink"}`}>
-              <s.icon size={14} className={i === idx ? "text-accent-soft" : ""} />
-              {s.label}
-              {i === idx && (
-                <span aria-hidden key={`${idx}-${v}`} className="absolute inset-x-0 bottom-0 h-[2px] bg-accent-soft/70"
-                  style={{ animation: `progress ${SCENE_MS}ms linear both`,
-                           animationPlayState: paused ? "paused" : "running" }} />
-              )}
-            </button>
-          ))}
-          {/* make the auto-rotation explicit — nobody should have to guess */}
-          <span className="ml-auto flex items-center gap-1.5">
-            <span className="hidden items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[11px] font-medium text-ink-faint sm:inline-flex"
-              title="This preview uses illustrative sample data — the product runs on real timing data.">
-              <FlaskConical size={11} /> Sample data
-            </span>
-            <button onClick={() => setPaused((p) => !p)}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                paused ? "border-white/15 bg-white/[0.04] text-ink-muted"
-                       : "border-accent/30 bg-accent/[0.08] text-accent-soft"}`}
-              title={paused ? "Resume the tour" : "The tour advances automatically — click to pause"}>
-              {paused ? <><Pause size={11} /> Paused</> : <><Play size={11} /> Auto-playing</>}
-            </button>
-          </span>
-        </div>
-
-        {/* the scene itself — fixed height so rotation never shifts the page */}
-        <div className="mt-4 min-h-[260px] sm:min-h-[230px]" aria-live="polite">
-          <div key={`${scene.id}-${v}`} className="animate-fade-in">
-            {scene.id === "story" && <StoryScene v={v} />}
-            {scene.id === "ask" && <AskScene v={v} />}
-            {scene.id === "pace" && <PaceScene v={v} />}
-            {scene.id === "strategy" && <StrategyScene v={v} />}
-            {scene.id === "history" && <HistoryScene v={v} />}
-          </div>
-        </div>
-
-        <div className="mt-4 flex items-center justify-end border-t border-white/[0.05] pt-3">
-          <Link href={scene.href}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-accent-soft hover:text-accent">
-            {scene.cta} <ArrowRight size={14} />
+          <Link href="/explorer"
+            className="inline-flex items-center gap-1 font-semibold text-accent-soft transition-colors hover:text-accent">
+            Start reading <ArrowRight size={14} />
           </Link>
         </div>
-      </div>
+      </section>
+
+      {/* ---- 3. where to go -------------------------------------------- */}
+      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Door href="/explorer" icon={<Timer size={16} />} title="Read a race"
+            line="Story, strategy, pace and tyres for any session." />
+          <Door href="/explorer?tab=ask" icon={<MessageSquareText size={16} />} title="Ask a question"
+            line="“Why did Leclerc lose places?” — answered from the data." />
+          <Door href="/history" icon={<Trophy size={16} />} title="Look something up"
+            line="Official results and standings, 1950 to today." />
+        </div>
+      </section>
     </div>
   );
 }
 
-/* ---- scene 1: the race story (a different Grand Prix each pass) ---- */
-const STORY_VARIANTS = [
-  {
-    label: "2025 Australian GP · Race Story",
-    lede: "Verstappen won from pole, running a two-stop race — but the VSC on lap 34 decided the podium behind him.",
-    lines: ["Leclerc had the second-fastest car but a third stop dropped him to P4.",
-            "Albon was the day's biggest mover, up 6 places to P9."],
-    chips: ["Winner · Verstappen", "Turning point · VSC lap 34", "Biggest mover · Albon +6"],
-  },
-  {
-    label: "2024 Monaco GP · Race Story",
-    lede: "Leclerc finally won at home — an early red flag handed the field a free tyre change, and track position did the rest.",
-    lines: ["Piastri shadowed him within three seconds, but Monaco offered nowhere to pass.",
-            "The entire top ten finished on a single effective stop."],
-    chips: ["Winner · Leclerc", "Turning point · Red flag lap 1", "One-stop race"],
-  },
-  {
-    label: "2024 British GP · Race Story",
-    lede: "Hamilton won a wet-dry Silverstone thriller — the timing of the final stop for slicks decided it.",
-    lines: ["Norris led mid-race but a late tyre call dropped him to P3.",
-            "Verstappen recovered to P2 despite damage through the rain phase."],
-    chips: ["Winner · Hamilton", "Rain · laps 20–35", "Norris P3"],
-  },
-];
-
-function StoryScene({ v }: { v: number }) {
-  const s = STORY_VARIANTS[v % STORY_VARIANTS.length];
+/* -------------------------------------------------------------------------- */
+/* The backdrop: the product's own primary chart, drawing itself.             */
+/*                                                                            */
+/* A stock hero image would be decoration. This is a position trace — the same */
+/* shape the Explorer draws for a real Grand Prix — at low contrast, drawing   */
+/* in over two seconds and then STOPPING. It says what the product is before a */
+/* word of the headline is read, and it doesn't loop, because a background     */
+/* that keeps moving competes with the text sitting on top of it.              */
+/* -------------------------------------------------------------------------- */
+function TelemetryBackdrop() {
+  const LINES = [
+    { d: "M0 78 C 90 74, 150 42, 240 40 S 380 62, 470 30 S 620 22, 760 34", c: "var(--l1)", w: 1.6 },
+    { d: "M0 96 C 110 92, 170 70, 250 66 S 400 34, 500 58 S 640 52, 760 48", c: "var(--l2)", w: 1.4 },
+    { d: "M0 60 C 80 66, 160 96, 260 88 S 390 96, 480 76 S 630 84, 760 66", c: "var(--l3)", w: 1.2 },
+    { d: "M0 120 C 100 118, 180 104, 280 110 S 420 118, 520 96 S 660 106, 760 88", c: "var(--l4)", w: 1.1 },
+  ];
   return (
-    <div>
-      <div className="label mb-2 text-accent-soft">{s.label}</div>
-      <p className="max-w-2xl text-[17px] font-medium leading-relaxed text-ink">{s.lede}</p>
-      <div className="mt-3 max-w-2xl space-y-1.5 border-l-2 border-white/[0.07] pl-4">
-        {s.lines.map((l) => (
-          <p key={l} className="text-sm leading-relaxed text-ink-muted">{l}</p>
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden"
+      style={{
+        ["--l1" as string]: "rgb(var(--accent) / 0.55)",
+        ["--l2" as string]: "rgb(var(--speed) / 0.45)",
+        ["--l3" as string]: "rgb(var(--amber) / 0.35)",
+        ["--l4" as string]: "rgb(var(--ink-faint) / 0.35)",
+      }}>
+      {/* Masked, not just positioned. The traces are wider than the space to
+          the right of the headline, so without this they run straight through
+          the words — text over a stroke of the same weight is unreadable at any
+          opacity. The mask dissolves them before they reach the text column. */}
+      <svg className="absolute -right-24 top-0 h-full w-[130%] max-w-none sm:right-0 sm:w-[72%]"
+        viewBox="0 0 760 150" fill="none" preserveAspectRatio="none"
+        style={{
+          maskImage: "linear-gradient(to right, transparent 0%, rgba(0,0,0,.3) 30%, #000 58%)",
+          WebkitMaskImage: "linear-gradient(to right, transparent 0%, rgba(0,0,0,.3) 30%, #000 58%)",
+        }}>
+        {LINES.map((l, i) => (
+          <path key={i} d={l.d} stroke={l.c} strokeWidth={l.w} strokeLinecap="round"
+            pathLength={100} className="hero-trace"
+            style={{ animationDelay: `${0.15 + i * 0.13}s` }} />
         ))}
-      </div>
-      <div className="mt-4 flex flex-wrap gap-1.5">
-        {s.chips.map((c) => <span key={c} className="chip">{c}</span>)}
-      </div>
+      </svg>
+      {/* the wash the traces sit in, so they read as depth rather than as a
+          drawing pinned to the page */}
+      <div className="absolute inset-0"
+        style={{ background: "radial-gradient(80% 60% at 78% 0%, rgb(var(--accent) / 0.07), transparent 62%)" }} />
     </div>
   );
 }
 
-/* ---- scene 2: ask the race (types itself; question varies) ---- */
-const ASK_VARIANTS = [
-  {
-    q: "Why did Leclerc finish P4?",
-    a: "He had the second-fastest true pace, but a third stop cost ~20s of pit-lane time and dropped him behind the two-stoppers. The VSC on lap 34 sealed it.",
-    tags: ["P2 pace, P4 result", "3 stops vs 2", "VSC lap 34–37"],
-  },
-  {
-    q: "Who had the best race pace?",
-    a: "Verstappen — quickest once fuel and tyres are corrected, about 0.16s per lap faster than Leclerc, and he converted it into the win.",
-    tags: ["Clean-air pace", "+0.16s/lap margin", "Pole → win"],
-  },
-  {
-    q: "What could Antonelli have done better?",
-    a: "Cover the undercut. He had podium pace, but staying out through the cheap-stop window dropped him into traffic he never cleared.",
-    tags: ["P3 pace, P15 result", "Missed VSC window", "Traffic after rejoin"],
-  },
-];
-
-function AskScene({ v }: { v: number }) {
-  const item = ASK_VARIANTS[v % ASK_VARIANTS.length];
-  const [typed, setTyped] = useState(0);
-  const [showAnswer, setShowAnswer] = useState(false);
-
-  useEffect(() => {
-    const t = setInterval(() => {
-      setTyped((n) => {
-        if (n >= item.q.length) { clearInterval(t); setShowAnswer(true); return n; }
-        return n + 1;
-      });
-    }, 30);
-    return () => clearInterval(t);
-  }, [item.q]);
-
+/* -------------------------------------------------------------------------- */
+function ModeCard({
+  id, on, onPick, title, tag, line, preview,
+}: {
+  id: Mode; on: boolean; onPick: (m: Mode) => void;
+  title: string; tag: string; line: string; preview: React.ReactNode;
+}) {
   return (
-    <div>
-      <div className="label mb-2 text-accent-soft">Ask the race</div>
-      <div className="flex max-w-2xl items-center gap-2 rounded-xl border border-white/10 bg-base-850/80 px-3.5 py-2.5">
-        <MessageSquareText size={15} className="shrink-0 text-ink-faint" />
-        <span className="min-h-[1.25rem] text-sm text-ink">
-          {item.q.slice(0, typed)}
-          <span className="ml-0.5 inline-block h-3.5 w-[2px] animate-pulse bg-accent-soft align-middle" />
+    <button type="button" onClick={() => onPick(id)} aria-pressed={on}
+      className={cx(
+        "group/mode relative overflow-hidden rounded-2xl border p-5 text-left transition-all duration-300 ease-out",
+        on
+          ? "border-accent/45 bg-accent/[0.05]"
+          : "border-white/[0.07] bg-base-900/60 hover:-translate-y-1 hover:border-white/[0.16] hover:bg-base-850/80")}
+      style={on ? { boxShadow: "0 0 0 1px rgb(var(--accent) / 0.3), 0 20px 50px -24px rgb(var(--accent) / 0.5)" } : undefined}>
+      <span aria-hidden
+        className={cx("pointer-events-none absolute inset-0 transition-opacity duration-500",
+          on ? "opacity-100" : "opacity-0 group-hover/mode:opacity-60")}
+        style={{ background: "radial-gradient(120% 80% at 0% 0%, rgb(var(--accent) / 0.12), transparent 58%)" }} />
+
+      <span className="relative flex items-center gap-2.5">
+        <span className="text-xl font-bold tracking-tight text-ink">{title}</span>
+        <span className="rounded-md bg-white/[0.06] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+          {tag}
         </span>
-      </div>
-      <div className={`mt-3.5 max-w-2xl transition-all duration-500 ${showAnswer ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0"}`}>
-        <p className="text-[15px] leading-relaxed text-ink">{item.a}</p>
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {item.tags.map((t) => <span key={t} className="chip">{t}</span>)}
-        </div>
-      </div>
-    </div>
+        <span className={cx("ml-auto grid h-6 w-6 shrink-0 place-items-center rounded-full border transition-all duration-300",
+          on ? "scale-100 border-accent bg-accent text-pure" : "scale-90 border-white/15 text-transparent")}>
+          <Check size={13} strokeWidth={3} />
+        </span>
+      </span>
+      <span className="relative mt-1.5 block text-[13.5px] leading-relaxed text-ink-muted">{line}</span>
+
+      {/* The whole argument for this mode, shown rather than listed. A bullet
+          list describing "more detail" is a promise; a miniature of the actual
+          panel is the thing itself. */}
+      <span className="relative mt-4 block overflow-hidden rounded-xl border border-white/[0.06] bg-base-950/70 p-3">
+        {preview}
+      </span>
+    </button>
   );
 }
 
-/* ---- scene 3: pace analysis (true speed vs results; race varies) ---- */
-const PACE_VARIANTS = [
-  {
-    label: "2025 Australian GP · clean-air speed",
-    rows: [
-      { code: "VER", color: "#3671C6", gap: 0 },
-      { code: "LEC", color: "#E8002D", gap: 0.16 },
-      { code: "NOR", color: "#FF8000", gap: 0.21 },
-      { code: "RUS", color: "#27F4D2", gap: 0.38 },
-      { code: "ALO", color: "#229971", gap: 0.55 },
-    ],
-  },
-  {
-    label: "2024 Monaco GP · clean-air speed",
-    rows: [
-      { code: "LEC", color: "#E8002D", gap: 0 },
-      { code: "PIA", color: "#FF8000", gap: 0.08 },
-      { code: "SAI", color: "#E8002D", gap: 0.22 },
-      { code: "NOR", color: "#FF8000", gap: 0.31 },
-      { code: "RUS", color: "#27F4D2", gap: 0.49 },
-    ],
-  },
-  {
-    label: "2024 British GP · clean-air speed",
-    rows: [
-      { code: "HAM", color: "#27F4D2", gap: 0 },
-      { code: "RUS", color: "#27F4D2", gap: 0.05 },
-      { code: "NOR", color: "#FF8000", gap: 0.11 },
-      { code: "VER", color: "#3671C6", gap: 0.18 },
-      { code: "PIA", color: "#FF8000", gap: 0.24 },
-    ],
-  },
-];
-
-function PaceScene({ v }: { v: number }) {
-  const variant = PACE_VARIANTS[v % PACE_VARIANTS.length];
-  const max = variant.rows[variant.rows.length - 1].gap;
+/** What Simple looks like: one sentence and a couple of facts, all large. */
+function SimplePreview() {
   return (
-    <div>
-      <div className="label mb-2 text-accent-soft">{variant.label}</div>
-      <div className="max-w-2xl space-y-2">
-        {variant.rows.map((p, i) => (
-          <div key={p.code} className="flex items-center gap-3">
-            <span className="w-9 shrink-0 text-xs font-semibold text-ink">{p.code}</span>
-            <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
-              <span className="block h-full origin-left animate-grow-x rounded-full"
-                style={{ width: `${100 - (p.gap / max) * 70}%`, background: p.color,
-                         animationDelay: `${i * 90}ms` }} />
-            </span>
-            <span className="w-16 shrink-0 text-right text-xs tabular-nums text-ink-muted">
-              {p.gap === 0 ? "fastest" : `+${p.gap.toFixed(2)}s`}
-            </span>
-          </div>
-        ))}
-      </div>
-      <p className="mt-3.5 max-w-2xl text-sm leading-relaxed text-ink-muted">
-        True one-lap speed once fuel and tyres are corrected — so you can see who was
-        genuinely quick, not just who finished ahead.
-      </p>
-    </div>
+    <span className="block">
+      <span className="block text-[11px] font-semibold uppercase tracking-wider text-accent-soft">
+        The race in a line
+      </span>
+      <span className="mt-1.5 block text-[15px] font-semibold leading-snug text-ink">
+        Norris won from pole, 15.1s clear, on a three-stop.
+      </span>
+      <span className="mt-3 flex items-end gap-5">
+        <span className="block">
+          <span className="block text-[10.5px] uppercase tracking-wider text-ink-faint">Turning point</span>
+          <span className="block text-[13px] font-bold text-ink">Virtual Safety Car</span>
+        </span>
+        <span className="block">
+          <span className="block text-[10.5px] uppercase tracking-wider text-ink-faint">Laps</span>
+          <span className="block text-[13px] font-bold tabular-nums text-ink">54–57</span>
+        </span>
+      </span>
+    </span>
   );
 }
 
-/* ---- scene 4: strategy timeline (tyre stints + the cheap-stop window) ---- */
-type StratRow = { code: string; stints: { c: keyof typeof COMPOUND_COLOR; laps: number }[] };
-const STRAT_VARIANTS: {
-  label: string; rows: StratRow[]; total: number;
-  window: { left: number; width: number; tag: string };
-}[] = [
-  {
-    label: "2025 Australian GP · tyre stints & pit windows",
-    total: 58,
-    rows: [
-      { code: "VER", stints: [{ c: "MEDIUM", laps: 30 }, { c: "HARD", laps: 28 }] },
-      { code: "NOR", stints: [{ c: "MEDIUM", laps: 34 }, { c: "HARD", laps: 24 }] },
-      { code: "LEC", stints: [{ c: "SOFT", laps: 18 }, { c: "MEDIUM", laps: 22 }, { c: "SOFT", laps: 18 }] },
-    ],
-    window: { left: 0.585, width: 0.06, tag: "VSC" },
-  },
-  {
-    label: "2024 British GP · tyre stints & pit windows",
-    total: 52,
-    rows: [
-      { code: "HAM", stints: [{ c: "MEDIUM", laps: 18 }, { c: "INTERMEDIATE", laps: 15 }, { c: "SOFT", laps: 19 }] },
-      { code: "VER", stints: [{ c: "MEDIUM", laps: 17 }, { c: "INTERMEDIATE", laps: 17 }, { c: "HARD", laps: 18 }] },
-      { code: "NOR", stints: [{ c: "MEDIUM", laps: 19 }, { c: "INTERMEDIATE", laps: 16 }, { c: "SOFT", laps: 17 }] },
-    ],
-    window: { left: 0.33, width: 0.09, tag: "RAIN" },
-  },
-];
-
-function StrategyScene({ v }: { v: number }) {
-  const s = STRAT_VARIANTS[v % STRAT_VARIANTS.length];
-  const hasInters = s.rows.some((r) => r.stints.some((st) => st.c === "INTERMEDIATE"));
+/** What Advanced looks like: the same race, as measurements. */
+function AdvancedPreview() {
+  const ROWS = [
+    { code: "NOR", c: "#FF8000", pace: "1:24.490", d: "—", w: 100 },
+    { code: "PIA", c: "#FF8000", pace: "1:24.730", d: "+0.240", w: 74 },
+    { code: "ANT", c: "#27F4D2", pace: "1:24.902", d: "+0.412", w: 55 },
+  ];
   return (
-    <div>
-      <div className="label mb-2 text-accent-soft">{s.label}</div>
-      {/* one dash-outlined overlay spans all three cars, so the neutralization
-          reads as a moment in the race, not another stint */}
-      <div className="relative max-w-2xl pt-4">
-        <div className="space-y-2">
-          {s.rows.map((d) => (
-            <div key={d.code} className="flex items-center gap-3">
-              <span className="w-9 shrink-0 text-xs font-semibold text-ink">{d.code}</span>
-              <span className="flex h-4 flex-1 gap-[3px]">
-                {d.stints.map((st, i) => (
-                  <span key={i} className="h-full rounded-[4px]"
-                    style={{ width: `${(st.laps / s.total) * 100}%`, background: COMPOUND_COLOR[st.c],
-                             opacity: 0.85 }} />
-                ))}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="pointer-events-none absolute bottom-[-4px] top-0 rounded-md border-2 border-dashed border-amber bg-amber/[0.07]"
-          style={{ left: `calc(3rem + (100% - 3rem) * ${s.window.left})`,
-                   width: `calc((100% - 3rem) * ${s.window.width})` }}>
-          <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 rounded-sm bg-base-950 px-1 text-[11px] font-bold tracking-wider text-amber">
-            {s.window.tag}
+    <span className="block">
+      <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-speed">
+        Clean-air pace
+        <span className="ml-auto font-normal normal-case tracking-normal text-ink-faint">
+          fuel &amp; tyre corrected
+        </span>
+      </span>
+      <span className="mt-2 block space-y-1.5">
+        {ROWS.map((r) => (
+          <span key={r.code} className="flex items-center gap-2">
+            <span className="w-9 shrink-0 text-[11.5px] font-bold tabular-nums" style={{ color: r.c }}>
+              {r.code}
+            </span>
+            <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.07]">
+              <span className="block h-full rounded-full"
+                style={{ width: `${r.w}%`, background: `linear-gradient(90deg, ${r.c}55, ${r.c})` }} />
+            </span>
+            <span className="w-[4.2rem] shrink-0 text-right text-[11px] tabular-nums text-ink-muted">{r.pace}</span>
+            <span className="w-[3.1rem] shrink-0 text-right text-[11px] tabular-nums text-ink-faint">{r.d}</span>
           </span>
-        </div>
-      </div>
-      <div className="mt-3 flex max-w-2xl flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-ink-faint">
-        <span><i className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ background: COMPOUND_COLOR.SOFT }} />Soft</span>
-        <span><i className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ background: COMPOUND_COLOR.MEDIUM }} />Medium</span>
-        <span><i className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ background: COMPOUND_COLOR.HARD }} />Hard</span>
-        {hasInters && <span><i className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ background: COMPOUND_COLOR.INTERMEDIATE }} />Inter</span>}
-        <span><i className="mr-1.5 inline-block h-2 w-3.5 rounded-[2px] border border-dashed border-amber bg-amber/[0.07] align-middle" />{s.window.tag === "RAIN" ? "Rain window" : "VSC window"}</span>
-      </div>
-      <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink-muted">
-        Every stint, stop and undercut mapped out — with the decisive calls explained
-        in plain English.
-      </p>
-    </div>
+        ))}
+      </span>
+    </span>
   );
 }
 
-/* ---- scene 5: the historical archive (era varies) ---- */
-const HISTORY_VARIANTS = [
-  {
-    label: "Historical archive · 2024 standings",
-    rows: [
-      { name: "M. Verstappen", team: "Red Bull", pts: 437, color: "#3671C6" },
-      { name: "L. Norris", team: "McLaren", pts: 374, color: "#FF8000" },
-      { name: "C. Leclerc", team: "Ferrari", pts: 356, color: "#E8002D" },
-    ],
-  },
-  {
-    label: "Historical archive · 2021 standings",
-    rows: [
-      { name: "M. Verstappen", team: "Red Bull", pts: 395.5, color: "#3671C6" },
-      { name: "L. Hamilton", team: "Mercedes", pts: 387.5, color: "#27F4D2" },
-      { name: "V. Bottas", team: "Mercedes", pts: 226, color: "#27F4D2" },
-    ],
-  },
-  {
-    label: "Historical archive · 2008 standings",
-    rows: [
-      { name: "L. Hamilton", team: "McLaren", pts: 98, color: "#B6BABD" },
-      { name: "F. Massa", team: "Ferrari", pts: 97, color: "#E8002D" },
-      { name: "K. Räikkönen", team: "Ferrari", pts: 75, color: "#E8002D" },
-    ],
-  },
-];
-
-function HistoryScene({ v }: { v: number }) {
-  const variant = HISTORY_VARIANTS[v % HISTORY_VARIANTS.length];
-  const max = variant.rows[0].pts;
+/* -------------------------------------------------------------------------- */
+function Door({ href, icon, title, line }: {
+  href: string; icon: React.ReactNode; title: string; line: string;
+}) {
   return (
-    <div>
-      <div className="label mb-2 text-accent-soft">{variant.label}</div>
-      <div className="max-w-2xl space-y-2.5">
-        {variant.rows.map((r, i) => (
-          <div key={r.name} className="flex items-center gap-3">
-            <span className="w-4 shrink-0 text-right text-sm font-bold tabular-nums text-ink-muted">{i + 1}</span>
-            <div className="min-w-0 flex-1">
-              <div className="mb-1 flex items-baseline justify-between gap-2">
-                <span className="truncate text-sm font-medium text-ink">
-                  {r.name} <span className="text-xs text-ink-faint">{r.team}</span>
-                </span>
-                <span className="shrink-0 text-xs tabular-nums text-ink-muted">{r.pts} pts</span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-                <span className="block h-full origin-left animate-grow-x rounded-full"
-                  style={{ width: `${(r.pts / max) * 100}%`, background: r.color,
-                           animationDelay: `${i * 90}ms` }} />
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-      <p className="mt-3.5 max-w-2xl text-sm leading-relaxed text-ink-muted">
-        Official results, qualifying and championship standings for every season
-        since 1950 — searchable in seconds.
-      </p>
-    </div>
+    <Link href={href}
+      className="group/door pressable flex items-start gap-3 rounded-xl border border-white/[0.06] bg-base-900/50 p-4 transition-colors hover:border-white/[0.14] hover:bg-base-850/70">
+      <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent-soft transition-transform duration-300 group-hover/door:scale-110">
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span className="flex items-center gap-1.5 text-[14.5px] font-semibold text-ink">
+          {title}
+          <ArrowRight size={13}
+            className="text-ink-faint transition-transform duration-200 group-hover/door:translate-x-0.5 group-hover/door:text-accent-soft" />
+        </span>
+        <span className="mt-0.5 block text-[12.5px] leading-relaxed text-ink-muted">{line}</span>
+      </span>
+    </Link>
   );
 }
