@@ -36,6 +36,33 @@
   --amber: 255 176 32;
 
   --tint: 255 255 255;
+
+  /* ---- the motion scale -------------------------------------------------
+     Four durations and three curves, and nothing in the product invents a
+     fifth. Timing carries meaning: a press must answer before you have let go
+     (dur-1), a hover is a response (dur-2), a disclosure is a movement you
+     watch (dur-3), a room change is a journey (dur-4).
+
+     `--ease-out` is the house curve — a fast start that settles, which is how
+     a physical object arrives. `--ease-spring` overshoots and is reserved for
+     things that ARRIVE (a check landing, a card being chosen); using it on a
+     hover makes the interface feel loose. */
+  --dur-1: 110ms;
+  --dur-2: 200ms;
+  --dur-3: 320ms;
+  --dur-4: 520ms;
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --ease-in-out: cubic-bezier(.4, 0, .2, 1);
+  --ease-spring: cubic-bezier(.34, 1.4, .64, 1);
+
+  /* ---- elevation --------------------------------------------------------
+     Three levels, and a panel's level is a statement about its importance —
+     see the hierarchy notes in DESIGN_SYSTEM.md. Every shadow is built from
+     the theme's own shadow colour so it works on white as well as on black. */
+  --el-1: 0 1px 2px -1px var(--shadow-card);
+  --el-2: 0 2px 4px -2px var(--shadow-card), 0 12px 28px -18px var(--shadow-strong);
+  --el-3: 0 4px 8px -4px var(--shadow-card), 0 24px 56px -28px var(--shadow-strong);
+  --el-lift: 0 6px 12px -6px var(--shadow-card), 0 28px 60px -30px var(--shadow-strong);
   /* the ambient wash behind the page — a pit wall at night */
   --glow-a: rgba(255, 59, 59, 0.10);
   --glow-b: rgba(0, 224, 198, 0.06);
@@ -121,64 +148,116 @@ body {
 }
 
 @layer components {
-  /* ONE surface language, two levels of it.
-     .card / .panel  — anything that stands on the page background.
-     .tile           — anything nested inside one of those.
-     Radius encodes the nesting: 2xl outside, xl inside. Nothing in the product
-     invents a third surface. */
-  .card {
-    @apply rounded-2xl border border-white/[0.06] bg-base-850/70 shadow-card backdrop-blur-sm;
-  }
+  /* ---------------------------------------------------------------------
+     ONE surface language, three levels of it.
+
+     Every panel in the product used to carry the same border, the same
+     background and the same shadow, so a page of eight panels gave the eye
+     nothing to sort by and everything read as equally important. Level is now
+     a statement about weight:
+
+       .panel        the default. Most things are this.
+       .panel-raised one step proud — the primary panel on a screen.
+       .panel-hero   the one thing that matters most here. Earns a gradient
+                     and a real shadow, and there is never more than one per
+                     view.
+       .tile         nested inside any of the above. Radius encodes nesting.
+
+     Hierarchy comes from weight and space, not from louder borders.
+     --------------------------------------------------------------------- */
   .panel {
-    @apply rounded-2xl border border-white/[0.06] bg-base-850/60 shadow-card backdrop-blur-sm;
+    @apply rounded-2xl border border-white/[0.06] bg-base-850/60 backdrop-blur-sm;
+    box-shadow: var(--el-1);
   }
+  .panel-raised {
+    @apply rounded-2xl border border-white/[0.08] bg-base-850/85 backdrop-blur-sm;
+    box-shadow: var(--el-2);
+  }
+  .panel-hero {
+    @apply relative overflow-hidden rounded-2xl border border-white/[0.10] backdrop-blur-sm;
+    background:
+      radial-gradient(120% 100% at 0% 0%, rgb(var(--accent) / 0.07), transparent 58%),
+      rgb(var(--base-850) / 0.9);
+    box-shadow: var(--el-3);
+  }
+  /* `.card` is the legacy name for `.panel`; kept so 40 call sites don't have
+     to churn, defined once so the two can never drift apart. */
+  .card { @apply panel; }
   .tile {
     @apply rounded-xl border border-white/[0.06] bg-base-800/50;
   }
-  .card-hover,
-  .panel-hover {
-    @apply transition-all duration-200 hover:border-white/[0.12] hover:bg-base-800/80;
-  }
+
   .chip {
     @apply inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-xs font-medium text-ink-muted;
   }
-  /* A chip is a label; a chip you can press is a control. They looked identical,
-     which is exactly the kind of thing a tester clicks at and nothing happens.
-     Every chip rendered as a <button> gets this and only those. */
-  button.chip, a.chip {
-    @apply cursor-pointer transition-all duration-200 ease-out
-           hover:-translate-y-px hover:border-white/25 hover:bg-white/[0.07] hover:text-ink
-           active:translate-y-0 active:duration-75;
-  }
   .pill-btn {
     @apply inline-flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-base-800 px-3 py-2 text-sm text-ink
-           transition-all duration-200 ease-out
-           hover:-translate-y-px hover:border-white/25 hover:bg-base-700
-           active:translate-y-0 active:duration-75
-           disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0;
+           disabled:cursor-not-allowed disabled:opacity-40;
   }
   .label {
     @apply text-[11px] font-semibold uppercase tracking-wider text-ink-faint;
   }
   .grid-lines { background-size: 100% 2rem; }
-
-  /* ONE vocabulary for "you can press this".
-     A tester in user testing kept clicking things that weren't interactive,
-     which is a failure of signalling, not of the tester. Every actionable
-     surface in the product now says so the same way — the cursor changes, the
-     surface lifts a hair, the border warms — and, just as importantly, static
-     information never does any of those things. */
-  .pressable {
-    @apply cursor-pointer transition-all duration-200 ease-out
-           hover:-translate-y-px hover:border-white/[0.16] hover:bg-white/[0.045]
-           active:translate-y-0 active:duration-75;
-  }
-  /* the same promise for a surface that carries its own accent colour */
-  .pressable-glow {
-    @apply cursor-pointer transition-all duration-200 ease-out
-           hover:-translate-y-px active:translate-y-0 active:duration-75;
-  }
 }
+
+/* -----------------------------------------------------------------------
+   ONE vocabulary for "you can press this".
+
+   A tester kept clicking things that weren't interactive, which is a failure
+   of signalling rather than of the tester. Every actionable surface says so
+   the same way, and static information never does any of it.
+
+   The press is the part that was missing. `active:translate-y-0` merely
+   cancelled the hover lift — the control went back to where it started, which
+   reads as nothing happening. A real press goes BELOW rest and answers inside
+   dur-1, so the feedback lands before you have finished clicking.
+   ----------------------------------------------------------------------- */
+.pressable,
+.pill-btn,
+button.chip,
+a.chip,
+.panel-hover,
+.card-hover {
+  cursor: pointer;
+  transition:
+    transform var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out),
+    border-color var(--dur-2) var(--ease-out),
+    background-color var(--dur-2) var(--ease-out),
+    color var(--dur-2) var(--ease-out);
+}
+.pressable:hover,
+.panel-hover:hover,
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--el-lift);
+  border-color: rgb(var(--tint) / 0.16);
+  background-color: rgb(var(--tint) / 0.045);
+}
+.pill-btn:hover,
+button.chip:hover,
+a.chip:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--el-2);
+  border-color: rgb(var(--tint) / 0.25);
+  color: rgb(var(--ink));
+}
+.pressable-glow { cursor: pointer; transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out); }
+.pressable-glow:hover { transform: translateY(-2px); }
+
+/* below rest, and fast — the press is felt, not watched */
+.pressable:active,
+.pressable-glow:active,
+.pill-btn:active,
+button.chip:active,
+a.chip:active,
+.panel-hover:active,
+.card-hover:active {
+  transform: translateY(0) scale(0.982);
+  transition-duration: var(--dur-1);
+}
+.pill-btn:disabled:hover { transform: none; box-shadow: none; }
+
 
 /* An icon inside a hovered pressable leans in. Declared once here rather than
    as a group-hover utility at 60 call sites, so a new control gets the whole
@@ -517,3 +596,36 @@ html.theme-sweep::view-transition-new(root) {
   .stagger-1, .stagger-2, .stagger-3, .stagger-4 { animation: none; }
   .hero-trace { animation: none; stroke-dasharray: none; }
 }
+
+
+/* ---------------------------------------------------------------------------
+   Route transitions, and the arrival vocabulary the whole product shares.
+
+   Nothing in a premium interface simply appears. `.route-in` covers a page,
+   `.rise-in` covers anything that arrives inside one, and both use the house
+   curve so a section landing feels like the page landing, only smaller.
+   --------------------------------------------------------------------------- */
+@keyframes route-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.route-in { animation: route-in var(--dur-3) var(--ease-out) both; }
+
+@keyframes rise-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.rise-in { animation: rise-in var(--dur-3) var(--ease-out) both; }
+
+/* Scroll-revealed sections. The landing page is a progression, not a wall:
+   each band arrives as it comes into view, which is what turns scrolling into
+   pacing. `.reveal` is the resting state, `.reveal-on` is applied by an
+   IntersectionObserver — and because the resting state is only applied when
+   JS is running (see useReveal), a page with scripting disabled shows
+   everything rather than nothing. */
+.reveal { opacity: 0; transform: translateY(18px); }
+.reveal-on {
+  opacity: 1; transform: none;
+  transition: opacity var(--dur-4) var(--ease-out), transform var(--dur-4) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-in, .rise-in { animation: none; }
+  .reveal { opacity: 1; transform: none; }
+  .reveal-on { transition: none; }
+}
+:root[data-motion="calm"] .reveal { opacity: 1; transform: none; }

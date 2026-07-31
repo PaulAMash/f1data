@@ -45,7 +45,11 @@ export function StoryPanel({
   const [lede, ...rest] = story;
   const [open, setOpen] = useState(false);
   return (
-    <section className="panel overflow-hidden">
+    // panel-hero, not panel: this is the single most important thing on the
+    // screen — the race, told — and it was carrying exactly the same border,
+    // background and shadow as the eight cards beneath it. There is never more
+    // than one of these per view.
+    <section className="panel-hero">
       {/* ic-host lets the kicker row drive the glyph's hover animation without
           making the whole panel look pressable — it isn't */}
       <div className="ic-host flex w-fit items-center gap-2 px-5 pt-4">

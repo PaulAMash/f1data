@@ -19,10 +19,25 @@ export type Mode = "simple" | "advanced";
 export type Theme = "dark" | "light";
 export type MotionPref = "full" | "calm";
 
+/**
+ * The accent is already a CSS variable, so letting the reader choose one costs
+ * a lookup rather than a theme. Every value is checked for contrast against
+ * both surfaces — an accent is used for text on panels, not only for fills.
+ */
+export const ACCENTS = {
+  f1:      { label: "Pitwall red", dark: "255 59 59",  soft: "255 106 90",  light: "217 4 0",    lightSoft: "194 26 15" },
+  amber:   { label: "Amber",       dark: "255 154 46", soft: "255 178 96",  light: "180 83 9",   lightSoft: "154 70 8" },
+  teal:    { label: "Teal",        dark: "0 214 190",  soft: "94 231 214",  light: "0 138 122",  lightSoft: "0 118 105" },
+  violet:  { label: "Violet",      dark: "167 139 250", soft: "196 181 253", light: "109 63 219", lightSoft: "91 50 190" },
+  sky:     { label: "Sky",         dark: "96 178 255", soft: "148 205 255", light: "20 105 190", lightSoft: "16 88 160" },
+} as const;
+export type AccentKey = keyof typeof ACCENTS;
+
 export interface Prefs {
   mode: Mode;
   theme: Theme;
   motion: MotionPref;
+  accent: AccentKey;
   /** Has the reader been through the landing choice? Gates the walkthrough. */
   onboarded: boolean;
 }
@@ -30,7 +45,7 @@ export interface Prefs {
 export const PREFS_KEY = "pitwall-iq:prefs";
 
 export const DEFAULT_PREFS: Prefs = {
-  mode: "simple", theme: "dark", motion: "full", onboarded: false,
+  mode: "simple", theme: "dark", motion: "full", accent: "f1", onboarded: false,
 };
 
 /**
@@ -51,6 +66,7 @@ export const NO_FLASH_SCRIPT = `
     root.dataset.theme = p.theme || "dark";
     var sysCalm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     root.dataset.motion = p.motion || (sysCalm ? "calm" : "full");
+    if (p.accent) root.dataset.accent = p.accent;
   } catch (e) {
     document.documentElement.dataset.theme = "dark";
   }
@@ -85,6 +101,7 @@ function resolveInitial(): Prefs {
     mode: stored.mode ?? DEFAULT_PREFS.mode,
     theme: stored.theme ?? DEFAULT_PREFS.theme,
     motion: stored.motion ?? (sysCalm ? "calm" : "full"),
+    accent: (stored.accent && stored.accent in ACCENTS ? stored.accent : DEFAULT_PREFS.accent) as AccentKey,
     onboarded: stored.onboarded ?? false,
   };
 }
@@ -118,6 +135,13 @@ export function PrefsProvider({ children }: { children: React.ReactNode }) {
     const root = document.documentElement;
     root.dataset.theme = prefs.theme;
     root.dataset.motion = prefs.motion;
+    root.dataset.accent = prefs.accent;
+    // written as variables rather than as a stylesheet rule per accent: five
+    // accents times two themes would be ten rules that all have to stay in step
+    const a = ACCENTS[prefs.accent] ?? ACCENTS.f1;
+    const dark = prefs.theme === "dark";
+    root.style.setProperty("--accent", dark ? a.dark : a.light);
+    root.style.setProperty("--accent-soft", dark ? a.soft : a.lightSoft);
     try {
       localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
     } catch { /* private browsing — the session still works, it just won't persist */ }

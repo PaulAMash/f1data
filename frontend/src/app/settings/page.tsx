@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Check, RotateCcw } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
-import { usePrefs, DEFAULT_PREFS, PREFS_KEY, type Prefs } from "@/lib/prefs";
+import { usePrefs, ACCENTS, DEFAULT_PREFS, PREFS_KEY, type AccentKey, type Prefs } from "@/lib/prefs";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
@@ -70,6 +70,26 @@ export default function SettingsPage() {
                 }}
                 swatch={<Swatch bg="#ffffff" fg="#0d1522" accent="#d90400" />} />
             </ChoiceGrid>
+          </Section>
+
+          <Section title="Accent"
+            hint="The colour Pitwall IQ uses to point at things. Every option is contrast-checked against both themes.">
+            <div className="flex flex-wrap gap-2.5">
+              {(Object.keys(ACCENTS) as AccentKey[]).map((k) => {
+                const a = ACCENTS[k];
+                const on = prefs.accent === k;
+                const swatch = `rgb(${prefs.theme === "dark" ? a.dark : a.light})`;
+                return (
+                  <button key={k} type="button" onClick={() => set("accent", k)}
+                    aria-pressed={on} title={a.label} aria-label={a.label}
+                    className={cx("pressable grid h-9 w-9 place-items-center rounded-full border-2 transition-all",
+                      on ? "scale-110" : "border-transparent")}
+                    style={{ borderColor: on ? swatch : undefined }}>
+                    <span className="h-5 w-5 rounded-full" style={{ background: swatch }} />
+                  </button>
+                );
+              })}
+            </div>
           </Section>
 
           <Section title="Motion"

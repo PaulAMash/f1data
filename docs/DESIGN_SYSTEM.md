@@ -715,3 +715,65 @@ were even on.
 its glow whatever else is chosen; only the cars nobody asked about recede further. The rule
 generalises: when two filters are active, they compose — the one applied most recently never
 cancels the other.
+
+---
+
+## The token layer
+
+Pages stopped being designed one at a time when the language moved into variables. Nothing
+in the product invents a value outside these scales.
+
+**Motion — four durations, three curves.** Timing carries meaning, so the duration says what
+kind of event this is: a press must answer before you have let go (`--dur-1`, 110ms), a hover
+is a response (`--dur-2`), a disclosure is a movement you watch (`--dur-3`), a room change is
+a journey (`--dur-4`). `--ease-out` is the house curve — fast start, settling finish, the way
+a physical object arrives. `--ease-spring` overshoots and is reserved for things that
+*arrive* (a check landing, a card being chosen); on a hover it makes the interface feel loose.
+
+**Elevation — three levels, and level is a statement.** Every panel used to carry the same
+border, background and shadow, so a page of eight gave the eye nothing to sort by:
+
+| | when |
+|---|---|
+| `.panel` | the default. Most things are this. |
+| `.panel-raised` | one step proud — the primary panel on a screen. |
+| `.panel-hero` | the one thing that matters most here. Gradient and a real shadow. **Never more than one per view.** |
+| `.tile` | nested inside any of the above; radius encodes the nesting. |
+
+Hierarchy comes from weight and space, not from louder borders.
+
+**A press goes below rest.** `active:translate-y-0` merely cancelled the hover lift — the
+control returned to where it started, which reads as nothing happening. Every actionable
+surface now drops *below* rest and scales a hair, inside `--dur-1`, so the feedback lands
+before the click finishes. Static information still does none of it.
+
+---
+
+## Nothing simply appears
+
+`.route-in` for a page, `.rise-in` for anything arriving inside one, `.reveal` for sections
+that arrive as you scroll to them — all on the house curve, so a section landing feels like
+the page landing, only smaller. Route transitions live in `app/template.tsx`, which Next
+remounts on every navigation (`layout.tsx` would persist and never re-run).
+
+The motion is deliberately small. A page that slides in from the side announces itself and
+gets tiring by the fourth navigation; a page that simply arrives feels like the same
+application showing you something else.
+
+**A reveal must never be able to hide content.** `useReveal` applies the hidden resting state
+only after it has mounted, so a failed script or a missing IntersectionObserver leaves the
+section visible the whole time. A reveal that starts at `opacity: 0` in the stylesheet is one
+broken script away from an empty page.
+
+---
+
+## The accent is the reader's, the data's colours are not
+
+`--accent` was already a variable, so offering a choice of accent costs a lookup rather than
+a theme — five options, each contrast-checked against both themes, written as variables
+rather than as ten stylesheet rules that would have to stay in step.
+
+It retints navigation, actions and selection. It deliberately does **not** touch the tone
+palette in `Visuals.tsx`. Green means a place gained and red means a place lost; if picking a
+violet accent could restain a gain chip, the colour would stop being information. **A
+preference may change how the product looks. It may never change what a colour means.**

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowRight, Check, MessageSquareText, Timer, Trophy } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
 import { usePrefs, type Mode } from "@/lib/prefs";
+import { useReveal } from "@/lib/useReveal";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
@@ -28,6 +29,9 @@ import { cx } from "@/lib/format";
 export default function Landing() {
   const { prefs, set, ready } = usePrefs();
   const [picked, setPicked] = useState(false);
+  // each band arrives as it comes into view — scrolling becomes pacing
+  const modeBand = useReveal<HTMLElement>();
+  const doorBand = useReveal<HTMLElement>();
 
   function choose(m: Mode) {
     set("mode", m);
@@ -72,7 +76,8 @@ export default function Landing() {
       </section>
 
       {/* ---- 2. how you want it ---------------------------------------- */}
-      <section id="mode" className="mx-auto max-w-7xl scroll-mt-20 px-4 pb-6 sm:px-6">
+      <section id="mode" ref={modeBand.ref}
+        className={cx("mx-auto max-w-7xl scroll-mt-20 px-4 pb-6 sm:px-6", modeBand.className)}>
         <div className="mb-5 flex flex-wrap items-end gap-x-4 gap-y-1">
           <h2 className="text-[22px] font-bold tracking-tight sm:text-[26px]">Pick your depth</h2>
           <p className="text-sm text-ink-muted">
@@ -109,7 +114,8 @@ export default function Landing() {
       </section>
 
       {/* ---- 3. where to go -------------------------------------------- */}
-      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20">
+      <section ref={doorBand.ref}
+        className={cx("mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20", doorBand.className)}>
         <div className="grid gap-3 sm:grid-cols-3">
           <Door href="/explorer" icon={<Timer size={16} />} title="Read a race"
             line="Story, strategy, pace and tyres for any session." />
