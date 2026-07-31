@@ -1,5 +1,6 @@
 "use client";
-import { CloudRain, CloudSun, Droplets, Navigation, Sun, Thermometer } from "lucide-react";
+import { CloudRain, Droplets, Navigation, Sun } from "lucide-react";
+import { CloudSun, Thermometer } from "@/components/ui/MotionIcon";
 import type { RaceSession } from "@/lib/types";
 import { InsightCard } from "@/components/ui/InsightCard";
 import { IconTile, Meter, Sparkline, VisualLabel } from "@/components/ui/Visuals";

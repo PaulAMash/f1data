@@ -1,7 +1,6 @@
 "use client";
-import {
-  Building2, Clock, Gauge, Repeat, Sparkles, Target, Timer, TrendingUp, User,
-} from "lucide-react";
+import { Building2, User } from "lucide-react";
+import { Clock, Gauge, Repeat, Sparkles, Target, Timer, TrendingUp } from "@/components/ui/MotionIcon";
 import type { Driver, PracticeSummary, RaceSession } from "@/lib/types";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";

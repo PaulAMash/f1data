@@ -1047,3 +1047,37 @@ def test_pitwall_is_never_imported_directly(monkeypatch):
             if line.strip() in ("import pitwall", "import pitwall as pw"):
                 offenders.append(f"{path.relative_to(root)}:{i}")
     assert not offenders, f"bare pitwall imports: {offenders}"
+
+
+# --------------------------------------------------------------------------- #
+# Evidence the UI can draw.
+#
+# "gained 1 place (P3 → P2); top-3 race pace; 2-stop execution" is three facts
+# wearing one sentence's clothing. A panel can only show three chips if it is
+# handed three things, so the analysis emits them separately as well as joined.
+# --------------------------------------------------------------------------- #
+def test_standout_drive_reports_its_evidence_as_separate_factors():
+    from app.adapters.mock_adapter import get_mock_session
+    from app.analysis.engine import analyze
+    s = get_mock_session(2026, "Austrian Grand Prix", "Race")
+    strategy, _pace = analyze(s)
+    assert strategy.driver_of_the_day
+    assert strategy.dotd_factors, "the pick must carry its evidence in parts"
+    # each one is chip-sized, and none of them is the joined sentence
+    for f in strategy.dotd_factors:
+        assert ";" not in f and len(f) <= 24, f
+    # and the prose form still exists for the tooltip
+    assert strategy.dotd_reason
+
+
+def test_standout_factors_survive_a_driver_with_nothing_to_report():
+    """A winner from pole with no pit data has no factors — and an empty list is
+    the honest answer, not a chip saying nothing."""
+    from app.analysis.strategy import _driver_of_the_day
+    from app.adapters.mock_adapter import get_mock_session
+    s = get_mock_session(2026, "Austrian Grand Prix", "Race")
+    for c in s.classification:
+        c.grid, c.pit_stops = c.position, 0
+    driver, reason, factors = _driver_of_the_day(s, {})
+    assert driver and reason
+    assert factors == []

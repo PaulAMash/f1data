@@ -52,12 +52,26 @@ interface Moment {
   endLap?: number;
   /** What this did to the race — decides the colour and the badge. */
   cls?: MomentClass;
-  /** One line stating why this is on a list of the moments that mattered. */
+  /** One line stating why this is on a list of the moments that mattered.
+   *  Prose — it belongs in the drawer, never on the resting card. */
   outcome?: string;
+  /** WHY IT MATTERS, in as few characters as possible: "+2 places", "4 laps
+   *  neutralised". Computed from structured fields only — never scraped out of
+   *  the sentence above, because a regex over prose is a bug waiting for the
+   *  day someone rewords the sentence. Absent when we have no number, which is
+   *  better than padding the card with words that don't measure anything. */
+  impact?: string;
   /** Extra prose for the drawer, when the moment brings its own. */
   extra?: string[];
 }
 interface Mover { code: string; d: number; from: number; to: number; }
+
+/** A lap range long enough to be the point of the moment, phrased as one. */
+function spanImpact(range?: number[] | null): string | undefined {
+  if (!range || range.length < 2) return undefined;
+  const span = range[1] - range[0] + 1;
+  return span > 1 ? `${span} laps` : undefined;
+}
 
 /* A moment's colour is what it DID to the race, never a neutral grey: a beat
    that decided a Grand Prix should not look like chrome. Neutralisations keep
@@ -195,20 +209,15 @@ export function PositionChart({
       out.push({
         lap: w.start, kind: w.kind, label: EVENT[w.kind].label, endLap: w.end,
         outcome: w.cause ? `Brought out when ${w.cause}.` : EVENT[w.kind].blurb,
+        impact: `${w.end - w.start + 1} lap${w.end - w.start ? "s" : ""} neutralised`,
       });
     }
-    const beats: RaceInsight[] = [...(strategy?.turning_points ?? []), ...(strategy?.insights ?? [])];
-    for (const b of beats) {
-      const lap = b.lap_range?.[0];
-      if (lap != null && lap > 1 && lap < total && !out.some((m) => Math.abs(m.lap - lap) < 2))
-        out.push({
-          lap, kind: "story", label: b.title, insight: b,
-          cls: momentClassOf(b.kind, b.severity),
-          outcome: b.detail || undefined,
-        });
-    }
-    // Undercuts earn a place only if they come with their consequence. An
-    // undercut marker that says a move happened, without saying what it was
+    // Undercuts are read BEFORE the generic insight list, because both can
+    // describe the same move and only this one carries `positions_gained`.
+    // With the old order an insight claimed the lap first and the card lost the
+    // one number that says whether the move was worth making.
+    //
+    // An undercut marker that says a move happened, without saying what it was
     // worth, is a fact with no reason to be on a list of moments that decided
     // the race — which is exactly why they used to get skimmed past.
     const nameOf = (c: string) => driverByCode[c]?.code ?? c;
@@ -218,8 +227,22 @@ export function PositionChart({
       if (lap == null || lap <= 1 || lap >= total) continue;
       if (out.some((m) => Math.abs(m.lap - lap) < 2)) continue;
       const st = undercutStory(u, nameOf, finishPos);
+      const g = u.positions_gained ?? 0;
       out.push({ lap, kind: "story", label: st.title, cls: st.cls,
-                 outcome: st.outcome, extra: [st.detail] });
+                 outcome: st.outcome, extra: [st.detail],
+                 impact: !u.gained ? "no gain"
+                   : g > 0 ? `+${g} place${g === 1 ? "" : "s"}` : "track position held" });
+    }
+    const beats: RaceInsight[] = [...(strategy?.turning_points ?? []), ...(strategy?.insights ?? [])];
+    for (const b of beats) {
+      const lap = b.lap_range?.[0];
+      if (lap != null && lap > 1 && lap < total && !out.some((m) => Math.abs(m.lap - lap) < 2))
+        out.push({
+          lap, kind: "story", label: b.title, insight: b,
+          cls: momentClassOf(b.kind, b.severity),
+          outcome: b.detail || undefined,
+          impact: spanImpact(b.lap_range),
+        });
     }
     const seen = new Set<string>();
     return out.filter((m) => { const k = `${m.lap}:${m.kind}`; return !seen.has(k) && seen.add(k); })
@@ -262,11 +285,12 @@ export function PositionChart({
           leadStr ? `${leadStr} as the pack compressed.` : null,
           pitStr ? `${pitStr} — a discounted stop while the field ran slowly.` : "Few took the stop, keeping track position.", upStr, dnStr);
       } else if (m.kind === "story") {
-        // the consequence leads, because that is the reason this beat is on
-        // the list at all; the mechanism follows for anyone who wants it
-        S.push(m.outcome ?? m.insight?.detail ?? m.label,
+        // `outcome` is NOT repeated here: the drawer renders it as its own lead
+        // paragraph, so pushing it into the list too printed the consequence
+        // twice, one line under the other.
+        S.push(m.outcome ? null : (m.insight?.detail ?? m.label),
                upStr ? `${upStr}.` : dnStr ? `${dnStr}.` : null);
-        A.push(m.outcome ?? m.insight?.detail ?? m.label,
+        A.push(m.outcome ? null : (m.insight?.detail ?? m.label),
                ...(m.extra ?? []), m.insight?.explanation ?? null, upStr, dnStr, pitStr);
       } else {
         S.push(win ? `${nm(win)} won from ${nm(p2)} and ${nm(p3)}.` : "The chequered flag falls.");
@@ -560,15 +584,20 @@ function KeyMoments({ moments, narratives, open, simple, onToggle, onClose, driv
                   <span className="opacity-45">·</span>
                   <span className="truncate opacity-90">{momentBadge(m)}</span>
                 </span>
-                <span className={cx("mt-0.5 block truncate text-[13.5px] font-semibold leading-tight",
+                <span className={cx("mt-0.5 block text-[13.5px] font-semibold leading-tight",
                   on ? "text-ink" : "text-ink-muted group-hover:text-ink")}>
                   {m.label}
                 </span>
-                {m.outcome && (
-                  // two lines, not one: a consequence cut off mid-sentence is
-                  // no more useful than no consequence at all
-                  <span className="mt-1 line-clamp-2 block text-[12px] leading-snug text-ink-faint transition-colors duration-200 group-hover:text-ink-muted">
-                    {m.outcome}
+                {/* WHY IT MATTERS, as a measurement rather than a sentence.
+                    This line used to carry two clamped lines of prose, so a
+                    row of moments was a wall of half-finished paragraphs and
+                    the reader had to actually read all of it before deciding
+                    what to open. The explanation is still there — it opens
+                    with the drawer, which is what the chevron is promising. */}
+                {m.impact && (
+                  <span className="mt-1.5 inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-bold tabular-nums"
+                    style={{ background: `${c}1f`, color: c }}>
+                    {m.impact}
                   </span>
                 )}
               </span>
@@ -601,6 +630,13 @@ function KeyMoments({ moments, narratives, open, simple, onToggle, onClose, driv
             </div>
             <CloseButton onClick={onClose} label="Collapse moment" />
           </div>
+          {/* the consequence, in words, leads the drawer — it is what the
+              reader opened the card to get */}
+          {openM.outcome && (
+            <p className="mb-2.5 text-[13.5px] font-medium leading-relaxed text-ink">
+              {openM.outcome}
+            </p>
+          )}
           <ul className={cx("space-y-1.5", simple ? "text-[15px] leading-relaxed text-ink" : "text-sm leading-relaxed text-ink-muted")}>
             {lines.map((l, i) => (
               <li key={i} className="flex gap-2">{!simple && <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-ink-faint" />}<span>{l}</span></li>

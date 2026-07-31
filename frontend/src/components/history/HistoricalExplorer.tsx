@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, ChevronDown, RefreshCw } from "lucide-react";
+import { ChevronDown, RefreshCw } from "lucide-react";
+import { AlertTriangle } from "@/components/ui/MotionIcon";
 import { api } from "@/lib/api";
 import { useIsSimple } from "@/lib/mode";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";

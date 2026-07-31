@@ -104,6 +104,7 @@ export interface UndercutEvent {
 }
 export interface StrategySummary {
   winner?: string | null; driver_of_the_day?: string | null; dotd_reason?: string | null;
+  dotd_factors?: string[];
   biggest_gainers: any[]; biggest_losers: any[];
   best_strategy?: any; worst_strategy?: any; best_pit_timing?: any;
   avg_pit_loss?: number | null; pit_counts: Record<string, number>; tyre_summary: any[];

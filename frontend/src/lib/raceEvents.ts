@@ -1,4 +1,5 @@
-import { Flag, ShieldAlert, Gauge, TrendingDown, TrendingUp, Eye } from "lucide-react";
+import { ShieldAlert, Eye } from "lucide-react";
+import { Flag, Gauge, TrendingDown, TrendingUp } from "@/components/ui/MotionIcon";
 import type { RaceSession, StrategySummary, UndercutEvent } from "./types";
 
 /* -------------------------------------------------------------------------- */

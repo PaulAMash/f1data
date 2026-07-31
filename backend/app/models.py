@@ -382,6 +382,9 @@ class StrategySummary(BaseModel):
     winner: Optional[str] = None
     driver_of_the_day: Optional[str] = None
     dotd_reason: Optional[str] = None
+    #: The same evidence as `dotd_reason`, unjoined, so the UI can render chips
+    #: instead of a semicolon-separated sentence.
+    dotd_factors: list[str] = Field(default_factory=list)
     biggest_gainers: list[dict] = Field(default_factory=list)
     biggest_losers: list[dict] = Field(default_factory=list)
     best_strategy: Optional[dict] = None

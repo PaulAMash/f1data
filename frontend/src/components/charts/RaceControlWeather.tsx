@@ -4,7 +4,8 @@ import {
   Area, AreaChart, CartesianGrid, ReferenceArea, ReferenceLine, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
 } from "recharts";
-import { CloudRain, Flag, Gauge, ShieldAlert, Thermometer, TriangleAlert } from "lucide-react";
+import { CloudRain, ShieldAlert, TriangleAlert } from "lucide-react";
+import { Flag, Gauge, Thermometer } from "@/components/ui/MotionIcon";
 import type { RaceSession } from "@/lib/types";
 import { flagKindOf } from "@/lib/raceEvents";
 import { StatStrip, VisualLabel } from "@/components/ui/Visuals";

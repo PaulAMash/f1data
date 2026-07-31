@@ -4,9 +4,8 @@ import {
   Area, AreaChart, CartesianGrid, Line, LineChart, ReferenceArea, ReferenceDot,
   ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import {
-  ArrowLeftRight, Crown, Flag, Gauge, Repeat, Target, Timer, TrendingUp, Trophy, Zap,
-} from "lucide-react";
+import { ArrowLeftRight, Gauge, Repeat, Target, Timer, TrendingUp, Trophy, Zap } from "lucide-react";
+import { Crown, Flag } from "@/components/ui/MotionIcon";
 import { api } from "@/lib/api";
 import type { RaceBundle } from "@/lib/types";
 import {

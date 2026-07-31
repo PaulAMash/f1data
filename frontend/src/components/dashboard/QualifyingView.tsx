@@ -1,10 +1,7 @@
 "use client";
 
-import {
-  AlertTriangle, ArrowDownWideNarrow, ArrowUp, Building2, ChevronRight, Flag, Gauge,
-  Gavel, LineChart,
-  Medal, Ruler, Sparkles, Target, Thermometer, TrendingDown, TrendingUp, User, Zap,
-} from "lucide-react";
+import { ArrowUp, Building2, ChevronRight, Gavel, User } from "lucide-react";
+import { AlertTriangle, ArrowDownWideNarrow, Flag, Gauge, LineChart, Medal, Ruler, Sparkles, Target, Thermometer, TrendingDown, TrendingUp, Zap } from "@/components/ui/MotionIcon";
 import type { Driver, QualifyingSummary, RaceSession } from "@/lib/types";
 import { useIsSimple } from "@/lib/mode";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
@@ -109,7 +106,7 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
       {/* Simple: the six takeaways. Advanced: the full analyst card set.
           Every card carries its number as a shape, not as a sentence. */}
       <InsightGrid cols={3}>
-        <InsightCard feature icon={<Medal size={14} />} iconAnim="shimmer" tone="accent"
+        <InsightCard feature icon={<Medal size={14} />} tone="accent"
           label={<Term term="pole margin">Pole position</Term>}
           value={nameOf(q.pole_driver)} driver={driverOf(session, q.pole_driver)}
           sub={q.pole_lap ? `${fmtLap(q.pole_lap)} · ${rowOf(q.pole_driver)?.team ?? ""}` : undefined}
@@ -844,7 +841,7 @@ function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSessio
                 const gainQ23 = r.q2 && r.q3 ? r.q2 - r.q3 : null;
                 return (
                   <InsightCard key={r.driver}
-                    icon={<TrendingUp size={14} />} iconAnim="rise" tone={i === 0 ? "speed" : "good"}
+                    icon={<TrendingUp size={14} />} tone={i === 0 ? "speed" : "good"}
                     label={i === 0 ? "Found the most" : `#${i + 1} improver`}
                     value={r.name} driver={driverOf(session, r.driver)}
                     sub={`${r.team}${r.position ? ` · qualified P${r.position}` : ""}`}

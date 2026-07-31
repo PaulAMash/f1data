@@ -1,13 +1,14 @@
 "use client";
 import { useState } from "react";
-import { Award, Flag, Timer, TrendingDown, TrendingUp } from "lucide-react";
-import type { ClassificationRow, RaceBundle } from "@/lib/types";
+import { Award, Flag, Timer, TrendingDown, TrendingUp } from "@/components/ui/MotionIcon";
+import type { ClassificationRow, RaceBundle, RaceSession } from "@/lib/types";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { DriverAvatar, DriverBadge } from "@/components/ui/DriverBadge";
 import { StatTile } from "@/components/ui/StatTile";
 import { InfoTip } from "@/components/ui/InfoTip";
-import { IconTile, type VisualTone } from "@/components/ui/Visuals";
+import { IconTile, Meter, PositionShift, type IconAnim, type VisualTone } from "@/components/ui/Visuals";
+import { InsightCard } from "@/components/ui/InsightCard";
 import { cx, fmtGap, fmtLap, fmtSec, netBadge } from "@/lib/format";
 import { derivePenalties, finalPenalties, penaltiesByDriver } from "@/lib/penalties";
 import { PenaltyBadges } from "@/components/ui/PenaltyBadge";
@@ -72,7 +73,20 @@ export function RaceOverview({
                 </span>
               </span>
             }
-            sub={strategy.dotd_reason ?? undefined}
+            /* Three facts, shown as three things. `dotd_reason` joins the same
+               evidence with semicolons — "gained 1 place (P3 → P2); top-3 race
+               pace; 2-stop execution" — which is a sentence to read where a row
+               of chips is a glance. The sentence stays as the tooltip. */
+            sub={strategy.dotd_factors?.length ? (
+              <span className="flex flex-wrap gap-1">
+                {strategy.dotd_factors.map((f) => (
+                  <span key={f}
+                    className="rounded-md bg-accent/10 px-1.5 py-0.5 text-[11px] font-semibold text-accent-soft">
+                    {f}
+                  </span>
+                ))}
+              </span>
+            ) : (strategy.dotd_reason ?? undefined)}
             info="Pitwall IQ's own data-driven pick: positions gained, weighted by race pace and a win-from-behind bonus. This is NOT the official fan-voted Driver of the Day — that's a public vote, which isn't part of the timing data." />
           {strategy.avg_pit_loss != null ? (
             <StatTile label="Avg pit loss" tone="speed" icon={<Timer size={14} />}
@@ -94,16 +108,32 @@ export function RaceOverview({
       {!simple && (
         <div className="grid items-start gap-3 md:grid-cols-3">
           {strategy.best_strategy && (
-            <VerdictCard tone="good" icon={<Award size={15} />} title="Best strategy"
-              driver={strategy.best_strategy.driver} detail={strategy.best_strategy.detail} />
+            <VerdictCard tone="good" icon={<Award size={14} />}
+              title="Best strategy" session={session}
+              driver={strategy.best_strategy.driver} detail={strategy.best_strategy.detail}
+              /* the verdict IS the shift: where raw pace put them, where they
+                 actually finished. Two numbers and an arrow beat the sentence
+                 that used to spell the same thing out. */
+              visual={<PositionShift from={strategy.best_strategy.pace_rank}
+                to={strategy.best_strategy.finish} fromLabel="Pace P" toLabel="Finish P" />}
+              takeaway={gainText(strategy.best_strategy, "better")} />
           )}
           {strategy.worst_strategy && (
-            <VerdictCard tone="bad" icon={<TrendingDown size={15} />} title="Costliest strategy"
-              driver={strategy.worst_strategy.driver} detail={strategy.worst_strategy.detail} />
+            <VerdictCard tone="bad" icon={<TrendingDown size={14} />}
+              title="Costliest strategy" session={session}
+              driver={strategy.worst_strategy.driver} detail={strategy.worst_strategy.detail}
+              visual={<PositionShift from={strategy.worst_strategy.pace_rank}
+                to={strategy.worst_strategy.finish} fromLabel="Pace P" toLabel="Finish P" />}
+              takeaway={gainText(strategy.worst_strategy, "worse")} />
           )}
           {strategy.best_pit_timing && (
-            <VerdictCard tone="key" icon={<Timer size={15} />} title="Best pit timing"
-              driver={strategy.best_pit_timing.driver} detail={strategy.best_pit_timing.detail} />
+            <VerdictCard tone="key" icon={<Timer size={14} />} title="Best pit timing"
+              session={session}
+              driver={strategy.best_pit_timing.driver} detail={strategy.best_pit_timing.detail}
+              visual={pitTimingVisual(strategy.best_pit_timing)}
+              takeaway={strategy.best_pit_timing.saved_s != null
+                ? `Lap ${strategy.best_pit_timing.lap} — a discounted stop.`
+                : `Lap ${strategy.best_pit_timing.lap} — quickest of the race.`} />
           )}
         </div>
       )}
@@ -230,24 +260,64 @@ function DnfBadge({ row }: { row: ClassificationRow }) {
 }
 
 /** A strategy verdict, in the shared insight-card shape. */
+/** How far a strategy moved a driver from where raw pace had them. */
+function gainText(v: any, dir: "better" | "worse"): string {
+  const n = v?.pace_rank != null && v?.finish != null ? v.pace_rank - v.finish : null;
+  if (n == null || n === 0) return "Finished where the pace said they would.";
+  const places = `${Math.abs(n)} place${Math.abs(n) === 1 ? "" : "s"}`;
+  return dir === "better"
+    ? `${places} better than raw pace deserved.`
+    : `${places} worse than the car was capable of.`;
+}
+
+/** Seconds, drawn against what a stop is actually measured against. */
+function pitTimingVisual(v: any): React.ReactNode {
+  if (v?.saved_s != null) {
+    // a cheap stop is worth the green-flag loss it avoided — roughly 22s
+    return (
+      <Meter label="Saved vs a green stop" tone="amber" value={`${v.saved_s.toFixed(1)}s`}
+        pct={Math.min(100, Math.max(5, (v.saved_s / 22) * 100))}
+        scaleMin="0s" scaleMax="~22s — a full green-flag stop" />
+    );
+  }
+  if (v?.stationary_s != null) {
+    // 2.0s is a great stop, 4.0s a slow one — the window the sport works in
+    return (
+      <Meter label="Stationary time" tone="amber" value={`${v.stationary_s.toFixed(2)}s`}
+        pct={Math.min(100, Math.max(5, ((4.5 - v.stationary_s) / 2.5) * 100))}
+        scaleMin="Slow" scaleMax="2.0s — a great stop" />
+    );
+  }
+  return undefined;
+}
+
+/**
+ * A strategy verdict, held to the same standard as every other card in the app.
+ *
+ * These three were the last panels still built as title + badge + paragraph, so
+ * switching into Advanced felt like walking into an older version of the
+ * product: no portrait, no visual, no drawer, and a sentence to read before you
+ * knew whether it was good news.
+ *
+ * They now say it the way the rest of the product does — the driver's face, the
+ * measurement drawn, one line of consequence — with the sentence kept where a
+ * sentence belongs, behind the chevron.
+ */
 function VerdictCard({
-  tone, icon, title, driver, detail,
+  tone, icon, iconAnim, title, driver, detail, visual, takeaway, session,
 }: {
-  tone: "good" | "bad" | "key"; icon: React.ReactNode; title: string;
-  driver?: string; detail?: string;
+  tone: "good" | "bad" | "key"; icon: React.ReactNode; iconAnim?: IconAnim; title: string;
+  driver?: string; detail?: string; visual?: React.ReactNode; takeaway?: React.ReactNode;
+  session: RaceSession;
 }) {
+  const d = session.drivers.find((x) => x.code === driver) ?? null;
   const visualTone: VisualTone = tone === "good" ? "good" : tone === "bad" ? "bad" : "amber";
   return (
-    <div className="panel p-4">
-      <div className="flex items-center gap-2">
-        <IconTile tone={visualTone} size={26}>{icon}</IconTile>
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{title}</span>
-        {driver && <span className="ml-auto"><Badge tone={tone}>{driver}</Badge></span>}
-      </div>
-      <p className="mt-3 text-sm leading-relaxed text-ink-muted">
-        {detail ?? "No clear signal in this race."}
-      </p>
-    </div>
+    <InsightCard
+      icon={icon} iconAnim={iconAnim} tone={visualTone} label={title}
+      value={d?.name ?? driver ?? "—"} sub={d?.team}
+      driver={d} visual={visual} takeaway={takeaway}
+      detail={detail ? <p>{detail}</p> : undefined} />
   );
 }
 

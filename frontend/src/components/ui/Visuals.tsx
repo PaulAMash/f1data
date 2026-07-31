@@ -509,13 +509,19 @@ export function StatStrip({
 
 /** The tinted glyph tile every card, panel and hero leads with. */
 /**
- * How a glyph behaves when the reader reaches for its card. Each option is
- * keyed to what the icon depicts, so the motion carries meaning rather than
- * decorating: a crown catches the light, a flag waves, an arrow travels, a
- * gauge sweeps. Nothing moves at rest — an icon that animates unprompted is a
- * distraction; one that animates when you reach for it is feedback.
+ * Whole-glyph motion, for the stock icons still in place.
+ *
+ * There used to be seven of these — wave, rise, fall, sweep, drift — each one a
+ * transform applied to an opaque glyph, so a flag, a chart and a crown all
+ * moved the same three ways and none of the motion meant anything. Icons that
+ * should describe themselves now do it from the inside (see MotionIcon.tsx) and
+ * ignore this prop entirely; what's left is the pair that genuinely operates on
+ * a whole glyph.
+ *
+ * Nothing moves at rest — an icon that animates unprompted is a distraction;
+ * one that animates when you reach for it is feedback.
  */
-export type IconAnim = "shimmer" | "wave" | "rise" | "fall" | "sweep" | "drift" | "pulse";
+export type IconAnim = "shimmer" | "pulse";
 
 export function IconTile({
   children, tone = "neutral", size = 28, className, anim,

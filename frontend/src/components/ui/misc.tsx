@@ -1,5 +1,6 @@
 "use client";
-import { AlertTriangle, Inbox } from "lucide-react";
+import { Inbox } from "lucide-react";
+import { AlertTriangle } from "@/components/ui/MotionIcon";
 import { RaceLoader, RaceSpinner } from "./RaceLoader";
 import { cx } from "@/lib/format";
 

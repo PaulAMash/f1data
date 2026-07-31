@@ -533,3 +533,88 @@ is precisely how a missing Python package spent two days impersonating an F1 out
 load, startup logs a warning saying which data will be missing from every session —
 because an app that starts cleanly while a whole source is dead teaches its operator that
 "partial data" is normal.
+
+---
+
+## Motion must describe the thing that is moving
+
+The first icon set transformed whole glyphs: a flag rotated 11°, a chart rotated 18°, a crown
+scaled 118%. Every icon moved the same three ways regardless of what it depicted, so the
+motion carried no meaning. A wobble is a wobble.
+
+You cannot draw a graph left-to-right, or ripple cloth, by transforming the box the artwork
+sits in. `components/ui/MotionIcon.tsx` therefore draws its own glyphs, so every part that
+should move is an addressable element:
+
+| glyph | what moves | why that |
+|---|---|---|
+| flag | cloth in bands, each a beat behind the last | a wave *travels*; a whole flag flapping is a lever |
+| trend / chart | `stroke-dashoffset`, head held back | a line chart is *drawn* |
+| timer | the hand, on `steps(12)` | a smooth sweep is a dial; a tick is a stopwatch |
+| gauge | needle overshoots, then settles | a needle has mass |
+| thermometer | the column, out of the bulb | on a real one, nothing else moves |
+| weather | rays turn, cloud drifts across | two independent motions, as in the sky |
+| crown / medal | a highlight travels through a clip | metal catches the light |
+| bolt | full brightness, then decay | lightning does not fade in |
+
+They are drop-in replacements for the lucide glyphs they succeed — same 24×24 box, same 2px
+round-capped stroke, same `currentColor` — so they sit beside any remaining stock icon
+without looking like a different set. Nothing moves at rest: motion begins when the reader
+reaches for the card, and is removed entirely under `prefers-reduced-motion`.
+
+**Animate a CSS property, not an SVG attribute.** `stdDeviation` on `feGaussianBlur` is an
+attribute, so a `@keyframes` block naming it silently animates nothing. `filter: blur()` is
+a real CSS property and applies cleanly to an SVG group.
+
+---
+
+## Loading is a shot, not an illustration
+
+The wheel turned everything at one constant rate forever, which is how a machine moves. The
+rewrite gives it mass: it spins **up**, holds, and eases off across a four-second phrase, and
+that same phrase drives the motion blur, the brake glow and the road — which is what makes
+five animations read as one object. Suspension travel is damped, the contact patch squashes
+under load, and rubber smoke leaves the patch on staggered delays. No two periods divide into
+each other, so the loop never lands on itself or strobes.
+
+---
+
+## Headline first, details second
+
+A card at rest answers three questions and stops: **what happened**, **when**, and **why it
+matters**. Key Moments used to spend two clamped lines of prose on the third, so a row of
+moments was a wall of half-finished paragraphs the reader had to read *before* deciding what
+was worth opening.
+
+Why-it-matters is now a measurement — `+1 place`, `4 laps neutralised`, `22 laps` — and the
+explanation opens with the drawer, which is what the chevron was already promising.
+
+**The measurement comes from structured fields, never from parsing the sentence.** A regex
+over prose is a bug waiting for the day someone rewords it. When two sources describe the
+same event, the one carrying the number wins: undercuts are read before the generic insight
+list precisely because only they carry `positions_gained`. And when there is no number, the
+chip is absent — better than padding a card with words that measure nothing.
+
+The same rule sends evidence to the frontend in pieces. `dotd_reason` joins three facts with
+semicolons; `dotd_factors` keeps them apart, because a panel can only show three chips if it
+is handed three things.
+
+---
+
+## Constructor identity
+
+Teams are recognised before they are read, so the gallery leads with an emblem. It used to
+spend that space on the words "2 cars" — true of every constructor since 1950, and therefore
+information about none of them.
+
+Real logos are trademarks and we hold no licensed files, so `ConstructorMark` draws an honest
+one instead: a motorsport shield in the team's own livery, split by its **second** colour,
+which is what separates the two teams who share a blue. Colour is how anyone identifies an F1
+car at 300km/h.
+
+It is drop-in ready. `logoSrc()` points at `/teams/<id>.svg` and the mark is **probed**, not
+error-handled — an `<img>` whose src 404s fires `error` before React attaches a handler, so
+an `onError` fallback loses the race and the browser's broken-image glyph plus its alt text
+end up in the layout. Loading it detached means a missing asset is simply never shown. Add a
+licensed file at that path and it is used immediately, exactly the way the curated driver
+portrait works.

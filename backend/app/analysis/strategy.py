@@ -204,7 +204,7 @@ def compute_strategy(session: RaceSession, pace: list[DriverPaceSummary]) -> Str
     weather_summary = _weather_summary(session)
 
     # driver of the day
-    dotd, dotd_reason = _driver_of_the_day(session, pace_by_driver)
+    dotd, dotd_reason, dotd_factors = _driver_of_the_day(session, pace_by_driver)
 
     # insights + turning points
     turning_points = _turning_points(session, pace_by_driver)
@@ -219,7 +219,7 @@ def compute_strategy(session: RaceSession, pace: list[DriverPaceSummary]) -> Str
 
     return StrategySummary(
         winner=winner,
-        driver_of_the_day=dotd, dotd_reason=dotd_reason,
+        driver_of_the_day=dotd, dotd_reason=dotd_reason, dotd_factors=dotd_factors,
         biggest_gainers=gainers, biggest_losers=losers,
         best_strategy=best_strategy, worst_strategy=worst_strategy,
         best_pit_timing=best_pit_timing, avg_pit_loss=avg_pit_loss,
@@ -551,7 +551,15 @@ def _all_insights(session, pace_by_driver, undercuts, best_strategy, worst_strat
 # --------------------------------------------------------------------------- #
 # helpers
 # --------------------------------------------------------------------------- #
-def _driver_of_the_day(session: RaceSession, pace_by_driver) -> tuple[str | None, str | None]:
+def _driver_of_the_day(session: RaceSession, pace_by_driver) -> tuple[str | None, str | None, list[str]]:
+    """(driver, reason, factors).
+
+    `factors` is the same evidence as `reason`, kept as separate items instead of
+    joined with semicolons. "gained 1 place (P3 → P2); top-3 race pace; 2-stop
+    execution" is three facts wearing one sentence's clothing — the UI can show
+    three chips a reader takes in at a glance, but only if it is given three
+    things.
+    """
     best = None
     best_score = -1e9
     for c in session.classification:
@@ -565,7 +573,7 @@ def _driver_of_the_day(session: RaceSession, pace_by_driver) -> tuple[str | None
         if score > best_score:
             best_score, best = score, c
     if not best:
-        return None, None
+        return None, None, []
     net = (best.grid - best.position) if best.grid else 0
     reason_bits = []
     if net > 0:
@@ -576,7 +584,16 @@ def _driver_of_the_day(session: RaceSession, pace_by_driver) -> tuple[str | None
         reason_bits.append(f"top-{p.pace_rank} race pace")
     if best.pit_stops:
         reason_bits.append(f"{best.pit_stops}-stop execution")
-    return best.driver, ("; ".join(reason_bits) or "strong all-round drive")
+
+    # short forms, sized for a chip rather than a sentence
+    factors: list[str] = []
+    if net > 0:
+        factors.append(f"+{net} place{'s' if net != 1 else ''}")
+    if p and p.pace_rank and p.pace_rank <= 3:
+        factors.append(f"P{p.pace_rank} race pace")
+    if best.pit_stops:
+        factors.append(f"{best.pit_stops}-stop")
+    return best.driver, ("; ".join(reason_bits) or "strong all-round drive"), factors
 
 
 def _weather_summary(session: RaceSession) -> str | None:

@@ -4,6 +4,7 @@ import { Search, X } from "lucide-react";
 import type { Driver } from "@/lib/types";
 import { cx } from "@/lib/format";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
+import { ConstructorMark } from "@/components/ui/ConstructorMark";
 
 /* -------------------------------------------------------------------------- */
 /* The driver gallery.                                                        */
@@ -28,34 +29,6 @@ import { DriverAvatar } from "@/components/ui/DriverBadge";
 /* entry doesn't leave a hole where the placeholder used to be.                */
 /* -------------------------------------------------------------------------- */
 
-/**
- * A short, legible constructor mark. Real logos aren't in our asset pipeline, so
- * rather than approximate them we build an honest one from the team's own colour
- * and initials — recognisable at a glance, and never a wrong logo.
- */
-const TEAM_MARK: Record<string, string> = {
-  // initials alone collide for these two, and a mark that identifies the wrong
-  // team is worse than no mark at all
-  "red bull racing": "RBR",
-  "racing bulls": "RB",
-  "kick sauber": "SAU",
-  "haas f1 team": "HAA",
-  "aston martin": "AM",
-  "alpine": "ALP",
-  "williams": "WIL",
-  "mclaren": "MCL",
-  "mercedes": "MER",
-  "ferrari": "FER",
-  "audi": "AUD",
-  "cadillac": "CAD",
-};
-function teamMark(team: string): string {
-  const known = TEAM_MARK[team.trim().toLowerCase()];
-  if (known) return known;
-  const words = team.replace(/\bF1 Team\b/gi, "").trim().split(/\s+/);
-  if (words.length === 1) return words[0].slice(0, 3).toUpperCase();
-  return words.slice(0, 3).map((w) => w[0]).join("").toUpperCase();
-}
 
 export function DriverPalette({
   open, onClose, drivers, finishOrder, focused, onFocus,
@@ -178,15 +151,15 @@ function ConstructorCard({
         }} />
 
       <header className="relative flex items-center gap-2.5 px-3.5 pb-2.5 pt-3">
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-[10.5px] font-black tracking-tight transition-transform duration-300 ease-out group-hover/team:scale-110"
-          style={{ background: `${color}2a`, color, boxShadow: `inset 0 0 0 1px ${color}66` }}>
-          {teamMark(team)}
+        {/* The emblem is the identifier. It replaced a "2 cars" counter that was
+            true of every constructor since 1950 and therefore said nothing about
+            any of them — that space now carries the one thing the reader is
+            actually scanning for. */}
+        <span className="transition-transform duration-300 ease-out group-hover/team:scale-110">
+          <ConstructorMark team={team} color={color} size={26} />
         </span>
         <span className="truncate text-[12.5px] font-bold uppercase tracking-[0.13em] text-ink-muted transition-colors duration-200 group-hover/team:text-ink">
           {team}
-        </span>
-        <span className="ml-auto shrink-0 text-[11px] font-medium tabular-nums text-ink-faint">
-          {drivers.length} {drivers.length === 1 ? "car" : "cars"}
         </span>
       </header>
 

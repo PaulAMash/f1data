@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Database, RefreshCw, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, Database, RefreshCw, Trash2, XCircle } from "lucide-react";
+import { AlertTriangle } from "@/components/ui/MotionIcon";
 import { api } from "@/lib/api";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";

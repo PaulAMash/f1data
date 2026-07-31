@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
-import { ChevronDown, Flag } from "lucide-react";
+import { ChevronDown } from "lucide-react";
+import { Flag } from "@/components/ui/MotionIcon";
 import type { RaceInsight, StrategySummary } from "@/lib/types";
 import { KIND_LABEL, MOMENT, momentClassOf } from "@/lib/raceEvents";
 import { cx } from "@/lib/format";

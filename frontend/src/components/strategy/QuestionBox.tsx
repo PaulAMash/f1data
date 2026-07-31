@@ -1,8 +1,7 @@
 "use client";
 import { useState } from "react";
-import {
-  ChevronDown, CornerDownLeft, MessageSquareText, Sparkles, Wand2,
-} from "lucide-react";
+import { ChevronDown, CornerDownLeft, MessageSquareText, Wand2 } from "lucide-react";
+import { Sparkles } from "@/components/ui/MotionIcon";
 import { api } from "@/lib/api";
 import type { QuestionAnswer, SessionCategory } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
