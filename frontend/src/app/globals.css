@@ -629,3 +629,86 @@ html.theme-sweep::view-transition-new(root) {
   .reveal-on { transition: none; }
 }
 :root[data-motion="calm"] .reveal { opacity: 1; transform: none; }
+
+
+/* ---------------------------------------------------------------------------
+   The hero visual.
+
+   A landing image should build like a shot: canvas, then traces drawing left to
+   right, then the nodes landing, then the labels. Nothing is on screen at t=0
+   and nothing pops.
+
+   Once built it must not go completely still — but it must not loop visibly
+   either, or it competes with the headline. The only continuing motion is a
+   short bright dash travelling each trace on a long, staggered cycle, plus a
+   very slow drift in the ambient light behind them.
+   --------------------------------------------------------------------------- */
+.hero-canvas {
+  background:
+    radial-gradient(120% 90% at 70% 10%, rgb(var(--base-800) / .9), transparent 60%),
+    rgb(var(--base-950));
+  border: 1px solid rgb(var(--tint) / .07);
+  animation: hv-canvas 1s var(--ease-out) both;
+}
+@keyframes hv-canvas { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
+
+.hero-bloom {
+  background:
+    radial-gradient(48% 60% at 24% 68%, rgb(var(--accent) / .20), transparent 70%),
+    radial-gradient(44% 56% at 72% 26%, rgb(var(--speed) / .16), transparent 70%),
+    radial-gradient(40% 50% at 52% 90%, rgb(var(--amber) / .10), transparent 72%);
+  animation: hv-bloom 18s ease-in-out infinite alternate;
+}
+@keyframes hv-bloom {
+  from { opacity: .75; transform: translate3d(-1.5%, 1%, 0) scale(1.02); }
+  to   { opacity: 1;   transform: translate3d(1.5%, -1%, 0) scale(1.06); }
+}
+
+.hv-draw { stroke-dasharray: 100; animation: hv-draw 2.1s var(--ease-out) both; }
+@keyframes hv-draw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+
+/* a 6%-long bright segment running the length of the path */
+.hv-spark {
+  stroke-dasharray: 6 94;
+  opacity: .9;
+  animation: hv-spark 7s linear infinite both;
+}
+@keyframes hv-spark {
+  0%   { stroke-dashoffset: 100; opacity: 0; }
+  8%   { opacity: .85; }
+  70%  { opacity: .85; }
+  85%  { opacity: 0; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+
+.hv-node { animation: hv-node .7s var(--ease-spring) both; transform-box: fill-box; transform-origin: center; }
+@keyframes hv-node { from { opacity: 0; transform: scale(.2); } to { opacity: 1; transform: none; } }
+
+.hv-pin { animation: hv-pin .7s var(--ease-out) both; }
+@keyframes hv-pin { from { opacity: 0; transform: translateY(6px) scale(.94); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-canvas, .hero-bloom, .hv-draw, .hv-node, .hv-pin { animation: none; }
+  .hv-draw { stroke-dasharray: none; }
+  .hv-spark { animation: none; opacity: 0; }
+}
+:root[data-motion="calm"] .hv-spark, :root[data-motion="calm"] .hero-bloom { animation: none; }
+
+/* ---------------------------------------------------------------------------
+   Cinematic arrival, applied to a whole page.
+
+   `.build > *` staggers every direct child in, so a race page assembles itself
+   top to bottom instead of appearing all at once. The delay is capped: past
+   about eight children the reader is waiting rather than watching.
+   --------------------------------------------------------------------------- */
+.build > * { animation: rise-in var(--dur-4) var(--ease-out) both; }
+.build > *:nth-child(1) { animation-delay: .04s; }
+.build > *:nth-child(2) { animation-delay: .10s; }
+.build > *:nth-child(3) { animation-delay: .16s; }
+.build > *:nth-child(4) { animation-delay: .22s; }
+.build > *:nth-child(5) { animation-delay: .28s; }
+.build > *:nth-child(6) { animation-delay: .34s; }
+.build > *:nth-child(n+7) { animation-delay: .38s; }
+
+@media (prefers-reduced-motion: reduce) { .build > * { animation: none; } }
+:root[data-motion="calm"] .build > * { animation: none; }

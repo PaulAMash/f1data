@@ -777,3 +777,48 @@ It retints navigation, actions and selection. It deliberately does **not** touch
 palette in `Visuals.tsx`. Green means a place gained and red means a place lost; if picking a
 violet accent could restain a gain chip, the colour would stop being information. **A
 preference may change how the product looks. It may never change what a colour means.**
+
+---
+
+## The hero is the product's own subject
+
+A landing page gets one image, and a stock photograph would be decoration. `HeroVisual` draws
+a Grand Prix as light: five position traces across a dark canvas, each with a bloom layer
+beneath it so the strokes read as *emitting* rather than as lines painted on a rectangle,
+with the annotations a race engineer would actually be watching pinned to the moments that
+matter.
+
+Three things make it read as film rather than as a chart:
+
+- **It builds.** Nothing is on screen at t=0. Canvas, then traces drawing left to right over
+  two seconds, then nodes landing, then labels — the order a shot would be cut in.
+- **It breathes.** Once built, the only continuing motion is a short bright dash travelling
+  each trace on a long staggered cycle, plus an 18-second drift in the ambient light. It
+  never loops visibly, because a background that performs competes with the headline on it.
+- **It has depth.** Bloom under, vignette over, labels floating above both.
+
+`.build > *` applies the same idea to a whole page: children stagger in so a race assembles
+itself top to bottom. The delay is capped at six children — past that the reader is waiting
+rather than watching.
+
+---
+
+## A flourish must fail to "no flourish", never to a wrong number
+
+The count-up statistics shipped reading **0**. They started at zero and waited for an
+IntersectionObserver that, for elements already on screen at first paint, never fired. The
+page confidently displayed "0 RACES" and "0 DRIVERS" about a product with 24 and 500+.
+
+Two changes, and the second is the principle:
+
+1. It measures `getBoundingClientRect()` on mount and counts immediately if the element is
+   already in view, using the observer only for the "scrolled to later" case it is actually
+   good at.
+2. **The state initialises at the target value**, and the animation sets it to zero only when
+   it genuinely starts. Now the worst case is a number that appears without counting.
+
+Decoration is allowed to not happen. It is never allowed to make the product lie.
+
+The same rule caught a second bug in the same file: the hero traces referenced `--t-accent`
+and friends, which were never declared anywhere, so every stroke resolved to `none` and only
+the white highlight was visible. Colours now bind to palette variables that exist.
