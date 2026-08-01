@@ -682,10 +682,15 @@ html.theme-sweep::view-transition-new(root) {
    never changed, which is a good description of most performance problems. */
 .hero-grain {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
-  mix-blend-mode: overlay;
-  opacity: .05;
+  /* NO `mix-blend-mode`, for the same reason `.hero-dof` carries no
+     backdrop-filter: a blend against a surface that changes every frame is
+     re-evaluated every frame by the compositor. `overlay` here measured nine
+     frames a second — more than the entire canvas render costs. Plain alpha
+     is a slightly milkier grain for a third of the price, and at five percent
+     nobody can tell the two apart without a difference blend. */
+  opacity: .055;
 }
-:root[data-theme="light"] .hero-grain { mix-blend-mode: multiply; opacity: .028; }
+:root[data-theme="light"] .hero-grain { opacity: .03; }
 
 .hero-vignette {
   background: radial-gradient(120% 92% at 50% 46%, transparent 34%, rgb(0 0 0 / .46) 100%);
@@ -805,6 +810,16 @@ html.theme-sweep::view-transition-new(root) {
 .tele-code { font-weight: 700; color: rgb(var(--ink-muted)); letter-spacing: .08em; }
 .tele-gap { margin-left: auto; color: rgb(var(--ink-faint)); font-size: 9px; }
 .tele-key { width: 20px; font-weight: 700; }
+.tele-move {
+  width: 7px;
+  font-size: 6.5px;
+  line-height: 1;
+  color: transparent;
+  animation: tele-move-in var(--dur-3) var(--ease-out);
+}
+.tele-move.is-up { color: rgb(52 211 153); }
+.tele-move.is-down { color: rgb(var(--accent-soft)); }
+@keyframes tele-move-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
 .tele-split { height: 1px; background: rgb(var(--tint) / .07); margin: 4px 0 3px; }
 
 .tele-bar {
@@ -838,7 +853,27 @@ html.theme-sweep::view-transition-new(root) {
   box-shadow: var(--el-3);
 }
 :root[data-theme="light"] .tele-head { background: rgb(var(--tint) / .035); }
-:root[data-theme="light"] .tele-bar { background: rgb(var(--tint) / .10); }
+:root[data-theme="light"] .tele-bar { background: rgb(var(--tint) / .12); }
+
+/* Daylight needs more ink, not more opacity.
+   The cluster was legible on black at --ink-faint because a faint grey on
+   near-black still has real contrast; the same grey on white has almost none.
+   Light mode moves every readout up one step on the ink ramp and thickens the
+   ticks, which is a rebalance rather than a brightness change — the panel is
+   no more prominent, its contents are simply readable. */
+:root[data-theme="light"] .tele-row,
+:root[data-theme="light"] .tele-line { color: rgb(var(--ink-muted)); }
+:root[data-theme="light"] .tele-gap,
+:root[data-theme="light"] .tele-pos { color: rgb(var(--ink-muted)); }
+:root[data-theme="light"] .tele-code,
+:root[data-theme="light"] .tele-head { color: rgb(var(--ink)); }
+:root[data-theme="light"] .tele-tick { width: 2.5px; }
+:root[data-theme="light"] .tele-sectors > i { color: rgb(var(--ink-muted)); }
+:root[data-theme="light"] .ann-head { color: rgb(var(--ink-muted)); }
+:root[data-theme="light"] .ann-stem {
+  background: linear-gradient(to top, rgb(var(--tint) / .5), rgb(var(--tint) / .16));
+}
+:root[data-theme="light"] .ann-anchor { box-shadow: 0 0 0 3px rgb(var(--base-900) / .85); }
 
 @media (prefers-reduced-motion: reduce) {
   .tele, .ann-card { animation: none; }
@@ -947,13 +982,17 @@ html.theme-sweep::view-transition-new(root) {
     -webkit-mask-image: none;
     mask-image: none;
   }
+  /* Light mode needs far less scrim than dark does, and the phone is where
+     that shows. Near-black type on white is legible over anything; white type
+     over bright lines is not. Matching the two themes' scrims here washed the
+     field out for no contrast the page was actually short of. */
   :root[data-theme="light"] .hero-dof {
     background: linear-gradient(
       to bottom,
-      rgb(var(--base-900) / .90) 0%,
-      rgb(var(--base-900) / .84) 50%,
-      rgb(var(--base-900) / .48) 80%,
-      rgb(var(--base-900) / .30) 100%
+      rgb(var(--base-900) / .74) 0%,
+      rgb(var(--base-900) / .66) 50%,
+      rgb(var(--base-900) / .34) 80%,
+      rgb(var(--base-900) / .18) 100%
     );
   }
 }

@@ -3,8 +3,55 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V55**. Reviewed at 1440×900 and 390×844, in both themes, with motion full and
+Last pass: **V56**. Reviewed at 1440×900 and 390×844, in both themes, with motion full and
 calm.
+
+---
+
+## Fixed in V56
+
+### 1. Overtakes formed hard corners — *high*
+
+Not a rendering problem. `move()` seeded the transition with a position that
+already contained the car's drift term, which was then added a second time —
+a step discontinuity of up to half a lane at the start of every pass. Running
+order and drift are separate quantities now. Lines are also drawn as Catmull-Rom
+splines rather than 7px `lineTo` segments, so no join can form an angle.
+
+### 2. The scan stuttered — *high*
+
+It was running at 31fps while the rest of the scene got away with it, and a small
+bright object crossing the screen shows every dropped frame. The cap is off; the
+frame budget was found by measuring rather than guessing (see below).
+
+### 3. V55's frame-rate figure was measured wrong — *correction*
+
+"56fps" counted rAF callbacks, most of which returned immediately under the frame
+cap. Real draw rate was about 28. Instrumenting the draw itself found the cost in
+one place: the bloom composite was 5.1ms of a 7.1ms frame. Merging the two bloom
+layers inside the small buffer, halving the bloom source's update rate and
+dropping the grain's `mix-blend-mode` took the JS frame to 4.8ms.
+
+### 4. The minimap car left the track — *medium*
+
+It was animated along straight lines between the bezier endpoints, which is not
+the curve that was drawn. Outline and marker now come from one segment list, and
+the marker is placed by arc length so it also travels at constant speed. Layouts
+morph into one another at the end of each lap.
+
+### 5. The cluster read as a static panel — *medium*
+
+Lap ticked once every 83 seconds, ERS cycled slower than anyone would watch, and
+nothing indicated a change of position. Every readout now moves inside the thirty
+seconds somebody might actually give it, and a place change shows an arrow for six
+seconds and then stops.
+
+### 6. Light mode was still legible-by-opacity — *medium*
+
+The cluster and cards moved up one step on the ink ramp rather than getting more
+opaque, the minimap went from 6% to 20%, and the phone's scrim was cut by a third
+— near-black type on white never needed the same protection white type over
+bright lines does.
 
 ---
 

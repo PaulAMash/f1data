@@ -1127,3 +1127,101 @@ every panel — and never terminal green.
 **Under reduced motion the composition survives and the movement does not.** The
 field draws one frame, no packets, no cards. A motion preference should cost the
 reader the animation, never the artwork.
+
+---
+
+## Two quantities that must never be one
+
+`Car.pos` is where a car is drawn. `Car.base` is where it is in the running
+order. They differ by the slow drift that makes the trace breathe.
+
+Keeping only `pos` looked economical and produced the single worst artefact in
+the hero: staging a move seeded `from` with a value that already contained the
+drift, and the next frame added the drift *again*. Every overtake therefore
+opened with an instantaneous jump of up to half a lane — the hard corner that
+appeared wherever two lines crossed.
+
+> **A step discontinuity cannot be smoothed by anything downstream.** No spline,
+> no easing curve, no amount of sampling will hide it, because the data really
+> does contain a jump. Fix the quantity, not the picture.
+
+---
+
+## Curves, not segments
+
+Sampling a curve every 7px and joining with `lineTo` draws a polygon, and
+wherever the field turned quickly the polygon showed. Lines are now Catmull-Rom
+splines converted to cubic beziers, which are C1 continuous by construction: no
+join anywhere can form an angle, whatever the data does.
+
+It is also *cheaper*. 18px samples through a curve read smoother than 7px samples
+through straight lines, so the fix removed work rather than adding it. The
+blurred bloom pass samples at half that again — nothing survives the blur.
+
+---
+
+## How to measure a frame
+
+V55 reported "56fps" for a hero that was actually drawing at about 28. The
+number came from counting `requestAnimationFrame` callbacks — but under a frame
+cap most callbacks return immediately, so the count measures how often rAF is
+*serviced*, not how often anything is *drawn*. It is a real number about the
+wrong thing.
+
+Measure the work: `performance.now()` either side of the draw, exponentially
+averaged, exposed for a probe to read. Then break it into phases before touching
+anything. Doing that here found the whole cost in one place — the bloom composite
+was 5.1ms of a 7.1ms frame, and everything I had assumed was expensive (the
+splines, the simulation, the DOM writes) totalled under half a millisecond.
+
+**Blend where the pixels are few.** The two bloom layers were composited onto the
+full-size canvas separately: two blends of a million pixels. They are now
+combined inside the 0.42x buffer and composited once — two blends of 190,000
+pixels plus one of a million. Same image, a third of the cost.
+
+### The compositor rule, restated
+
+V55 established that a `backdrop-filter` over a surface that changes every frame
+is re-evaluated every frame. `mix-blend-mode` is the same rule: the film grain's
+`overlay` blend cost nine frames a second — more than the entire canvas render.
+It is plain alpha now, and at five percent nobody can tell the two apart without
+a difference blend.
+
+> Anything that asks the compositor to combine a layer with what is behind it
+> costs a full-screen operation per frame, and none of it appears in your
+> drawing code.
+
+---
+
+## One source of truth, or the marker leaves the road
+
+The minimap drew its circuit as cubic beziers and then animated the car along a
+straight line between the segment *endpoints* — a different curve entirely. The
+car regularly cut across open space, which says louder than anything else that
+the picture is decorative.
+
+`lib/miniTrack.ts` derives both the outline and the marker from the same segment
+list, and places the marker by **arc length** rather than by curve parameter. The
+second part matters as much as the first: a bezier's `t` runs fast through gentle
+curves and slow through tight ones, so a marker placed by `t` surges and dawdles
+around every corner even when it is exactly on the line.
+
+Layouts share a segment count, so one can be interpolated into another. A lap
+ends, the road bends into a different circuit over two seconds, and the next lap
+runs somewhere else — which is the cheapest way to make a background element
+nobody is looking at never repeat itself.
+
+---
+
+## Population, not per-object timers
+
+Seven markers each on their own countdown drifted into phase and out again:
+sometimes six packets at once, sometimes an empty screen for eight seconds. What
+the design actually cares about is *how many are alive*, so that is what is
+controlled — keep at least one, allow at most three, space arrivals irregularly,
+never two on the same line. Nothing is synchronised because nothing shares a
+clock.
+
+The same reasoning governs the callouts: one card at a time, two to four seconds
+of life against a beat every five to nine. The clean state is the common one,
+which is what makes a card land when it does arrive.

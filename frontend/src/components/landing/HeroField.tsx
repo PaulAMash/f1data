@@ -5,6 +5,7 @@ import {
   DRIVERS, HISTORY_S, N, RaceEngine,
   type Annotation, type Snapshot,
 } from "@/lib/raceEngine";
+import { MiniTrack } from "@/lib/miniTrack";
 
 /* -------------------------------------------------------------------------- */
 /* The hero.                                                                  */
@@ -40,11 +41,6 @@ const FIELD_H = 0.78;   // share of the canvas height the running order occupies
 const FIELD_C = 0.50;   // where its centre sits
 const NOW_U = 0.955;    // the live edge, as a fraction of the width
 
-/* The circuit in the far background. Not a real track — a shape with the
-   rhythm of one, at 6% opacity, with the leader's marker running it. Nobody is
-   meant to notice this for thirty seconds. */
-const CIRCUIT = "M 0.10 0.62 C 0.02 0.40, 0.14 0.16, 0.34 0.18 C 0.52 0.20, 0.52 0.42, 0.64 0.44 C 0.78 0.46, 0.82 0.22, 0.94 0.30 C 1.04 0.37, 0.98 0.66, 0.84 0.70 C 0.68 0.75, 0.60 0.62, 0.46 0.66 C 0.30 0.71, 0.20 0.86, 0.10 0.62 Z";
-
 export function HeroField({ className }: { className?: string }) {
   const wrap = useRef<HTMLDivElement | null>(null);
   const main = useRef<HTMLCanvasElement | null>(null);
@@ -79,6 +75,7 @@ export function HeroField({ className }: { className?: string }) {
     // Safari before 17 has no ctx.filter. The scene still renders; it simply
     // does not bloom, which is a lesser hero rather than a broken one.
     const canBlur = typeof ctx.filter === "string";
+    let miniSeed = 0x1f2e3d4c;
 
     const root = document.documentElement;
     const calm = () =>
@@ -92,6 +89,12 @@ export function HeroField({ className }: { className?: string }) {
        then the staged moments are cleared so nothing is half-finished on
        screen at the moment the reader arrives. */
     const race = new RaceEngine();
+    const mini = new MiniTrack(() => {
+      // borrows the engine's determinism rather than Math.random, so the
+      // sequence of circuits is the same on the server and the client
+      miniSeed = (miniSeed * 1664525 + 1013904223) >>> 0;
+      return miniSeed / 4294967296;
+    });
     for (let i = 0; i < 900; i++) race.step(1 / 30);
     race.annotations.length = 0;
     race.pulses.length = 0;
@@ -131,6 +134,43 @@ export function HeroField({ className }: { className?: string }) {
     };
     const ageAt = (x: number) => Math.max(0, (1 - x / w) * HISTORY_S);
     const uToX = (u: number) => u * w;
+
+    /* CURVES, NOT SEGMENTS.
+       Sampling every 7px and joining with lineTo draws a polygon, and wherever
+       the field turned quickly the polygon showed — a visible corner at every
+       sample. A Catmull-Rom spline converted to cubic beziers is C1 continuous
+       by construction: no join anywhere can form an angle, whatever the data
+       does. It is also cheaper, because 16px samples through a curve read
+       smoother than 7px samples through straight lines. */
+    const SAMPLE = 18;
+    const xs: number[] = [];
+    const ys: number[] = [];
+    const spline = (
+      c: CanvasRenderingContext2D, yOf: (x: number) => number, from: number, to: number,
+      step = SAMPLE,
+    ) => {
+      xs.length = 0; ys.length = 0;
+      // one sample beyond each end, so the tangents at the visible ends are
+      // still informed by data rather than by the clamp
+      for (let x = from - step; x <= to + step; x += step) {
+        xs.push(x); ys.push(yOf(x));
+      }
+      if (xs.length < 2) return;
+      const n = xs.length;
+      c.beginPath();
+      c.moveTo(xs[0], ys[0]);
+      for (let i = 0; i < n - 1; i++) {
+        const x0 = xs[i > 0 ? i - 1 : 0], y0 = ys[i > 0 ? i - 1 : 0];
+        const x1 = xs[i], y1 = ys[i];
+        const x2 = xs[i + 1], y2 = ys[i + 1];
+        const x3 = xs[i + 2 < n ? i + 2 : n - 1], y3 = ys[i + 2 < n ? i + 2 : n - 1];
+        c.bezierCurveTo(
+          x1 + (x2 - x0) / 6, y1 + (y2 - y0) / 6,
+          x2 - (x3 - x1) / 6, y2 - (y3 - y1) / 6,
+          x2, y2,
+        );
+      }
+    };
 
     /* ---- the scene, drawn twice per frame at two resolutions -------------- */
     // rank per driver, rebuilt once a frame. Looking this up inside the draw
@@ -185,12 +225,9 @@ export function HeroField({ className }: { className?: string }) {
         const width = (crisp ? 1 : 1.4) * (1.7 + lead * 1.7);
         const alpha = light ? 0.7 + lead * 0.3 : 0.46 + lead * 0.5;
 
-        c.beginPath();
-        let started = false;
-        for (let x = -30; x <= w + 34; x += 7) {
-          const y = Y(race.posAt(d, ageAt(x)));
-          if (!started) { c.moveTo(x, y); started = true; } else c.lineTo(x, y);
-        }
+        // the blurred pass is sampled half as finely; nothing survives the blur
+        spline(c, (x) => Y(race.posAt(d, ageAt(x))), -SAMPLE, w + SAMPLE * 2,
+          crisp ? SAMPLE : SAMPLE * 2);
         c.strokeStyle = crisp ? focused(colour, 0.30, 0.66) : colour;
         c.globalAlpha = alpha;
         c.lineWidth = width;
@@ -219,13 +256,12 @@ export function HeroField({ className }: { className?: string }) {
         c.strokeStyle = g;
         c.globalAlpha = Math.min(1, p.heat) * (light ? 0.5 : 0.9);
         c.lineWidth = (crisp ? 2.8 : 3.8) * Math.min(1.5, p.heat);
-        c.beginPath();
-        let on = false;
-        for (let x = x0 - tail; x <= x0 + 6; x += 4) {
-          if (x < -20 || x > w + 20) continue;
-          const y = Y(race.posAt(p.driver, ageAt(x)));
-          if (!on) { c.moveTo(x, y); on = true; } else c.lineTo(x, y);
-        }
+        /* Only the packet's own span, not the whole width behind a clip. The
+           first cut built a full-screen spline per packet per pass — six extra
+           curves a frame for a highlight forty pixels long, which halved the
+           frame rate the packets were supposed to be spending. */
+        spline(c, (x) => Y(race.posAt(p.driver, ageAt(x))),
+          Math.max(-SAMPLE, x0 - tail), Math.min(w + SAMPLE, x0 + 6));
         c.stroke();
       }
 
@@ -291,22 +327,42 @@ export function HeroField({ className }: { className?: string }) {
       }
       ctx.stroke();
 
-      // the circuit, above the field where nothing else is competing, with the
-      // leader's marker running it at the leader's own lap rate
-      const cw = Math.min(w * 0.145, 190), ch = cw * 0.62;
+      /* The minimap. One source of truth: the marker is placed on the same
+         curve that is stroked, by arc length, so it cannot leave the road and
+         cannot surge through corners. The road itself bends into a different
+         circuit at the end of every lap.
+
+         Not on a phone. At 390px it is sixty pixels wide, which is a smudge
+         rather than a circuit — and the brief's last instruction is the one
+         worth obeying here: increase sophistication, not complexity. */
+      if (w < 720) return;
+      const cw = Math.min(w * 0.155, 200), ch = cw * 0.62;
       const ox = w - cw - 26, oy = h * 0.045;
+      const tp = mini.track;
+
       ctx.save();
       ctx.translate(ox, oy);
       ctx.scale(cw, ch);
-      ctx.strokeStyle = `rgba(${faint}, ${light ? 0.06 : 0.06})`;
-      ctx.lineWidth = 1.8 / cw;
-      ctx.stroke(new Path2D(CIRCUIT));
+      // brighter than the rest of layer 6, and brighter again on paper, where
+      // a 6% line over white is not a line
+      ctx.strokeStyle = light
+        ? `rgba(${faint}, ${0.2 * mini.settled})`
+        : `rgba(${faint}, ${0.155 * mini.settled})`;
+      ctx.lineWidth = 1.7 / cw;
+      ctx.lineJoin = "round";
+      ctx.stroke(tp.path());
       ctx.restore();
 
-      const pt = circuitPoint((race.t * 0.05) % 1);
-      ctx.fillStyle = light ? "rgba(190, 18, 60, .42)" : "rgba(255, 130, 100, .5)";
+      const [mx, my] = tp.at(mini.u);
+      const px = ox + mx * cw, py = oy + my * ch;
+      const glow = ctx.createRadialGradient(px, py, 0, px, py, 9);
+      glow.addColorStop(0, light ? "rgba(190,18,60,.34)" : "rgba(255,140,110,.42)");
+      glow.addColorStop(1, "transparent");
+      ctx.fillStyle = glow;
+      ctx.fillRect(px - 9, py - 9, 18, 18);
+      ctx.fillStyle = light ? "rgb(190, 18, 60)" : "rgb(255, 168, 140)";
       ctx.beginPath();
-      ctx.arc(ox + pt.x * cw, oy + pt.y * ch, 2, 0, Math.PI * 2);
+      ctx.arc(px, py, 2.4, 0, Math.PI * 2);
       ctx.fill();
     };
 
@@ -316,15 +372,17 @@ export function HeroField({ className }: { className?: string }) {
     let publish = 0;
     let lastIds = "";
     let roomLight = false;
+    let bloomAge = 9;
+    let bloomStale = true;
 
-    /* Thirty frames a second, on purpose.
-       Nothing in this scene moves quickly — the fastest thing on screen is a
-       data packet crossing in two seconds — and film has been telling stories
-       at twenty-four for a century. Halving the frame rate halves every cost
-       in the loop and is invisible at these speeds, which makes it the single
-       best trade available here. The simulation still advances on real elapsed
-       time, so the race does not run at half speed. */
-    const MIN_FRAME = 1000 / 31;
+    /* Every frame the display will give us.
+       Thirty-one was a defensible trade while the render cost forty
+       milliseconds. It is not defensible now: the lines are slow enough to
+       survive it, but a small bright packet crossing the screen is exactly the
+       kind of motion that shows every dropped frame, and it read as a
+       different, worse animation than the one behind it. The bloom chain made
+       the budget; the packets get to spend it. */
+    const MIN_FRAME = 1000 / 61;
 
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
@@ -332,12 +390,14 @@ export function HeroField({ className }: { className?: string }) {
       const dt = Math.min(0.06, (now - last) / 1000);
       last = now;
       const still = calm();
-      if (!still) race.step(dt);
+      if (!still) { race.step(dt); mini.step(dt); }
 
       const s = race.snapshot();
       for (let r = 0; r < s.order.length; r++) rankOf[s.order[r]] = r;
 
       const light = root.dataset.theme === "light";
+      const HAZE = light ? 0.34 : 0.95;
+      const BLOOM = light ? 0.26 : 0.8;
       const Y0 = laneY();
 
       if (++roomAge >= 3 || light !== roomLight) {
@@ -352,9 +412,18 @@ export function HeroField({ className }: { className?: string }) {
       ctx.drawImage(room, 0, 0, w, h);
       drawMarks(light);
 
-      lctx.setTransform(dpr * LOW, 0, 0, dpr * LOW, 0, 0);
-      lctx.clearRect(0, 0, w, h);
-      drawScene(lctx, light, false, s.order);
+      /* THE BLOOM SOURCE UPDATES AT HALF RATE.
+         It is a heavily blurred, quarter-resolution copy of a scene that moves
+         a few pixels a second. One frame of staleness in it is not perceivable
+         by any means — and rebuilding it every frame was a third of the frame
+         budget the packets needed in order to stop stepping. */
+      if (++bloomAge >= 2) {
+        bloomAge = 0;
+        lctx.setTransform(dpr * LOW, 0, 0, dpr * LOW, 0, 0);
+        lctx.clearRect(0, 0, w, h);
+        drawScene(lctx, light, false, s.order);
+        bloomStale = true;
+      }
 
       /* Two composites, not three, and the wide one reads off a bitmap a
          seventh of the size — a blur of a downsample is both cheaper and
@@ -365,26 +434,38 @@ export function HeroField({ className }: { className?: string }) {
          0.15x buffer is the same picture for a twentieth of the work, because
          the bilinear upscale afterwards is itself a smoothing operation. This
          is the difference between 23fps and the cap. */
-      if (canBlur) {
-        bctx.setTransform(1, 0, 0, 1, 0, 0);
-        bctx.clearRect(0, 0, blur.width, blur.height);
-        bctx.filter = "blur(3px)";
-        bctx.drawImage(low, 0, 0);
-        bctx.filter = "none";
+      if (canBlur && bloomStale) {
+        bloomStale = false;
 
+        /* Both bloom layers are combined HERE, in the quarter-size buffer,
+           rather than as two full-screen composites onto the canvas. Blending
+           a million pixels twice was five of the seven milliseconds this frame
+           costs; blending 190,000 twice and then compositing once is the same
+           image for a third of the price. The per-layer weights are folded in
+           as ratios of the strongest, since globalAlpha cannot exceed one. */
         mctx.setTransform(1, 0, 0, 1, 0, 0);
         mctx.clearRect(0, 0, mip.width, mip.height);
         mctx.filter = "blur(2.5px)";
         mctx.drawImage(low, 0, 0, mip.width, mip.height);
         mctx.filter = "none";
 
-        ctx.globalCompositeOperation = light ? "multiply" : "lighter";
-        ctx.globalAlpha = light ? 0.34 : 0.95;
-        ctx.drawImage(mip, 0, 0, w, h);          // volumetric haze
-        ctx.globalAlpha = light ? 0.26 : 0.8;
-        ctx.drawImage(blur, 0, 0, w, h);         // bloom
+        bctx.setTransform(1, 0, 0, 1, 0, 0);
+        bctx.clearRect(0, 0, blur.width, blur.height);
+        bctx.globalCompositeOperation = "source-over";
+        bctx.globalAlpha = BLOOM / HAZE;
+        bctx.filter = "blur(3px)";
+        bctx.drawImage(low, 0, 0, blur.width, blur.height);
+        bctx.filter = "none";
+        bctx.globalCompositeOperation = "lighter";
+        bctx.globalAlpha = 1;
+        bctx.drawImage(mip, 0, 0, blur.width, blur.height);
+        bctx.globalCompositeOperation = "source-over";
       }
-
+      if (canBlur) {
+        ctx.globalCompositeOperation = light ? "multiply" : "lighter";
+        ctx.globalAlpha = HAZE;
+        ctx.drawImage(blur, 0, 0, w, h);
+      }
       ctx.globalCompositeOperation = "source-over";
       ctx.globalAlpha = 1;
       drawScene(ctx, light, true, s.order);
@@ -402,8 +483,13 @@ export function HeroField({ className }: { className?: string }) {
         const x = uToX(u);
         const y = Y(race.posAt(a.driver, ageAt(x)));
         const age = race.t - a.born;
-        // in over 420ms, out over the last 1.4s of its run
-        const fade = Math.min(1, age / 0.42) * Math.min(1, (u - 0.52) / 0.09);
+        /* In over 400ms, out over the last third of its own life. Tying the
+           fade to `life` rather than to a screen position means a two-second
+           card and a four-second card breathe the same way — the only thing
+           that differs between them is how long they hold. */
+        const fade = Math.min(1, age / 0.4)
+          * Math.min(1, (1 - age / a.life) / 0.32)
+          * Math.min(1, (u - 0.5) / 0.06);
         el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`;
         el.style.opacity = String(Math.max(0, Math.min(1, fade)));
         // a card born near the live edge would hang off the page; it opens to
@@ -411,9 +497,10 @@ export function HeroField({ className }: { className?: string }) {
         el.dataset.flip = x > w - 210 ? "1" : "0";
       }
 
-      // five times a second is enough for the cluster to read as live and few
-      // enough that React is nowhere near the frame budget
-      if (now - publish > 180) { publish = now; setSnap(s); }
+      // eleven times a second. At five the gaps visibly stepped between
+      // values, which reads as a display refreshing rather than as a number
+      // changing — and React is still nowhere near the frame budget.
+      if (now - publish > 90) { publish = now; setSnap(s); }
     };
     raf = requestAnimationFrame(frame);
 
@@ -503,6 +590,12 @@ function Telemetry({ snap }: { snap: Snapshot }) {
             <span className="tele-pos tabular-nums">{i + 1}</span>
             <span className="tele-tick" style={{ background: `var(--d${d})` }} />
             <span className="tele-code">{DRIVERS[d].code}</span>
+            {/* an arrow for six seconds after a place changes, then nothing —
+                a permanent indicator would stop meaning "just now" */}
+            <span className={cx("tele-move", snap.moved[d] > 0 && "is-up",
+              snap.moved[d] < 0 && "is-down")}>
+              {snap.moved[d] > 0 ? "▲" : snap.moved[d] < 0 ? "▼" : ""}
+            </span>
             <span className="tele-gap tabular-nums">
               {i === 0 ? "LEADER" : `+${(snap.gap * i * 0.92).toFixed(3)}`}
             </span>
@@ -533,22 +626,6 @@ function Telemetry({ snap }: { snap: Snapshot }) {
       </div>
     </div>
   );
-}
-
-/* -------------------------------------------------------------------------- */
-/** Sampled once from the same path the background draws, so they cannot drift. */
-function circuitPoint(u: number): { x: number; y: number } {
-  // a cheap arc-length-free parameterisation is fine at 6% opacity and 2px
-  const segs = [
-    [0.10, 0.62, 0.34, 0.18], [0.34, 0.18, 0.64, 0.44],
-    [0.64, 0.44, 0.94, 0.30], [0.94, 0.30, 0.84, 0.70],
-    [0.84, 0.70, 0.46, 0.66], [0.46, 0.66, 0.10, 0.62],
-  ];
-  const k = u * segs.length;
-  const i = Math.min(segs.length - 1, Math.floor(k));
-  const f = k - i;
-  const [x0, y0, x1, y1] = segs[i];
-  return { x: x0 + (x1 - x0) * f, y: y0 + (y1 - y0) * f };
 }
 
 export { N as HERO_LANES };
