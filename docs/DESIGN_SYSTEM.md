@@ -1225,3 +1225,119 @@ clock.
 The same reasoning governs the callouts: one card at a time, two to four seconds
 of life against a beat every five to nine. The clean state is the common one,
 which is what makes a card land when it does arrive.
+
+---
+
+## Simulate the cause, not the effect
+
+V56's director decided "there is an overtake now" and moved two cars past each
+other. That is a puppet show: convincing for one beat, and structurally unable
+to produce the thing that actually makes a race worth watching — a midfield
+fight that forms, holds, and eventually resolves.
+
+Every car now carries a **pace**, in seconds per lap, and a **gap**, in seconds
+behind the leader. The gap integrates the pace difference; positions are read
+off the gaps. An overtake is therefore not an event that gets staged, it is what
+it looks like when one car's gap crosses another's.
+
+Everything else falls out of that for free:
+
+- a leader in clean air pulls away, because clean air is worth 0.05s a lap;
+- a car within a second gets DRS *and* dirty air at once, so it closes and then
+  struggles — which is a battle, and battles last until the pace underneath
+  them changes;
+- tyre age costs time, and the compound decides how fast;
+- a pit stop is twenty seconds added to a gap.
+
+The director's job shrinks to what a commentator's actually is: **noticing what
+the race did and saying so.** It checks for a real closing gap before it reaches
+for a canned reading, and the OVERTAKE card is emitted by the rank-change
+detector rather than by whatever decided to move the cars.
+
+> Simulating the cause is usually less code than faking the effect, and it is
+> the only version that can surprise you.
+
+### A pit stop is not a teleport
+
+Adding twenty seconds to a gap in one frame puts a vertical line through the
+picture — the same step discontinuity that made overtakes kink in V56, arriving
+by a different route. The loss is banked and paid out over about three seconds.
+The rule generalises: **any quantity the renderer reads must be continuous in
+time**, no matter how discrete the event that caused it.
+
+### Position, gap, and why the lane is a blend
+
+Lane position is `0.55 · rank + 0.45 · gap/span`, plus a small per-car breath.
+
+Pure gap looks correct and reads badly — real gaps cluster at the front, so six
+cars pile into the top third and one straggler holds two-thirds of the frame
+empty. Pure rank spaces evenly and throws away every compression and escape,
+which is the entire point of the model. The rank is eased rather than integer,
+because an integer rank would step the lane every time two cars swapped.
+
+---
+
+## Reordering is information
+
+A timing panel that re-renders its rows in the new order is an HTML table. On a
+real feed you *watch* one row rise past another, and that movement is the
+information — replacing it with an instant swap throws it away.
+
+`HeroTiming` uses FLIP: read every row's offset before React commits, let React
+reorder, transform each row back to where it was, then release on the house
+curve. The browser animates a transform on the compositor, so a reorder costs no
+layout at all — which is why it can run at 11Hz beside a canvas without touching
+the frame budget.
+
+---
+
+## An instrument, not a caption
+
+A label and a number is a tooltip. What a pit wall shows is a small instrument:
+the reading, and the shape the reading came from. Every event card carries a
+visualisation, and which one is a property of the event rather than a decoration:
+
+| viz | what it means |
+|---|---|
+| `spark` | a lap-time trace — anything about pace |
+| `bars` | a per-sector breakdown |
+| `wave` | a continuously sampled signal |
+| `gauge` | anything with a percentage |
+| `pulse` | a state, not a number |
+| `scan` | the system doing work |
+
+All six are about thirty pixels wide. They are not there to be read.
+
+**Population, not cadence.** One to three cards live at once, on different cars,
+with independent lifetimes — beats every 1.9–4.3s against cards that hold
+3.5–5.5s. Measured over 88 samples the histogram is 0/1/2/3 = 7/47/30/4, which
+is the shape a real feed has: usually one thing, sometimes three, occasionally
+nothing at all. A fixed cadence with a fixed duration is a metronome, and a
+metronome is the one thing "alive" is not.
+
+---
+
+## The broadcast ends and another begins
+
+A single endless race is a loop with extra steps. Races now have realistic
+lengths (52–71 laps), and when one finishes the whole field fades, a different
+seven drivers are drawn from a pool of twelve, and a new race starts with a new
+circuit, a new lap count, new weather and new gaps. The canvas fades with the
+panel, so the changeover is one event rather than two.
+
+---
+
+## Acknowledging the cursor without announcing it
+
+Lines lean toward the pointer and a little extra light gathers under it. Both
+ease in and decay to nothing when the pointer leaves, so a quick movement leaves
+a wake rather than a jump.
+
+The falloff has to be **smooth in both axes**, which the obvious formula is not:
+`sign(dy) · (1 − |dy|/reach)` flips sign the instant a line crosses the cursor's
+height and puts a V-shaped notch in it — the same defect V56 spent its budget
+removing, through a new door. The attraction is `u · e^(−u²)`: odd, C-infinity,
+zero at the cursor's own height and zero far from it, with its maximum in
+between. There is no value of `dy` at which anything can form a corner.
+
+It is an animation, so `prefers-reduced-motion` gets none of it.

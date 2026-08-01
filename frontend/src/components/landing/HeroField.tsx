@@ -2,10 +2,12 @@
 import { useEffect, useRef, useState } from "react";
 import { cx } from "@/lib/format";
 import {
-  DRIVERS, HISTORY_S, N, RaceEngine,
+  HISTORY_S, N, POOL, RaceEngine,
   type Annotation, type Snapshot,
 } from "@/lib/raceEngine";
 import { MiniTrack } from "@/lib/miniTrack";
+import { HeroTiming } from "./HeroTiming";
+import { HeroCard } from "./HeroCard";
 
 /* -------------------------------------------------------------------------- */
 /* The hero.                                                                  */
@@ -40,6 +42,17 @@ import { MiniTrack } from "@/lib/miniTrack";
 const FIELD_H = 0.78;   // share of the canvas height the running order occupies
 const FIELD_C = 0.50;   // where its centre sits
 const NOW_U = 0.955;    // the live edge, as a fraction of the width
+
+/** Rounded rect, because canvas still does not have one everywhere. */
+function roundRect(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+}
 
 export function HeroField({ className }: { className?: string }) {
   const wrap = useRef<HTMLDivElement | null>(null);
@@ -125,6 +138,29 @@ export function HeroField({ className }: { className?: string }) {
     const ro = new ResizeObserver(resize);
     ro.observe(host);
 
+    /* ---- the cursor -------------------------------------------------------
+       The hero acknowledges the reader and never announces that it has. A
+       pointer near a line lifts it by a few pixels — an attraction that falls
+       off over about a fifth of the width — and gathers a little extra light
+       around itself. Both are eased toward, never snapped to, so moving the
+       mouse quickly produces a wake rather than a jump; and `strength` decays
+       to zero the moment the pointer leaves, so nothing is left held open.
+
+       Pointer events are on the SECTION, not on this element: the field is
+       pointer-events:none by design, because the buttons drawn over it have to
+       stay clickable. */
+    let mx = -1, my = -1, mStrength = 0, mWant = 0;
+    const track = (e: PointerEvent) => {
+      const r = host.getBoundingClientRect();
+      mx = e.clientX - r.left;
+      my = e.clientY - r.top;
+      mWant = 1;
+    };
+    const leave = () => { mWant = 0; };
+    const surface = host.parentElement ?? host;
+    surface.addEventListener("pointermove", track, { passive: true });
+    surface.addEventListener("pointerleave", leave, { passive: true });
+
     /* ---- geometry --------------------------------------------------------- */
     const laneY = () => {
       const span = h * FIELD_H * race.spread;
@@ -135,12 +171,35 @@ export function HeroField({ className }: { className?: string }) {
     const ageAt = (x: number) => Math.max(0, (1 - x / w) * HISTORY_S);
     const uToX = (u: number) => u * w;
 
+    /* How much a line at (x, y) leans toward the pointer.
+       The falloff has to be SMOOTH IN BOTH AXES, which the obvious formula is
+       not: `sign(dy) * (1 - |dy|/reach)` flips sign the instant a line crosses
+       the cursor's height and puts a V-shaped notch in it — the same class of
+       defect V56 spent its whole budget removing, arriving through a new door.
+
+       `u · e^(−u²)` is odd, C-infinity, zero at the cursor's own height and
+       zero far from it, with its maximum in between. So a line leans toward
+       the pointer, straightens as it reaches it, and is untouched beyond —
+       and there is no value of dy at which anything can form a corner. */
+    const PULL_X = () => w * 0.19;
+    const REACH = 210;
+    const bend = (x: number, y: number) => {
+      if (mStrength < 0.01) return 0;
+      const dx = (x - mx) / PULL_X();
+      if (dx < -2.6 || dx > 2.6) return 0;
+      const u = (y - my) / REACH;
+      if (u < -3 || u > 3) return 0;
+      // 0.4289 is the peak of u·e^(−u²); dividing by it makes 26 the real
+      // maximum displacement in pixels
+      return -u * Math.exp(-u * u) / 0.4289 * Math.exp(-dx * dx) * 13 * mStrength;
+    };
+
     /* CURVES, NOT SEGMENTS.
        Sampling every 7px and joining with lineTo draws a polygon, and wherever
        the field turned quickly the polygon showed — a visible corner at every
        sample. A Catmull-Rom spline converted to cubic beziers is C1 continuous
        by construction: no join anywhere can form an angle, whatever the data
-       does. It is also cheaper, because 16px samples through a curve read
+       does. It is also cheaper, because 18px samples through a curve read
        smoother than 7px samples through straight lines. */
     const SAMPLE = 18;
     const xs: number[] = [];
@@ -211,7 +270,7 @@ export function HeroField({ className }: { className?: string }) {
       };
 
       for (let d = N - 1; d >= 0; d--) {
-        const colour = light ? DRIVERS[d].light : DRIVERS[d].dark;
+        const colour = light ? POOL[race.cars[d].ref].light : POOL[race.cars[d].ref].dark;
         // The front of the race is the subject. Weight and brightness fall off
         // down the order so the eye is told where to look, instead of being
         // handed seven equal lines and left to choose.
@@ -223,11 +282,15 @@ export function HeroField({ className }: { className?: string }) {
            third of the composition simply emptied out. A car the reader cannot
            see is not a subtle car, it is a missing one. */
         const width = (crisp ? 1 : 1.4) * (1.7 + lead * 1.7);
-        const alpha = light ? 0.7 + lead * 0.3 : 0.46 + lead * 0.5;
+        /* `alive` dips to zero across a race changeover, so the whole field
+           dims out and the next race arrives rather than replacing this one
+           between two frames. */
+        const alpha = (light ? 0.7 + lead * 0.3 : 0.46 + lead * 0.5)
+          * (0.12 + 0.88 * race.alive);
 
         // the blurred pass is sampled half as finely; nothing survives the blur
-        spline(c, (x) => Y(race.posAt(d, ageAt(x))), -SAMPLE, w + SAMPLE * 2,
-          crisp ? SAMPLE : SAMPLE * 2);
+        spline(c, (x) => { const y = Y(race.posAt(d, ageAt(x))); return y + bend(x, y); },
+          -SAMPLE, w + SAMPLE * 2, crisp ? SAMPLE : SAMPLE * 2);
         c.strokeStyle = crisp ? focused(colour, 0.30, 0.66) : colour;
         c.globalAlpha = alpha;
         c.lineWidth = width;
@@ -246,7 +309,7 @@ export function HeroField({ className }: { className?: string }) {
       /* packets. Travelling toward the live edge, because that is the        */
       /* direction information moves in this picture: toward being analysed.  */
       for (const p of race.pulses) {
-        const colour = light ? DRIVERS[p.driver].light : DRIVERS[p.driver].dark;
+        const colour = light ? POOL[race.cars[p.car].ref].light : POOL[race.cars[p.car].ref].dark;
         const x0 = uToX(p.u);
         const tail = w * 0.055;
         const g = c.createLinearGradient(x0 - tail, 0, x0 + 6, 0);
@@ -260,7 +323,7 @@ export function HeroField({ className }: { className?: string }) {
            first cut built a full-screen spline per packet per pass — six extra
            curves a frame for a highlight forty pixels long, which halved the
            frame rate the packets were supposed to be spending. */
-        spline(c, (x) => Y(race.posAt(p.driver, ageAt(x))),
+        spline(c, (x) => { const y = Y(race.posAt(p.car, ageAt(x))); return y + bend(x, y); },
           Math.max(-SAMPLE, x0 - tail), Math.min(w + SAMPLE, x0 + 6));
         c.stroke();
       }
@@ -272,7 +335,7 @@ export function HeroField({ className }: { className?: string }) {
         const d = ord[r];
         const y = Y(race.posAt(d, ageAt(nx)));
         c.globalAlpha = (light ? 0.75 : 0.95) * (1 - r / (N + 2));
-        c.fillStyle = light ? DRIVERS[d].light : DRIVERS[d].dark;
+        c.fillStyle = light ? POOL[race.cars[d].ref].light : POOL[race.cars[d].ref].dark;
         c.beginPath();
         c.arc(nx, y, crisp ? 2.1 : 2.8, 0, Math.PI * 2);
         c.fill();
@@ -300,12 +363,17 @@ export function HeroField({ className }: { className?: string }) {
       lamp(w * 0.72, leadY, Math.max(w, h) * 0.58, "255, 92, 62", 0.15 * k);
       lamp(w * 0.32, h * 0.28, Math.max(w, h) * 0.5, "0, 186, 220", 0.1 * k);
       lamp(w * 0.92, h * 0.84, Math.max(w, h) * 0.42, "255, 168, 44", 0.075 * k);
+      // and a little more light wherever the reader is looking
+      if (mStrength > 0.01 && mx > 0) {
+        lamp(mx, my, Math.max(w, h) * 0.2, light ? "120, 140, 190" : "255, 190, 170",
+          0.09 * k * mStrength);
+      }
     };
 
     /* Layer 6 — background intelligence. A handful of sharp strokes, so these
        stay on the main canvas where they can hold a hairline. Everything here
        is between 3% and 9%: the reader should find it on a second visit. */
-    const drawMarks = (light: boolean) => {
+    const drawMarks = (light: boolean, s: Snapshot) => {
       const faint = light ? "15, 23, 42" : "255, 255, 255";
       ctx.lineWidth = 1;
 
@@ -327,43 +395,93 @@ export function HeroField({ className }: { className?: string }) {
       }
       ctx.stroke();
 
-      /* The minimap. One source of truth: the marker is placed on the same
-         curve that is stroked, by arc length, so it cannot leave the road and
-         cannot surge through corners. The road itself bends into a different
-         circuit at the end of every lap.
+      /* THE RACE TRACKER.
+         A circuit and one dot was a decoration that filled a corner. This is
+         the same race the lines are: every car's place around the lap comes
+         from its gap to the leader, so the dots really are in the running
+         order and really do close up and pass each other. One source of truth
+         throughout — the marker is placed on the same curve that is stroked,
+         by arc length, so it can neither leave the road nor surge through a
+         corner.
 
          Not on a phone. At 390px it is sixty pixels wide, which is a smudge
-         rather than a circuit — and the brief's last instruction is the one
-         worth obeying here: increase sophistication, not complexity. */
+         rather than a circuit, and the brief's last instruction is the one
+         worth obeying: sophistication, not complexity. */
       if (w < 720) return;
-      const cw = Math.min(w * 0.155, 200), ch = cw * 0.62;
-      const ox = w - cw - 26, oy = h * 0.045;
+      const cw = Math.min(w * 0.185, 236), ch = cw * 0.62;
+      const ox = w - cw - 30, oy = h * 0.055;
       const tp = mini.track;
+
+      // a pane of glass to sit it on, so it reads as an instrument
+      const pad = 13;
+      ctx.save();
+      roundRect(ctx, ox - pad, oy - pad - 13, cw + pad * 2, ch + pad * 2 + 13, 11);
+      ctx.fillStyle = light ? "rgba(255,255,255,.6)" : "rgba(14,18,28,.42)";
+      ctx.fill();
+      ctx.strokeStyle = `rgba(${faint}, ${light ? 0.1 : 0.07})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.clip();
+
+      // the name of the circuit, which is the one label the widget earns
+      ctx.font = "600 8px ui-monospace, monospace";
+      ctx.fillStyle = `rgba(${faint}, ${light ? 0.55 : 0.4})`;
+      ctx.letterSpacing = "1.4px";
+      ctx.fillText(mini.name, ox - pad + 11, oy - pad - 1);
+      ctx.letterSpacing = "0px";
 
       ctx.save();
       ctx.translate(ox, oy);
       ctx.scale(cw, ch);
-      // brighter than the rest of layer 6, and brighter again on paper, where
-      // a 6% line over white is not a line
+      const road = tp.path();
+      // a soft bed under the road, then the road: two strokes read as depth
       ctx.strokeStyle = light
-        ? `rgba(${faint}, ${0.2 * mini.settled})`
-        : `rgba(${faint}, ${0.155 * mini.settled})`;
-      ctx.lineWidth = 1.7 / cw;
+        ? `rgba(${faint}, ${0.09 * mini.settled})`
+        : `rgba(${faint}, ${0.1 * mini.settled})`;
+      ctx.lineWidth = 5.5 / cw;
       ctx.lineJoin = "round";
-      ctx.stroke(tp.path());
+      ctx.stroke(road);
+      ctx.strokeStyle = light
+        ? `rgba(${faint}, ${0.34 * mini.settled})`
+        : `rgba(${faint}, ${0.26 * mini.settled})`;
+      ctx.lineWidth = 1.5 / cw;
+      ctx.stroke(road);
       ctx.restore();
 
-      const [mx, my] = tp.at(mini.u);
-      const px = ox + mx * cw, py = oy + my * ch;
-      const glow = ctx.createRadialGradient(px, py, 0, px, py, 9);
-      glow.addColorStop(0, light ? "rgba(190,18,60,.34)" : "rgba(255,140,110,.42)");
-      glow.addColorStop(1, "transparent");
-      ctx.fillStyle = glow;
-      ctx.fillRect(px - 9, py - 9, 18, 18);
-      ctx.fillStyle = light ? "rgb(190, 18, 60)" : "rgb(255, 168, 140)";
-      ctx.beginPath();
-      ctx.arc(px, py, 2.4, 0, Math.PI * 2);
-      ctx.fill();
+      /* the field, in running order. Drawn back to front so the leader's glow
+         sits on top of the car it is lapping rather than under it. */
+      for (let r = s.order.length - 1; r >= 0; r--) {
+        const ci = s.order[r];
+        const [mx, my] = tp.at(race.cars[ci].trackU);
+        const px = ox + mx * cw, py = oy + my * ch;
+        const colour = light ? POOL[race.cars[ci].ref].light : POOL[race.cars[ci].ref].dark;
+        const lead = 1 - r / (N - 1);
+
+        const g = ctx.createRadialGradient(px, py, 0, px, py, 7 + lead * 3);
+        g.addColorStop(0, colour);
+        g.addColorStop(1, "transparent");
+        ctx.globalAlpha = light ? 0.16 + lead * 0.1 : 0.24 + lead * 0.16;
+        ctx.fillStyle = g;
+        ctx.fillRect(px - 10, py - 10, 20, 20);
+
+        ctx.globalAlpha = light ? 0.85 : 0.95;
+        ctx.fillStyle = colour;
+        ctx.beginPath();
+        ctx.arc(px, py, 1.7 + lead * 0.9, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      // the status light, when the race is under anything but green
+      if (s.status !== "GREEN") {
+        const tint = s.status === "SAFETY CAR" ? "255,176,32"
+          : s.status === "VSC" ? "255,208,64" : "255,196,0";
+        const beat = 0.55 + 0.45 * Math.sin(race.t * 5);
+        ctx.fillStyle = `rgba(${tint}, ${0.25 + beat * 0.5})`;
+        roundRect(ctx, ox + cw - 26, oy - pad - 9, 26, 11, 3);
+        ctx.fill();
+      }
+      ctx.restore();
     };
 
     /* ---- the frame -------------------------------------------------------- */
@@ -391,6 +509,9 @@ export function HeroField({ className }: { className?: string }) {
       last = now;
       const still = calm();
       if (!still) { race.step(dt); mini.step(dt); }
+      // the bend is an animation, so a reader who asked for less gets none
+      const want = still ? 0 : mWant;
+      mStrength += (want - mStrength) * Math.min(1, dt * (want ? 3.4 : 5));
 
       const s = race.snapshot();
       for (let r = 0; r < s.order.length; r++) rankOf[s.order[r]] = r;
@@ -400,9 +521,9 @@ export function HeroField({ className }: { className?: string }) {
       const BLOOM = light ? 0.26 : 0.8;
       const Y0 = laneY();
 
-      if (++roomAge >= 3 || light !== roomLight) {
+      if (++roomAge >= (mStrength > 0.01 ? 1 : 3) || light !== roomLight) {
         roomAge = 0; roomLight = light;
-        paintRoom(light, Y0(race.posAt(s.leader, 0)));
+        paintRoom(light, Y0(race.posAt(s.order[0], 0)));
       }
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -410,7 +531,7 @@ export function HeroField({ className }: { className?: string }) {
       ctx.globalCompositeOperation = "source-over";
       ctx.globalAlpha = 1;
       ctx.drawImage(room, 0, 0, w, h);
-      drawMarks(light);
+      drawMarks(light, s);
 
       /* THE BLOOM SOURCE UPDATES AT HALF RATE.
          It is a heavily blurred, quarter-resolution copy of a scene that moves
@@ -481,7 +602,7 @@ export function HeroField({ className }: { className?: string }) {
         if (!el) continue;
         const u = race.annotationU(a);
         const x = uToX(u);
-        const y = Y(race.posAt(a.driver, ageAt(x)));
+        const y = Y(race.posAt(a.car, ageAt(x)));
         const age = race.t - a.born;
         /* In over 400ms, out over the last third of its own life. Tying the
            fade to `life` rather than to a screen position means a two-second
@@ -489,12 +610,15 @@ export function HeroField({ className }: { className?: string }) {
            that differs between them is how long they hold. */
         const fade = Math.min(1, age / 0.4)
           * Math.min(1, (1 - age / a.life) / 0.32)
-          * Math.min(1, (u - 0.5) / 0.06);
+          * Math.min(1, (u - 0.4) / 0.05);
         el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`;
         el.style.opacity = String(Math.max(0, Math.min(1, fade)));
         // a card born near the live edge would hang off the page; it opens to
         // the left instead, and keeps its stem on the point it describes
-        el.dataset.flip = x > w - 210 ? "1" : "0";
+        /* The tracker and the timing panel own the right-hand quarter. Cards
+           are born to the left of both and open leftward once they are wide
+           enough to reach — so the three never negotiate for the same pixels. */
+        el.dataset.flip = x > w - 480 ? "1" : "0";
       }
 
       // eleven times a second. At five the gaps visibly stepped between
@@ -504,7 +628,12 @@ export function HeroField({ className }: { className?: string }) {
     };
     raf = requestAnimationFrame(frame);
 
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      surface.removeEventListener("pointermove", track);
+      surface.removeEventListener("pointerleave", leave);
+    };
   }, []);
 
   return (
@@ -526,104 +655,15 @@ export function HeroField({ className }: { className?: string }) {
           the history leftward and retire long before they reach the headline. */}
       <div className="absolute inset-0 hidden md:block">
         {cards.map((a) => (
-          <div key={a.id} className="ann absolute left-0 top-0 opacity-0"
+          <HeroCard key={a.id} a={a}
             ref={(el) => {
               if (el) cardRefs.current.set(a.id, el);
               else cardRefs.current.delete(a.id);
-            }}>
-            <span className="ann-stem" />
-            <span className="ann-anchor" style={{ background: `var(--d${a.driver})` }} />
-            <span className="ann-card">
-              <span className="ann-head">
-                <span className="ann-dot" style={{ background: `var(--d${a.driver})` }} />
-                {a.label}
-              </span>
-              {a.value && <span className="ann-value">{a.value}</span>}
-              {a.spark && <Spark points={a.spark} driver={a.driver} />}
-            </span>
-          </div>
+            }} />
         ))}
       </div>
 
-      {snap && <Telemetry snap={snap} />}
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/** Layer 4. Authentic enough to believe, small enough not to invite study. */
-function Spark({ points, driver }: { points: number[]; driver: number }) {
-  const d = points
-    .map((v, i) => `${(i / (points.length - 1)) * 46} ${14 - v * 12}`)
-    .map((p, i) => (i ? `L ${p}` : `M ${p}`))
-    .join(" ");
-  return (
-    <svg width="46" height="14" viewBox="0 0 46 14" fill="none" className="ann-spark">
-      <path d={d} stroke={`var(--d${driver})`} strokeWidth="1.2" strokeLinecap="round"
-        strokeLinejoin="round" opacity="0.85" />
-    </svg>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/**
- * The instrument cluster.
- *
- * Deliberately at the threshold of readability. Its job is not to inform — the
- * product does that on the pages behind this one — it is to make the claim that
- * something is being measured continuously, and a number that never moves makes
- * the opposite claim. Everything here is a real value from the simulation, so
- * the gap really is the gap between the first two lines on screen.
- */
-function Telemetry({ snap }: { snap: Snapshot }) {
-  return (
-    <div className="tele absolute bottom-14 right-8 hidden w-[248px] lg:block">
-      <div className="tele-row tele-head">
-        <span className={cx("tele-flag", snap.status !== "GREEN" && "tele-flag-on")} />
-        {snap.status}
-        <span className="ml-auto tabular-nums opacity-70">LAP {snap.lap}</span>
-      </div>
-
-      <div className="tele-body">
-        {snap.order.slice(0, 4).map((d, i) => (
-          <div key={d} className="tele-line">
-            <span className="tele-pos tabular-nums">{i + 1}</span>
-            <span className="tele-tick" style={{ background: `var(--d${d})` }} />
-            <span className="tele-code">{DRIVERS[d].code}</span>
-            {/* an arrow for six seconds after a place changes, then nothing —
-                a permanent indicator would stop meaning "just now" */}
-            <span className={cx("tele-move", snap.moved[d] > 0 && "is-up",
-              snap.moved[d] < 0 && "is-down")}>
-              {snap.moved[d] > 0 ? "▲" : snap.moved[d] < 0 ? "▼" : ""}
-            </span>
-            <span className="tele-gap tabular-nums">
-              {i === 0 ? "LEADER" : `+${(snap.gap * i * 0.92).toFixed(3)}`}
-            </span>
-          </div>
-        ))}
-
-        <div className="tele-split" />
-
-        <div className="tele-line">
-          <span className="tele-key">ERS</span>
-          <span className="tele-bar"><i style={{ width: `${snap.ers * 100}%` }} /></span>
-          <span className="tele-gap tabular-nums">{Math.round(snap.ers * 100)}%</span>
-        </div>
-        <div className="tele-line">
-          <span className="tele-key">DEG</span>
-          <span className="tele-bar"><i className="tele-bar-warm" style={{ width: `${snap.deg * 145}%` }} /></span>
-          <span className="tele-gap tabular-nums">{snap.deg.toFixed(2)}</span>
-        </div>
-        <div className="tele-line">
-          <span className="tele-key">TRK</span>
-          <span className="tele-sectors">
-            {snap.sectors.map((s, i) => (
-              <i key={i} className={s < 0 ? "is-up" : ""}>{s < 0 ? "▲" : "▼"}</i>
-            ))}
-          </span>
-          <span className="tele-gap tabular-nums">{snap.trackTemp.toFixed(1)}°C</span>
-        </div>
-      </div>
+      {snap && <HeroTiming snap={snap} />}
     </div>
   );
 }

@@ -665,15 +665,19 @@ html.theme-sweep::view-transition-new(root) {
    over it: the DOM half of the hero, where type has to be crisp.
    --------------------------------------------------------------------------- */
 
-/* The seven cars, as variables, so the canvas and the DOM cannot disagree about
-   what colour a driver is. Deeper on paper — see the note on the two recipes. */
+/* The whole paddock, as variables, so the canvas and the DOM cannot disagree
+   about what colour a driver is. Indices match POOL in lib/raceEngine.ts — any
+   seven of these twelve can be on track at once, and a new race fields a
+   different seven. Deeper on paper: see the note on the two light recipes. */
 :root {
-  --d0: #ff8b1f; --d1: #4f8ce0; --d2: #ff4d5e; --d3: #27f4d2;
-  --d4: #3fd18b; --d5: #57b6ff; --d6: #b79bff;
+  --d0: #ff8b1f; --d1: #ffab5e; --d2: #4f8ce0; --d3: #7fb0ee;
+  --d4: #ff4d5e; --d5: #ff7b88; --d6: #27f4d2; --d7: #7af6e2;
+  --d8: #3fd18b; --d9: #57b6ff; --d10: #b79bff; --d11: #c9cede;
 }
 :root[data-theme="light"] {
-  --d0: #c2410c; --d1: #1d4ed8; --d2: #be123c; --d3: #0f766e;
-  --d4: #15803d; --d5: #0369a1; --d6: #6d28d9;
+  --d0: #c2410c; --d1: #9a3412; --d2: #1d4ed8; --d3: #1e40af;
+  --d4: #be123c; --d5: #9f1239; --d6: #0f766e; --d7: #115e59;
+  --d8: #15803d; --d9: #0369a1; --d10: #6d28d9; --d11: #475569;
 }
 
 /* Film, as composited layers rather than as per-frame canvas work. The grain
@@ -721,6 +725,7 @@ html.theme-sweep::view-transition-new(root) {
   background: linear-gradient(to top, rgb(var(--tint) / .38), rgb(var(--tint) / .10));
 }
 .ann[data-flip="1"] .ann-card { left: auto; right: -10px; }
+
 .ann-card {
   position: absolute;
   bottom: 30px; left: -10px;
@@ -760,33 +765,35 @@ html.theme-sweep::view-transition-new(root) {
 }
 .ann-spark { opacity: .9; }
 
-/* ---- Layer 4: the instrument cluster --------------------------------------
+/* ---- Live timing ----------------------------------------------------------
    Held just at the threshold of readability on purpose. It is not there to be
    read; it is there so the claim "something is being measured continuously"
-   has evidence behind it. Every value in it is real simulation state. */
+   has evidence behind it. Every value in it is real simulation state, and the
+   rows reorder by FLIP rather than by re-render — see HeroTiming.tsx. */
 .tele {
   font-family: var(--font-mono);
-  border-radius: 12px;
+  border-radius: 13px;
   border: 1px solid rgb(var(--tint) / .08);
-  background: rgb(var(--base-900) / .5);
+  background: rgb(var(--base-900) / .52);
   backdrop-filter: blur(14px) saturate(120%);
   -webkit-backdrop-filter: blur(14px) saturate(120%);
   box-shadow: var(--el-2);
   overflow: hidden;
+  transition: opacity var(--dur-4) var(--ease-out);
   animation: tele-in 1.4s var(--ease-out) .8s both;
 }
 @keyframes tele-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
-.tele-row, .tele-line {
+.tele-row, .tele-line, .tele-foot {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   font-size: 9.5px;
-  letter-spacing: .12em;
+  letter-spacing: .1em;
   color: rgb(var(--ink-faint));
 }
 .tele-head {
-  padding: 7px 10px;
+  padding: 7px 11px;
   font-weight: 700;
   border-bottom: 1px solid rgb(var(--tint) / .07);
   background: rgb(var(--tint) / .02);
@@ -804,71 +811,117 @@ html.theme-sweep::view-transition-new(root) {
 }
 @keyframes tele-pulse { 50% { box-shadow: 0 0 0 6px rgb(var(--amber) / .05); } }
 
-.tele-body { padding: 7px 10px 9px; display: grid; gap: 4px; }
-.tele-pos { width: 8px; color: rgb(var(--ink-faint)); }
-.tele-tick { width: 2px; height: 9px; border-radius: 1px; }
-.tele-code { font-weight: 700; color: rgb(var(--ink-muted)); letter-spacing: .08em; }
+.tele-body { padding: 6px 11px 7px; display: flex; flex-direction: column; gap: 3px; }
+.tele-line { position: relative; height: 15px; will-change: transform; }
+/* a sector flash washes the row it belongs to, then leaves */
+.tele-line.is-purple::before, .tele-line.is-green::before {
+  content: ""; position: absolute; inset: -1px -6px; border-radius: 4px;
+  animation: tele-flash 3.2s var(--ease-out) forwards;
+}
+.tele-line.is-purple::before { background: rgb(167 139 250 / .3); }
+.tele-line.is-green::before { background: rgb(52 211 153 / .26); }
+@keyframes tele-flash { from { opacity: 1; } to { opacity: 0; } }
+
+.tele-pos { width: 7px; color: rgb(var(--ink-faint)); }
+.tele-tick { width: 2px; height: 9px; border-radius: 1px; flex: none; }
+.tele-code { font-weight: 700; color: rgb(var(--ink-muted)); letter-spacing: .06em; }
 .tele-gap { margin-left: auto; color: rgb(var(--ink-faint)); font-size: 9px; }
 .tele-key { width: 20px; font-weight: 700; }
 .tele-move {
-  width: 7px;
-  font-size: 6.5px;
-  line-height: 1;
-  color: transparent;
+  width: 6px; font-size: 6px; line-height: 1; color: transparent;
   animation: tele-move-in var(--dur-3) var(--ease-out);
 }
 .tele-move.is-up { color: rgb(52 211 153); }
 .tele-move.is-down { color: rgb(var(--accent-soft)); }
 @keyframes tele-move-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
-.tele-split { height: 1px; background: rgb(var(--tint) / .07); margin: 4px 0 3px; }
 
+/* compound, age, DRS — the three things a strategist reads before the gap */
+.tele-tyre {
+  width: 11px; height: 11px; flex: none;
+  display: grid; place-items: center;
+  border: 1px solid; border-radius: 999px;
+  font-size: 6.5px; font-weight: 700;
+}
+.tele-age { width: 10px; font-size: 8px; opacity: .7; }
+.tele-drs {
+  font-size: 6.5px; font-weight: 700; letter-spacing: .06em;
+  padding: 1px 3px; border-radius: 3px;
+  color: transparent; background: transparent;
+  transition: color var(--dur-2) var(--ease-out), background-color var(--dur-2) var(--ease-out);
+}
+.tele-drs.is-on { color: rgb(var(--base-950)); background: rgb(52 211 153 / .9); }
+.tele-form { flex: none; opacity: .8; }
+
+.tele-foot {
+  padding: 6px 11px 7px;
+  border-top: 1px solid rgb(var(--tint) / .07);
+  font-size: 8.5px;
+}
+.tele-sep { width: 1px; height: 8px; background: rgb(var(--tint) / .12); }
 .tele-bar {
-  position: relative;
-  flex: 1;
-  height: 3px;
-  border-radius: 999px;
-  background: rgb(var(--tint) / .07);
-  overflow: hidden;
+  position: relative; flex: 1; height: 3px; border-radius: 999px;
+  background: rgb(var(--tint) / .07); overflow: hidden;
 }
 .tele-bar > i {
-  position: absolute; inset: 0 auto 0 0;
-  border-radius: 999px;
+  position: absolute; inset: 0 auto 0 0; border-radius: 999px;
   background: linear-gradient(90deg, rgb(var(--speed) / .5), rgb(var(--speed)));
   transition: width 220ms var(--ease-out);
 }
-.tele-bar > i.tele-bar-warm {
-  background: linear-gradient(90deg, rgb(var(--amber) / .5), rgb(var(--amber)));
+
+/* ---- the card's instruments ---------------------------------------------- */
+.ann-spark { opacity: .9; flex: none; }
+.ann-gauge {
+  stroke-dashoffset: 26;
+  animation: ann-gauge 2.4s var(--ease-out) infinite alternate;
 }
-.tele-sectors { display: inline-flex; gap: 5px; font-size: 7px; }
-.tele-sectors > i { color: rgb(var(--ink-faint)); font-style: normal; }
-.tele-sectors > i.is-up { color: rgb(var(--speed)); }
+@keyframes ann-gauge { from { stroke-dashoffset: 30; } to { stroke-dashoffset: 9; } }
+.ann-ring {
+  width: 8px; height: 8px; border-radius: 999px; flex: none;
+  animation: ann-ring 1.5s var(--ease-in-out) infinite;
+}
+@keyframes ann-ring {
+  0%, 100% { box-shadow: 0 0 0 0 currentColor; opacity: .9; }
+  50%      { box-shadow: 0 0 0 4px transparent; opacity: .55; }
+}
+.ann-scan {
+  position: relative; width: 30px; height: 4px; flex: none;
+  border-radius: 999px; overflow: hidden;
+  background: rgb(var(--tint) / .1);
+}
+.ann-scan > i {
+  position: absolute; top: 0; bottom: 0; width: 9px; border-radius: 999px;
+  animation: ann-scan 1.5s var(--ease-in-out) infinite;
+}
+@keyframes ann-scan { from { left: -9px; } to { left: 30px; } }
+
+/* tone is carried by the stem and the edge, never by the type */
+.ann.tone-caution .ann-card { border-color: rgb(var(--amber) / .3); }
+.ann.tone-alert .ann-card { border-color: rgb(var(--accent) / .35); }
+.ann.tone-gain .ann-card { border-color: rgb(52 211 153 / .28); }
 
 /* On paper a 50%-white panel over a white page is not a panel. Both glass
    surfaces get a real body, a real edge and a real shadow in light mode —
    frosted glass only reads as glass when there is something behind it. */
 :root[data-theme="light"] .tele,
 :root[data-theme="light"] .ann-card {
-  background: rgb(var(--base-900) / .86);
+  background: rgb(var(--base-900) / .88);
   border-color: rgb(var(--tint) / .11);
   box-shadow: var(--el-3);
 }
 :root[data-theme="light"] .tele-head { background: rgb(var(--tint) / .035); }
 :root[data-theme="light"] .tele-bar { background: rgb(var(--tint) / .12); }
 
-/* Daylight needs more ink, not more opacity.
-   The cluster was legible on black at --ink-faint because a faint grey on
-   near-black still has real contrast; the same grey on white has almost none.
-   Light mode moves every readout up one step on the ink ramp and thickens the
-   ticks, which is a rebalance rather than a brightness change — the panel is
-   no more prominent, its contents are simply readable. */
+/* Daylight needs more ink, not more opacity. A faint grey on near-black still
+   has real contrast; the same grey on white has almost none. Light mode moves
+   every readout one step up the ink ramp — a rebalance, not a brightening. */
 :root[data-theme="light"] .tele-row,
-:root[data-theme="light"] .tele-line { color: rgb(var(--ink-muted)); }
+:root[data-theme="light"] .tele-line,
+:root[data-theme="light"] .tele-foot,
 :root[data-theme="light"] .tele-gap,
 :root[data-theme="light"] .tele-pos { color: rgb(var(--ink-muted)); }
 :root[data-theme="light"] .tele-code,
 :root[data-theme="light"] .tele-head { color: rgb(var(--ink)); }
 :root[data-theme="light"] .tele-tick { width: 2.5px; }
-:root[data-theme="light"] .tele-sectors > i { color: rgb(var(--ink-muted)); }
 :root[data-theme="light"] .ann-head { color: rgb(var(--ink-muted)); }
 :root[data-theme="light"] .ann-stem {
   background: linear-gradient(to top, rgb(var(--tint) / .5), rgb(var(--tint) / .16));
@@ -876,11 +929,14 @@ html.theme-sweep::view-transition-new(root) {
 :root[data-theme="light"] .ann-anchor { box-shadow: 0 0 0 3px rgb(var(--base-900) / .85); }
 
 @media (prefers-reduced-motion: reduce) {
-  .tele, .ann-card { animation: none; }
-  .tele-flag-on { animation: none; }
+  .tele, .ann-card, .tele-flag-on, .ann-gauge, .ann-ring, .ann-scan > i,
+  .tele-line.is-purple::before, .tele-line.is-green::before { animation: none; }
 }
 :root[data-motion="calm"] .tele,
 :root[data-motion="calm"] .ann-card,
+:root[data-motion="calm"] .ann-gauge,
+:root[data-motion="calm"] .ann-ring,
+:root[data-motion="calm"] .ann-scan > i,
 :root[data-motion="calm"] .tele-flag-on { animation: none; }
 
 /* The ambient lamps used to live here as three fixed CSS gradients. They are

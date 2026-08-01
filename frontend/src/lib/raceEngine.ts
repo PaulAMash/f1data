@@ -1,32 +1,35 @@
 /* -------------------------------------------------------------------------- */
 /* The engine under the hero.                                                 */
 /*                                                                            */
-/* Everything before this was a drawing that resembled data. Lines were sine   */
-/* composites: smooth, endless, and completely disconnected from one another.  */
-/* Nothing could happen in that world, because there was nothing there to      */
-/* happen TO — no running order, no gaps, no cars that knew about each other.  */
-/* Which is why it stopped being interesting after four seconds.               */
-/*                                                                            */
-/* This is a small race instead. Seven cars hold a continuous running order, a */
-/* director stages moments into it, and the renderer draws whatever the        */
-/* simulation happens to be doing. The consequence worth the whole rewrite:    */
-/*                                                                            */
 /*     X IS TIME, AND THE RIGHT EDGE IS NOW.                                   */
 /*                                                                            */
-/* Every driver's position is recorded on a fixed tick. The curve at any x is  */
-/* where that car was `age(x)` seconds ago. So the field does not "scroll" —   */
-/* history simply gets older and slides left, exactly as a live timing trace   */
-/* does. An overtake is authored at the right edge and then travels the width  */
-/* of the screen as a thing that already happened. That is the difference      */
-/* between motion and narrative, and it is free once time is the x axis.       */
+/* Every car's position is recorded on a fixed tick, so the curve at any x is  */
+/* where that car was age(x) seconds ago. The field does not scroll — history  */
+/* gets older and slides left, the way a live timing trace does.               */
 /*                                                                            */
-/* Nothing here is random in the sense the reader would resent. The PRNG is    */
-/* seeded with a constant, so the sequence is identical on the server and the  */
-/* client (no hydration mismatch) and identical between reloads — but it is    */
-/* long, and no two moments carry the same parameters.                         */
+/* WHAT CHANGED IN V57: the race is no longer choreographed.                   */
+/*                                                                            */
+/* Before, a director decided "there is an overtake now" and moved two cars    */
+/* past each other. That is a puppet show: convincing for one beat, and never  */
+/* able to produce the thing the brief actually asks for — a midfield fight    */
+/* that forms, holds, and eventually resolves.                                 */
+/*                                                                            */
+/* Now every car carries a PACE, in seconds per lap, and a GAP, in seconds     */
+/* behind the leader. The gap integrates the pace difference. Positions are    */
+/* read off the gaps. So an overtake is not an event that gets staged — it is  */
+/* what it looks like when one car's gap crosses another's, exactly as in a    */
+/* real race. The director's job is reduced to what a commentator's actually   */
+/* is: noticing what the race did, and saying so.                              */
+/*                                                                            */
+/* Everything else falls out of that. A leader in clean air pulls away. A car  */
+/* within a second gets DRS and dirty air at the same time, so it closes and   */
+/* then struggles — which is a battle, and battles last until the pace         */
+/* underneath them changes. A pit stop is twenty seconds added to a gap.       */
+/*                                                                            */
+/* Nothing is random in a way a reader would resent: the PRNG is seeded with a */
+/* constant, so server and client agree and there is no hydration mismatch.    */
 /* -------------------------------------------------------------------------- */
 
-/** Deterministic, tiny, good enough. Seeded once so SSR and CSR agree. */
 function mulberry32(seed: number) {
   let a = seed >>> 0;
   return () => {
@@ -37,259 +40,335 @@ function mulberry32(seed: number) {
   };
 }
 
-const smoother = (k: number) => k * k * k * (k * (k * 6 - 15) + 10);
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 
-/* ---- the field ----------------------------------------------------------- */
-/* One car per constructor, so every line is a different hue and the reader can
-   follow an individual without a legend. Seven is the ceiling: past that the
-   scene stops being legible and starts being busy, which the brief is explicit
-   about not wanting. */
-export interface Driver {
+/* ---- the paddock --------------------------------------------------------- */
+/* Twelve, so a new race can field a different seven and actually look like a
+   different race. Colours are per constructor and deliberately far apart in
+   hue: the reader has to be able to follow one line without a legend. */
+export interface DriverRef {
   code: string;
   team: string;
-  /** on black — emitted light */
   dark: string;
-  /** on white — absorbed light, deeper so it holds against paper */
   light: string;
 }
 
-export const DRIVERS: Driver[] = [
+export const POOL: DriverRef[] = [
   { code: "NOR", team: "McLaren",   dark: "#ff8b1f", light: "#c2410c" },
+  { code: "PIA", team: "McLaren",   dark: "#ffab5e", light: "#9a3412" },
   { code: "VER", team: "Red Bull",  dark: "#4f8ce0", light: "#1d4ed8" },
+  { code: "TSU", team: "Red Bull",  dark: "#7fb0ee", light: "#1e40af" },
   { code: "LEC", team: "Ferrari",   dark: "#ff4d5e", light: "#be123c" },
+  { code: "HAM", team: "Ferrari",   dark: "#ff7b88", light: "#9f1239" },
   { code: "RUS", team: "Mercedes",  dark: "#27f4d2", light: "#0f766e" },
+  { code: "ANT", team: "Mercedes",  dark: "#7af6e2", light: "#115e59" },
   { code: "ALO", team: "Aston",     dark: "#3fd18b", light: "#15803d" },
   { code: "GAS", team: "Alpine",    dark: "#57b6ff", light: "#0369a1" },
   { code: "HUL", team: "Sauber",    dark: "#b79bff", light: "#6d28d9" },
+  { code: "OCO", team: "Haas",      dark: "#c9cede", light: "#475569" },
 ];
 
-export const N = DRIVERS.length;
+/** Cars on track in any one race. Seven is the legibility ceiling. */
+export const N = 7;
+
+export const COMPOUNDS = [
+  { key: "S", label: "SOFT",   tint: "#ff4d5e", wear: 1.55 },
+  { key: "M", label: "MEDIUM", tint: "#ffd34d", wear: 1.0 },
+  { key: "H", label: "HARD",   tint: "#e6ebf5", wear: 0.68 },
+] as const;
+
+export const WEATHER = ["DRY", "CLOUDY", "LIGHT RAIN", "HUMID"] as const;
 
 /** Seconds of race held across the width of the viewport. */
 export const HISTORY_S = 22;
-/** Fixed simulation tick for the history. Never varies, so nothing can drift. */
 const STEP_S = 0.1;
 const SAMPLES = Math.ceil(HISTORY_S / STEP_S) + 8;
+/** Real seconds per race lap. A race lasts about two minutes. */
+const LAP_S = 2.05;
 
-/* ---- what the director can stage ----------------------------------------- */
+/* ---- what the commentator can say ---------------------------------------- */
 export type BeatKind =
-  | "overtake" | "drs" | "pit" | "safety" | "fastest" | "sector" | "yellow" | "deg"
-  | "push" | "best" | "purple" | "battery" | "tyreTemp" | "gap" | "fuel" | "box";
+  | "overtake" | "drs" | "pit" | "safety" | "vsc" | "fastest" | "sector"
+  | "yellow" | "deg" | "push" | "best" | "purple" | "battery" | "tyreTemp"
+  | "gap" | "fuel" | "box" | "undercut" | "limits" | "engine" | "rain"
+  | "brake" | "closing";
+
+/** How a card visualises itself. Never text alone. */
+export type Viz = "spark" | "bars" | "wave" | "gauge" | "pulse" | "scan";
 
 export interface Annotation {
   id: number;
   kind: BeatKind;
-  /** small caps line — what happened */
   label: string;
-  /** the number, if there is one worth showing */
   value?: string;
-  driver: number;
+  /** car index within this race, 0..N-1 */
+  car: number;
+  /** index into POOL — what colour this actually is */
+  ref: number;
   born: number;
-  /** 0..1 across the width, where it was born */
   bornU: number;
-  /** a five-point series, drawn as a hairline chart on the card */
-  spark?: number[];
-  /** seconds on screen, fades included. Two to four — long enough to read
-      once, short enough that the hero is empty more often than it is not. */
   life: number;
+  viz: Viz;
+  /** the series a spark/bars/wave draws */
+  series: number[];
+  /** amber for caution, accent for incident, speed for a gain */
+  tone: "neutral" | "caution" | "gain" | "alert";
 }
 
 export interface Pulse {
-  driver: number;
-  /** 0..1 across the width */
+  car: number;
   u: number;
   speed: number;
-  /** 0..1 — how hot this packet is */
   heat: number;
   born: number;
   life: number;
 }
 
-export interface Snapshot {
-  leader: number;
-  /** gap from P1 to P2, seconds */
+export interface Row {
+  car: number;
+  ref: number;
+  pos: number;
+  /** seconds behind the car ahead */
+  interval: number;
+  /** seconds behind the leader */
   gap: number;
-  /** running order, driver indices, P1 first */
-  order: number[];
   ers: number;
-  deg: number;
-  trackTemp: number;
+  tyre: number;
+  tyreAge: number;
+  drs: boolean;
+  /** -1 lost, 0 held, +1 gained — only for a few seconds after it happens */
+  moved: number;
+  /** "purple" | "green" | null, for the sector flash */
+  flash: string | null;
+  /** last five lap times, normalised 0..1, for the row sparkline */
+  form: number[];
+}
+
+export interface Snapshot {
+  rows: Row[];
   lap: number;
-  /** last three sector deltas for the leader, negative is an improvement */
-  sectors: [number, number, number];
-  /** what the director is doing, for the status line */
+  laps: number;
+  weather: string;
+  circuit: string;
   status: string;
-  /** per driver: +1 gained a place recently, -1 lost one, 0 settled */
-  moved: number[];
+  trackTemp: number;
+  /** 0 while a race changes over, 1 while one is running */
+  alive: number;
+  /** the running order as car indices, for the renderer */
+  order: number[];
 }
 
 interface Car {
-  /** what the renderer sees: base + drift */
-  pos: number;
-  /* THE RUNNING ORDER AND THE BREATHING ARE SEPARATE QUANTITIES.
-     `base` is where the car is in the order; `pos` is that plus its slow drift.
-     Keeping only `pos` meant a staged move seeded `from` with a value that
-     already contained the drift — and then added the drift a second time on
-     the very next frame. Every overtake therefore began with an instantaneous
-     jump of up to half a lane, which is exactly the hard corner that showed up
-     wherever two lines crossed. A step discontinuity cannot be smoothed by any
-     amount of curve fitting downstream; it has to not happen. */
-  base: number;
-  from: number;
-  to: number;
-  moveStart: number;
-  moveDur: number;
-  /** slow personal drift so the trace breathes without wobbling */
-  driftPhase: number;
-  driftRate: number;
-  /** a fourth, much slower term that modulates how wide the drift swings */
-  swellRate: number;
+  ref: number;
+  /** seconds behind the leader — the whole model in one number */
+  gap: number;
+  /** seconds per lap slower than the reference. Negative is quick. */
+  pace: number;
+  paceTo: number;
+  paceUntil: number;
+  mood: "normal" | "push" | "manage";
   ers: number;
   ersUp: boolean;
-  /** for the cluster's gained/lost arrows */
+  tyre: number;
+  tyreAge: number;
+  drs: boolean;
+  flash: string | null;
+  flashUntil: number;
   rank: number;
+  /** the same rank, eased — an integer rank would step the lane on every pass */
+  rankF: number;
   rankMoved: number;
   rankDelta: number;
-}
-
-interface Effect {
-  kind: BeatKind;
-  start: number;
-  dur: number;
-  driver: number;
+  /** where this car is around the lap, 0..1 — the minimap reads this */
+  trackU: number;
+  form: number[];
+  wobble: number;
+  /* A PIT STOP IS NOT A TELEPORT.
+     Adding twenty seconds to a gap in one frame puts a vertical line through
+     the picture — the same step discontinuity that made overtakes kink in V56,
+     arriving by a different route. The loss is banked here and paid out over a
+     few seconds, so the car falls away down the order at a rate a car could. */
+  pitOwed: number;
+  /** pace plus every situational term — written by drivePace, read by
+      integrateGaps. Derived state, so it lives here rather than in any input. */
+  effective: number;
 }
 
 export class RaceEngine {
   t = 0;
   private rnd: () => number;
-  private cars: Car[] = [];
-  /** per-driver ring of positions, newest at `head` */
+  cars: Car[] = [];
   private hist: Float32Array[] = [];
   private head = 0;
-  private filled = 0;
   private acc = 0;
 
-  /** global lane spread — the safety car squeezes this */
+  /** lane spread — a safety car squeezes this */
   spread = 1;
   private spreadTo = 1;
-  /** global time scale — a yellow flag slows the whole picture */
   timeScale = 1;
   private timeTo = 1;
 
   annotations: Annotation[] = [];
   pulses: Pulse[] = [];
-  private effects: Effect[] = [];
-  private nextBeat = 5;
+  private nextBeat = 4;
   private nextPulse = 0;
   private recent: BeatKind[] = [];
   private annId = 1;
 
-  private lap = 34;
-  private trackTemp = 41.4;
-  private deg = 0.31;
+  /* ---- the broadcast ----------------------------------------------------- */
+  lap = 1;
+  laps = 57;
+  weather = "DRY";
+  circuit = "SECTOR 1";
+  trackTemp = 41.4;
+  /** 1 running, dips to 0 across a changeover */
+  alive = 1;
+  private changing = 0;
+  private status = "GREEN";
+  private statusUntil = 0;
+  /** the scale that maps a gap in seconds to a lane */
+  private span = 6;
 
   constructor(seed = 0x5eed1e) {
     this.rnd = mulberry32(seed);
     for (let i = 0; i < N; i++) {
-      this.cars.push({
-        pos: i, base: i, from: i, to: i, moveStart: 0, moveDur: 1,
-        driftPhase: this.rnd() * Math.PI * 2,
-        // spread around 1.0 so no two cars sweep on the same period
-        driftRate: 0.048 + this.rnd() * 0.028,
-        swellRate: 0.031 + this.rnd() * 0.026,
-        ers: 0.35 + this.rnd() * 0.5,
-        ersUp: this.rnd() > 0.5,
-        rank: i, rankMoved: -99, rankDelta: 0,
-      });
+      this.cars.push(this.blankCar(i));
       const h = new Float32Array(SAMPLES);
       h.fill(i);
       this.hist.push(h);
     }
-    this.filled = SAMPLES;
+    this.newRace(true);
+  }
+
+  private blankCar(i: number): Car {
+    return {
+      ref: i, gap: i * 1.2, pace: 0, paceTo: 0, paceUntil: 0, mood: "normal",
+      ers: 0.4, ersUp: true, tyre: 1, tyreAge: 0, drs: false,
+      flash: null, flashUntil: 0, rank: i, rankF: i, rankMoved: -99, rankDelta: 0,
+      trackU: 0, form: [0.5, 0.5, 0.5, 0.5, 0.5], wobble: 0, pitOwed: 0,
+      effective: 0,
+    };
+  }
+
+  /* ---- a new broadcast --------------------------------------------------- */
+  /**
+   * A different seven, a different circuit, a different length, a different
+   * story. The point of ending a race is that the next one is not the same one
+   * — an endless single race is a loop with extra steps.
+   */
+  private newRace(first = false) {
+    const picks = new Set<number>();
+    while (picks.size < N) picks.add(Math.floor(this.rnd() * POOL.length));
+    const refs = [...picks];
+
+    this.laps = [52, 53, 57, 58, 61, 63, 66, 71][Math.floor(this.rnd() * 8)];
+    this.lap = 1;
+    this.weather = WEATHER[Math.floor(this.rnd() * WEATHER.length)];
+    this.trackTemp = 28 + this.rnd() * 22;
+    this.span = 6;
+    this.status = "GREEN";
+
+    for (let i = 0; i < N; i++) {
+      const c = this.cars[i];
+      c.ref = refs[i];
+      c.gap = i * (0.7 + this.rnd() * 0.9);
+      // grid pace order is roughly the grid order, with real overlap
+      c.pace = i * 0.052 + (this.rnd() - 0.5) * 0.12;
+      c.paceTo = c.pace;
+      c.paceUntil = this.t + 4 + this.rnd() * 8;
+      c.mood = "normal";
+      c.ers = 0.35 + this.rnd() * 0.5;
+      c.ersUp = this.rnd() > 0.5;
+      c.tyre = Math.floor(this.rnd() * 3);
+      c.tyreAge = this.rnd() * 6;
+      c.drs = false;
+      c.flash = null;
+      c.rank = i; c.rankF = i; c.rankMoved = -99; c.rankDelta = 0;
+      c.trackU = 0;
+      c.form = [0.5, 0.5, 0.5, 0.5, 0.5];
+      c.pitOwed = 0;
+      if (first) this.hist[i].fill(i);
+    }
+    this.annotations.length = 0;
+    this.pulses.length = 0;
+    this.nextBeat = this.t + 3;
   }
 
   /* ---- reading the world ------------------------------------------------- */
 
-  /**
-   * Where driver `d` was `age` seconds ago, interpolated.
-   *
-   * Catmull-Rom rather than linear: at 0.1s ticks a linear read puts a visible
-   * corner at every sample, and a hero made of corners is the thing this whole
-   * rewrite exists to avoid.
-   */
-  posAt(d: number, age: number): number {
-    const h = this.hist[d];
+  /** Where car `c` was `age` seconds ago, in lanes. Catmull-Rom, so no corners. */
+  posAt(c: number, age: number): number {
+    const h = this.hist[c];
     const f = age / STEP_S;
     const i = Math.floor(f);
     const fr = f - i;
     const at = (k: number) => h[(((this.head - k) % SAMPLES) + SAMPLES) % SAMPLES];
-    // ages beyond the buffer simply hold the oldest value — never a wrap, so
-    // there is no seam where the ring meets itself
     if (i >= SAMPLES - 3) return at(SAMPLES - 3);
     const p0 = at(i - 1 < 0 ? 0 : i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
     const a = 2 * p1;
     const b = p2 - p0;
-    const c = 2 * p0 - 5 * p1 + 4 * p2 - p3;
+    const cc = 2 * p0 - 5 * p1 + 4 * p2 - p3;
     const e = -p0 + 3 * p1 - 3 * p2 + p3;
-    return 0.5 * (a + b * fr + c * fr * fr + e * fr * fr * fr);
+    return 0.5 * (a + b * fr + cc * fr * fr + e * fr * fr * fr);
   }
 
-  /** The lane a car occupies now, including its slow personal drift. */
-  /** Advances one car and returns nothing — it writes `base` and `pos`. */
-  private livePos(i: number, t: number) {
-    const c = this.cars[i];
-    const k = c.moveDur <= 0 ? 1 : clamp01((t - c.moveStart) / c.moveDur);
-    c.base = c.from + (c.to - c.from) * smoother(k);
+  /**
+   * A lane, from a gap and a position.
+   *
+   * Pure proportional-to-gap looks correct and reads badly: real gaps cluster
+   * at the front, so six cars pile into the top third and one straggler holds
+   * the bottom two-thirds empty. Pure position spaces evenly and throws away
+   * every compression and every escape — the whole point of the model.
+   *
+   * Sixty per cent position, forty per cent gap. The field stays legible across
+   * the full height, a leader pulling clear still visibly opens a gap, and a
+   * safety car still visibly closes everything up.
+   */
+  private lane(gap: number, rank: number, car: Car, t: number): number {
+    /* Plus a small independent breath per car.
+       The gap model supplies the narrative — battles, escapes, a pass — but it
+       is slow by nature, and 60% of a lane is a rank that barely moves, so on
+       its own the field draws seven near-parallel rails. This restores the
+       flowing quality the field had before the model arrived: four fifths of a
+       lane, on periods no two cars share, layered UNDER the story rather than
+       instead of it. It is pace variation, which is the most believable thing
+       a lap chart contains. */
+    const p = car.ref * 1.9;
+    const breath =
+      0.30 * Math.sin(t * (0.155 + (car.ref % 5) * 0.011) + p) +
+      0.13 * Math.sin(t * 0.34 + p * 1.7) +
+      0.05 * Math.sin(t * 0.63 + p * 2.9);
+    return 0.55 * rank + 0.45 * (gap / this.span) * (N - 1) + breath;
+  }
 
-    /* Three slow terms, tuned against HISTORY_S rather than against taste.
-       The width of the screen is 22 seconds, so a 33-second period shows as
-       two-thirds of one graceful sweep — a current, not a wave.
-
-       The fourth term is the one that stops the field ever looking settled:
-       it modulates the AMPLITUDE of the first on a period of its own, so the
-       spacing between lines keeps opening and closing. Four incommensurable
-       periods per car, all different between cars, is a repeat interval no
-       viewer will ever sit through. */
-    const p = c.driftPhase;
-    const swell = 0.62 + 0.38 * Math.sin(t * c.swellRate + p * 2.3);
-    c.pos = c.base
-      + 0.36 * swell * Math.sin(t * 0.19 * c.driftRate * 16 + p)
-      + 0.15 * Math.sin(t * 0.33 + p * 1.7)
-      + 0.06 * Math.sin(t * 0.61 + p * 2.9);
+  order(): number[] {
+    return this.cars
+      .map((c, i) => [c.gap, i] as [number, number])
+      .sort((a, b) => a[0] - b[0])
+      .map(([, i]) => i);
   }
 
   snapshot(): Snapshot {
-    const order = this.cars
-      .map((c, i) => [c.pos, i] as [number, number])
-      .sort((a, b) => a[0] - b[0])
-      .map(([, i]) => i);
-    const lead = this.cars[order[0]].pos;
-    const second = this.cars[order[1]].pos;
+    const ord = this.order();
+    const rows: Row[] = ord.map((ci, r) => {
+      const c = this.cars[ci];
+      return {
+        car: ci, ref: c.ref, pos: r + 1,
+        interval: r === 0 ? 0 : c.gap - this.cars[ord[r - 1]].gap,
+        gap: c.gap,
+        ers: c.ers, tyre: c.tyre, tyreAge: Math.floor(c.tyreAge),
+        drs: c.drs,
+        moved: this.t - c.rankMoved < 5 ? Math.sign(c.rankDelta) : 0,
+        flash: this.t < c.flashUntil ? c.flash : null,
+        form: c.form,
+      };
+    });
     return {
-      leader: order[0],
-      gap: Math.max(0.08, (second - lead) * 1.35 + 0.22),
-      order,
-      ers: this.cars[order[0]].ers,
-      deg: this.deg,
-      trackTemp: this.trackTemp,
-      lap: Math.floor(this.lap),
-      sectors: [
-        -0.041 + 0.28 * Math.sin(this.t * 0.21),
-        0.062 + 0.24 * Math.sin(this.t * 0.17 + 2),
-        -0.118 + 0.3 * Math.sin(this.t * 0.13 + 4),
-      ],
-      status: this.activeStatus(),
-      // an arrow lives for six seconds, then the position is simply the position
-      moved: this.cars.map((c) => (this.t - c.rankMoved < 6 ? Math.sign(c.rankDelta) : 0)),
+      rows, lap: Math.min(this.laps, Math.floor(this.lap)), laps: this.laps,
+      weather: this.weather, circuit: this.circuit, status: this.status,
+      trackTemp: this.trackTemp, alive: this.alive, order: ord,
     };
-  }
-
-  private activeStatus(): string {
-    const e = this.effects.find((x) => x.kind === "safety" || x.kind === "yellow");
-    if (e?.kind === "safety") return "SAFETY CAR";
-    if (e?.kind === "yellow") return "YELLOW FLAG";
-    return "GREEN";
   }
 
   /* ---- running the world ------------------------------------------------- */
@@ -299,285 +378,182 @@ export class RaceEngine {
     this.t += dt;
     const t = this.t;
 
-    // eased globals — a safety car should arrive, not switch on
     this.spread += (this.spreadTo - this.spread) * Math.min(1, dt * 1.6);
     this.timeScale += (this.timeTo - this.timeScale) * Math.min(1, dt * 1.4);
+    if (t > this.statusUntil && this.status !== "GREEN") {
+      this.status = "GREEN";
+      this.spreadTo = 1;
+      this.timeTo = 1;
+    }
 
-    /* Every readout has to visibly move inside the thirty seconds somebody
-       might actually watch for. A lap that ticks over once every eighty
-       seconds is, to that viewer, a static number — and a static number is a
-       claim that nothing is being measured. */
-    this.lap += dt * 0.036;                                  // ~28s a lap
+    /* the changeover: fade the whole picture out, swap the race, fade back */
+    if (this.changing > 0) {
+      this.changing -= dt;
+      this.alive = clamp01(Math.abs(this.changing - 1.1) / 1.1);
+      if (this.changing <= 1.1 && this.changing + dt > 1.1) this.newRace();
+      if (this.changing <= 0) { this.changing = 0; this.alive = 1; }
+    } else {
+      this.lap += dt / LAP_S;
+      if (this.lap >= this.laps + 0.6) this.changing = 2.2;
+    }
+
     this.trackTemp += (Math.sin(t * 0.11) + Math.sin(t * 0.043) * 0.6) * dt * 0.19;
-    this.deg = 0.27 + 0.17 * (0.5 + 0.5 * Math.sin(t * 0.075))
-      + 0.02 * Math.sin(t * 0.31);
 
-    for (const c of this.cars) {
-      c.ers += (c.ersUp ? 0.085 : -0.16) * dt;               // ~10s up, ~5s down
-      if (c.ers > 0.97) { c.ers = 0.97; c.ersUp = false; }
-      if (c.ers < 0.14) { c.ers = 0.14; c.ersUp = true; }
-    }
-
-    /* Places gained and lost, so the cluster can show an arrow for a few
-       seconds after a change. The rank is read from the same order the lines
-       are drawn in, so an arrow can never disagree with the picture. */
-    const nowOrder = this.order();
-    for (let r = 0; r < nowOrder.length; r++) {
-      const c = this.cars[nowOrder[r]];
-      if (c.rank !== r) {
-        c.rankDelta = c.rank - r;   // moved up in the list = gained
-        c.rankMoved = t;
-        c.rank = r;
-      }
-    }
-
-    for (let i = 0; i < N; i++) this.livePos(i, t);
-
-    this.retireEffects(t);
-    this.direct(t);
+    this.drivePace(dt, t);
+    this.integrateGaps(dt, t);
+    this.rankChanges(t, dt);
+    this.commentate(t);
     this.movePulses(dt, t);
     this.emitPulses(t);
     this.ageAnnotations(t);
 
-    // history on a fixed tick, so the scroll rate can never drift
+    /* history on a fixed tick, so the scroll rate can never drift */
     this.acc += dt;
     while (this.acc >= STEP_S) {
       this.acc -= STEP_S;
       this.head = (this.head + 1) % SAMPLES;
-      for (let i = 0; i < N; i++) this.hist[i][this.head] = this.cars[i].pos;
-      if (this.filled < SAMPLES) this.filled++;
+      for (let i = 0; i < N; i++) {
+        const c = this.cars[i];
+        this.hist[i][this.head] = this.lane(c.gap, c.rankF, c, this.t);
+      }
     }
   }
 
-  /* ---- the director ------------------------------------------------------ */
-
-  private direct(t: number) {
-    if (t < this.nextBeat) return;
-    this.nextBeat = t + 4.6 + this.rnd() * 4.2;
-
-    /* Readings outnumber events about three to one, which is the ratio a real
-       timing feed has: the race is mostly measurement, punctuated. The four
-       weighted twice are the ones worth seeing more than once. */
-    const pool: BeatKind[] = [
-      "overtake", "overtake", "drs", "drs", "sector", "sector",
-      "purple", "purple", "best", "push", "battery", "gap", "gap",
-      "tyreTemp", "fuel", "deg", "fastest", "pit", "safety", "yellow",
-    ];
-    let kind = pool[Math.floor(this.rnd() * pool.length)];
-    // a moment that just happened is not a moment
-    let guard = 0;
-    while (this.recent.includes(kind) && guard++ < 8) {
-      kind = pool[Math.floor(this.rnd() * pool.length)];
-    }
-    this.recent.push(kind);
-    if (this.recent.length > 5) this.recent.shift();
-
-    this.stage(kind, t);
-  }
-
-  private order(): number[] {
-    return this.cars.map((c, i) => [c.pos, i] as [number, number])
-      .sort((a, b) => a[0] - b[0]).map(([, i]) => i);
-  }
-
-  private move(i: number, to: number, dur: number, t: number) {
-    const c = this.cars[i];
-    // `base`, never `pos` — see the note on Car.base
-    c.from = c.base;
-    c.to = Math.max(-0.35, Math.min(N - 0.65, to));
-    c.moveStart = t;
-    c.moveDur = dur;
-  }
-
-  private note(a: Omit<Annotation, "id" | "born" | "bornU" | "life">, t: number, life = 3.2) {
-    /* One at a time, and never two on the same line.
-       The brief's Layer 8 is the one that matters most: the goal is
-       atmosphere, and a second card turns the hero into a dashboard. Cards
-       live two to four seconds against a beat every five to nine, so the
-       clean state is the common one — which is what makes the card land when
-       it does arrive. */
-    this.annotations = this.annotations.filter((x) => x.driver !== a.driver);
-    if (this.annotations.length >= 1) this.annotations.shift();
-    this.annotations.push({ ...a, id: this.annId++, born: t, bornU: 0.88, life });
-  }
-
-  private spark(seed: number, drop: boolean): number[] {
-    const r = mulberry32(seed);
-    const out: number[] = [];
-    let v = 0.5;
-    for (let i = 0; i < 7; i++) {
-      v += (r() - 0.5) * 0.34 + (drop ? -0.06 : 0.05);
-      out.push(Math.max(0.05, Math.min(0.95, v)));
-    }
-    return out;
-  }
-
-  private stage(kind: BeatKind, t: number) {
+  /**
+   * Pace: the only thing anybody actually decides.
+   *
+   * A car holds a pace for a stint of a few seconds and then picks another,
+   * eased into rather than switched. Tyre age costs time. Clean air is worth
+   * having, dirty air is not, and a car within DRS range gets both at once —
+   * which is why battles hold rather than resolve immediately.
+   */
+  private drivePace(dt: number, t: number) {
     const ord = this.order();
-    const front = () => ord[Math.floor(this.rnd() * 4)];
-    const dp = (n: number) => (100 + Math.floor(this.rnd() * 899)).toString().slice(0, n);
 
-    switch (kind) {
-      /* ---- beats that actually move the race ---------------------------- */
-      case "overtake": {
-        const p = 1 + Math.floor(this.rnd() * 3);
-        const ahead = ord[p - 1], behind = ord[p];
-        // 5.5s rather than 4.2s: a pass should be a lean, not a swerve
-        this.move(behind, p - 1, 5.5, t);
-        this.move(ahead, p, 5.5, t);
-        this.note({
-          kind, driver: behind, label: "OVERTAKE",
-          value: `${DRIVERS[behind].code} ▸ ${DRIVERS[ahead].code}`,
-        }, t, 3.6);
-        break;
-      }
-      case "pit": {
-        const d = ord[2 + Math.floor(this.rnd() * 4)];
-        this.move(d, this.cars[d].base + 2.4 + this.rnd() * 1.4, 6.5, t);
-        this.effects.push({ kind, start: t, dur: 22, driver: d });
-        this.note({ kind, driver: d, label: "BOX THIS LAP", value: `${(2.1 + this.rnd() * 0.7).toFixed(1)}s` }, t, 3.4);
-        break;
-      }
-      case "safety": {
-        this.spreadTo = 0.42;
-        this.timeTo = 0.74;
-        this.effects.push({ kind, start: t, dur: 9, driver: ord[0] });
-        this.note({ kind, driver: ord[0], label: "SAFETY CAR", value: "neutralised" }, t, 4);
-        break;
-      }
-      case "yellow": {
-        this.timeTo = 0.6;
-        this.effects.push({ kind, start: t, dur: 4.5, driver: ord[0] });
-        this.note({ kind, driver: ord[2], label: "YELLOW FLAG", value: `sector ${1 + Math.floor(this.rnd() * 3)}` }, t, 3);
-        break;
-      }
+    for (let r = 0; r < ord.length; r++) {
+      const c = this.cars[ord[r]];
 
-      /* ---- beats that are readings, not events -------------------------- */
-      case "drs": {
-        const d = front();
-        for (let k = 0; k < 3; k++) {
-          this.pulses.push({ driver: d, u: 0.02 + k * 0.05, speed: 0.5, heat: 1.1, born: t, life: 4 });
-        }
-        this.note({ kind, driver: d, label: "DRS ENABLED", value: `+${(11 + this.rnd() * 8).toFixed(0)} km/h` }, t, 2.8);
-        break;
+      if (t > c.paceUntil) {
+        c.paceUntil = t + 3.5 + this.rnd() * 7;
+        const roll = this.rnd();
+        c.mood = roll > 0.82 ? "push" : roll > 0.66 ? "manage" : "normal";
+        const base = r * 0.05 + (this.rnd() - 0.5) * 0.16;
+        c.paceTo = base + (c.mood === "push" ? -0.17 : c.mood === "manage" ? 0.14 : 0);
       }
-      case "fastest": {
-        const d = front();
-        this.pulses.push({ driver: d, u: -0.05, speed: 0.86, heat: 1.7, born: t, life: 3 });
-        this.note({
-          kind, driver: d, label: "FASTEST LAP", value: `1:2${3 + Math.floor(this.rnd() * 2)}.${dp(3)}`,
-          spark: this.spark(this.annId * 7919, true),
-        }, t, 3.8);
-        break;
+      // eased, never switched: a step in pace is a kink in the trace
+      c.pace += (c.paceTo - c.pace) * Math.min(1, dt * 0.8);
+
+      /* A stint pace that holds flat between decisions gives parallel lines.
+         Real pace never holds — it drifts with fuel, track, traffic and the
+         driver. Two slow terms per car, on periods nothing else shares, and an
+         amplitude chosen against the window: 0.18 s/lap over the ten laps the
+         screen holds is about a lane and a half of movement, which is a race
+         breathing rather than a chart wobbling. */
+      const ph = c.ref * 1.7;
+      c.wobble = 0.18 * Math.sin(t * 0.14 + ph) + 0.07 * Math.sin(t * 0.31 + ph * 2.3);
+
+      c.tyreAge += dt / LAP_S;
+      const wear = COMPOUNDS[c.tyre].wear;
+      const degradation = Math.max(0, c.tyreAge - 8) * 0.011 * wear;
+
+      // clean air for the leader; everyone else is in somebody's wake
+      const ahead = r === 0 ? null : this.cars[ord[r - 1]];
+      const interval = ahead ? c.gap - ahead.gap : 99;
+      c.drs = interval < 1.0 && r > 0 && this.status === "GREEN";
+      const dirty = interval < 1.6 ? (1.6 - interval) * 0.09 : 0;
+      const drs = c.drs ? -0.13 : 0;
+      const clean = r === 0 ? -0.05 : 0;
+
+      c.effective = c.pace + degradation + dirty + drs + clean + c.wobble;
+
+      c.ers += (c.ersUp ? 0.075 : (c.drs ? -0.2 : -0.13)) * dt;
+      if (c.ers > 0.97) { c.ers = 0.97; c.ersUp = false; }
+      if (c.ers < 0.13) { c.ers = 0.13; c.ersUp = true; }
+
+    }
+  }
+
+  private integrateGaps(dt: number, t: number) {
+    const ord = this.order();
+    const ref = this.cars[ord[0]].effective;
+
+    for (const c of this.cars) {
+      const rel = c.effective - ref;
+      c.gap += rel * (dt / LAP_S);
+      // the stop is paid out over about three seconds, never in one frame
+      if (c.pitOwed > 0.01) {
+        const pay = Math.min(c.pitOwed, c.pitOwed * Math.min(1, dt * 1.5) + dt * 1.2);
+        c.gap += pay;
+        c.pitOwed -= pay;
       }
-      case "purple": {
-        const d = front();
-        const sN = 1 + Math.floor(this.rnd() * 3);
-        this.pulses.push({ driver: d, u: 0.08, speed: 0.46, heat: 1.3, born: t, life: 4 });
-        this.note({ kind, driver: d, label: `PURPLE S${sN}`, value: `−0.${dp(3)}` }, t, 3);
-        break;
-      }
-      case "sector": {
-        const d = ord[Math.floor(this.rnd() * 5)];
-        const sN = 1 + Math.floor(this.rnd() * 3);
-        this.note({
-          kind, driver: d, label: `SECTOR ${sN}`, value: `−0.${dp(3)}`,
-          spark: this.spark(this.annId * 104729, true),
-        }, t, 3);
-        break;
-      }
-      case "best": {
-        const d = ord[Math.floor(this.rnd() * 5)];
-        this.note({ kind, driver: d, label: "PERSONAL BEST", value: `1:2${4 + Math.floor(this.rnd() * 2)}.${dp(3)}` }, t, 3);
-        break;
-      }
-      case "push": {
-        const d = front();
-        this.pulses.push({ driver: d, u: 0.02, speed: 0.55, heat: 1.2, born: t, life: 4 });
-        this.note({ kind, driver: d, label: "PUSH LAP", value: `${2 + Math.floor(this.rnd() * 4)} laps` }, t, 2.8);
-        break;
-      }
-      case "battery": {
-        const d = front();
-        this.cars[d].ers = 0.95; this.cars[d].ersUp = false;
-        this.note({ kind, driver: d, label: "BATTERY DEPLOY", value: `${80 + Math.floor(this.rnd() * 19)}%` }, t, 2.8);
-        break;
-      }
-      case "gap": {
-        const p = 1 + Math.floor(this.rnd() * 4);
-        const d = ord[p];
-        const g = (this.cars[d].base - this.cars[ord[p - 1]].base) * 1.35;
-        this.note({ kind, driver: d, label: "GAP", value: `${g >= 0 ? "+" : ""}${g.toFixed(2)}s` }, t, 2.6);
-        break;
-      }
-      case "tyreTemp": {
-        const d = ord[Math.floor(this.rnd() * 6)];
-        this.note({ kind, driver: d, label: "TYRE TEMP", value: `${96 + Math.floor(this.rnd() * 18)}°C` }, t, 2.8);
-        break;
-      }
-      case "fuel": {
-        const d = ord[Math.floor(this.rnd() * 6)];
-        this.note({ kind, driver: d, label: "FUEL TARGET", value: `${(0.4 + this.rnd() * 1.4).toFixed(2)} kg` }, t, 2.8);
-        break;
-      }
-      case "deg": {
-        const d = ord[1 + Math.floor(this.rnd() * 4)];
-        this.note({
-          kind, driver: d, label: "TYRE DEG", value: `+0.0${3 + Math.floor(this.rnd() * 6)} s/lap`,
-          spark: this.spark(this.annId * 15485863, false),
-        }, t, 3.6);
-        break;
+      if (c.gap < 0) c.gap = 0;
+    }
+
+    // the leader is the datum, always
+    let min = Infinity;
+    for (const c of this.cars) min = Math.min(min, c.gap);
+    if (min > 0) for (const c of this.cars) c.gap -= min;
+
+    /* The span adapts slowly toward the spread of the field, so a leader
+       pulling away compresses everyone behind — visible, and true — without
+       the picture ever rescaling fast enough to notice. */
+    let max = 0;
+    for (const c of this.cars) max = Math.max(max, c.gap);
+    const want = Math.max(3.4, Math.min(16, max * 1.06));
+    this.span += (want - this.span) * Math.min(1, dt * 0.08);
+
+    // where each car is around the lap, for the minimap
+    const lapU = (this.lap % 1);
+    for (const c of this.cars) {
+      c.trackU = ((lapU - c.gap * 0.055) % 1 + 1) % 1;
+      // a rolling form trace for each row's sparkline
+      if (this.rnd() < dt * 0.9) {
+        c.form.push(clamp01(0.5 - c.effective * 1.4 + (this.rnd() - 0.5) * 0.2));
+        if (c.form.length > 5) c.form.shift();
       }
     }
   }
 
-  private retireEffects(t: number) {
-    for (let i = this.effects.length - 1; i >= 0; i--) {
-      const e = this.effects[i];
-      if (t - e.start < e.dur) continue;
-      if (e.kind === "safety") { this.spreadTo = 1; this.timeTo = 1; }
-      if (e.kind === "yellow") { this.timeTo = 1; }
-      if (e.kind === "pit") {
-        // the stop pays off: the car comes back at the cars it dropped behind
-        this.move(e.driver, Math.max(0, this.cars[e.driver].pos - 1.6), 9, t);
+  private rankChanges(t: number, dt: number) {
+    const ord = this.order();
+    // the eased rank follows the real one, so a swap bends rather than steps
+    for (let r = 0; r < ord.length; r++) {
+      const c = this.cars[ord[r]];
+      c.rankF += (r - c.rankF) * Math.min(1, dt * 1.1);
+    }
+    for (let r = 0; r < ord.length; r++) {
+      const c = this.cars[ord[r]];
+      if (c.rank === r) continue;
+      c.rankDelta = c.rank - r;
+      c.rankMoved = t;
+      const was = c.rank;
+      c.rank = r;
+      // a real pass just happened; say so, but not more than once a beat
+      if (c.rankDelta > 0 && was - r === 1 && t > this.nextBeat - 3) {
+        const lost = this.cars[ord[r + 1]];
+        this.note({
+          kind: "overtake", car: ord[r], label: "OVERTAKE",
+          value: `${POOL[c.ref].code} ▸ ${POOL[lost.ref].code}`,
+          viz: "pulse", series: [], tone: "gain",
+        }, t, 4.5);
       }
-      this.effects.splice(i, 1);
     }
   }
 
   /* ---- packets ----------------------------------------------------------- */
 
-  /**
-   * Markers: between one and three alive at any moment, on different lines.
-   *
-   * Per-driver timers meant seven independent countdowns that drifted into
-   * phase and then out again — sometimes six packets at once, sometimes an
-   * empty screen for eight seconds. The population is the thing worth
-   * controlling, so it is controlled directly: keep at least one, allow up to
-   * three, and space the arrivals irregularly. Nothing is ever synchronised
-   * because nothing shares a clock.
-   */
   private emitPulses(t: number) {
-    const alive = this.pulses.length;
-    if (alive >= 3) return;
-    if (alive > 0 && t < this.nextPulse) return;
-
-    const busy = new Set(this.pulses.map((p) => p.driver));
+    if (this.pulses.length >= 3) return;
+    if (this.pulses.length > 0 && t < this.nextPulse) return;
+    const busy = new Set(this.pulses.map((p) => p.car));
     const free: number[] = [];
     for (let i = 0; i < N; i++) if (!busy.has(i)) free.push(i);
     if (!free.length) return;
-
-    // the front of the race transmits more often than the back
-    free.sort((a, b) => this.cars[a].pos - this.cars[b].pos);
+    free.sort((a, b) => this.cars[a].gap - this.cars[b].gap);
     const pick = free[Math.floor(this.rnd() ** 1.7 * free.length)];
-
     this.pulses.push({
-      driver: pick,
-      u: -0.06,
-      speed: 0.21 + this.rnd() * 0.13,
-      heat: 0.9 - this.cars[pick].pos * 0.055,
-      born: t,
-      life: 9,
+      car: pick, u: -0.06, speed: 0.21 + this.rnd() * 0.13,
+      heat: 0.9 - this.cars[pick].rank * 0.055, born: t, life: 9,
     });
     this.nextPulse = t + 1.1 + this.rnd() * 3.6;
   }
@@ -592,19 +568,203 @@ export class RaceEngine {
 
   /* ---- annotations ------------------------------------------------------- */
 
-  /**
-   * A card is born at the right edge and then rides the history leftward at
-   * exactly the rate the data does — because it is pinned to a moment, not to
-   * a screen position. It is retired well before it can reach the headline.
-   */
   annotationU(a: Annotation): number {
     return a.bornU - (this.t - a.born) / HISTORY_S;
+  }
+
+  private note(a: Omit<Annotation, "id" | "born" | "bornU" | "life" | "ref">, t: number, life = 3.2) {
+    /* One to three at a time, on different cars, with independent lifetimes.
+       The population is what matters — a fixed cadence with a fixed duration
+       is a metronome, and a metronome is the one thing "alive" is not. */
+    if (this.annotations.some((x) => x.car === a.car)) return;
+    if (this.annotations.length >= 3) this.annotations.shift();
+    this.annotations.push({
+      ...a, ref: this.cars[a.car].ref, id: this.annId++, born: t, bornU: 0.72, life,
+    });
+  }
+
+  private series(seed: number, drift: number): number[] {
+    const r = mulberry32(seed);
+    const out: number[] = [];
+    let v = 0.5;
+    for (let i = 0; i < 8; i++) {
+      v = clamp01(v + (r() - 0.5) * 0.32 + drift);
+      out.push(v);
+    }
+    return out;
   }
 
   private ageAnnotations(t: number) {
     for (let i = this.annotations.length - 1; i >= 0; i--) {
       const a = this.annotations[i];
-      if (t - a.born > a.life || this.annotationU(a) < 0.5) this.annotations.splice(i, 1);
+      if (t - a.born > a.life || this.annotationU(a) < 0.4) this.annotations.splice(i, 1);
     }
+  }
+
+  /* ---- the commentator ---------------------------------------------------
+     It no longer decides what happens. It watches the race and reports it,
+     and only reaches for a canned reading when the race is not offering one. */
+  private commentate(t: number) {
+    if (t < this.nextBeat || this.changing > 0) return;
+    /* Cadence against lifetime is what sets the population. Beats every 1.9
+       to 4.3 seconds against cards that live 3.5 to 5.5 gives between one and
+       three on screen, with the occasional clean moment — which is the shape
+       the brief asks for and the shape a real feed has. */
+    this.nextBeat = t + 1.9 + this.rnd() * 2.4;
+
+    const ord = this.order();
+    const dp = () => (100 + Math.floor(this.rnd() * 899)).toString();
+    const front = () => ord[Math.floor(this.rnd() * 4)];
+
+    /* First: is the race itself saying something? A gap under a second in the
+       top half is a battle, and a battle is more interesting than any reading
+       we could invent. */
+    for (let r = 1; r < 5; r++) {
+      const c = this.cars[ord[r]];
+      const iv = c.gap - this.cars[ord[r - 1]].gap;
+      if (iv < 0.75 && c.drs && !this.recent.includes("closing")) {
+        this.remember("closing");
+        this.note({
+          kind: "closing", car: ord[r], label: "GAP CLOSING",
+          value: `${iv.toFixed(2)}s`, viz: "wave",
+          series: this.series(this.annId * 7919, -0.04), tone: "gain",
+        }, t, 4.7);
+        return;
+      }
+    }
+
+    const pool: BeatKind[] = [
+      "drs", "drs", "sector", "purple", "best", "push", "battery", "gap", "gap",
+      "tyreTemp", "fuel", "deg", "fastest", "pit", "undercut", "limits",
+      "engine", "brake", "safety", "vsc", "yellow", "rain",
+    ];
+    let kind = pool[Math.floor(this.rnd() * pool.length)];
+    let guard = 0;
+    while (this.recent.includes(kind) && guard++ < 10) {
+      kind = pool[Math.floor(this.rnd() * pool.length)];
+    }
+    this.remember(kind);
+
+    const car = front();
+    const mid = ord[2 + Math.floor(this.rnd() * 4)];
+    const S = () => 1 + Math.floor(this.rnd() * 3);
+
+    switch (kind) {
+      case "safety":
+        this.status = "SAFETY CAR"; this.statusUntil = t + 9;
+        this.spreadTo = 0.42; this.timeTo = 0.74;
+        this.note({ kind, car: ord[0], label: "SAFETY CAR", value: "neutralised",
+          viz: "scan", series: [], tone: "alert" }, t, 5.4);
+        break;
+      case "vsc":
+        this.status = "VSC"; this.statusUntil = t + 6;
+        this.timeTo = 0.7;
+        this.note({ kind, car: ord[0], label: "VIRTUAL SC", value: "delta +0.4",
+          viz: "scan", series: [], tone: "caution" }, t, 4.7);
+        break;
+      case "yellow":
+        this.status = "YELLOW"; this.statusUntil = t + 4.5;
+        this.timeTo = 0.62;
+        this.note({ kind, car: mid, label: "YELLOW FLAG", value: `sector ${S()}`,
+          viz: "pulse", series: [], tone: "caution" }, t, 4.3);
+        break;
+      case "pit": {
+        const c = this.cars[mid];
+        c.pitOwed += 19 + this.rnd() * 4;
+        c.tyreAge = 0;
+        c.tyre = Math.floor(this.rnd() * 3);
+        this.note({ kind, car: mid, label: "PIT STOP",
+          value: `${(2.1 + this.rnd() * 0.7).toFixed(1)}s`, viz: "bars",
+          series: this.series(this.annId * 104729, 0), tone: "neutral" }, t, 4.5);
+        break;
+      }
+      case "undercut":
+        this.note({ kind, car: mid, label: "UNDERCUT", value: `+${(0.4 + this.rnd()).toFixed(1)}s`,
+          viz: "spark", series: this.series(this.annId * 15485863, -0.05), tone: "gain" }, t, 4.5);
+        break;
+      case "drs":
+        this.pulses.push({ car, u: 0.02, speed: 0.5, heat: 1.1, born: t, life: 4 });
+        this.note({ kind, car, label: "DRS ENABLED", value: `+${(11 + this.rnd() * 8).toFixed(0)} km/h`,
+          viz: "gauge", series: [], tone: "gain" }, t, 5.2);
+        break;
+      case "fastest":
+        this.pulses.push({ car, u: -0.05, speed: 0.86, heat: 1.7, born: t, life: 3 });
+        this.markFlash(car, "purple", t);
+        this.note({ kind, car, label: "FASTEST LAP", value: `1:2${3 + Math.floor(this.rnd() * 2)}.${dp()}`,
+          viz: "spark", series: this.series(this.annId * 7919, -0.06), tone: "gain" }, t, 4.9);
+        break;
+      case "purple":
+        this.markFlash(car, "purple", t);
+        this.pulses.push({ car, u: 0.08, speed: 0.46, heat: 1.3, born: t, life: 4 });
+        this.note({ kind, car, label: `PURPLE S${S()}`, value: `−0.${dp()}`,
+          viz: "bars", series: this.series(this.annId * 104729, -0.05), tone: "gain" }, t, 5.4);
+        break;
+      case "best":
+        this.markFlash(car, "green", t);
+        this.note({ kind, car: mid, label: "PERSONAL BEST", value: `1:2${4 + Math.floor(this.rnd() * 2)}.${dp()}`,
+          viz: "spark", series: this.series(this.annId * 15485863, -0.03), tone: "gain" }, t, 5.4);
+        break;
+      case "sector":
+        this.note({ kind, car: mid, label: `SECTOR ${S()}`, value: `−0.${dp()}`,
+          viz: "bars", series: this.series(this.annId * 999331, -0.04), tone: "neutral" }, t, 5.3);
+        break;
+      case "rain":
+        this.weather = "LIGHT RAIN";
+        this.note({ kind, car: ord[0], label: "RAIN RADAR", value: "12 min",
+          viz: "wave", series: this.series(this.annId * 41, 0.02), tone: "caution" }, t, 4.7);
+        break;
+      case "limits":
+        this.note({ kind, car: mid, label: "TRACK LIMITS", value: `turn ${4 + Math.floor(this.rnd() * 9)}`,
+          viz: "pulse", series: [], tone: "caution" }, t, 5.2);
+        break;
+      case "engine":
+        this.note({ kind, car, label: "ENGINE MODE", value: `mode ${2 + Math.floor(this.rnd() * 4)}`,
+          viz: "gauge", series: [], tone: "neutral" }, t, 5.2);
+        break;
+      case "brake":
+        this.note({ kind, car: mid, label: "BRAKE TEMP", value: `${540 + Math.floor(this.rnd() * 260)}°C`,
+          viz: "wave", series: this.series(this.annId * 53, 0.03), tone: "caution" }, t, 5.3);
+        break;
+      case "battery":
+        this.cars[car].ers = 0.95; this.cars[car].ersUp = false;
+        this.note({ kind, car, label: "ERS DEPLOY", value: `${80 + Math.floor(this.rnd() * 19)}%`,
+          viz: "gauge", series: [], tone: "gain" }, t, 5.2);
+        break;
+      case "gap": {
+        const r = 1 + Math.floor(this.rnd() * 4);
+        const c = ord[r];
+        const iv = this.cars[c].gap - this.cars[ord[r - 1]].gap;
+        this.note({ kind, car: c, label: "GAP", value: `+${iv.toFixed(2)}s`,
+          viz: "wave", series: this.series(this.annId * 61, 0), tone: "neutral" }, t, 5.1);
+        break;
+      }
+      case "tyreTemp":
+        this.note({ kind, car: mid, label: "TYRE TEMP", value: `${96 + Math.floor(this.rnd() * 18)}°C`,
+          viz: "bars", series: this.series(this.annId * 71, 0.02), tone: "caution" }, t, 5.2);
+        break;
+      case "fuel":
+        this.note({ kind, car: mid, label: "FUEL TARGET", value: `${(0.4 + this.rnd() * 1.4).toFixed(2)} kg`,
+          viz: "gauge", series: [], tone: "neutral" }, t, 5.2);
+        break;
+      case "push":
+        this.pulses.push({ car, u: 0.02, speed: 0.55, heat: 1.2, born: t, life: 4 });
+        this.note({ kind, car, label: "PUSH LAP", value: `${2 + Math.floor(this.rnd() * 4)} laps`,
+          viz: "spark", series: this.series(this.annId * 83, -0.05), tone: "gain" }, t, 5.2);
+        break;
+      default:
+        this.note({ kind: "deg", car: mid, label: "TYRE DEG",
+          value: `+0.0${3 + Math.floor(this.rnd() * 6)} s/lap`, viz: "spark",
+          series: this.series(this.annId * 97, 0.05), tone: "caution" }, t, 4.5);
+    }
+  }
+
+  private markFlash(car: number, kind: string, t: number) {
+    this.cars[car].flash = kind;
+    this.cars[car].flashUntil = t + 3.2;
+  }
+
+  private remember(k: BeatKind) {
+    this.recent.push(k);
+    if (this.recent.length > 7) this.recent.shift();
   }
 }

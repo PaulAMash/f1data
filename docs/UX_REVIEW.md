@@ -3,8 +3,45 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V56**. Reviewed at 1440×900 and 390×844, in both themes, with motion full and
+Last pass: **V57**. Reviewed at 1440×900 and 390×844, in both themes, with motion full and
 calm.
+
+---
+
+## Fixed in V57
+
+### 1. The race was choreographed, so it could never surprise — *high*
+
+A director staged overtakes by moving two cars past each other, which cannot
+produce a battle that forms and holds. Cars now carry pace and gap; gaps
+integrate pace differences; a pass is what it looks like when one gap crosses
+another. See *Simulate the cause, not the effect*.
+
+### 2. Another teleport, by a different route — *high*
+
+A pit stop added twenty seconds to a gap in one frame — a vertical line through
+the picture, and exactly the step discontinuity V56 removed from overtakes. Paid
+out over three seconds now.
+
+### 3. The tracker was a decoration filling a corner — *medium*
+
+It is the same race the lines are: every car's place around the lap comes from
+its gap, so the dots really are in the running order. Seven named circuits with
+distinct character, a glass panel, and the field carried across a morph.
+
+### 4. The panel re-rendered its rows instead of reordering them — *medium*
+
+FLIP now, so a swap is something you watch. It also carries compound, tyre age,
+DRS and a five-lap form trace — the things a strategist reads before the gap.
+
+### 5. Races ran to impossible lap numbers — *medium*
+
+Realistic lengths, a finish, a fade, and a different seven drivers on a
+different circuit in different weather.
+
+### 6. The cursor bend had a corner in it — *medium, found in review*
+
+`sign(dy)·|dy|` is discontinuous at zero. Replaced with `u·e^(−u²)`.
 
 ---
 
