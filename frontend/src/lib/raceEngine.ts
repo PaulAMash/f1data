@@ -86,6 +86,11 @@ const STEP_S = 0.1;
 const SAMPLES = Math.ceil(HISTORY_S / STEP_S) + 8;
 /** Real seconds per race lap. A race lasts about two minutes. */
 const LAP_S = 2.05;
+/* How long a car takes to go round the minimap. Deliberately unrelated to
+   LAP_S: the lap counter is a readout and can tick briskly, but a dot visibly
+   travelling a circuit is a moving object, and at two seconds a lap it read as
+   a decoration whipping round rather than as a car. Eighteen seconds is a car. */
+const TRACK_LAP_S = 18;
 
 /* ---- what the commentator can say ---------------------------------------- */
 export type BeatKind =
@@ -143,6 +148,12 @@ export interface Row {
   flash: string | null;
   /** last five lap times, normalised 0..1, for the row sparkline */
   form: number[];
+  /** 0 none, 1 green, 2 purple, 3 yellow — one per sector, per car */
+  sectors: number[];
+  /** 0..1 of the tyre's life used */
+  wear: number;
+  /** km/h at the speed trap, live */
+  speed: number;
 }
 
 export interface Snapshot {
@@ -153,6 +164,8 @@ export interface Snapshot {
   circuit: string;
   status: string;
   trackTemp: number;
+  /** the leader's trap speed, for the footer */
+  trap: number;
   /** 0 while a race changes over, 1 while one is running */
   alive: number;
   /** the running order as car indices, for the renderer */
@@ -183,7 +196,21 @@ interface Car {
   /** where this car is around the lap, 0..1 — the minimap reads this */
   trackU: number;
   form: number[];
+  /* Sectors tick over on each car's OWN clock — a car sets a sector when it
+     reaches one, and no two cars reach one together. Shared sector timing was
+     the same simultaneity mistake as the shared easing, one layer down. */
+  sectors: number[];
+  sectorAt: number;
+  sectorPhase: number;
+  speed: number;
   wobble: number;
+  /* Every rate in this file used to be shared. Two cars easing on the same
+     constant reach their new value at the same moment, and a viewer reads
+     simultaneity long before they read the values. Each car now owns its own. */
+  paceRef: number;
+  paceEase: number;
+  rankEase: number;
+  closeRate: number;
   /* A PIT STOP IS NOT A TELEPORT.
      Adding twenty seconds to a gap in one frame puts a vertical line through
      the picture — the same step discontinuity that made overtakes kink in V56,
@@ -203,9 +230,16 @@ export class RaceEngine {
   private head = 0;
   private acc = 0;
 
-  /** lane spread — a safety car squeezes this */
+  /* `spread` used to be a global multiplier on the lane height, eased from 1
+     to 0.42 whenever a safety car came out. It squeezed all seven lines at
+     once, over the same six hundred milliseconds, at the same x — which is
+     exactly the "nothing should ever happen globally" the brief is about.
+
+     A safety car now works the way it actually works: through PACE. Every car
+     is asked to converge on the car ahead, so the field closes up car by car,
+     each from its own gap, at its own rate, arriving at its own moment. The
+     result is the same picture and none of the simultaneity. */
   spread = 1;
-  private spreadTo = 1;
   timeScale = 1;
   private timeTo = 1;
 
@@ -229,6 +263,7 @@ export class RaceEngine {
   private statusUntil = 0;
   /** the scale that maps a gap in seconds to a lane */
   private span = 6;
+  private trackClock = 0;
 
   constructor(seed = 0x5eed1e) {
     this.rnd = mulberry32(seed);
@@ -247,6 +282,8 @@ export class RaceEngine {
       ers: 0.4, ersUp: true, tyre: 1, tyreAge: 0, drs: false,
       flash: null, flashUntil: 0, rank: i, rankF: i, rankMoved: -99, rankDelta: 0,
       trackU: 0, form: [0.5, 0.5, 0.5, 0.5, 0.5], wobble: 0, pitOwed: 0,
+      sectors: [0, 0, 0], sectorAt: 0, sectorPhase: 0, speed: 318,
+      paceRef: 0, paceEase: 0.5, rankEase: 0.7, closeRate: 1,
       effective: 0,
     };
   }
@@ -281,18 +318,50 @@ export class RaceEngine {
       c.ers = 0.35 + this.rnd() * 0.5;
       c.ersUp = this.rnd() > 0.5;
       c.tyre = Math.floor(this.rnd() * 3);
-      c.tyreAge = this.rnd() * 6;
+      c.tyreAge = this.rnd() * 15;
       c.drs = false;
       c.flash = null;
       c.rank = i; c.rankF = i; c.rankMoved = -99; c.rankDelta = 0;
       c.trackU = 0;
       c.form = [0.5, 0.5, 0.5, 0.5, 0.5];
       c.pitOwed = 0;
+      // spread widely: 0.34..0.86 is a factor of two and a half between the
+      // slowest and the quickest car to settle into a new pace
+      c.paceRef = c.pace;
+      c.paceEase = 0.34 + this.rnd() * 0.52;
+      c.rankEase = 0.42 + this.rnd() * 0.5;
+      c.closeRate = 0.7 + this.rnd() * 0.6;
+      c.sectors = [0, 0, 0];
+      c.sectorAt = this.t + this.rnd() * 3;
+      // Math.floor, and not optional: a float index writes a named property
+      // on the array rather than an element, so the pips never changed at all
+      c.sectorPhase = Math.floor(this.rnd() * 3);
+      c.speed = 300 + this.rnd() * 40;
       if (first) this.hist[i].fill(i);
     }
     this.annotations.length = 0;
     this.pulses.length = 0;
     this.nextBeat = this.t + 3;
+
+    /* THE CHANGEOVER MUST NEVER ENTER THE BUFFER.
+       Resetting seven gaps in one tick writes a step into every lane at the
+       same instant — and because the buffer scrolls, that step then travelled
+       across the screen as a vertical wall for the next twenty-two seconds,
+       with the old race's colours on one side of it and the new race's on the
+       other. It was the single most visible artefact in the hero.
+
+       The new race is instead run forward for a full window's worth of history
+       before anything is drawn, so the buffer holds only this race, already
+       shaped. The old race leaves with the fade rather than being stitched on
+       to the front of the new one. */
+    if (!first) {
+      const beats = this.annId;
+      for (let i = 0; i < Math.ceil((HISTORY_S + 2) / 0.033); i++) this.advance(0.033);
+      this.annotations.length = 0;
+      this.pulses.length = 0;
+      this.annId = beats;
+      this.nextBeat = this.t + 2;
+    }
   }
 
   /* ---- reading the world ------------------------------------------------- */
@@ -362,12 +431,18 @@ export class RaceEngine {
         moved: this.t - c.rankMoved < 5 ? Math.sign(c.rankDelta) : 0,
         flash: this.t < c.flashUntil ? c.flash : null,
         form: c.form,
+        sectors: c.sectors,
+        // a stint, not a lap count: the bar should be somewhere in the middle
+        // most of the time rather than pinned at either end
+        wear: clamp01(c.tyreAge / (this.laps / 2.4 / COMPOUNDS[c.tyre].wear)),
+        speed: c.speed,
       };
     });
     return {
       rows, lap: Math.min(this.laps, Math.floor(this.lap)), laps: this.laps,
       weather: this.weather, circuit: this.circuit, status: this.status,
       trackTemp: this.trackTemp, alive: this.alive, order: ord,
+      trap: this.cars[ord[0]].speed,
     };
   }
 
@@ -375,26 +450,30 @@ export class RaceEngine {
 
   step(dtSeconds: number) {
     const dt = Math.min(0.05, dtSeconds) * this.timeScale;
-    this.t += dt;
-    const t = this.t;
-
-    this.spread += (this.spreadTo - this.spread) * Math.min(1, dt * 1.6);
     this.timeScale += (this.timeTo - this.timeScale) * Math.min(1, dt * 1.4);
-    if (t > this.statusUntil && this.status !== "GREEN") {
-      this.status = "GREEN";
-      this.spreadTo = 1;
-      this.timeTo = 1;
-    }
 
     /* the changeover: fade the whole picture out, swap the race, fade back */
     if (this.changing > 0) {
       this.changing -= dt;
       this.alive = clamp01(Math.abs(this.changing - 1.1) / 1.1);
-      if (this.changing <= 1.1 && this.changing + dt > 1.1) this.newRace();
+      if (this.changing <= 1.1 && this.changing + dt > 1.1) { this.newRace(); return; }
       if (this.changing <= 0) { this.changing = 0; this.alive = 1; }
     } else {
       this.lap += dt / LAP_S;
       if (this.lap >= this.laps + 0.6) this.changing = 2.2;
+    }
+
+    this.advance(dt);
+  }
+
+  /** The physics, separable from the broadcast, so a new race can be run
+      forward through it before its first frame is ever shown. */
+  private advance(dt: number) {
+    this.t += dt;
+    const t = this.t;
+    if (t > this.statusUntil && this.status !== "GREEN") {
+      this.status = "GREEN";
+      this.timeTo = 1;
     }
 
     this.trackTemp += (Math.sin(t * 0.11) + Math.sin(t * 0.043) * 0.6) * dt * 0.19;
@@ -429,6 +508,8 @@ export class RaceEngine {
    */
   private drivePace(dt: number, t: number) {
     const ord = this.order();
+    let fastest = Infinity;
+    for (const c of this.cars) fastest = Math.min(fastest, c.effective);
 
     for (let r = 0; r < ord.length; r++) {
       const c = this.cars[ord[r]];
@@ -441,7 +522,9 @@ export class RaceEngine {
         c.paceTo = base + (c.mood === "push" ? -0.17 : c.mood === "manage" ? 0.14 : 0);
       }
       // eased, never switched: a step in pace is a kink in the trace
-      c.pace += (c.paceTo - c.pace) * Math.min(1, dt * 0.8);
+      c.pace += (c.paceTo - c.pace) * Math.min(1, dt * c.paceEase);
+      // a slow average of this car's own pace, for judging its own sectors
+      c.paceRef += (c.effective - c.paceRef) * Math.min(1, dt * 0.09);
 
       /* A stint pace that holds flat between decisions gives parallel lines.
          Real pace never holds — it drifts with fuel, track, traffic and the
@@ -464,7 +547,33 @@ export class RaceEngine {
       const drs = c.drs ? -0.13 : 0;
       const clean = r === 0 ? -0.05 : 0;
 
-      c.effective = c.pace + degradation + dirty + drs + clean + c.wobble;
+      /* Under caution a car closes on the one ahead until it is a second
+         behind, and no further. Each car therefore starts from its own gap,
+         closes at its own rate and settles at its own moment — a field
+         bunching up, rather than a picture being scaled. */
+      const neutral = this.status === "GREEN" || r === 0 ? 0
+        : -Math.min(0.5, Math.max(0, interval - 0.9)) * 0.55 * c.closeRate;
+
+      c.effective = c.pace + degradation + dirty + drs + clean + neutral + c.wobble;
+
+      /* A sector falls to each car when that car reaches it. The interval is
+         its own, the phase is its own, and the colour it lights depends on how
+         the car is actually going — so the pips are a readout rather than a
+         decoration blinking on a timer. */
+      if (t > c.sectorAt) {
+        c.sectorAt = t + 1.4 + this.rnd() * 1.5;
+        c.sectorPhase = (c.sectorPhase + 1) % 3;
+        /* Relative to the car's OWN rolling pace, not to the field's. A
+           sector colour answers "was that good for them", which is why a
+           midfield car can light green — comparing against the leader instead
+           left three rows permanently amber, which is accurate and useless. */
+        const own = c.effective < c.paceRef - 0.04;
+        const best = c.effective <= fastest + 0.005;
+        c.sectors[c.sectorPhase] = best && this.rnd() > 0.4 ? 2 : own ? 1 : 3;
+      }
+      // the trap speed follows the pace, with its own small tremor
+      c.speed += ((332 - c.effective * 26 + Math.sin(t * 1.7 + c.ref) * 4) - c.speed)
+        * Math.min(1, dt * 1.3);
 
       c.ers += (c.ersUp ? 0.075 : (c.drs ? -0.2 : -0.13)) * dt;
       if (c.ers > 0.97) { c.ers = 0.97; c.ersUp = false; }
@@ -482,7 +591,13 @@ export class RaceEngine {
       c.gap += rel * (dt / LAP_S);
       // the stop is paid out over about three seconds, never in one frame
       if (c.pitOwed > 0.01) {
-        const pay = Math.min(c.pitOwed, c.pitOwed * Math.min(1, dt * 1.5) + dt * 1.2);
+        /* A CONSTANT RATE, NOT AN EXPONENTIAL ONE.
+           Easing pays most of the debt in the first few frames, which is a
+           near-vertical drop however smooth the curve technically is. At two
+           and a half seconds of gap per second of real time, a twenty-second
+           stop unfolds over eight seconds — five hundred pixels of screen, and
+           a car sliding down the order rather than falling through it. */
+        const pay = Math.min(c.pitOwed, 2.5 * dt);
         c.gap += pay;
         c.pitOwed -= pay;
       }
@@ -499,13 +614,21 @@ export class RaceEngine {
        the picture ever rescaling fast enough to notice. */
     let max = 0;
     for (const c of this.cars) max = Math.max(max, c.gap);
-    const want = Math.max(3.4, Math.min(16, max * 1.06));
-    this.span += (want - this.span) * Math.min(1, dt * 0.08);
+    /* The span is the one quantity that legitimately has to be shared, since
+       it is the scale of the picture. It is therefore made as slow as it can
+       be without the field ever leaving the frame: a thirty-second time
+       constant is below the rate at which a viewer can attribute a change to
+       any moment, and the clamp is tight enough that it rarely has far to go. */
+    const want = Math.max(5, Math.min(13, max * 1.08));
+    this.span += (want - this.span) * Math.min(1, dt * 0.033);
 
     // where each car is around the lap, for the minimap
-    const lapU = (this.lap % 1);
+    this.trackClock += dt / TRACK_LAP_S;
     for (const c of this.cars) {
-      c.trackU = ((lapU - c.gap * 0.055) % 1 + 1) % 1;
+      /* Position around the lap comes from the gap, so the dots really are in
+         the running order and really do close up, fall back and get lapped —
+         and because each gap moves at its own rate, so does each dot. */
+      c.trackU = ((this.trackClock - c.gap * 0.03) % 1 + 1) % 1;
       // a rolling form trace for each row's sparkline
       if (this.rnd() < dt * 0.9) {
         c.form.push(clamp01(0.5 - c.effective * 1.4 + (this.rnd() - 0.5) * 0.2));
@@ -519,7 +642,7 @@ export class RaceEngine {
     // the eased rank follows the real one, so a swap bends rather than steps
     for (let r = 0; r < ord.length; r++) {
       const c = this.cars[ord[r]];
-      c.rankF += (r - c.rankF) * Math.min(1, dt * 1.1);
+      c.rankF += (r - c.rankF) * Math.min(1, dt * c.rankEase);
     }
     for (let r = 0; r < ord.length; r++) {
       const c = this.cars[ord[r]];
@@ -652,7 +775,7 @@ export class RaceEngine {
     switch (kind) {
       case "safety":
         this.status = "SAFETY CAR"; this.statusUntil = t + 9;
-        this.spreadTo = 0.42; this.timeTo = 0.74;
+        this.timeTo = 0.78;
         this.note({ kind, car: ord[0], label: "SAFETY CAR", value: "neutralised",
           viz: "scan", series: [], tone: "alert" }, t, 5.4);
         break;

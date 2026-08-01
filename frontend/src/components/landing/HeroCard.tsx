@@ -27,6 +27,7 @@ export const HeroCard = forwardRef<HTMLDivElement, { a: Annotation }>(
     return (
       <div ref={ref} className={cx("ann absolute left-0 top-0 opacity-0", `tone-${a.tone}`)}>
         <span className="ann-stem" />
+        <span className="ann-riser" />
         <span className="ann-anchor" style={{ background: `var(--d${a.ref})` }} />
         <span className="ann-card">
           <span className="ann-head">

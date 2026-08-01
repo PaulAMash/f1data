@@ -78,7 +78,7 @@ export function HeroTiming({ snap }: { snap: Snapshot }) {
 
   return (
     <div ref={host}
-      className={cx("tele absolute bottom-14 right-8 hidden w-[286px] lg:block")}
+      className={cx("tele absolute bottom-14 right-8 hidden w-[322px] lg:block")}
       style={{ opacity: 0.35 + snap.alive * 0.65 }}>
       <div className="tele-row tele-head">
         <span className={cx("tele-flag", snap.status !== "GREEN" && "tele-flag-on")} />
@@ -103,14 +103,22 @@ export function HeroTiming({ snap }: { snap: Snapshot }) {
                 {r.moved > 0 ? "▲" : r.moved < 0 ? "▼" : ""}
               </span>
 
-              {/* compound and its age — the two numbers a strategist reads first */}
+              {/* compound, and how much of it is left */}
               <span className="tele-tyre" style={{ color: c.tint, borderColor: `${c.tint}55` }}>
                 {c.key}
               </span>
-              <span className="tele-age tabular-nums">{r.tyreAge}</span>
+              <span className="tele-wear" title={`${r.tyreAge} laps`}>
+                <i style={{ width: `${(1 - r.wear) * 100}%`, background: c.tint }} />
+              </span>
+
+              {/* three pips, each set when that car reaches that sector */}
+              <span className="tele-sec">
+                {r.sectors.map((v, i) => (
+                  <i key={i} className={["", "is-ok", "is-purple", "is-slow"][v]} />
+                ))}
+              </span>
 
               <span className={cx("tele-drs", r.drs && "is-on")}>DRS</span>
-
               <Form points={r.form} ref_={r.ref} />
 
               <span className="tele-gap tabular-nums">
@@ -124,6 +132,9 @@ export function HeroTiming({ snap }: { snap: Snapshot }) {
       <div className="tele-foot">
         <span className="tele-key">ERS</span>
         <span className="tele-bar"><i style={{ width: `${(snap.rows[0]?.ers ?? 0.5) * 100}%` }} /></span>
+        <span className="tele-sep" />
+        {/* the trap speed, which never sits still for a whole second */}
+        <span className="tabular-nums">{Math.round(snap.trap)}<em>kph</em></span>
         <span className="tele-sep" />
         <span className="tabular-nums">{snap.trackTemp.toFixed(1)}°C</span>
         <span className="tele-sep" />

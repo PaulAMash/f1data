@@ -705,30 +705,51 @@ html.theme-sweep::view-transition-new(root) {
 
 /* ---- Layer 3: a card pinned to a moment -----------------------------------
    Positioned by the render loop, which sets only `transform` and `opacity` —
-   the two properties a browser can animate without touching layout. Everything
-   else about the card is declared once, here. */
+   the two properties a browser can animate without touching layout.
+
+   ONE RELATIONSHIP, FOR THE WHOLE LIFE OF THE CARD. It sits to the RIGHT of
+   its point and vertically centred on it, and it never flips, never detaches
+   and never drifts. Earlier versions opened above the anchor and swapped to
+   the left near an edge, which meant the card could ride a climbing line up
+   behind the navigation bar and could change sides mid-life — both of which
+   break the one thing a telemetry label has to communicate, which is that it
+   belongs to that point and no other. `--lift` is the only concession: a
+   vertical nudge, applied to the CARD alone, so the anchor stays exactly on
+   the data even when the card has been pushed clear of the chrome. */
 .ann {
   will-change: transform, opacity;
-  transition: opacity 120ms linear;
+  transition: opacity 140ms linear;
+  --lift: 0px;
 }
 .ann-anchor {
   position: absolute;
-  left: -3px; top: -3px;
-  height: 6px; width: 6px;
+  left: -3.5px; top: -3.5px;
+  height: 7px; width: 7px;
   border-radius: 999px;
   box-shadow: 0 0 0 3px rgb(var(--base-950) / .55);
 }
 .ann-stem {
+  /* Drawn from the anchor to the card, so it stays correct whatever `--lift`
+     is doing: a straight run right, then whatever vertical the nudge needs. */
   position: absolute;
-  left: 0; bottom: 0;
-  width: 1px; height: 30px;
-  background: linear-gradient(to top, rgb(var(--tint) / .38), rgb(var(--tint) / .10));
+  left: 3px;
+  top: 0;
+  height: 1px; width: 15px;
+  background: linear-gradient(to right, rgb(var(--tint) / .42), rgb(var(--tint) / .14));
 }
-.ann[data-flip="1"] .ann-card { left: auto; right: -10px; }
-
+.ann-riser {
+  position: absolute;
+  left: 17px; top: 0;
+  width: 1px;
+  height: calc(var(--lift) * 1);
+  margin-top: min(0px, var(--lift));
+  background: rgb(var(--tint) / .22);
+}
 .ann-card {
   position: absolute;
-  bottom: 30px; left: -10px;
+  left: 18px;
+  top: 0;
+  transform: translateY(calc(-50% + var(--lift)));
   display: flex;
   align-items: center;
   gap: 9px;
@@ -743,8 +764,8 @@ html.theme-sweep::view-transition-new(root) {
   animation: ann-in var(--dur-3) var(--ease-out) both;
 }
 @keyframes ann-in {
-  from { transform: translateY(4px) scale(.96); }
-  to   { transform: none; }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 .ann-head {
   display: inline-flex;
@@ -763,7 +784,6 @@ html.theme-sweep::view-transition-new(root) {
   color: rgb(var(--ink));
   font-variant-numeric: tabular-nums;
 }
-.ann-spark { opacity: .9; }
 
 /* ---- Live timing ----------------------------------------------------------
    Held just at the threshold of readability on purpose. It is not there to be
@@ -843,6 +863,30 @@ html.theme-sweep::view-transition-new(root) {
   font-size: 6.5px; font-weight: 700;
 }
 .tele-age { width: 10px; font-size: 8px; opacity: .7; }
+
+/* how much tyre is left — a bar that only ever drains, and resets on a stop */
+.tele-wear {
+  position: relative; width: 16px; height: 3px; flex: none;
+  border-radius: 999px; overflow: hidden;
+  background: rgb(var(--tint) / .1);
+}
+.tele-wear > i {
+  position: absolute; inset: 0 auto 0 0; border-radius: 999px;
+  transition: width 700ms var(--ease-out);
+}
+
+/* three sector pips per car, each lighting when THAT car reaches it */
+.tele-sec { display: inline-flex; gap: 2px; flex: none; }
+.tele-sec > i {
+  width: 5px; height: 3px; border-radius: 1px;
+  background: rgb(var(--tint) / .12);
+  transition: background-color 260ms var(--ease-out);
+}
+.tele-sec > i.is-ok { background: rgb(52 211 153 / .85); }
+.tele-sec > i.is-purple { background: rgb(167 139 250 / .95); }
+.tele-sec > i.is-slow { background: rgb(var(--amber) / .55); }
+
+.tele-foot em { font-style: normal; opacity: .5; margin-left: 1px; }
 .tele-drs {
   font-size: 6.5px; font-weight: 700; letter-spacing: .06em;
   padding: 1px 3px; border-radius: 3px;

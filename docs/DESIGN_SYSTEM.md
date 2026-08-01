@@ -1341,3 +1341,89 @@ zero at the cursor's own height and zero far from it, with its maximum in
 between. There is no value of `dy` at which anything can form a corner.
 
 It is an animation, so `prefers-reduced-motion` gets none of it.
+
+---
+
+## Nothing may happen to everything at once
+
+Six lines changing direction at the same x is the single loudest tell that a
+picture is generated rather than observed. A real feed cannot do it, because six
+drivers do not decide anything simultaneously. Every global quantity in the hero
+was therefore hunted down and either removed or slowed below the rate at which a
+viewer can attribute a change to a moment.
+
+**The vertical wall was the race changeover.** `newRace()` reset seven gaps in
+one tick, and because the buffer scrolls, that step then travelled across the
+screen for the next twenty-two seconds — with the old race's colours on one side
+of it and the new race's on the other. A new race is now run forward for a full
+window of history *before its first frame is drawn*, so the buffer only ever
+holds one race, already shaped. The old race leaves with the fade instead of
+being stitched onto the front of the new one.
+
+**The safety car was a global multiplier.** `spread` eased the lane height from
+1 to 0.42, squeezing all seven lines over the same six hundred milliseconds. It
+is gone. A caution now works the way it actually works — through pace: each car
+is asked to close on the one ahead, so the field bunches car by car, each from
+its own gap, at its own rate, arriving at its own moment. Same picture, none of
+the simultaneity.
+
+**Every easing constant was shared.** Two cars easing on the same constant reach
+their new value at the same instant, and a viewer reads simultaneity long before
+they read values. `paceEase`, `rankEase` and `closeRate` are now per car and
+spread over a factor of two and a half.
+
+**A float index writes a property, not an element.** `sectorPhase` was seeded
+with `rnd() * 3`, so `sectors[2.73] = 2` set a named property on the array and
+elements 0–2 never changed — three grey pips, forever, with no error anywhere.
+Any value used as an array index has to be integral at the point it is created,
+not at the point it is read.
+
+### The rule
+
+> Before adding motion, list every quantity the renderer reads that more than
+> one subject shares. Each one is a global animation waiting to be noticed.
+
+The only survivor is `span`, the scale of the picture itself, which cannot be
+per-car. It is clamped tightly and eased on a thirty-second constant — below the
+rate at which any change can be attributed to a moment.
+
+---
+
+## The cursor changes the light, never the data
+
+Bending the lines toward the pointer was the wrong idea however smooth the
+falloff became. Anchors, stems and cards are all pinned to positions read out of
+the history buffer, so deforming the drawing afterwards detached every one of
+them from the value it described. **A telemetry trace that moves because you
+waved at it is not telemetry.** What remains is atmospheric — a lamp that
+follows the cursor — which the reader feels without being able to name it.
+
+It also made the hero cheaper: evaluating an attraction at every spline sample
+was most of the difference between 41fps and 60.
+
+---
+
+## A label has exactly one relationship to its point
+
+To the right, vertically centred, for its whole life. It does not flip sides
+near an edge and it does not open above or below by turns. Either would break
+the only thing a telemetry label has to communicate, which is that it belongs to
+*that* point and no other.
+
+The one concession is `--lift`: when a climbing line would carry the card up
+behind the navigation bar, the **card** is nudged down while the **anchor** stays
+exactly on the data, and a riser covers the difference. Measured over sixty
+samples the card never rose above 95px with the bar ending at 56, never left the
+hero, and was never once to the left of its anchor.
+
+---
+
+## A readout answers "was that good for them"
+
+Sector pips compared each car against the leader, which is accurate and useless:
+three midfield rows sat permanently amber because they are, in fact, slower. They
+compare against the car's **own** rolling pace now, so a midfield car can light
+green for a good sector while purple stays reserved for the genuinely quickest.
+The same logic governs the wear bar, which is scaled to a stint rather than to a
+lap count so it spends most of its life somewhere in the middle rather than
+pinned at an end.

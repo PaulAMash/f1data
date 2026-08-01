@@ -139,12 +139,11 @@ export function HeroField({ className }: { className?: string }) {
     ro.observe(host);
 
     /* ---- the cursor -------------------------------------------------------
-       The hero acknowledges the reader and never announces that it has. A
-       pointer near a line lifts it by a few pixels — an attraction that falls
-       off over about a fifth of the width — and gathers a little extra light
-       around itself. Both are eased toward, never snapped to, so moving the
-       mouse quickly produces a wake rather than a jump; and `strength` decays
-       to zero the moment the pointer leaves, so nothing is left held open.
+       The hero acknowledges the reader and never announces that it has, and it
+       does so ONLY through light — see the note above drawScene for why the
+       lines themselves are now untouchable. The lamp is eased toward, never
+       snapped to, so moving the mouse quickly leaves a wake rather than a
+       jump, and it decays to nothing the moment the pointer leaves.
 
        Pointer events are on the SECTION, not on this element: the field is
        pointer-events:none by design, because the buttons drawn over it have to
@@ -171,28 +170,14 @@ export function HeroField({ className }: { className?: string }) {
     const ageAt = (x: number) => Math.max(0, (1 - x / w) * HISTORY_S);
     const uToX = (u: number) => u * w;
 
-    /* How much a line at (x, y) leans toward the pointer.
-       The falloff has to be SMOOTH IN BOTH AXES, which the obvious formula is
-       not: `sign(dy) * (1 - |dy|/reach)` flips sign the instant a line crosses
-       the cursor's height and puts a V-shaped notch in it — the same class of
-       defect V56 spent its whole budget removing, arriving through a new door.
-
-       `u · e^(−u²)` is odd, C-infinity, zero at the cursor's own height and
-       zero far from it, with its maximum in between. So a line leans toward
-       the pointer, straightens as it reaches it, and is untouched beyond —
-       and there is no value of dy at which anything can form a corner. */
-    const PULL_X = () => w * 0.19;
-    const REACH = 210;
-    const bend = (x: number, y: number) => {
-      if (mStrength < 0.01) return 0;
-      const dx = (x - mx) / PULL_X();
-      if (dx < -2.6 || dx > 2.6) return 0;
-      const u = (y - my) / REACH;
-      if (u < -3 || u > 3) return 0;
-      // 0.4289 is the peak of u·e^(−u²); dividing by it makes 26 the real
-      // maximum displacement in pixels
-      return -u * Math.exp(-u * u) / 0.4289 * Math.exp(-dx * dx) * 13 * mStrength;
-    };
+    /* THE CURSOR CHANGES THE LIGHT, NEVER THE DATA.
+       Bending the lines toward the pointer was the wrong idea however smooth
+       the falloff became: the anchors, the stems and the cards are all pinned
+       to positions read out of the history buffer, and deforming the drawing
+       after the fact detached every one of them from the value it described.
+       A telemetry trace that moves because you waved at it is not telemetry.
+       What is left is atmospheric — see the lamp in paintRoom — which the
+       reader feels without being able to name. */
 
     /* CURVES, NOT SEGMENTS.
        Sampling every 7px and joining with lineTo draws a polygon, and wherever
@@ -289,7 +274,7 @@ export function HeroField({ className }: { className?: string }) {
           * (0.12 + 0.88 * race.alive);
 
         // the blurred pass is sampled half as finely; nothing survives the blur
-        spline(c, (x) => { const y = Y(race.posAt(d, ageAt(x))); return y + bend(x, y); },
+        spline(c, (x) => Y(race.posAt(d, ageAt(x))),
           -SAMPLE, w + SAMPLE * 2, crisp ? SAMPLE : SAMPLE * 2);
         c.strokeStyle = crisp ? focused(colour, 0.30, 0.66) : colour;
         c.globalAlpha = alpha;
@@ -323,7 +308,7 @@ export function HeroField({ className }: { className?: string }) {
            first cut built a full-screen spline per packet per pass — six extra
            curves a frame for a highlight forty pixels long, which halved the
            frame rate the packets were supposed to be spending. */
-        spline(c, (x) => { const y = Y(race.posAt(p.car, ageAt(x))); return y + bend(x, y); },
+        spline(c, (x) => Y(race.posAt(p.car, ageAt(x))),
           Math.max(-SAMPLE, x0 - tail), Math.min(w + SAMPLE, x0 + 6));
         c.stroke();
       }
@@ -611,14 +596,22 @@ export function HeroField({ className }: { className?: string }) {
         const fade = Math.min(1, age / 0.4)
           * Math.min(1, (1 - age / a.life) / 0.32)
           * Math.min(1, (u - 0.4) / 0.05);
+        /* ALWAYS TO THE RIGHT, ALWAYS ATTACHED, NEVER BEHIND THE CHROME.
+           The card keeps one relationship to its point for its whole life: a
+           short stem out to the right, vertically centred. It does not flip
+           sides near an edge and it does not open above or below by turns —
+           either would break the only thing a telemetry label has to say,
+           which is that it belongs to THAT point.
+
+           The one concession is `--lift`: when a climbing line would carry the
+           card up behind the navigation bar, the CARD is nudged down while the
+           ANCHOR stays exactly on the data. The stem lengthens to cover the
+           difference, so the attachment is still visible and still true. */
+        const HALF = 17, TOP = 26, BOT = h - 26;
+        const lift = Math.max(0, TOP + HALF - y) + Math.min(0, BOT - HALF - y);
         el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`;
+        el.style.setProperty("--lift", `${lift.toFixed(1)}px`);
         el.style.opacity = String(Math.max(0, Math.min(1, fade)));
-        // a card born near the live edge would hang off the page; it opens to
-        // the left instead, and keeps its stem on the point it describes
-        /* The tracker and the timing panel own the right-hand quarter. Cards
-           are born to the left of both and open leftward once they are wide
-           enough to reach — so the three never negotiate for the same pixels. */
-        el.dataset.flip = x > w - 480 ? "1" : "0";
       }
 
       // eleven times a second. At five the gaps visibly stepped between

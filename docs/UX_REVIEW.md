@@ -3,8 +3,48 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V57**. Reviewed at 1440×900 and 390×844, in both themes, with motion full and
+Last pass: **V58**. Reviewed at 1440×900 and 390×844, in both themes, with motion full and
 calm.
+
+---
+
+## Fixed in V58
+
+### 1. The vertical wall — *critical*
+
+`newRace()` reset seven gaps in one tick and the step then scrolled across the
+screen for twenty-two seconds. New races are pre-rolled through a full window of
+history before their first frame is drawn.
+
+### 2. Everything moved together — *high*
+
+The safety car was a global lane multiplier; every easing constant was shared.
+Cautions now work through per-car pace convergence, and `paceEase`, `rankEase`
+and `closeRate` are per car.
+
+### 3. The pit stop was still near-vertical — *high*
+
+Exponential payout dumps most of the debt in the first few frames. It is a
+constant 2.5s of gap per second now — a twenty-second stop over eight seconds.
+
+### 4. Cursor deformation broke every anchor — *high*
+
+Removed entirely. The cursor affects light only. Also worth 41fps → 60.
+
+### 5. Labels could flip sides and hide behind the nav — *medium*
+
+One relationship for the whole life: right of the point, vertically centred,
+with the card nudged clear of the chrome while the anchor stays on the data.
+
+### 6. Sector pips never changed — *medium*
+
+`sectorPhase` was a float, so writes landed on a named array property rather
+than an element. Silent, and invisible to the type system.
+
+### 7. The tracker whipped round — *medium*
+
+Cars were on the race lap clock at two seconds a lap. They have their own
+eighteen-second clock now, spread around the circuit by their gaps.
 
 ---
 

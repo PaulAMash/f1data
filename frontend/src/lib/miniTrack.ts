@@ -217,7 +217,7 @@ export class MiniTrack {
   private lap = 0;
   private cache: TrackPath;
 
-  static LAP_S = 12;
+  static LAP_S = 34;
   static MORPH_S = 2.2;
 
   constructor(private rnd: () => number = Math.random) {
