@@ -53,7 +53,7 @@ export function ExploreCue() {
   return (
     <button type="button" onClick={go}
       className="pressable group/cue inline-flex items-center gap-2.5 rounded-xl border border-white/[0.10] bg-base-850/60 px-5 py-3.5 text-sm font-medium text-ink backdrop-blur-md">
-      Explore the experience
+      See how it works
       {/* The chevron drifts down on a slow loop. It is the page's only idle
           motion below the headline, and it exists to answer the one question a
           first-time reader has at the fold: is there more? */}

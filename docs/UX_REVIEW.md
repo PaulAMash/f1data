@@ -3,8 +3,45 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V54**. Reviewed at 1440×900 and 390×844, in both themes, with motion full and
+Last pass: **V55**. Reviewed at 1440×900 and 390×844, in both themes, with motion full and
 calm.
+
+---
+
+## Fixed in V55
+
+### 1. The hero was decoration that resembled data — *critical*
+
+Seven sine composites cannot overtake each other, because there was no running
+order for one to be ahead in. Nothing could ever happen, so nothing rewarded a
+second look. Replaced with an actual simulation (`lib/raceEngine.ts`) where x is
+time and the right edge is now — see *The hero is a simulation, not a drawing*.
+
+### 2. Glow instead of atmosphere — *high*
+
+Per-stroke haloes cannot pool light where lines overlap, which is the whole
+difference next to any reference with real lighting. Bloom is now a screen-space
+mip chain.
+
+### 3. The hero ran at 15fps — *critical*
+
+Two causes, neither in the drawing code. The full-screen `backdrop-filter` used
+for depth of field cost 60fps → 16 on its own, because the compositor re-filtered
+the entire hero every frame the canvas changed. Blurring during the full-screen
+composite cost most of the rest. Both fixed; the page now runs at the cap with
+the hero costing almost nothing even on a software rasteriser.
+
+### 4. No footer — *medium, carried over from V54's open list*
+
+Now states what the product is built on and that it is unaffiliated with Formula
+1 or the FIA. For something built entirely on somebody else's sport, that line
+had to be there.
+
+### 5. The hero paragraph was three lines deep — *low*
+
+One sentence now. The field behind it is already making the argument. The second control was
+also renamed from "Explore the experience" to **See how it works**, which says what pressing
+it does rather than describing a feeling.
 
 ---
 
@@ -102,17 +139,17 @@ Wiring them costs a loading state in the stat band, which is why it has not been
 the standing rule in this repo is that a flourish may fail to *no* flourish and may never make
 the product lie, and a stale literal is exactly that failure in slow motion.
 
-### C. There is no footer, anywhere — *medium*
+### C. The footer is on the landing page only — *low*
 
-The landing page simply stops after the doors. There is nowhere to state what the data sources
-are, what the project is, or that this is unofficial and unaffiliated. For a product built
-entirely on somebody else's sport, that last one matters.
+Closed for the page that needed it most. `/explorer`, `/history` and `/settings` are still
+application views that simply stop, and the unaffiliated-with-Formula-1 line arguably belongs
+on every one of them rather than on the one page a visitor might not reach.
 
 ### D. Only the logo goes home — *low*
 
 `/explorer` and `/history` offer no route back to the landing page except the wordmark, which
-is a convention rather than an affordance. A "Home" item in the nav, or making the wordmark
-visibly interactive, would close it.
+is a convention rather than an affordance. The footer closes this on the landing page; a
+"Home" item in the nav would close it everywhere.
 
 ### E. Two lint warnings are still standing — *low*
 

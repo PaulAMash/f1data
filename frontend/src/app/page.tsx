@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Check, MessageSquareText, Timer, Trophy } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
+import { Footer } from "@/components/layout/Footer";
 import { HeroField } from "@/components/landing/HeroField";
 import { ExploreCue } from "@/components/landing/ExploreCue";
 import { SampleStory } from "@/components/landing/SampleStory";
@@ -80,9 +81,11 @@ export default function Landing() {
               </span>
               .
             </h1>
-            <p className="stagger-3 mt-7 max-w-lg text-[17.5px] leading-relaxed text-ink-muted">
-              Pitwall IQ reads the lap-by-lap timing data and tells you what
-              actually decided the Grand Prix — not just who finished where.
+            {/* One sentence. The field behind it is already making the
+                argument; a paragraph here only delays the buttons. */}
+            <p className="stagger-3 mt-6 max-w-md text-[17.5px] leading-snug text-ink-muted">
+              We read every lap of timing data and tell you what actually
+              decided the Grand&nbsp;Prix.
             </p>
             <div className="stagger-4 mt-9 flex flex-wrap items-center gap-3">
               <Link href="/explorer"
@@ -191,6 +194,8 @@ export default function Landing() {
             art={<ArtArchive />} />
         </div>
       </section>
+
+      <Footer />
     </div>
   );
 }

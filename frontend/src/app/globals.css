@@ -661,31 +661,197 @@ html.theme-sweep::view-transition-new(root) {
    The hero field.
 
    The lines themselves are painted on a canvas — see HeroField.tsx for why.
-   Everything here is the ROOM they are painted in: the light source behind
-   them, and the pane of focal falloff in front of them.
+   Everything here is the ROOM they are painted in and the INSTRUMENTS layered
+   over it: the DOM half of the hero, where type has to be crisp.
    --------------------------------------------------------------------------- */
 
-/* The light in the room. Three slow lamps that never quite line up, so the
-   ambient colour keeps changing without ever announcing a cycle. */
-.hero-glow {
-  background:
-    radial-gradient(46% 62% at 18% 42%, rgb(var(--accent) / .16), transparent 72%),
-    radial-gradient(40% 54% at 62% 26%, rgb(var(--speed) / .13), transparent 72%),
-    radial-gradient(44% 50% at 84% 78%, rgb(var(--amber) / .09), transparent 74%);
-  animation: hero-glow 26s ease-in-out infinite alternate;
+/* The seven cars, as variables, so the canvas and the DOM cannot disagree about
+   what colour a driver is. Deeper on paper — see the note on the two recipes. */
+:root {
+  --d0: #ff8b1f; --d1: #4f8ce0; --d2: #ff4d5e; --d3: #27f4d2;
+  --d4: #3fd18b; --d5: #57b6ff; --d6: #b79bff;
 }
-/* Daylight does not have lamps in it. On paper the same three washes read as
-   dirt rather than as atmosphere, so light mode gets a much quieter room and
-   lets the ink do the work. */
-:root[data-theme="light"] .hero-glow {
-  background:
-    radial-gradient(52% 64% at 16% 36%, rgb(var(--accent) / .05), transparent 70%),
-    radial-gradient(46% 56% at 72% 22%, rgb(var(--speed) / .04), transparent 70%);
+:root[data-theme="light"] {
+  --d0: #c2410c; --d1: #1d4ed8; --d2: #be123c; --d3: #0f766e;
+  --d4: #15803d; --d5: #0369a1; --d6: #6d28d9;
 }
-@keyframes hero-glow {
-  from { opacity: .8; transform: translate3d(-1.2%, .8%, 0) scale(1.03); }
-  to   { opacity: 1;  transform: translate3d(1.2%, -.8%, 0) scale(1.07); }
+
+/* Film, as composited layers rather than as per-frame canvas work. The grain
+   is one feTurbulence the browser rasterises once and caches; the vignette is
+   a gradient. Both used to be redrawn sixty times a second for a result that
+   never changed, which is a good description of most performance problems. */
+.hero-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+  opacity: .05;
 }
+:root[data-theme="light"] .hero-grain { mix-blend-mode: multiply; opacity: .028; }
+
+.hero-vignette {
+  background: radial-gradient(120% 92% at 50% 46%, transparent 34%, rgb(0 0 0 / .46) 100%);
+}
+:root[data-theme="light"] .hero-vignette {
+  background: radial-gradient(120% 92% at 50% 46%, transparent 40%, rgb(15 23 42 / .07) 100%);
+}
+
+/* ---- Layer 3: a card pinned to a moment -----------------------------------
+   Positioned by the render loop, which sets only `transform` and `opacity` —
+   the two properties a browser can animate without touching layout. Everything
+   else about the card is declared once, here. */
+.ann {
+  will-change: transform, opacity;
+  transition: opacity 120ms linear;
+}
+.ann-anchor {
+  position: absolute;
+  left: -3px; top: -3px;
+  height: 6px; width: 6px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px rgb(var(--base-950) / .55);
+}
+.ann-stem {
+  position: absolute;
+  left: 0; bottom: 0;
+  width: 1px; height: 30px;
+  background: linear-gradient(to top, rgb(var(--tint) / .38), rgb(var(--tint) / .10));
+}
+.ann[data-flip="1"] .ann-card { left: auto; right: -10px; }
+.ann-card {
+  position: absolute;
+  bottom: 30px; left: -10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  white-space: nowrap;
+  padding: 6px 10px;
+  border-radius: 9px;
+  border: 1px solid rgb(var(--tint) / .12);
+  background: rgb(var(--base-900) / .72);
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  box-shadow: var(--el-2);
+  animation: ann-in var(--dur-3) var(--ease-out) both;
+}
+@keyframes ann-in {
+  from { transform: translateY(4px) scale(.96); }
+  to   { transform: none; }
+}
+.ann-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .16em;
+  color: rgb(var(--ink-muted));
+}
+.ann-dot { height: 5px; width: 5px; border-radius: 999px; }
+.ann-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: rgb(var(--ink));
+  font-variant-numeric: tabular-nums;
+}
+.ann-spark { opacity: .9; }
+
+/* ---- Layer 4: the instrument cluster --------------------------------------
+   Held just at the threshold of readability on purpose. It is not there to be
+   read; it is there so the claim "something is being measured continuously"
+   has evidence behind it. Every value in it is real simulation state. */
+.tele {
+  font-family: var(--font-mono);
+  border-radius: 12px;
+  border: 1px solid rgb(var(--tint) / .08);
+  background: rgb(var(--base-900) / .5);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  box-shadow: var(--el-2);
+  overflow: hidden;
+  animation: tele-in 1.4s var(--ease-out) .8s both;
+}
+@keyframes tele-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+.tele-row, .tele-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 9.5px;
+  letter-spacing: .12em;
+  color: rgb(var(--ink-faint));
+}
+.tele-head {
+  padding: 7px 10px;
+  font-weight: 700;
+  border-bottom: 1px solid rgb(var(--tint) / .07);
+  background: rgb(var(--tint) / .02);
+  color: rgb(var(--ink-muted));
+}
+.tele-flag {
+  height: 5px; width: 5px; border-radius: 999px;
+  background: rgb(52 211 153);
+  box-shadow: 0 0 0 3px rgb(52 211 153 / .16);
+}
+.tele-flag-on {
+  background: rgb(var(--amber));
+  box-shadow: 0 0 0 3px rgb(var(--amber) / .18);
+  animation: tele-pulse 1.1s var(--ease-in-out) infinite;
+}
+@keyframes tele-pulse { 50% { box-shadow: 0 0 0 6px rgb(var(--amber) / .05); } }
+
+.tele-body { padding: 7px 10px 9px; display: grid; gap: 4px; }
+.tele-pos { width: 8px; color: rgb(var(--ink-faint)); }
+.tele-tick { width: 2px; height: 9px; border-radius: 1px; }
+.tele-code { font-weight: 700; color: rgb(var(--ink-muted)); letter-spacing: .08em; }
+.tele-gap { margin-left: auto; color: rgb(var(--ink-faint)); font-size: 9px; }
+.tele-key { width: 20px; font-weight: 700; }
+.tele-split { height: 1px; background: rgb(var(--tint) / .07); margin: 4px 0 3px; }
+
+.tele-bar {
+  position: relative;
+  flex: 1;
+  height: 3px;
+  border-radius: 999px;
+  background: rgb(var(--tint) / .07);
+  overflow: hidden;
+}
+.tele-bar > i {
+  position: absolute; inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgb(var(--speed) / .5), rgb(var(--speed)));
+  transition: width 220ms var(--ease-out);
+}
+.tele-bar > i.tele-bar-warm {
+  background: linear-gradient(90deg, rgb(var(--amber) / .5), rgb(var(--amber)));
+}
+.tele-sectors { display: inline-flex; gap: 5px; font-size: 7px; }
+.tele-sectors > i { color: rgb(var(--ink-faint)); font-style: normal; }
+.tele-sectors > i.is-up { color: rgb(var(--speed)); }
+
+/* On paper a 50%-white panel over a white page is not a panel. Both glass
+   surfaces get a real body, a real edge and a real shadow in light mode —
+   frosted glass only reads as glass when there is something behind it. */
+:root[data-theme="light"] .tele,
+:root[data-theme="light"] .ann-card {
+  background: rgb(var(--base-900) / .86);
+  border-color: rgb(var(--tint) / .11);
+  box-shadow: var(--el-3);
+}
+:root[data-theme="light"] .tele-head { background: rgb(var(--tint) / .035); }
+:root[data-theme="light"] .tele-bar { background: rgb(var(--tint) / .10); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tele, .ann-card { animation: none; }
+  .tele-flag-on { animation: none; }
+}
+:root[data-motion="calm"] .tele,
+:root[data-motion="calm"] .ann-card,
+:root[data-motion="calm"] .tele-flag-on { animation: none; }
+
+/* The ambient lamps used to live here as three fixed CSS gradients. They are
+   now drawn on the canvas instead, because one of them tracks the leader — the
+   colour in the air has to move with the race, and a stylesheet cannot know
+   where the leader is. See drawRoom() in HeroField.tsx. */
 
 /* ---------------------------------------------------------------------------
    The mode cards.
@@ -728,9 +894,15 @@ html.theme-sweep::view-transition-new(root) {
    the page instead of stopping at an edge. The gradient underneath carries the
    same region toward the page colour, which is what keeps the headline at full
    contrast without putting a card behind it. */
+/* NO `backdrop-filter` HERE, DELIBERATELY.
+   This pane used to blur whatever was behind it, which meant the compositor
+   re-filtered the entire hero on every frame the canvas changed. Measured on
+   its own it cost more than every other thing on the page combined — 60fps to
+   16. The focal falloff now lives inside the canvas, where the sharp pass is
+   simply absent on the left (see drawScene), and what is left here is a plain
+   gradient scrim: the darkening that makes the headline legible, and nothing
+   the compositor has to think about. */
 .hero-dof {
-  backdrop-filter: blur(15px) saturate(115%);
-  -webkit-backdrop-filter: blur(15px) saturate(115%);
   background: linear-gradient(
     100deg,
     rgb(var(--base-950) / .94) 0%,
@@ -745,11 +917,8 @@ html.theme-sweep::view-transition-new(root) {
 
 /* In light mode the page colour is a warm grey, and 94% of a warm grey laid
    over white lines is exactly the haze the reader complained about. Paper
-   diffuses toward WHITE, so the falloff is built from the panel colour and the
-   blur is softer — the lines recede without being dirtied. */
+   diffuses toward WHITE, so the falloff is built from the panel colour. */
 :root[data-theme="light"] .hero-dof {
-  backdrop-filter: blur(11px) saturate(104%);
-  -webkit-backdrop-filter: blur(11px) saturate(104%);
   background: linear-gradient(
     100deg,
     rgb(var(--base-900) / .93) 0%,
@@ -770,10 +939,10 @@ html.theme-sweep::view-transition-new(root) {
   .hero-dof {
     background: linear-gradient(
       to bottom,
-      rgb(var(--base-950) / .93) 0%,
-      rgb(var(--base-950) / .88) 52%,
-      rgb(var(--base-950) / .58) 82%,
-      rgb(var(--base-950) / .42) 100%
+      rgb(var(--base-950) / .90) 0%,
+      rgb(var(--base-950) / .84) 50%,
+      rgb(var(--base-950) / .46) 80%,
+      rgb(var(--base-950) / .30) 100%
     );
     -webkit-mask-image: none;
     mask-image: none;
@@ -781,13 +950,11 @@ html.theme-sweep::view-transition-new(root) {
   :root[data-theme="light"] .hero-dof {
     background: linear-gradient(
       to bottom,
-      rgb(var(--base-900) / .92) 0%,
-      rgb(var(--base-900) / .86) 52%,
-      rgb(var(--base-900) / .54) 82%,
-      rgb(var(--base-900) / .38) 100%
+      rgb(var(--base-900) / .90) 0%,
+      rgb(var(--base-900) / .84) 50%,
+      rgb(var(--base-900) / .48) 80%,
+      rgb(var(--base-900) / .30) 100%
     );
   }
 }
 
-@media (prefers-reduced-motion: reduce) { .hero-glow { animation: none; } }
-:root[data-motion="calm"] .hero-glow { animation: none; }

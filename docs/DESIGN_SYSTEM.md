@@ -999,3 +999,131 @@ theme, motion and text size. The bar keeps only the theme toggle and the way int
 The walkthrough was retargeted with it. A tour step that points at a control which no longer
 exists is worse than no tour at all, so the "change the depth whenever" step now points at
 Settings and says what is inside it.
+
+---
+
+## The hero is a simulation, not a drawing
+
+V54 replaced array-shifting with pure functions of time — smooth, seamless, and
+still fundamentally decorative. Seven sine composites cannot overtake each other,
+because there is no running order for one to be ahead in. Nothing could ever
+*happen*, which is why the hero stopped being interesting after four seconds.
+
+`lib/raceEngine.ts` is a small race: seven cars, a continuous running order, and
+a director that stages moments into it. The renderer draws whatever the
+simulation is doing and invents nothing. The consequence worth the whole rewrite:
+
+> **X is time, and the right edge is now.**
+
+Every car's position is recorded on a fixed 0.1s tick. The curve at any x is
+where that car was `age(x)` seconds ago, read back with Catmull-Rom
+interpolation. The field does not "scroll" — history simply gets older and slides
+left, exactly as a live timing trace does. An overtake is authored at the live
+edge and then travels the full width of the screen as a thing that already
+happened, which is the difference between motion and narrative, and it is free
+once time is the x axis.
+
+**A card is pinned to a moment, not to a position.** Annotations are born at the
+live edge and ride the history leftward at exactly the rate the data does,
+because they are attached to a time. They retire before they can reach the
+headline. Never more than two at once.
+
+**Nothing is random in the sense a reader would resent.** The PRNG is seeded with
+a constant, so the sequence is identical on the server and the client — no
+hydration mismatch — and identical between reloads. It is simply long, and no two
+moments carry the same parameters. A beat that fired in the last three is not
+eligible to fire again.
+
+**Pre-roll before first paint.** At t=0 every car sits exactly on its grid slot,
+so the opening frame would be seven straight lines. Thirty seconds are simulated
+before the first paint, then the staged moments are cleared — the hero opens
+mid-race with shape already in the history, and with nothing half-finished on
+screen at the moment the reader arrives.
+
+---
+
+## Glow is per-object; atmosphere is per-scene
+
+This is the single largest visual difference between what we had and any
+reference with real lighting in it, and it is not a tuning problem.
+
+Every version up to V54 gave each line its own blurred copy — a halo, a bloom, a
+core, drawn per path. Light in a real room is **additive across the whole scene**:
+where two bright things overlap, the air between them gets brighter than either.
+Per-stroke haloes cannot do that, because each stroke only knows about itself.
+
+Bloom is now a screen-space pass, the way a renderer does it:
+
+1. draw the scene once into a `0.42x` buffer, and once more into a `0.15x` mip
+2. blur **those**, then composite both back upscaled
+3. draw the scene again, crisp, on top
+
+Light therefore pools where the field converges and thins where it spreads.
+
+**Blur small, upscale big.** Blurring during the full-screen composite means
+convolving a million pixels twice a frame. Doing it while the image is still a
+`0.42x` buffer is the same picture for a twentieth of the work, because the
+bilinear upscale afterwards is itself a smoothing operation. This one change was
+23fps → the cap.
+
+---
+
+## Depth of field is the absence of the sharp copy
+
+The focal falloff used to be a full-screen `backdrop-filter` pane in the DOM.
+Measured on its own, it cost more than everything else on the page combined —
+**60fps to 16** — because the compositor re-filtered the entire hero on every
+frame the canvas changed.
+
+It now lives inside the canvas: the crisp pass is painted through a horizontal
+gradient that does not exist on the left, so behind the headline only the blurred
+bloom survives. Same falloff, no compositing, and it is physically the correct
+model — out of focus *is* "the sharp copy is missing". What remains in CSS is a
+plain gradient scrim that darkens for legibility and gives the compositor nothing
+to think about.
+
+**A falloff measured in fractions of the width assumes there is a width.** On a
+phone those same numbers put the entire sharp pass in the last hundred pixels and
+the hero empties out, so narrow screens keep the field sharp throughout and hand
+legibility to the vertical scrim instead. A depth of field needs a foreground and
+a background to separate; one column has neither.
+
+### The performance rule this produced
+
+> Before optimising what you are drawing, check what the compositor is doing with
+> it. A `backdrop-filter` or a `mix-blend-mode` over a surface that changes every
+> frame is re-evaluated every frame, and it will not appear anywhere in your
+> drawing code.
+
+Grain and the vignette moved to static composited layers for the same reason:
+they were being redrawn sixty times a second for a result that never changed.
+
+---
+
+## Thirty frames a second, on purpose
+
+Nothing in the hero moves quickly — the fastest thing on screen is a data packet
+crossing in two seconds — and film has told stories at twenty-four for a century.
+Capping the render loop at 31fps halves every cost in it and is invisible at these
+speeds. The simulation still advances on real elapsed time, so the race does not
+run at half speed; only the drawing does.
+
+---
+
+## An instrument that never moves is a claim that nothing is being measured
+
+The cluster in the corner is deliberately at the threshold of readability. Its
+job is not to inform — the pages behind it do that — it is to make the claim that
+something is being measured continuously, and a static number makes the opposite
+claim. So every value in it is real simulation state: the gap shown really is the
+gap between the first two lines on screen, and the flag really does go yellow
+when the director throws one.
+
+This is the line between atmosphere and a hacker UI. Fake numbers that scroll are
+set dressing; real numbers from a real model are an instrument. The visual
+language is the product's own — hairlines, tabular figures, the same tokens as
+every panel — and never terminal green.
+
+**Under reduced motion the composition survives and the movement does not.** The
+field draws one frame, no packets, no cards. A motion preference should cost the
+reader the animation, never the artwork.
