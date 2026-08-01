@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowRight, Check, MessageSquareText, Timer, Trophy } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
 import { HeroField } from "@/components/landing/HeroField";
+import { ExploreCue } from "@/components/landing/ExploreCue";
 import { SampleStory } from "@/components/landing/SampleStory";
 import { Flag, Gauge, LineChart, Sparkles } from "@/components/ui/MotionIcon";
 import { usePrefs, type Mode } from "@/lib/prefs";
@@ -19,17 +20,22 @@ import { cx } from "@/lib/format";
 /* page of equal-sized cards can never buy is the sense that somebody decided  */
 /* what mattered most.                                                        */
 /*                                                                            */
-/*   1. THE SHOT       an oversized line beside a Grand Prix drawn as light.  */
-/*                     The type and the image share the row, so neither is     */
-/*                     decoration for the other.                               */
+/*   1. THE SHOT       a Grand Prix drawn as light, full bleed, with the type  */
+/*                     printed on it rather than beside it.                    */
 /*   2. THE SCALE      five numbers that count themselves in — the credibility */
 /*                     paragraph, without the paragraph.                       */
 /*   3. THE CHOICE     two large cards, tinted to their own character, each     */
 /*                     showing the actual panel it produces.                   */
-/*   4. THE WAY IN     three steps, then three doors.                          */
+/*   4. THE WAY IN     three steps, then three doors, each door carrying a     */
+/*                     picture of what is behind it.                           */
+/*                                                                            */
+/* HIERARCHY IS NUMBERED, NOT GUESSED. Chapters 02–04 all carry the same       */
+/* SectionHead: a numeral, a one-word chapter name, a heading and a line. The  */
+/* reader can tell at a glance how far down the page they are and how much is  */
+/* left, which is what stops a long landing page feeling like an endless one.  */
 /*                                                                            */
 /* Everything below the fold arrives as it is scrolled to, so the page has     */
-/* pacing rather than a single load.                                           */
+/* pacing rather than a single load.                                          */
 /* -------------------------------------------------------------------------- */
 
 export default function Landing() {
@@ -85,10 +91,8 @@ export default function Landing() {
                 Start exploring
                 <ArrowRight size={16} className="transition-transform duration-200 group-hover/cta:translate-x-0.5" />
               </Link>
-              {/* The second button demonstrates instead of navigating — see
-                  SampleStory. "See how it works" scrolled the page, which is
-                  not worth a hero button. */}
-              <SampleStory />
+              {/* The second control guides rather than competes — see ExploreCue. */}
+              <ExploreCue />
             </div>
           </div>
         </div>
@@ -106,23 +110,23 @@ export default function Landing() {
           <Stat icon={<Flag size={15} />} value={2026} label="Season" plain />
           <Stat icon={<Trophy size={15} />} value={24} label="Races" />
           <Stat icon={<Gauge size={15} />} value={500} suffix="+" label="Drivers" />
-          <Stat icon={<Timer size={15} />} value={75} label="Years of history" />
+          {/* 2026 − 1950. The archive's own range, not a round number. */}
+          <Stat icon={<Timer size={15} />} value={76} label="Years of history" />
           <Stat icon={<LineChart size={15} />} value={0} literal="Millions" label="Laps analysed" />
         </div>
       </section>
 
       {/* ---- 3. the choice --------------------------------------------- */}
-      <section id="mode" ref={modeBand.ref}
-        className={cx("mx-auto max-w-7xl scroll-mt-20 px-4 pb-4 pt-16 sm:px-6 sm:pt-20", modeBand.className)}>
-        <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-[26px] font-bold tracking-tight sm:text-[32px]">Choose your experience</h2>
-            <p className="mt-1 text-sm text-ink-muted">Two ways to read the same race. You decide your depth.</p>
-          </div>
-          <span className="chip">You can change this any time in Settings</span>
-        </div>
+      {/* tabIndex -1 so the hero's cue can hand focus here: a keyboard reader
+          who presses "Explore the experience" must arrive, not just scroll. */}
+      <section id="mode" tabIndex={-1} ref={modeBand.ref}
+        className={cx("mx-auto max-w-7xl scroll-mt-16 px-4 pb-4 pt-20 outline-none sm:px-6 sm:pt-24",
+          modeBand.className)}>
+        <SectionHead n="02" chapter="Choose" title="Choose your experience"
+          line="Two ways to read the same race. You decide your depth."
+          aside={<span className="chip">Change it any time in Settings</span>} />
 
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="mt-7 grid gap-4 lg:grid-cols-2">
           <ModeCard
             id="simple" on={ready && prefs.mode === "simple"} onPick={choose}
             title="Simple" tag="Watch the race like a commentator"
@@ -138,7 +142,7 @@ export default function Landing() {
         </div>
 
         <div aria-live="polite"
-          className={cx("mt-4 flex flex-wrap items-center gap-2 text-sm transition-all duration-300",
+          className={cx("mt-4 flex flex-wrap items-center gap-2 text-sm transition-all duration-[--dur-3] ease-[--ease-out]",
             picked ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-1 opacity-0")}>
           <Check size={15} className="text-emerald-400" />
           <span className="text-ink-muted">
@@ -153,30 +157,68 @@ export default function Landing() {
 
       {/* ---- 4. the way in ---------------------------------------------- */}
       <section ref={startBand.ref}
-        className={cx("mx-auto max-w-7xl px-4 pt-14 sm:px-6 sm:pt-20", startBand.className)}>
-        <h2 className="text-[26px] font-bold tracking-tight sm:text-[32px]">Quick start</h2>
-        <p className="mt-1 text-sm text-ink-muted">Thirty seconds to get comfortable.</p>
-        <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          <Step n={1} title="Read a race" line="The story, the key moments and the turning point."
-            visual={<StepTrace />} />
-          <Step n={2} title="Compare drivers" line="Head-to-head pace, stints and race impact."
-            visual={<StepBars />} />
-          <Step n={3} title="Ask any question" line="Answered from the real lap data, not a template."
-            visual={<StepLines />} />
+        className={cx("mx-auto max-w-7xl px-4 pt-20 sm:px-6 sm:pt-24", startBand.className)}>
+        <SectionHead n="03" chapter="Start" title="Quick start"
+          line="Thirty seconds to get comfortable." />
+        <div className="mt-7 grid gap-3 sm:grid-cols-3">
+          <Step n={1} tint="var(--accent)" title="Read a race"
+            line="The story, the key moments and the turning point." />
+          <Step n={2} tint="var(--speed)" title="Compare drivers"
+            line="Head-to-head pace, stints and race impact." />
+          <Step n={3} tint="var(--amber)" title="Ask any question"
+            line="Answered from the real lap data, not a template." />
+        </div>
+        {/* "Show me" is the reader's next thought once the three steps have
+            said what the product does. It is answered here, quietly. */}
+        <div className="mt-5">
+          <SampleStory />
         </div>
       </section>
 
       <section ref={doorBand.ref}
-        className={cx("mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20", doorBand.className)}>
-        <div className="grid gap-3 sm:grid-cols-3">
+        className={cx("mx-auto max-w-7xl px-4 pb-20 pt-20 sm:px-6 sm:pb-28 sm:pt-24", doorBand.className)}>
+        <SectionHead n="04" chapter="Enter" title="Three ways in"
+          line="Pick the one that matches the question you arrived with." />
+        <div className="mt-7 grid gap-4 sm:grid-cols-3">
           <Door href="/explorer" icon={<Timer size={16} />} title="Read a race"
-            line="Story, strategy, pace and tyres for any session." />
+            line="Story, strategy, pace and tyres for any session."
+            art={<ArtRace />} />
           <Door href="/explorer?tab=ask" icon={<MessageSquareText size={16} />} title="Ask a question"
-            line="“Why did Leclerc lose places?” — answered from the data." />
+            line="“Why did Leclerc lose places?” — answered from the data."
+            art={<ArtAsk />} />
           <Door href="/history" icon={<Trophy size={16} />} title="Look something up"
-            line="Official results and standings, 1950 to today." />
+            line="Official results and standings, 1950 to today."
+            art={<ArtArchive />} />
         </div>
       </section>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/**
+ * The chapter marker.
+ *
+ * One component so every section below the hero shares a rhythm: a hairline, a
+ * numeral, the chapter word, then the heading. The numeral is the cheapest
+ * possible progress indicator — it costs no chrome and tells the reader where
+ * they are in the argument.
+ */
+function SectionHead({ n, chapter, title, line, aside }: {
+  n: string; chapter: string; title: string; line: string; aside?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <div className="min-w-0">
+        <p className="flex items-center gap-2.5 text-[11px] font-semibold uppercase tracking-[0.22em] text-ink-faint">
+          <span className="font-mono text-accent-soft">{n}</span>
+          <span className="h-px w-6 bg-white/[0.14]" />
+          {chapter}
+        </p>
+        <h2 className="mt-3 text-[28px] font-bold leading-tight tracking-[-0.03em] sm:text-[34px]">{title}</h2>
+        <p className="mt-1.5 max-w-xl text-[14.5px] text-ink-muted">{line}</p>
+      </div>
+      {aside}
     </div>
   );
 }
@@ -214,32 +256,34 @@ function ModeCard({
 }) {
   return (
     <button type="button" onClick={() => onPick(id)} aria-pressed={on}
+      data-on={on ? "true" : "false"}
       className={cx(
-        "group/mode relative overflow-hidden rounded-2xl border p-5 text-left sm:p-6",
-        "transition-all duration-300 ease-out",
+        "mode-card group/mode relative overflow-hidden rounded-2xl border p-5 text-left sm:p-6",
+        "transition-all duration-[--dur-3] ease-[--ease-out]",
         on ? "-translate-y-0.5" : "hover:-translate-y-1")}
+      // `--pick` carries the card's own colour into the stylesheet so the
+      // chosen-state shadow can be tuned per theme — a bloom that reads as
+      // light on black reads as spilled paint on white.
       style={{
+        ["--pick" as string]: tint,
         borderColor: on ? `rgb(${tint} / .5)` : "rgb(var(--tint) / .07)",
         background: `linear-gradient(155deg, rgb(${tint} / ${on ? ".10" : ".045"}), rgb(var(--base-900) / .8) 58%)`,
-        boxShadow: on
-          ? `0 0 0 1px rgb(${tint} / .35), 0 26px 60px -30px rgb(${tint} / .75)`
-          : "var(--el-2)",
       }}>
       {/* the light in the card's own colour, brightening as you reach for it */}
       <span aria-hidden
-        className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full transition-opacity duration-500"
+        className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full transition-opacity duration-[--dur-4]"
         style={{
           background: `radial-gradient(closest-side, rgb(${tint} / .3), transparent)`,
           opacity: on ? 0.9 : 0.35,
         }} />
 
       <span className="relative flex items-center gap-3">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-transform duration-300 group-hover/mode:scale-110"
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-transform duration-[--dur-3] ease-[--ease-spring] group-hover/mode:scale-110"
           style={{ background: `rgb(${tint} / .16)`, color: `rgb(${tint})` }}>
           <Sparkles size={17} />
         </span>
         <span className="text-[22px] font-bold tracking-tight text-ink">{title}</span>
-        <span className={cx("ml-auto grid h-6 w-6 shrink-0 place-items-center rounded-full border transition-all duration-300",
+        <span className={cx("ml-auto grid h-6 w-6 shrink-0 place-items-center rounded-full border transition-all duration-[--dur-3] ease-[--ease-spring]",
           on ? "scale-100 text-pure" : "scale-90 border-white/15 text-transparent")}
           style={on ? { background: `rgb(${tint})`, borderColor: `rgb(${tint})` } : undefined}>
           <Check size={13} strokeWidth={3} />
@@ -324,76 +368,171 @@ function AdvancedPreview() {
 }
 
 /* -------------------------------------------------------------------------- */
-function Step({ n, title, line, visual }: {
-  n: number; title: string; line: string; visual: React.ReactNode;
+/**
+ * A step in a sequence.
+ *
+ * These used to carry small chart doodles in the corner. Two of the three were
+ * grey bars on a dark card, which is the universal picture of content that has
+ * not loaded yet — a landing page cannot afford to look like it is still
+ * fetching. The artwork has moved to the doors, where it can be large enough to
+ * say something, and a step now looks like what it is: an ordered instruction,
+ * with an oversized ghost numeral doing the decorative work and a tint that
+ * tells the three apart at a glance.
+ */
+function Step({ n, title, line, tint }: {
+  n: number; title: string; line: string; tint: string;
 }) {
   return (
-    <div className="panel group/step relative flex items-start gap-3 overflow-hidden p-4">
-      <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-accent/12 text-[12px] font-bold tabular-nums text-accent-soft">
+    <div className="panel group/step relative flex items-start gap-3 overflow-hidden p-4 sm:p-5">
+      <span aria-hidden
+        className="ghost-num pointer-events-none absolute -bottom-7 -right-2 select-none font-mono text-[104px] font-bold leading-none tracking-tighter transition-transform duration-[--dur-4] ease-[--ease-out] group-hover/step:-translate-y-1"
+        style={{ ["--gn" as string]: tint }}>
         {n}
       </span>
-      <span className="min-w-0 flex-1">
+      <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg text-[12px] font-bold tabular-nums"
+        style={{ background: `rgb(${tint} / .14)`, color: `rgb(${tint})` }}>
+        {n}
+      </span>
+      <span className="relative min-w-0 flex-1">
         <span className="block text-[14.5px] font-semibold text-ink">{title}</span>
         <span className="mt-1 block max-w-[16rem] text-[12.5px] leading-relaxed text-ink-muted">{line}</span>
-      </span>
-      {/* a miniature of the thing, not an icon of the thing */}
-      <span aria-hidden className="pointer-events-none absolute -bottom-1 -right-2 opacity-45 transition-all duration-500 group-hover/step:-translate-y-0.5 group-hover/step:opacity-70">
-        {visual}
       </span>
     </div>
   );
 }
 
-function StepTrace() {
+/* -------------------------------------------------------------------------- */
+/**
+ * A door, with a window in it.
+ *
+ * These were three identical icon-and-two-lines rows, which told the reader
+ * nothing about how the three destinations differ — the icon was decoration
+ * standing in for information. Each now carries a small true picture of what
+ * is on the other side: crossing position traces, an answer being assembled,
+ * a results table. You can tell them apart before you have read a word, and
+ * the artwork leans in when you reach for it.
+ */
+function Door({ href, icon, title, line, art }: {
+  href: string; icon: React.ReactNode; title: string; line: string; art: React.ReactNode;
+}) {
   return (
-    <svg width="112" height="56" viewBox="0 0 112 56" fill="none" aria-hidden>
-      <path d="M2 40 C 22 38, 34 16, 52 20 S 80 34, 110 8" stroke="rgb(var(--accent))"
-        strokeWidth="2" strokeLinecap="round" />
-      <circle cx="52" cy="20" r="2.6" fill="rgb(var(--accent))" />
-      <circle cx="110" cy="8" r="2.6" fill="rgb(var(--accent))" />
-    </svg>
+    <Link href={href} className="group/door pressable panel relative flex flex-col overflow-hidden">
+      <span className="relative block h-[112px] overflow-hidden border-b border-white/[0.06] bg-base-950/50">
+        <span aria-hidden
+          className="absolute inset-0 transition-transform duration-[--dur-4] ease-[--ease-out] group-hover/door:scale-[1.04]">
+          {art}
+        </span>
+        {/* the artwork sits behind the card's own light, so it recedes */}
+        <span aria-hidden className="absolute inset-0"
+          style={{ background: "linear-gradient(to bottom, transparent 45%, rgb(var(--base-900) / .55))" }} />
+      </span>
+      <span className="flex items-start gap-3 p-4">
+        <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent-soft transition-transform duration-[--dur-3] ease-[--ease-spring] group-hover/door:scale-110">
+          {icon}
+        </span>
+        <span className="min-w-0">
+          <span className="flex items-center gap-1.5 text-[14.5px] font-semibold text-ink">
+            {title}
+            <ArrowRight size={13}
+              className="text-ink-faint transition-transform duration-[--dur-2] group-hover/door:translate-x-0.5 group-hover/door:text-accent-soft" />
+          </span>
+          <span className="mt-0.5 block text-[12.5px] leading-relaxed text-ink-muted">{line}</span>
+        </span>
+      </span>
+    </Link>
   );
 }
-function StepBars() {
+
+/* The three windows. Drawn at a fixed viewBox and stretched, so they fill the
+   band at any column width without a media query. */
+const ART = "h-full w-full";
+
+function ArtRace() {
+  const LINES = [
+    { d: "M0 46 C 40 44, 70 18, 110 22 S 180 40, 240 14", c: "rgb(var(--accent))", o: 0.95 },
+    { d: "M0 30 C 44 32, 72 52, 116 50 S 182 24, 240 30", c: "rgb(var(--speed))", o: 0.8 },
+    { d: "M0 62 C 46 58, 78 66, 120 62 S 186 70, 240 58", c: "#a78bfa", o: 0.6 },
+    { d: "M0 76 C 50 80, 84 74, 128 78 S 190 86, 240 74", c: "rgb(var(--amber))", o: 0.45 },
+  ];
   return (
-    <svg width="112" height="56" viewBox="0 0 112 56" fill="none" aria-hidden>
-      {[[10, 44], [28, 30], [46, 36], [64, 18], [82, 26]].map(([x, y], i) => (
-        <rect key={i} x={x} y={y} width="10" height={50 - y} rx="3"
-          fill={i % 2 ? "rgb(var(--speed))" : "rgb(var(--accent))"} opacity={0.75} />
+    <svg className={ART} viewBox="0 0 240 100" preserveAspectRatio="none" fill="none" aria-hidden>
+      {LINES.map((l) => (
+        <path key={l.d} d={l.d} stroke={l.c} strokeWidth="2" strokeLinecap="round"
+          opacity={l.o} vectorEffect="non-scaling-stroke" />
       ))}
-    </svg>
-  );
-}
-function StepLines() {
-  return (
-    <svg width="112" height="56" viewBox="0 0 112 56" fill="none" aria-hidden>
-      {[16, 26, 36].map((y, i) => (
-        <rect key={y} x="8" y={y} width={88 - i * 22} height="5" rx="2.5"
-          fill="rgb(var(--ink-faint))" opacity={0.5 - i * 0.12} />
-      ))}
-      <rect x="8" y="46" width="34" height="5" rx="2.5" fill="rgb(var(--accent))" opacity="0.75" />
+      {/* the crossing point is the only thing in a position chart worth marking */}
+      <circle cx="110" cy="22" r="3" fill="rgb(var(--accent))" />
+      <circle cx="110" cy="22" r="7" fill="rgb(var(--accent))" opacity="0.18" />
     </svg>
   );
 }
 
-/* -------------------------------------------------------------------------- */
-function Door({ href, icon, title, line }: {
-  href: string; icon: React.ReactNode; title: string; line: string;
-}) {
+/**
+ * Three pieces of evidence converging on one answer.
+ *
+ * The first draft of this was a stack of grey bars, which is indistinguishable
+ * from a loading skeleton — and a skeleton is the one thing a landing page must
+ * never look like. This draws the product's actual claim instead: separate
+ * measurements, each in its own colour, resolving into a single conclusion.
+ */
+function ArtAsk() {
+  const FEEDS = [
+    { y: 24, c: "rgb(var(--accent))" },
+    { y: 50, c: "rgb(var(--speed))" },
+    { y: 76, c: "rgb(var(--amber))" },
+  ];
   return (
-    <Link href={href}
-      className="group/door pressable panel flex items-start gap-3 p-4">
-      <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent-soft transition-transform duration-300 group-hover/door:scale-110">
-        {icon}
-      </span>
-      <span className="min-w-0">
-        <span className="flex items-center gap-1.5 text-[14.5px] font-semibold text-ink">
-          {title}
-          <ArrowRight size={13}
-            className="text-ink-faint transition-transform duration-200 group-hover/door:translate-x-0.5 group-hover/door:text-accent-soft" />
-        </span>
-        <span className="mt-0.5 block text-[12.5px] leading-relaxed text-ink-muted">{line}</span>
-      </span>
-    </Link>
+    <svg className={ART} viewBox="0 0 240 100" preserveAspectRatio="xMidYMid slice" fill="none" aria-hidden>
+      {FEEDS.map((f) => (
+        <g key={f.y}>
+          <circle cx="26" cy={f.y} r="4.5" fill={f.c} opacity="0.9" />
+          <path d={`M34 ${f.y} C 74 ${f.y}, 106 50, 146 50`} stroke={f.c} strokeWidth="1.6"
+            opacity="0.55" strokeLinecap="round" />
+        </g>
+      ))}
+      {/* the answer they arrive at */}
+      <circle cx="158" cy="50" r="19" fill="rgb(var(--accent))" opacity="0.12" />
+      <circle cx="158" cy="50" r="11" fill="rgb(var(--accent))" opacity="0.22" />
+      <circle cx="158" cy="50" r="5" fill="rgb(var(--accent))" />
+      <path d="M177 50 H 214" stroke="rgb(var(--accent))" strokeWidth="2" strokeLinecap="round"
+        opacity="0.75" />
+      <path d="M206 44 L 214 50 L 206 56" stroke="rgb(var(--accent))" strokeWidth="2"
+        strokeLinecap="round" strokeLinejoin="round" opacity="0.75" />
+    </svg>
+  );
+}
+
+/**
+ * Seventy-five seasons, and a podium at the end of them.
+ *
+ * Same reasoning as above: a fake results table drawn in grey reads as a table
+ * that failed to load. A podium is legible in a quarter of a second and cannot
+ * be mistaken for anything else.
+ */
+function ArtArchive() {
+  const STEPS = [
+    { x: 96, w: 36, h: 30, c: "rgb(var(--speed))", o: 0.55 },   // 2nd
+    { x: 136, w: 36, h: 46, c: "rgb(var(--accent))", o: 0.95 }, // 1st
+    { x: 176, w: 36, h: 20, c: "rgb(var(--amber))", o: 0.6 },   // 3rd
+  ];
+  return (
+    <svg className={ART} viewBox="0 0 240 100" preserveAspectRatio="xMidYMid slice" fill="none" aria-hidden>
+      {/* the seasons stretching back behind it, thinning as they recede */}
+      {Array.from({ length: 12 }, (_, i) => (
+        <rect key={i} x={16 + i * 5.5} y={78 - (4 + i * 1.6)} width="2.5" height={4 + i * 1.6} rx="1.25"
+          fill="rgb(var(--tint))" opacity={0.07 + i * 0.013} />
+      ))}
+      {STEPS.map((s) => (
+        <g key={s.x}>
+          <rect x={s.x} y={78 - s.h} width={s.w} height={s.h} rx="4" fill={s.c} opacity={s.o * 0.16} />
+          <rect x={s.x} y={78 - s.h} width={s.w} height="2.5" rx="1.25" fill={s.c} opacity={s.o} />
+        </g>
+      ))}
+      {/* the winner, standing on the top step rather than floating above it */}
+      <circle cx="154" cy="24" r="4.5" fill="rgb(var(--accent))" />
+      <path d="M147 32 C 147 27, 161 27, 161 32 Z" fill="rgb(var(--accent))" />
+      <line x1="16" y1="79.25" x2="224" y2="79.25" stroke="rgb(var(--tint))" strokeWidth="1.5"
+        opacity="0.16" />
+    </svg>
   );
 }

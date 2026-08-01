@@ -6,16 +6,19 @@ import Link from "next/link";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
-/* The second button.                                                         */
+/* The worked example.                                                        */
 /*                                                                            */
-/* "See how it works" scrolled the page down one section, which is not worth a */
-/* hero button — a control that important has to be worth pressing.            */
-/*                                                                            */
-/* This answers a real question instead, the way the product does: the         */
-/* evidence arrives one beat at a time, each line landing as the analysis      */
+/* The evidence arrives one beat at a time, each line landing as the analysis  */
 /* reaches it, and the verdict only once the working is on screen. Twenty      */
 /* seconds, no narration, and at the end the reader has watched Pitwall IQ do  */
 /* the thing it claims to do rather than read a promise that it can.           */
+/*                                                                            */
+/* WHERE IT LIVES. This was the hero's second button, which was the wrong      */
+/* rank for it: it asked a stranger to care about one driver in one race       */
+/* before they knew what the product was, and it competed with the one control */
+/* that should have won. It now sits at the end of Quick start — after the     */
+/* three steps have said what the product does, at the exact moment "show me"  */
+/* is the reader's next thought — as a quiet link rather than a button.        */
 /* -------------------------------------------------------------------------- */
 
 interface Beat {
@@ -45,11 +48,14 @@ export function SampleStory() {
   return (
     <>
       <button type="button" onClick={() => setOpen(true)}
-        className="pressable group/demo inline-flex items-center gap-2.5 rounded-xl border border-white/10 bg-base-850/60 px-5 py-3.5 text-sm font-medium text-ink backdrop-blur-md">
-        <span className="grid h-6 w-6 place-items-center rounded-full bg-accent/15 text-accent-soft transition-transform duration-300 group-hover/demo:scale-110">
+        className="group/demo inline-flex items-center gap-2.5 text-[13.5px] font-medium text-ink-muted transition-colors duration-[--dur-2] hover:text-ink">
+        <span className="grid h-6 w-6 place-items-center rounded-full bg-accent/15 text-accent-soft transition-transform duration-[--dur-3] ease-[--ease-spring] group-hover/demo:scale-110">
           <Play size={11} fill="currentColor" />
         </span>
-        Why did Verstappen win?
+        Watch a worked example
+        <span className="text-ink-faint transition-colors group-hover/demo:text-ink-muted">
+          — “Why did Verstappen win?”
+        </span>
       </button>
       {open && <Player onClose={() => setOpen(false)} />}
     </>

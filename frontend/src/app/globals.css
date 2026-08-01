@@ -638,69 +638,6 @@ html.theme-sweep::view-transition-new(root) {
 
 
 /* ---------------------------------------------------------------------------
-   The hero visual.
-
-   A landing image should build like a shot: canvas, then traces drawing left to
-   right, then the nodes landing, then the labels. Nothing is on screen at t=0
-   and nothing pops.
-
-   Once built it must not go completely still — but it must not loop visibly
-   either, or it competes with the headline. The only continuing motion is a
-   short bright dash travelling each trace on a long, staggered cycle, plus a
-   very slow drift in the ambient light behind them.
-   --------------------------------------------------------------------------- */
-.hero-canvas {
-  background:
-    radial-gradient(120% 90% at 70% 10%, rgb(var(--base-800) / .9), transparent 60%),
-    rgb(var(--base-950));
-  border: 1px solid rgb(var(--tint) / .07);
-  animation: hv-canvas 1s var(--ease-out) both;
-}
-@keyframes hv-canvas { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
-
-.hero-bloom {
-  background:
-    radial-gradient(48% 60% at 24% 68%, rgb(var(--accent) / .20), transparent 70%),
-    radial-gradient(44% 56% at 72% 26%, rgb(var(--speed) / .16), transparent 70%),
-    radial-gradient(40% 50% at 52% 90%, rgb(var(--amber) / .10), transparent 72%);
-  animation: hv-bloom 18s ease-in-out infinite alternate;
-}
-@keyframes hv-bloom {
-  from { opacity: .75; transform: translate3d(-1.5%, 1%, 0) scale(1.02); }
-  to   { opacity: 1;   transform: translate3d(1.5%, -1%, 0) scale(1.06); }
-}
-
-.hv-draw { stroke-dasharray: 100; animation: hv-draw 2.1s var(--ease-out) both; }
-@keyframes hv-draw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
-
-/* a 6%-long bright segment running the length of the path */
-.hv-spark {
-  stroke-dasharray: 6 94;
-  opacity: .9;
-  animation: hv-spark 7s linear infinite both;
-}
-@keyframes hv-spark {
-  0%   { stroke-dashoffset: 100; opacity: 0; }
-  8%   { opacity: .85; }
-  70%  { opacity: .85; }
-  85%  { opacity: 0; }
-  100% { stroke-dashoffset: 0; opacity: 0; }
-}
-
-.hv-node { animation: hv-node .7s var(--ease-spring) both; transform-box: fill-box; transform-origin: center; }
-@keyframes hv-node { from { opacity: 0; transform: scale(.2); } to { opacity: 1; transform: none; } }
-
-.hv-pin { animation: hv-pin .7s var(--ease-out) both; }
-@keyframes hv-pin { from { opacity: 0; transform: translateY(6px) scale(.94); } to { opacity: 1; transform: none; } }
-
-@media (prefers-reduced-motion: reduce) {
-  .hero-canvas, .hero-bloom, .hv-draw, .hv-node, .hv-pin { animation: none; }
-  .hv-draw { stroke-dasharray: none; }
-  .hv-spark { animation: none; opacity: 0; }
-}
-:root[data-motion="calm"] .hv-spark, :root[data-motion="calm"] .hero-bloom { animation: none; }
-
-/* ---------------------------------------------------------------------------
    Cinematic arrival, applied to a whole page.
 
    `.build > *` staggers every direct child in, so a race page assembles itself
@@ -723,17 +660,13 @@ html.theme-sweep::view-transition-new(root) {
 /* ---------------------------------------------------------------------------
    The hero field.
 
-   The flow is one translation of exactly one column per tick, linear and
-   infinite, on the same beat the data shifts by one column. Because both the
-   distance and the period match, the race streams continuously — there is no
-   frame where it steps.
+   The lines themselves are painted on a canvas — see HeroField.tsx for why.
+   Everything here is the ROOM they are painted in: the light source behind
+   them, and the pane of focal falloff in front of them.
    --------------------------------------------------------------------------- */
-.hf-flow { animation: hf-flow var(--hf-tick, 3400ms) linear infinite; }
-@keyframes hf-flow {
-  from { transform: translateX(0); }
-  to   { transform: translateX(calc(var(--hf-step) * -1)); }
-}
 
+/* The light in the room. Three slow lamps that never quite line up, so the
+   ambient colour keeps changing without ever announcing a cycle. */
 .hero-glow {
   background:
     radial-gradient(46% 62% at 18% 42%, rgb(var(--accent) / .16), transparent 72%),
@@ -741,18 +674,60 @@ html.theme-sweep::view-transition-new(root) {
     radial-gradient(44% 50% at 84% 78%, rgb(var(--amber) / .09), transparent 74%);
   animation: hero-glow 26s ease-in-out infinite alternate;
 }
+/* Daylight does not have lamps in it. On paper the same three washes read as
+   dirt rather than as atmosphere, so light mode gets a much quieter room and
+   lets the ink do the work. */
+:root[data-theme="light"] .hero-glow {
+  background:
+    radial-gradient(52% 64% at 16% 36%, rgb(var(--accent) / .05), transparent 70%),
+    radial-gradient(46% 56% at 72% 22%, rgb(var(--speed) / .04), transparent 70%);
+}
 @keyframes hero-glow {
   from { opacity: .8; transform: translate3d(-1.2%, .8%, 0) scale(1.03); }
   to   { opacity: 1;  transform: translate3d(1.2%, -.8%, 0) scale(1.07); }
+}
+
+/* ---------------------------------------------------------------------------
+   The mode cards.
+
+   A chosen card glows in its own colour. How much glow is a property of the
+   ROOM, not of the card: on black, a wide soft bloom reads as the card being
+   lit; on white the same bloom has nothing to light and reads as ink bleeding
+   through the paper. Light mode therefore keeps the ring — which is the part
+   that actually communicates "chosen" — and all but drops the spread.
+   --------------------------------------------------------------------------- */
+/* The one idle animation below the fold: a chevron that keeps drifting down,
+   because "is there more?" is the only question a hero cannot answer with
+   words. Long, soft, and never at rest for less than half its cycle — an idle
+   loop that hurries is an irritation rather than an invitation. */
+.cue-bob { animation: cue-bob 2.8s var(--ease-in-out) infinite; }
+@keyframes cue-bob {
+  0%, 62%, 100% { transform: translateY(0); }
+  80%           { transform: translateY(2.5px); }
+}
+@media (prefers-reduced-motion: reduce) { .cue-bob { animation: none; } }
+:root[data-motion="calm"] .cue-bob { animation: none; }
+
+/* The oversized numeral behind a step. A tint at 7% is a whisper on black and
+   very nearly nothing on white, so paper gets a little more of it. */
+.ghost-num { color: rgb(var(--gn) / .07); }
+:root[data-theme="light"] .ghost-num { color: rgb(var(--gn) / .13); }
+
+.mode-card { box-shadow: var(--el-2); }
+.mode-card[data-on="true"] {
+  box-shadow: 0 0 0 1px rgb(var(--pick) / .35), 0 26px 60px -30px rgb(var(--pick) / .75);
+}
+:root[data-theme="light"] .mode-card[data-on="true"] {
+  box-shadow: 0 0 0 1.5px rgb(var(--pick) / .45), 0 10px 26px -20px rgb(var(--pick) / .5);
 }
 
 /* The depth of field.
 
    `backdrop-filter` blurs whatever is behind this pane, and the mask decides
    HOW MUCH of the pane exists at each x — so the blur itself falls off across
-   the page instead of stopping at an edge. The gradient underneath darkens the
-   same region, which is what keeps the headline at full contrast without
-   putting a card behind it. */
+   the page instead of stopping at an edge. The gradient underneath carries the
+   same region toward the page colour, which is what keeps the headline at full
+   contrast without putting a card behind it. */
 .hero-dof {
   backdrop-filter: blur(15px) saturate(115%);
   -webkit-backdrop-filter: blur(15px) saturate(115%);
@@ -768,19 +743,51 @@ html.theme-sweep::view-transition-new(root) {
   mask-image: linear-gradient(100deg, #000 0%, #000 40%, rgba(0,0,0,.55) 62%, transparent 84%);
 }
 
-/* the standings rows and race-control markers arrive rather than blink */
-.hf-row { animation: rise-in var(--dur-4) var(--ease-out) both; }
-.hf-marker { animation: hf-marker 13s var(--ease-out) both; }
-@keyframes hf-marker {
-  0%   { opacity: 0; transform: translateY(8px) scale(.94); }
-  6%   { opacity: 1; transform: none; }
-  86%  { opacity: 1; transform: none; }
-  100% { opacity: 0; transform: translateY(-6px) scale(.98); }
+/* In light mode the page colour is a warm grey, and 94% of a warm grey laid
+   over white lines is exactly the haze the reader complained about. Paper
+   diffuses toward WHITE, so the falloff is built from the panel colour and the
+   blur is softer — the lines recede without being dirtied. */
+:root[data-theme="light"] .hero-dof {
+  backdrop-filter: blur(11px) saturate(104%);
+  -webkit-backdrop-filter: blur(11px) saturate(104%);
+  background: linear-gradient(
+    100deg,
+    rgb(var(--base-900) / .93) 0%,
+    rgb(var(--base-900) / .84) 28%,
+    rgb(var(--base-900) / .48) 50%,
+    rgb(var(--base-900) / .10) 70%,
+    transparent 84%
+  );
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .hf-flow, .hero-glow, .hf-row { animation: none; }
-  .hf-marker { animation: none; opacity: 1; }
+/* A LEFT-TO-RIGHT FALLOFF ASSUMES THERE IS A RIGHT.
+   On a phone the copy is the full width of the page, so a horizontal falloff
+   puts the brightest part of the field directly underneath the paragraph — the
+   composition survives and the sentence does not. Narrow screens get the same
+   idea rotated: dense behind the type at the top, opening up underneath the
+   buttons, where the field has the column to itself. */
+@media (max-width: 640px) {
+  .hero-dof {
+    background: linear-gradient(
+      to bottom,
+      rgb(var(--base-950) / .93) 0%,
+      rgb(var(--base-950) / .88) 52%,
+      rgb(var(--base-950) / .58) 82%,
+      rgb(var(--base-950) / .42) 100%
+    );
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  :root[data-theme="light"] .hero-dof {
+    background: linear-gradient(
+      to bottom,
+      rgb(var(--base-900) / .92) 0%,
+      rgb(var(--base-900) / .86) 52%,
+      rgb(var(--base-900) / .54) 82%,
+      rgb(var(--base-900) / .38) 100%
+    );
+  }
 }
-:root[data-motion="calm"] .hf-flow,
+
+@media (prefers-reduced-motion: reduce) { .hero-glow { animation: none; } }
 :root[data-motion="calm"] .hero-glow { animation: none; }

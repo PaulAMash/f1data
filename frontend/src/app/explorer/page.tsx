@@ -69,7 +69,7 @@ const TOUR: Step[] = [
   { target: "[data-tour='sources']", title: "Always checkable",
     body: "Every number says which F1 source it came from, and what wasn't available. Nothing here is invented." },
   { target: "[data-tour='mode']", title: "Change the depth whenever",
-    body: "Simple reads like a commentator; Advanced shows every measurement. Your choice is remembered." },
+    body: "Settings holds the reading depth — Simple reads like a commentator, Advanced shows every measurement — along with theme and motion. Your choice is remembered." },
 ];
 
 export default function ExplorerPage() {
@@ -337,6 +337,12 @@ function DataUnavailable({ error, onRetry, onPick, onOpenData }: {
   error: ApiError; onRetry: () => void; onPick: (s: Selection) => void; onOpenData: () => void;
 }) {
   const hint = REASON_HINT[error.reason] ?? "";
+  // The API's own message usually already carries the explanation. Printing the
+  // canned hint underneath it then says the same sentence twice in two type
+  // sizes, which reads as a bug rather than as help — so the hint only appears
+  // when it is adding something the message did not already say.
+  const stem = hint.split(/ — |\. /)[0].trim();
+  const showHint = stem.length > 0 && !error.message.toLowerCase().includes(stem.toLowerCase());
   return (
     <Card>
       <CardBody className="flex flex-col items-center gap-3 py-10 text-center">
@@ -346,7 +352,7 @@ function DataUnavailable({ error, onRetry, onPick, onOpenData }: {
         <div>
           <h3 className="text-base font-semibold">We couldn&apos;t load this session</h3>
           <p className="mx-auto mt-1 max-w-md text-sm text-ink-muted">{error.message}</p>
-          {hint && <p className="mx-auto mt-1 max-w-md text-xs text-ink-faint">{hint}</p>}
+          {showHint && <p className="mx-auto mt-1 max-w-md text-xs text-ink-faint">{hint}</p>}
         </div>
 
         <div className="mt-1 flex flex-wrap justify-center gap-2">

@@ -831,19 +831,15 @@ V52's hero was five hand-written bezier paths that drew themselves once and then
 forever. It looked good for about fifteen seconds — exactly as long as it takes to notice
 that nothing is ever going to change.
 
-`HeroField` is a small race simulation instead. It keeps a running order, drifts it, and
-every 3.4 seconds advances a lap: the field flows leftward, a new column of positions is
-generated on the right, cars occasionally trade places, lap times move, and race-control
-events are born and expire. It is a state machine, not a loop, so the order after five
-minutes is genuinely different from the order at load.
-
-The flow is one translation of exactly one column per tick, on the same beat the data shifts
-by one column — matching distance and period is what makes it stream rather than step.
+V53's hero was a small race simulation: it kept an array of lap positions, shifted it left
+every 3.4 seconds, generated a new column on the right, and ran a CSS translation to cover
+the gap. It was a genuine improvement on a still picture, and it was still wrong — see
+*Motion that has no clock* below for why, and for what replaced it.
 
 **Seed deterministically.** The opening grid was seeded with `Math.random()`, so the server
 rendered one set of lap times and the client rendered another: a hydration mismatch, which
-React repairs by throwing the server's markup away. Every seed value is now a pure function
-of the car's index. All variation enters from the first tick, which is after hydration.
+React repairs by throwing the server's markup away. That is why nothing in a first render
+may be random — a rule the current field keeps for free, because it holds no state at all.
 
 **Depth of field, not a card.** The race spans the full width *behind* the copy, and one
 `backdrop-filter` pane sits between them, masked so it is opaque behind the headline and
@@ -853,13 +849,26 @@ rather than a bordered panel beside it.
 
 ---
 
-## A hero button has to be worth pressing
+## A hero's second button guides; it does not compete
 
-"See how it works" scrolled the page down one section. `SampleStory` answers a real question
-instead, the way the product does: evidence arrives one beat at a time, each line landing as
-the analysis reaches it, and the verdict only once the working is on screen. Twenty seconds,
-no narration, and at the end the reader has *watched* Pitwall IQ do the thing it claims to
-do rather than read a promise that it can.
+The first version scrolled the page down one section, which is not worth a hero control. The
+second — "Why did Verstappen win?" — opened `SampleStory`, a twenty-second demonstration in
+which evidence arrives one beat at a time and the verdict lands only once the working is on
+screen. Better content, wrong place: it asked a stranger to care about one driver in one race
+before they knew what the product was, and it sat beside the single control that should win.
+
+A hero has exactly one primary action. The second control's job is to tell everyone who is
+not ready for that action where to go next — so it now says **Explore the experience** and
+scrolls to *Choose your experience*, with *Quick start* immediately behind it. The
+demonstration moved to the end of Quick start, as a quiet link rather than a button, at the
+point where "show me" is genuinely the reader's next thought.
+
+**Drive the scroll, don't delegate it.** `scrollIntoView` decides where to stop from
+`scroll-margin`, and `focus()` during a smooth scroll moves the scroll anchor — two mechanisms
+that must agree for the landing to be exact. `ExploreCue` computes the offset itself and
+focuses the section only once the scroll has finished, so there is nothing to agree about.
+Focus matters here: a keyboard user who presses the button must arrive at the section, not
+merely watch the page move.
 
 ---
 
@@ -875,3 +884,118 @@ relights it, larger text enlarges it — while the reader is still deciding.
 carry (Account, Data, Notifications) are deliberately absent rather than present and dead, and
 "larger text" scales the root font size so the whole ramp grows proportionally — labels and
 figures included — rather than enlarging body copy and leaving the interface behind.
+
+---
+
+## Motion that has no clock
+
+The hero read as "an animated SVG" rather than as motion graphics, and every complaint about
+it was a symptom of one cause: **two clocks**. A `setInterval` shifted an array of lap
+positions; a CSS animation translated the group to cover the gap. Two timers cannot stay in
+phase, and every drift surfaced as the snap, the jitter, the visible regeneration of paths.
+Worse, every path had a real beginning and a real end, so something always had to be born at
+one edge and killed at the other.
+
+The field holds no state now. Each line is a pure function of position and time:
+
+```
+y(x, t) = lane + Σ Aₖ · sin(x·fₖ + t·sₖ + φ)
+```
+
+sampled fresh across the viewport every frame. The picture moves because `t` advances, not
+because anything was moved. That single change removes the entire class of defect:
+
+- **no seam** — there is no join to hide, because there is no join;
+- **no respawn** — nothing is created or destroyed, so nothing can pop;
+- **no reset** — the frequencies share no common factor, so the composite never returns to a
+  previous state and the loop cannot be seen;
+- **no jitter** — one clock, `requestAnimationFrame`, and the sample is exact at any `t`.
+
+**Fibre optic, not a stroke.** A line is drawn four times — a wide halo, a broad bloom, the
+body, and a hair of near-white core — and a brighter packet travels each line on its own
+cycle. Four passes are what make a line look like it is *carrying* light rather than being
+painted with it, and that is the whole reason this is worth a canvas.
+
+**Reduced motion still gets a picture.** Under `calm`, `t` stops advancing and the field is
+drawn once — the composition survives, the movement does not. A motion preference should cost
+the reader the animation, never the artwork.
+
+---
+
+## Emitted light and absorbed light are different recipes
+
+The light theme "felt like the dark version with white paint", and the hero was the proof: on
+paper the additive glow turned to grey fog.
+
+That is not a tuning problem, it is a physics one. Additive blending (`lighter`) is how light
+behaves in a dark room — overlaps get brighter, and a colour laid over black has somewhere to
+go. On white there is nowhere brighter to go, so the same operation can only *desaturate*.
+
+So the field carries two recipes rather than one set of opacities:
+
+| | dark | light |
+|---|---|---|
+| composite | `lighter` — light is emitted | `multiply` — light is absorbed |
+| halo/bloom | glow around the line | a coloured shadow under it |
+| core | a hair of near-white | a second pass of the same hue, so the centre deepens |
+| overlaps | brighten | darken |
+
+The ink metaphor is exact: two multiplies of one colour give a darker centre for free, which
+is why the light recipe needs no second colour. The same reasoning applies everywhere the two
+rooms differ — the ambient hero lamps are nearly removed on paper, the focal-falloff pane
+diffuses toward *white* rather than toward the page grey, and the chosen mode card keeps its
+ring but drops almost all of its bloom, because a bloom on white reads as ink bleeding through
+rather than as a card being lit.
+
+**Rule.** When a theme looks wrong, ask whether the effect is describing light or describing
+pigment before reaching for the opacity.
+
+---
+
+## Artwork, or nothing — never a skeleton
+
+Three feature cards carried small chart doodles. Two of them were grey bars on a dark panel,
+which is the universal picture of *content that has not loaded yet*. A landing page cannot
+afford to look like it is still fetching, and a first impression is exactly where that mistake
+costs the most.
+
+The rule that came out of it: **decoration must be legible as decoration.** Anything that
+resembles placeholder geometry — a stack of neutral rounded bars, a grey rectangle where text
+should be — is worse than an empty card.
+
+So the doors carry real pictures of what is behind them, each readable in about a quarter of a
+second: crossing position traces; three coloured measurements converging into one answer; a
+podium with the seasons receding behind it. Nothing is grey, nothing is a bar of the size and
+spacing that text would occupy. The steps gave their doodles up entirely and took an
+oversized ghost numeral instead — sequence is what a step has to communicate, and a numeral
+communicates it without pretending to be data.
+
+---
+
+## Chapters, not sections
+
+A long landing page reads as an endless one unless the reader can tell where they are. Every
+section below the hero now shares one `SectionHead`: a numeral, a hairline, a one-word chapter
+name, the heading, and a line. `02 CHOOSE`, `03 START`, `04 ENTER`.
+
+It costs no chrome and it is the cheapest progress indicator there is — the reader can see how
+far down the argument they are and how much is left, which is the difference between scrolling
+with intent and scrolling to find the bottom.
+
+---
+
+## A preference is stated once, not repeated in the furniture
+
+Simple/Advanced lived as a segmented control in the nav bar, on every page, forever. That was
+the wrong rank for it twice over. A nav bar is for identity, navigation, and the controls that
+change the room you are in; and a preference that is offered again on every screen stops
+reading as *decided* and starts reading as *unresolved* — the interface asking the same
+question over and over.
+
+Display mode is now stated in the two places a preference belongs: **once on the landing page**,
+where it is explained, previewed and confirmed, and **permanently in Settings**, alongside
+theme, motion and text size. The bar keeps only the theme toggle and the way into Settings.
+
+The walkthrough was retargeted with it. A tour step that points at a control which no longer
+exists is worse than no tour at all, so the "change the depth whenever" step now points at
+Settings and says what is inside it.
