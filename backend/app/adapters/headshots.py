@@ -249,6 +249,31 @@ def season_media_map(year: int) -> dict[str, str]:
 # --------------------------------------------------------------------------- #
 # Resolution + enrichment
 # --------------------------------------------------------------------------- #
+def portraits_by_name(year: int, names: list[str]) -> dict[str, str]:
+    """
+    Full name -> official portrait URL, for callers that have names and nothing
+    else.
+
+    A championship table comes from Ergast/Jolpica, which knows a driver's name
+    and no more; the portraits live in Formula1.com's driver listing, which is
+    keyed by exactly that. The listing is fetched once per call and disk-cached
+    per season, so a twenty-row table costs one lookup, not twenty. Names that
+    do not resolve are simply absent — the UI already draws a clean initials
+    avatar for those, which is better than a silhouette.
+    """
+    listing = f1_listing_map(year)
+    if not listing:
+        return {}
+    out: dict[str, str] = {}
+    for name in names:
+        if not name:
+            continue
+        url = listing.get(_norm(name)) or listing.get(f"surname:{_surname(name)}")
+        if url:
+            out[name] = url
+    return out
+
+
 def resolve(session: RaceSession) -> list[dict]:
     """Per-driver portrait trace (what /api/debug/headshots serves and what
     enrich() applies). Order, all Formula1.com: official listing by name →

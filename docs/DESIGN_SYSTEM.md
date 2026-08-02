@@ -1839,3 +1839,193 @@ Declared on all four surface levels, which fixes the class rather than the
 instance.
 
 > A container that cannot be narrower than its contents is not a container.
+
+---
+
+## A tint behind twenty opaque bars is not a tint
+
+The safety-car band on the tyre chart was painted *behind* the stint bars. Twenty
+rows of full-saturation yellow, red and white cover the plot almost edge to edge,
+so the only place it ever showed was the 4px gaps between rows — which is the
+same as not painting it at all.
+
+The obvious fix is worse. Moving the tint in front recolours every compound it
+crosses, and compound colour is the one thing that chart exists to encode.
+
+So the neutralisation is told in three registers, none of which competes with the
+bars:
+
+* **The rail** — a track-state strip above the plot, on the same lap scale. Green
+  where the race was racing, a solid SC/VSC/RED capsule where it wasn't. This is
+  the part you can read from across the room, and it costs the plot nothing
+  because it is not in it.
+* **The hatch** — diagonal stripes over the bars, in the event's colour. Stripes
+  have gaps, so the compound underneath still reads. It is the same texture the
+  "tyre not recorded" bars already use, so the reader has met it before.
+* **The edges** — a hard rule on the window's first and last lap, above
+  everything, so *when exactly* is answerable to the lap.
+
+Hovering a capsule raises the hatch and lights both edges, and says how many cars
+took a cheap stop inside the window — which is the only reason a tyre chart draws
+safety cars in the first place.
+
+> If a layer cannot be seen, moving it forward is not the only option. Say the
+> same thing somewhere it has room.
+
+---
+
+## A marker that answers "yes, something happened here" is not finished
+
+The undercut mark was an 11px `▲` in a text node with a `title` attribute. On a
+wall of yellow it was invisible; when found, it said "Undercut attempt", which
+tells a reader who already knows what an undercut is that one occurred.
+
+It is now a stemmed marker on the exact lap of the stop, coloured by whether the
+move actually **worked** — teal if it did, rose if it did not, which is a fact the
+data already carried and the chart was throwing away. Hovering it explains the
+mechanism in one paragraph *and* what it was worth in this race, with this race's
+lap numbers, from `undercutStory()`.
+
+Two details that are not decoration. The head is stroked in `rgb(var(--base-900))`
+with `paint-order: stroke`, so the stroke renders under the fill: the marker cuts
+itself out of whatever compound it lands on — white, yellow and red all sit under
+it — without the halo eating half of a 12px triangle. And it is a `<span>` with
+`role="img"`, not a `<button>`: the row it lives in is already a button, and a
+button inside a button is markup React refuses to hydrate.
+
+> A chart that can explain itself is worth more than one that can only be read by
+> someone who already knows.
+
+---
+
+## The FIA feed is an instrument, so draw an instrument
+
+Race control was a stack of rounded cards: every neutralisation dumped at the top
+in a box, then every message underneath in another box, each padded like a
+notification. Two things were wrong and neither was styling.
+
+**It was out of order.** Windows first, messages second, so the safety car sat
+above the green flag that preceded it. A log whose rows are not in time order is
+not a log. They are now one chronological feed; a message with no lap stamped
+inherits the lap of the message before it, because the feed is chronological and
+"no lap" means "still on that lap", not "unknown".
+
+**It was unscannable.** Proportional text, no column for the lap, no way to see
+only the flags. It is now fixed-width with a lap column that forms a column, a
+three-letter status tag in the broadcast colour, neutralisations spanning the feed
+as banners where they happened, and filters that only appear for groups the
+session actually contains.
+
+Two things fell out of building it. The black-and-white flag — a formal warning
+for unsporting driving — arrives in the *flag* field, not the message, so reading
+only the message classified the most consequential signal in the log as a note.
+And the broadcast colours are used here as **text**, which is the case they were
+never designed for: VSC yellow is legible as a band across a dark plot and
+illegible as 9px type on white, so the tags go through the same lightness clamp
+the liveries do.
+
+> Dense on purpose. The room this belongs to is a pit wall, not an inbox.
+
+---
+
+## "Why was it decisive" has a finite number of answers
+
+A strategy card could say *what* happened and, when the backend had one, a
+sentence of general context. Neither answers the question a debrief exists for.
+
+Races are not decided by stops. They are decided by four or five recognisable
+mechanisms, and once a reader can name them they start seeing them unprompted in
+the next race they watch: safety-car timing, the undercut, track position across
+the pit cycle, and the tyre offset at the flag.
+
+Every mechanism in `lib/decisive.ts` is **detected**, never assumed — each one is a
+claim about this session checked against this session's pit stops, position
+trace, stints and classification. A mechanism that cannot be verified is not
+stated, and a card with nothing detectable falls back to the explanation it always
+had.
+
+Three rules emerged while building it, and each one came from the code being
+wrong first:
+
+* **Two laps after a stop is the middle of the pit cycle, not the end of it.**
+  The cars ahead have not stopped yet, so the driver is always behind — and the
+  card announced that a successful undercut "traded track position" directly
+  below the undercut it won. The cycle closes when every car that was ahead has
+  taken its own next stop, bounded by this driver's next stop and by fifteen laps.
+* **A mechanism must belong to the moment it is attached to.** A card about a
+  driver's long closing stint was carrying the undercut they pulled forty laps
+  earlier, which taught the reader that the tag means nothing.
+* **Do not tell two stories about one stop with opposite signs.** Where an
+  undercut already answers "what did the pit cycle do", the track-position line is
+  suppressed. The more specific claim wins.
+
+> A card arguing with itself is worse than a card that says less.
+
+---
+
+## An empty state is a question, not a hole
+
+Compare opened on two drivers it picked itself — the two quickest on corrected
+pace — and presented their duel as though the reader had asked for it. That is a
+comparison nobody chose, sitting exactly where the reader's own question should
+be, and its most common effect was to make people think the page was already
+showing them what they wanted.
+
+It opens empty now, and the empty state does the three things an empty state
+owes: it says what the page is for, it shows the two slots waiting to be filled,
+and it offers the duels **this session actually contains** — the fight for the
+win, the teammates who cannot blame the car, the closest finish on the road, the
+two quickest on pace. Each is derived from the classification in front of it, so
+the shortcuts are about this race rather than a generic "try comparing two
+drivers".
+
+When one side is already chosen — a reader who arrived from "deep dive on
+Leclerc" — the question changes to *against whom?*, and the three answers always
+worth offering are the same car, the car in front, and the car behind.
+
+> A page that answers a question nobody asked has spent the most valuable space
+> it has.
+
+---
+
+## A modal state with no affordance is the one state a modal may never be in
+
+The tour locks scroll **input** from the moment it starts — deliberately, so a
+reader cannot slide the highlighted control out from under its own spotlight. The
+card, though, waits for its target to render, and the first beat of a tour started
+from the landing page has to fetch a whole route first.
+
+Between those two moments the product was a page that would not scroll, with no
+card, no scrim and nothing to press. On a warm route it lasted 180ms and nobody
+saw it. On a cold one it was a locked screen.
+
+After 700ms of waiting the tour now admits it is working — and, the part that
+actually matters, offers the way out.
+
+The same review found the other half of the same mistake. The scrim is
+`pointer-events-none`, so the nav bar stays live during a tour, which is right.
+But the tour then saw a path that was not its own and pushed the reader straight
+back: Back appeared to do nothing, because every step out was answered by a step
+in. Walking away from a tour ends it, marks it done, and leaves the reader on the
+page they chose.
+
+> Locking input is a promise to draw something. Make the second half of that
+> promise unconditional.
+
+---
+
+## The spelling bridge only converts what was authored on one side
+
+Two hundred and forty-nine British spellings are transformed into American at
+render. The transform runs one way — authored British → rendered American — which
+means a string authored *American* is American in both settings, and a British
+reader gets "neutralization" in an otherwise British interface. Four surfaces had
+it.
+
+The fix is two lines and one habit: add the stem to the dictionary, and author
+British everywhere. The glossary keeps keys for both spellings, because it is
+looked up on the **authored** text and the bridge rewrites the rendered document,
+not the source.
+
+> A one-way transform makes the authoring side load-bearing. Say so out loud, or
+> it drifts.

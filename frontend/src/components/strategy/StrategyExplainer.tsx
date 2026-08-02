@@ -1,9 +1,10 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { Flag } from "@/components/ui/MotionIcon";
-import type { RaceInsight, StrategySummary } from "@/lib/types";
+import type { RaceInsight, RaceSession, StrategySummary } from "@/lib/types";
 import { KIND_LABEL, MOMENT, momentClassOf } from "@/lib/raceEvents";
+import { decisiveContext, mechanismsFor, type DecisiveContext } from "@/lib/decisive";
 import { cx } from "@/lib/format";
 
 /* Every card used to be styled by SEVERITY, and "info" — which is most of them
@@ -16,10 +17,14 @@ import { cx } from "@/lib/format";
    on the Position chart and the Race Story timeline. */
 
 export function StrategyExplainer({
-  strategy, onFocusDrivers,
-}: { strategy: StrategySummary; onFocusDrivers?: (codes: string[]) => void }) {
+  strategy, session, onFocusDrivers,
+}: { strategy: StrategySummary; session: RaceSession; onFocusDrivers?: (codes: string[]) => void }) {
   const [filter, setFilter] = useState<"all" | "key">("all");
   const [openKey, setOpenKey] = useState<string | null>(null);
+  // built once for the whole page: every card asks the same session the same
+  // questions, and rebuilding the position trace per card would be twenty
+  // passes over a thousand points to answer eight questions
+  const ctx = useMemo(() => decisiveContext(session, strategy), [session, strategy]);
   const insights = filter === "key"
     ? strategy.insights.filter((i) => i.severity === "key" || i.severity === "bad" || i.severity === "good")
     : strategy.insights;
@@ -51,7 +56,7 @@ export function StrategyExplainer({
             {col.map((ins) => {
               const key = `${ins.kind}|${ins.title}`;
               return (
-                <StrategyCard key={key} ins={ins} onFocus={onFocusDrivers}
+                <StrategyCard key={key} ins={ins} ctx={ctx} onFocus={onFocusDrivers}
                   open={openKey === key}
                   onToggle={() => setOpenKey((k) => (k === key ? null : key))} />
               );
@@ -70,13 +75,16 @@ export function StrategyExplainer({
  * so the page scans clean but the depth is one click away. Only one card is
  * open at a time (true accordion), keeping the layout compact.
  */
-function StrategyCard({ ins, open, onToggle, onFocus }: {
-  ins: RaceInsight; open: boolean; onToggle: () => void; onFocus?: (c: string[]) => void;
+function StrategyCard({ ins, ctx, open, onToggle, onFocus }: {
+  ins: RaceInsight; ctx: DecisiveContext; open: boolean; onToggle: () => void;
+  onFocus?: (c: string[]) => void;
 }) {
   const cls = momentClassOf(ins.kind, ins.severity);
   const meta = MOMENT[cls];
   const Icon = meta.icon;
   const c = meta.color;
+  // only computed for the card the reader actually opened
+  const mechanisms = useMemo(() => (open ? mechanismsFor(ins, ctx) : []), [open, ins, ctx]);
   return (
     <div className={cx("group/ins relative overflow-hidden rounded-xl border bg-base-850/50",
       "transition-all duration-200 ease-out hover:-translate-y-px",
@@ -114,10 +122,32 @@ function StrategyCard({ ins, open, onToggle, onFocus }: {
         <div className={cx("border-t border-white/[0.05] p-4 pt-3 transition-opacity duration-200",
           open ? "opacity-100" : "opacity-0")}>
           <p className="text-sm leading-relaxed text-ink-muted">{ins.detail}</p>
-          {ins.explanation && (
+          {/* ONE "why" block, not two. The backend's context leads it when there
+              is any, and the named mechanisms — each one checked against this
+              session — follow. See lib/decisive.ts. */}
+          {(ins.explanation || mechanisms.length > 0) && (
             <div className="mt-2.5 rounded-lg border border-white/[0.05] bg-base-900/40 p-3">
-              <div className="label mb-1">Why it mattered</div>
-              <p className="text-sm leading-relaxed text-ink-muted">{ins.explanation}</p>
+              <div className="label mb-1.5">Why it was decisive</div>
+              {ins.explanation && (
+                <p className="text-sm leading-relaxed text-ink-muted">{ins.explanation}</p>
+              )}
+              {mechanisms.length > 0 && (
+                <ul className={cx("space-y-2.5", ins.explanation && "mt-3 border-t border-white/[0.06] pt-3")}>
+                  {mechanisms.map((m) => {
+                    const mc = MOMENT[m.tone].color;
+                    return (
+                      <li key={m.key} className="flex gap-2.5">
+                        <span aria-hidden className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full"
+                          style={{ background: mc, boxShadow: `0 0 0 3px ${mc}22` }} />
+                        <div className="min-w-0">
+                          <div className="text-[12.5px] font-semibold" style={{ color: mc }}>{m.label}</div>
+                          <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink-muted">{m.detail}</p>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </div>
           )}
           <div className="mt-3 flex flex-wrap items-center gap-2">

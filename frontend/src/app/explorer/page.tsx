@@ -259,7 +259,7 @@ export default function ExplorerPage() {
                   </Section>
                 )}
                 {chartTab === "tyres" && (
-                  <Section title="Tyre strategy timeline" info="Each bar is a stint, coloured by compound. ▲ marks a detected undercut; shaded bands are neutralizations. Click a driver to focus their strategy.">
+                  <Section title="Tyre strategy timeline" info="Each bar is a stint, coloured by compound. The Track rail above the plot shows when the race was neutralised — hover a capsule to see what it did to the strategy. A stemmed marker is a detected undercut: teal if it worked, rose if it didn't, and hovering it explains why. Click a driver to focus their strategy.">
                     <TyreStrategyChart session={session} undercuts={bundle.strategy.undercuts} highlight={selected} onSelect={setSelected} />
                   </Section>
                 )}
@@ -272,7 +272,7 @@ export default function ExplorerPage() {
             )}
             {isRaceLike && tab === "strategy" && (
               <Section title="Explain the race">
-                <StrategyExplainer strategy={bundle.strategy}
+                <StrategyExplainer strategy={bundle.strategy} session={session}
                   onFocusDrivers={(d) => { setSelected(d); setChartTab("position"); setTab("charts"); }} />
               </Section>
             )}

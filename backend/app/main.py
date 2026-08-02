@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from . import cache, service
-from .adapters import data_source_manager, history_adapter, historical, pitstop_service
+from .adapters import data_source_manager, headshots, history_adapter, historical, pitstop_service
 from .adapters.data_source_manager import DataUnavailableError
 from .adapters.pitwall_runtime import load_pitwall
 from .analysis.engine import analyze, compare_drivers
@@ -380,7 +380,23 @@ def simulate(body: SimulateBody):
 # --------------------------------------------------------------------------- #
 @app.get("/api/history/standings")
 def history_standings(year: int = Query(...), type: str = Query("driver")):
-    rows, src = history_adapter.get_standings(year, "constructor" if type == "constructor" else "driver")
+    kind = "constructor" if type == "constructor" else "driver"
+    rows, src = history_adapter.get_standings(year, kind)
+    # A championship table is a list of people, and it read like a spreadsheet
+    # because it had no faces in it. Ergast/Jolpica knows the name; F1's own
+    # driver listing knows the portrait; this joins them by name. Only when the
+    # app is genuinely allowed to reach the network — demo mode stays offline,
+    # and a row with no portrait renders the initials avatar it always did.
+    settings = get_settings()
+    if kind == "driver" and not settings.mock_mode and settings.enable_live_fetch:
+        try:
+            faces = headshots.portraits_by_name(year, [r.get("name") for r in rows])
+            for r in rows:
+                url = faces.get(r.get("name"))
+                if url:
+                    r["headshot_url"] = url
+        except Exception:  # noqa: BLE001
+            pass
     return {"source": src.value, "year": year, "type": type, "standings": rows}
 
 

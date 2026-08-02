@@ -145,6 +145,10 @@ for (const s of [
   "custom", "personal", "optim", "organ", "real", "recogn", "summar", "priorit",
   "minim", "maxim", "visual", "normal", "util", "categor", "emphas", "apolog",
   "special", "standard", "modern", "synchron", "stabil", "penal", "local",
+  // a safety car "neutralises" the race — the word appears on four surfaces and
+  // was the one piece of jargon still authored American, so a British reader
+  // was reading "neutralization" in an otherwise British interface
+  "neutral",
 ]) ise(s);
 
 const GB_TO_US = new Map(PAIRS);

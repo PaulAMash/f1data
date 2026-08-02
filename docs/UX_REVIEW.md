@@ -3,8 +3,82 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V60**. Reviewed at 1440×950 and 390×844, in both themes, with motion full and
-calm, in both language styles, and walked end to end as a first-time visitor.
+Last pass: **V61**. Reviewed at 1440×1000 and 390×844, in both themes, in both language
+styles, and walked end to end as a first-time visitor down both branches of the welcome
+screen — tutorial taken and tutorial declined.
+
+---
+
+## Fixed in V61
+
+### 1. Every dropdown in the product, re-checked against the standard — *was high*
+
+Reported: the Grand Prix picker and Compare's second driver rendered behind the page or
+invisibly. Reproduced at scroll offset 400 (`Grand Prix → menu: missing`), and the cause was
+in the shared component rather than in either caller: a `scroll` listener that closed the menu
+was firing on the very scroll that brought the trigger into view. The menu now **follows** its
+trigger and leaves only when the trigger leaves the viewport. All nine pickers verified open,
+in-viewport and on top, at three scroll offsets, on desktop and phone.
+
+### 2. The Tyres chart could not show a safety car — *was high*
+
+The neutralisation band was painted behind twenty rows of opaque bars. Rebuilt as a track-state
+rail above the plot, a hatch over the bars and hard edges on the window's first and last lap;
+hovering a capsule says how many cars took the cheap stop inside it. See the design-system
+note.
+
+### 3. The undercut mark said nothing — *was medium*
+
+An 11px glyph with a `title` of "Undercut attempt". Now a stemmed marker coloured by whether
+the move worked, with a hover that teaches the mechanism and states what it was worth in this
+race. All of a driver's undercuts are drawn; previously only the first existed.
+
+### 4. Race control was a list of boxes in the wrong order — *was medium*
+
+Neutralisations were dumped above messages that preceded them. Rebuilt as one chronological
+fixed-width feed with a lap column, status tags, inline neutralisation banners and filters.
+
+### 5. Decisive moments did not say why they were decisive — *was medium*
+
+Named mechanisms, each detected against this session's own data, with a "why it was decisive"
+block that leads with the backend's context and follows with what actually happened.
+
+### 6. Compare answered a question nobody asked — *was medium*
+
+It auto-populated with the two quickest drivers. Now a designed empty state with duels derived
+from this session's classification.
+
+### 7. The standings had no faces — *was low*
+
+Driver rows carry portraits, joined by name from F1's own driver listing at the API and
+falling back to the team-coloured initials avatar the product already used.
+
+### 8. Back could not reach Home — *was medium*
+
+Rewritten to step through in-app history and stop at Home, where the control hides. Verified:
+`/history → /explorer → / → hidden`.
+
+### 9. The hero numbered its chapters 02 and 03 — *was low*
+
+"See how it works" was removed entirely rather than replaced, and the chapters renumbered.
+
+### 10. The tour could lock the screen with nothing on it — *found in review, was high*
+
+Scroll input is locked when the tour starts; the card waits for its target. On a cold route
+that gap is a locked page with no affordance. It now shows a holding state with a way out after
+700ms.
+
+### 11. The tour would not let the reader leave — *found in review, was high*
+
+The scrim is `pointer-events-none` so the nav stays live, but the engine pushed the reader back
+whenever the path was not its own — which made Back look broken. Walking away now ends the
+tour, marks it done, and leaves the reader where they went.
+
+### 12. Four surfaces spelled "neutralization" at a British reader — *found in review, was low*
+
+The spelling bridge only converts authored British → rendered American. Those strings were
+authored American, so both settings showed the same word. Stem added, strings re-authored, and
+the glossary keyed on both spellings.
 
 ---
 
@@ -512,6 +586,18 @@ a broken redirect, a broken effect or a broken component, and cost an hour twice
 page renders but nothing reacts, check `/_next/static/chunks/main-app.js` before reading any
 more code. Kill by PID (the process is `next-server`, not `next dev`, so `pkill -f "next dev"`
 misses it), delete `.next`, and start one server.
+
+**A probe that waits for "a dialog" will pass the wrong dialog.** The tour now renders a
+holding card while it fetches its first route, and the first-run script broke on it — reporting
+"0 beats advanced" for a tour that was working perfectly, because it had matched the holding
+card's dialog role and stopped waiting. It cost a fix to a bug that did not exist before the
+real one — the tour not releasing the reader — was found underneath it. Match on the specific
+label (`aria-label^="Guided tour, step"`), never on the role.
+
+**Half the product's primary controls are links, not buttons.** `get_by_role("button",
+name="Start exploring")` times out on an `<a href>` that happens to be styled as a button, and
+a 30-second timeout in a `try` block silently changes the timing of everything after it — which
+is how a tour that only fails when started quickly looked like a tour that always worked.
 
 **And the original one: headless Chromium at `device_scale_factor: 2` does not run smooth
 scrolling at all.** A bare

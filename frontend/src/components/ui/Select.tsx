@@ -30,8 +30,9 @@ import { cx } from "@/lib/format";
 /*               unless there is genuinely no room, in which case it opens up  */
 /*               rather than off the bottom of the screen.                     */
 /*                                                                            */
-/* It is not a modal. It closes on scroll rather than following the trigger:   */
-/* a menu that rides the page while you scroll is a menu you have to dismiss.  */
+/* It is not a modal. It is attached to its trigger: it follows it while the   */
+/* page moves and leaves when the trigger leaves the viewport — see the note   */
+/* on the follow effect for why closing on scroll was the bug it looked like.  */
 /* -------------------------------------------------------------------------- */
 
 export interface Option<T extends string | number> {
@@ -51,12 +52,14 @@ const GAP = 6;           // between trigger and menu
 const EDGE = 12;         // never closer than this to the viewport edge
 
 export function Select<T extends string | number>({
-  value, onChange, options, className, wide, ariaLabel, id,
+  value, onChange, options, className, wide, ariaLabel, id, placeholder,
 }: {
   value: T;
   onChange: (v: T) => void;
   options: readonly Option<T>[];
   className?: string;
+  /** Shown, muted, when `value` matches no option — an unfilled slot. */
+  placeholder?: string;
   /** Widen the trigger — used for long labels like a Grand Prix name. */
   wide?: boolean;
   ariaLabel?: string;
@@ -86,34 +89,65 @@ export function Select<T extends string | number>({
     const above = r.top - GAP - EDGE;
     // down unless it genuinely does not fit and there is meaningfully more room up
     const up = below < wanted && above > below;
-    setPos({
+    const next: Pos = {
       left: Math.max(EDGE, Math.min(r.left, window.innerWidth - r.width - EDGE)),
       top: up ? r.top - GAP : r.bottom + GAP,
       width: r.width,
       up,
       maxH: Math.max(120, Math.min(wanted, up ? above : below)),
-    });
+    };
+    setPos((cur) => (cur
+      && cur.left === next.left && cur.top === next.top && cur.width === next.width
+      && cur.up === next.up && cur.maxH === next.maxH ? cur : next));
   }, [options.length]);
 
   useLayoutEffect(() => { if (open) place(); }, [open, place]);
 
+  /* THE MENU FOLLOWS ITS TRIGGER; IT DOES NOT DIE ON A SCROLL.
+     The first version closed on any scroll event captured on the window, on
+     the reasoning that a menu riding the page is a menu you have to dismiss.
+     That reasoning is right and the implementation was not: a scroll the menu
+     ITSELF caused — the browser bringing a partly-visible trigger into view
+     when it is clicked, a sticky header settling, trackpad momentum still
+     running — closed it in the same frame it opened. The reader saw a menu
+     flash and vanish, which reads as "the dropdown is broken" and was
+     precisely the report.
+
+     A menu is attached to its trigger, so it moves with it and it leaves when
+     the trigger does. Repositioning is rAF-throttled and writes only when a
+     value actually changed, so a fling costs one layout read per frame and no
+     React work at all in the common case. */
+  useEffect(() => {
+    if (!open) return;
+    let raf = 0;
+    const follow = () => {
+      raf = 0;
+      const el = trigger.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      // gone from the viewport: the menu has nothing left to be attached to
+      if (r.bottom < 0 || r.top > window.innerHeight) { setOpen(false); return; }
+      place();
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(follow); };
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [open, place]);
+
   useEffect(() => {
     if (!open) return;
     setActive(index);
-    const close = () => setOpen(false);
     const outside = (e: MouseEvent) => {
       const t = e.target as Node;
       if (!menu.current?.contains(t) && !trigger.current?.contains(t)) setOpen(false);
     };
-    // a menu that follows the page is a menu you have to dismiss
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("resize", close);
     document.addEventListener("mousedown", outside);
-    return () => {
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("resize", close);
-      document.removeEventListener("mousedown", outside);
-    };
+    return () => document.removeEventListener("mousedown", outside);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -173,7 +207,9 @@ export function Select<T extends string | number>({
         {current?.tint && (
           <span aria-hidden className="sel-chip" style={{ background: current.tint }} />
         )}
-        <span className="truncate">{current?.label ?? "—"}</span>
+        <span className={cx("truncate", !current && "text-ink-faint")}>
+          {current?.label ?? placeholder ?? "—"}
+        </span>
         <ChevronDown size={14} aria-hidden
           className={cx("ml-auto shrink-0 text-ink-faint transition-transform duration-[--dur-2] ease-[--ease-out]",
             open && "rotate-180 text-accent-soft")} />

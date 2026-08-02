@@ -146,6 +146,18 @@ export function GuidedTour() {
     return () => clearTimeout(t);
   }, [beat, ready, next]);
 
+  /* Whether this beat is still resolving, and whether it has been resolving
+     long enough to be worth saying so. Declared with the other hooks because
+     the render below returns early and hooks may not be conditional. */
+  const waiting = !beat || !ready || (!!beat.target && !box);
+  const [stalled, setStalled] = useState(false);
+  useEffect(() => {
+    if (!running || !waiting) { setStalled(false); return; }
+    const STALL_MS = 700;
+    const t = setTimeout(() => setStalled(true), STALL_MS);
+    return () => clearTimeout(t);
+  }, [running, waiting]);
+
   useEffect(() => {
     if (!running) return;
     const onKey = (e: KeyboardEvent) => {
@@ -157,10 +169,38 @@ export function GuidedTour() {
     return () => window.removeEventListener("keydown", onKey);
   }, [running, next, prev, stop]);
 
-  // a beat with a target is not shown until that target has been found: a card
-  // that appears before its spotlight points at nothing for a frame
-  if (!running || !beat || !ready || typeof document === "undefined") return null;
-  if (beat.target && !box) return null;
+  if (!running || typeof document === "undefined") return null;
+
+  /* THE WAIT BETWEEN BEATS.
+     A beat with a target is not shown until that target has been found: a card
+     that appears before its spotlight points at nothing for a frame. That gap
+     is normally under a fifth of a second and rendering nothing across it is
+     right.
+
+     What was wrong is what happens when the gap is NOT short — the first beat
+     of a tour started from the landing page has to fetch a whole route first,
+     and scroll input is locked from the moment the tour starts. On a cold
+     route that left the reader on a page that would not scroll, with no card,
+     no scrim and nothing to press: a modal state with no affordance, which is
+     the one state a modal may never be in.
+     So after `STALL_MS` of waiting the tour admits it is working, and — the
+     part that actually matters — offers the way out. */
+  if (waiting) {
+    return stalled ? createPortal(
+      <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-4"
+        style={{ background: "rgb(var(--base-950) / 0.84)" }}
+        role="dialog" aria-modal="true" aria-label="Guided tour, opening">
+        <span className="tour-wait" aria-hidden />
+        <span className="text-[13px] text-ink-muted">Opening the tour…</span>
+        <button type="button" onClick={() => stop()}
+          className="rounded-lg px-3 py-1.5 text-[12.5px] font-semibold text-ink-faint transition-colors hover:text-ink">
+          Skip the tour
+        </button>
+      </div>,
+      document.body,
+    ) : null;
+  }
+  if (!beat) return null;
 
   const PAD = 8;
   const hole = box && {
@@ -211,7 +251,7 @@ export function GuidedTour() {
           one beat to the next as a single moving spotlight, and the target
           inside the hole stays live. */}
       {hole ? (
-        <div onClick={stop}
+        <div onClick={() => stop()}
           className="absolute rounded-xl transition-all duration-[450ms] ease-[cubic-bezier(.22,1,.36,1)]"
           style={{
             top: hole.top, left: hole.left, width: hole.width, height: hole.height,
@@ -220,7 +260,7 @@ export function GuidedTour() {
             pointerEvents: "none",
           }} />
       ) : (
-        <div onClick={stop} className="pointer-events-auto absolute inset-0 bg-base-950/84" />
+        <div onClick={() => stop()} className="pointer-events-auto absolute inset-0 bg-base-950/84" />
       )}
 
       {/* The card is mounted only once the page has stopped, and it fades in
@@ -236,7 +276,7 @@ export function GuidedTour() {
             <p className="text-[14.5px] font-bold tracking-tight text-ink">{beat.title}</p>
             <p className="mt-1 text-[12.5px] leading-relaxed text-ink-muted">{beat.body}</p>
           </div>
-          <button onClick={stop} aria-label="Leave the tour"
+          <button onClick={() => stop()} aria-label="Leave the tour"
             className="-mr-1 -mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full text-ink-faint transition-colors hover:bg-white/[0.08] hover:text-ink">
             <X size={14} />
           </button>
@@ -265,7 +305,7 @@ export function GuidedTour() {
             className="ml-auto grid h-7 w-7 place-items-center rounded-lg text-ink-faint transition-colors hover:bg-white/[0.06] hover:text-ink disabled:opacity-25">
             <ArrowLeft size={13} />
           </button>
-          <button onClick={stop}
+          <button onClick={() => stop()}
             className="text-[12.5px] font-medium text-ink-faint transition-colors hover:text-ink">
             Skip
           </button>

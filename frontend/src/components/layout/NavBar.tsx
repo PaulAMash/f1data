@@ -38,12 +38,13 @@ export function NavBar({ active }: { active?: "home" | "explorer" | "history" | 
           </span>
         </Link>
 
-        {/* One level up, and there is only one level. Width animates rather
-            than the element appearing, so the row beside it does not jump. */}
+        {/* Absent on Home, because Home is the root and there is nothing behind
+            it. Width animates rather than the element appearing, so the row
+            beside it does not jump when it comes and goes. */}
         <div className={cx("flex items-center overflow-hidden transition-all duration-[--dur-3] ease-[--ease-out]",
           canBack ? "ml-1 w-8 opacity-100" : "w-0 opacity-0")}>
           <button type="button" onClick={back} tabIndex={canBack ? 0 : -1}
-            aria-label="Back to home" title="Back to home"
+            aria-label="Back" title="Back"
             className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-muted transition-colors hover:bg-white/[0.06] hover:text-ink">
             <ArrowLeft size={15} />
           </button>
@@ -52,7 +53,7 @@ export function NavBar({ active }: { active?: "home" | "explorer" | "history" | 
         <nav className="flex items-center gap-0.5 text-sm sm:gap-1">
           <Link href="/" className={link(active === "home")}>Home</Link>
           <Link href="/explorer" className={link(active === "explorer")}>Explore</Link>
-          <Link href="/history" className={link(active === "history")}>Historical</Link>
+          <Link href="/history" data-tour="nav-history" className={link(active === "history")}>Historical</Link>
         </nav>
 
         {/* The room controls: how it looks, and everything else. */}

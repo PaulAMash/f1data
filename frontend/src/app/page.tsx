@@ -6,7 +6,6 @@ import { ArrowRight, MessageSquareText, Timer, Trophy } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
 import { Footer } from "@/components/layout/Footer";
 import { HeroField } from "@/components/landing/HeroField";
-import { ExploreCue } from "@/components/landing/ExploreCue";
 import { FeaturedRace } from "@/components/landing/FeaturedRace";
 import { Flag, Gauge, LineChart } from "@/components/ui/MotionIcon";
 import { usePrefs } from "@/lib/prefs";
@@ -26,16 +25,20 @@ import { cx } from "@/lib/format";
 /* page of equal-sized cards can never buy is the sense that somebody decided  */
 /* what mattered most.                                                        */
 /*                                                                            */
-/*   1. THE SHOT       a Grand Prix drawn as light, full bleed, with the type  */
-/*                     printed on it rather than beside it.                    */
-/*   2. THE SCALE      figures that prove the archive is real.                 */
-/*   3. THE CHOICE     shown ONCE — see below.                                 */
-/*   4. THE WAY IN     three steps, then three doors, each door carrying a     */
-/*                     picture of what is behind it.                           */
+/*   THE SHOT     a Grand Prix drawn as light, full bleed, with the type       */
+/*                printed on it rather than beside it, and ONE control.        */
+/*   THE SCALE    figures that prove the archive is real.                      */
+/*   01 READ      the most recent Grand Prix, already analysed.                */
+/*   02 ENTER     three doors, each carrying a picture of what is behind it.   */
 /*                                                                            */
-/* HIERARCHY IS NUMBERED, NOT GUESSED. The chapters below the hero all carry   */
-/* the same SectionHead, and the numerals are computed rather than typed —     */
-/* because the page is not the same length on every visit.                     */
+/* HIERARCHY IS NUMBERED, NOT GUESSED — and the numbering starts at 01.        */
+/* It used to start at 02, because the chapters had been renumbered when the   */
+/* experience-choice band moved to its own screen and nothing was renumbered   */
+/* back. A reader who notices there is no 01 has found a seam, and a seam on   */
+/* the front page is worse than the ordering being useful.                     */
+/*                                                                            */
+/* The hero and the statistics band are deliberately NOT numbered. They are    */
+/* not chapters in the argument; they are the cover.                            */
 /*                                                                            */
 /* THE CHOICE IS PART OF ARRIVING, NOT PART OF THE PAGE.                       */
 /*                                                                            */
@@ -128,14 +131,27 @@ export default function Landing() {
               We read every lap of timing data and tell you what actually
               decided the Grand&nbsp;Prix.
             </p>
-            <div className="stagger-4 mt-9 flex flex-wrap items-center gap-3">
+            {/* ONE CONTROL.
+                The hero has had a second button in every version and it has
+                never earned its place: first a question about one driver in
+                one race, then a scroll dressed as an answer, then a
+                demonstration that duplicated the tour the primary control
+                already starts. Three attempts at a job that does not exist is
+                the answer — a hero that knows what it wants the reader to do
+                should ask for exactly that, once, and get out of the way. What
+                is below the fold is one scroll away and does not need a
+                button to announce it. */}
+            <div className="stagger-4 mt-9 flex flex-wrap items-center gap-4">
               <Link href="/explorer" data-tour="cta" onClick={begin}
-                className="cta-glow pressable-glow group/cta inline-flex items-center gap-2 rounded-xl bg-accent px-6 py-3.5 text-sm font-semibold text-pure">
+                className="cta-glow pressable-glow group/cta inline-flex items-center gap-2 rounded-xl bg-accent px-7 py-4 text-[15px] font-semibold text-pure">
                 Start exploring
-                <ArrowRight size={16} className="transition-transform duration-200 group-hover/cta:translate-x-0.5" />
+                <ArrowRight size={17} className="transition-transform duration-200 group-hover/cta:translate-x-0.5" />
               </Link>
-              {/* The second control answers its own label — see ExploreCue. */}
-              <ExploreCue />
+              {ready && !prefs.onboarded && (
+                <span className="text-[13px] text-ink-faint">
+                  We&rsquo;ll show you around on the way in.
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -153,7 +169,7 @@ export default function Landing() {
       {/* ---- 3. a real race, right now ----------------------------------- */}
       <section ref={featureBand.ref}
         className={cx("mx-auto max-w-7xl px-4 pt-20 sm:px-6 sm:pt-24", featureBand.className)}>
-        <SectionHead n="02" chapter="Read" title="Start with the last one"
+        <SectionHead n="01" chapter="Read" title="Start with the last one"
           line="The most recent Grand Prix, already analysed." />
         <div className="mt-7">
           <FeaturedRace />
@@ -163,7 +179,7 @@ export default function Landing() {
       {/* ---- 4. the way in ---------------------------------------------- */}
       <section ref={doorBand.ref}
         className={cx("mx-auto max-w-7xl px-4 pb-20 pt-20 sm:px-6 sm:pb-28 sm:pt-24", doorBand.className)}>
-        <SectionHead n="03" chapter="Enter" title="Three ways in"
+        <SectionHead n="02" chapter="Enter" title="Three ways in"
           line="Pick the one that matches the question you arrived with." />
         <div className="mt-7 grid gap-4 sm:grid-cols-3">
           <Door href="/explorer" icon={<Timer size={16} />} title="Read a race"

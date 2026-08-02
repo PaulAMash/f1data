@@ -23,6 +23,7 @@ export function ThemeToggle({ className }: { className?: string }) {
   return (
     <button
       type="button"
+      data-tour="theme"
       aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}
       aria-pressed={dark}
       title={dark ? "Light theme" : "Dark theme"}

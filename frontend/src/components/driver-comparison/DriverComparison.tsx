@@ -41,12 +41,16 @@ export function DriverComparison({
   bundle: RaceBundle; year: number; gp: string; session: string; initial: string[];
 }) {
   const codes = bundle.session.drivers.map((d) => d.code);
-  const ranked = [...bundle.pace].sort((x, y) => (x.pace_rank ?? 99) - (y.pace_rank ?? 99));
-  const [a, setA] = useState(initial[0] ?? ranked[0]?.driver ?? codes[0]);
-  const [b, setB] = useState(initial[1] ?? ranked[1]?.driver ?? codes[1]);
+  /* Empty until the reader chooses. A page that arrives already showing the two
+     quickest cars is answering a question nobody asked — see CompareEmpty. The
+     one exception is a driver carried in from elsewhere in the product ("deep
+     dive on Leclerc"), which IS a choice the reader made. */
+  const [a, setA] = useState(initial[0] ?? "");
+  const [b, setB] = useState(initial[1] ?? "");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const ready = !!a && !!b && a !== b;
 
   // liveries are tuned for a dark broadcast graphic; several vanish on white
   const paint = useLivery();
@@ -55,6 +59,8 @@ export function DriverComparison({
   const nameOf = (c: string) => drvOf(c)?.name ?? c;
 
   useEffect(() => {
+    // no pair, no request — the empty state is not a loading state
+    if (!ready) { setData(null); setErr(null); setLoading(false); return; }
     let cancel = false;
     setLoading(true); setErr(null);
     api.compare(year, gp, session, a, b)
@@ -62,7 +68,7 @@ export function DriverComparison({
       .catch((e) => { if (!cancel) setErr(e.message); })
       .finally(() => { if (!cancel) setLoading(false); });
     return () => { cancel = true; };
-  }, [a, b, year, gp, session]);
+  }, [ready, a, b, year, gp, session]);
 
   const positionData = useMemo(() => {
     const byLap = new Map<number, any>();
@@ -105,15 +111,30 @@ export function DriverComparison({
           title lives here rather than in another card around the whole thing */}
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="mr-1 text-sm font-semibold text-ink">Driver comparison</h2>
-        <DriverSelect value={a} onChange={setA} options={codes} color={colorOf(a)} />
+        {/* a driver cannot be compared with themself, so each picker offers
+            everyone except whoever is already on the other side */}
+        <DriverSelect value={a} onChange={setA} options={codes.filter((c) => c !== b)}
+          color={colorOf(a)} ariaLabel="First driver" placeholder="Choose a driver" />
         <ArrowLeftRight size={16} className="text-ink-faint" />
-        <DriverSelect value={b} onChange={setB} options={codes} color={colorOf(b)} />
+        <DriverSelect value={b} onChange={setB} options={codes.filter((c) => c !== a)}
+          color={colorOf(b)} ariaLabel="Second driver" placeholder="Choose a driver" />
+        {ready && (
+          <button type="button" onClick={() => { setA(""); setB(""); }}
+            className="text-[11.5px] font-semibold text-ink-faint transition-colors hover:text-ink">
+            Clear
+          </button>
+        )}
       </div>
 
-      {loading && <div className="flex justify-center py-10"><Spinner /></div>}
-      {err && <ErrorState message={err} />}
+      {!ready && (
+        <CompareEmpty bundle={bundle} a={a} b={b} colorOf={colorOf} drvOf={drvOf}
+          onPick={(x, y) => { setA(x); setB(y); }} />
+      )}
 
-      {data && !loading && !("error" in data) && (
+      {ready && loading && <div className="flex justify-center py-10"><Spinner /></div>}
+      {ready && err && <ErrorState message={err} />}
+
+      {ready && data && !loading && !("error" in data) && (
         <>
           <HeadToHead bundle={bundle} data={data} a={a} b={b}
             drvOf={drvOf} nameOf={nameOf} colorOf={colorOf} swings={swings} />
@@ -513,14 +534,204 @@ function CompoundSeq({ seq }: { seq: string[] }) {
   );
 }
 
-function DriverSelect({ value, onChange, options, color }: {
+function DriverSelect({ value, onChange, options, color, ariaLabel, placeholder }: {
   value: string; onChange: (v: string) => void; options: string[]; color: string;
+  ariaLabel: string; placeholder: string;
 }) {
   // the chip carries the driver's livery into the trigger and into every row,
   // so the two sides of a comparison are told apart before they are read
   return (
-    <Select value={value} onChange={onChange} ariaLabel="Driver"
+    <Select value={value} onChange={onChange} ariaLabel={ariaLabel} placeholder={placeholder}
       options={options.map((o) => ({ value: o, label: o, tint: o === value ? color : undefined }))} />
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Compare, before anything has been chosen.                                   */
+/*                                                                            */
+/* The page used to open on two drivers it picked itself — the two quickest on */
+/* corrected pace — and present their duel as though the reader had asked for  */
+/* it. That is a comparison nobody chose, sitting where the reader's own       */
+/* question should be, and its most common effect was to make people think the */
+/* page was already showing them what they wanted.                            */
+/*                                                                            */
+/* So it opens empty, and the empty state does the work an empty state should: */
+/* it says what this page is for, shows the two slots waiting to be filled, and*/
+/* offers the duels this session actually contains. Every suggestion is        */
+/* derived from the classification in front of it — the fight for the win, the */
+/* teammates who cannot blame the car, the closest finish on the road — so     */
+/* the shortcuts are about THIS race rather than a generic "try comparing two  */
+/* drivers".                                                                   */
+/* -------------------------------------------------------------------------- */
+
+interface Duel { key: string; a: string; b: string; title: string; why: string; }
+
+function duelsFor(bundle: RaceBundle, picked: string): Duel[] {
+  const cls = [...bundle.session.classification]
+    .filter((c) => c.position != null)
+    .sort((x, y) => (x.position ?? 99) - (y.position ?? 99));
+  const out: Duel[] = [];
+  const seen = new Set<string>();
+  const add = (d: Duel | null) => {
+    if (!d || d.a === d.b) return;
+    const k = [d.a, d.b].sort().join("|");
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push(d);
+  };
+  const teamOf = (code: string) => cls.find((c) => c.driver === code)?.team;
+
+  if (picked) {
+    /* one side already chosen — the useful question is "against whom?", and the
+       three answers that are always worth offering are the same car, the car in
+       front and the car behind */
+    const i = cls.findIndex((c) => c.driver === picked);
+    const mate = cls.find((c) => c.driver !== picked && c.team === teamOf(picked));
+    if (mate) add({
+      key: "mate", a: picked, b: mate.driver,
+      title: "Their teammate",
+      why: "Same car, same strategy calls — the only comparison the machinery can't explain away.",
+    });
+    if (i > 0) add({
+      key: "ahead", a: picked, b: cls[i - 1].driver,
+      title: `The car ahead · P${cls[i - 1].position}`,
+      why: `${cls[i - 1].name} finished directly in front. Where was the race lost?`,
+    });
+    if (i >= 0 && i < cls.length - 1) add({
+      key: "behind", a: picked, b: cls[i + 1].driver,
+      title: `The car behind · P${cls[i + 1].position}`,
+      why: `${cls[i + 1].name} was the one chasing. Where was it held off?`,
+    });
+    return out.slice(0, 3);
+  }
+
+  // nothing chosen yet — the duels this session is actually about
+  if (cls.length >= 2) add({
+    key: "win", a: cls[0].driver, b: cls[1].driver,
+    title: "The fight for the win",
+    why: `${cls[0].name} against ${cls[1].name} — first and second at the flag.`,
+  });
+
+  // the teammate pair who finished closest together: the same car, judged twice
+  let bestMates: { a: string; b: string; gap: number; team: string } | null = null;
+  for (let i = 0; i < cls.length; i++) {
+    for (let j = i + 1; j < cls.length; j++) {
+      if (cls[i].team !== cls[j].team) continue;
+      const gap = (cls[j].position ?? 99) - (cls[i].position ?? 0);
+      if (!bestMates || gap < bestMates.gap) {
+        bestMates = { a: cls[i].driver, b: cls[j].driver, gap, team: cls[i].team };
+      }
+    }
+  }
+  if (bestMates) add({
+    key: "mates", a: bestMates.a, b: bestMates.b,
+    title: "Teammates, same machinery",
+    why: `Both ${bestMates.team} cars, ${bestMates.gap} place${bestMates.gap === 1 ? "" : "s"} apart. Everything left is the driver.`,
+  });
+
+  // the closest finish on the road, only where both cars have a classified time
+  let closest: { a: string; b: string; d: number } | null = null;
+  for (let i = 0; i + 1 < cls.length; i++) {
+    const x = cls[i], y = cls[i + 1];
+    if (x.race_time == null || y.race_time == null) continue;
+    const d = y.race_time - x.race_time;
+    if (d <= 0) continue;
+    if (!closest || d < closest.d) closest = { a: x.driver, b: y.driver, d };
+  }
+  if (closest) add({
+    key: "close", a: closest.a, b: closest.b,
+    title: "The closest finish",
+    why: `${fmtSec(closest.d)} apart at the flag — the tightest gap anywhere in the classification.`,
+  });
+
+  // the two quickest cars on corrected pace, when that isn't just the podium
+  const ranked = [...bundle.pace].sort((x, y) => (x.pace_rank ?? 99) - (y.pace_rank ?? 99));
+  if (ranked.length >= 2 && ranked[0].pace_rank != null) add({
+    key: "pace", a: ranked[0].driver, b: ranked[1].driver,
+    title: "Quickest two on pace",
+    why: "Ranked on clean-air laps rather than on where they finished.",
+  });
+
+  return out.slice(0, 4);
+}
+
+function CompareEmpty({
+  bundle, a, b, onPick, colorOf, drvOf,
+}: {
+  bundle: RaceBundle; a: string; b: string;
+  onPick: (a: string, b: string) => void;
+  colorOf: (c: string) => string;
+  drvOf: (c: string) => RaceBundle["session"]["drivers"][number] | undefined;
+}) {
+  const picked = a || b;
+  const duels = useMemo(() => duelsFor(bundle, picked), [bundle, picked]);
+
+  return (
+    <div className="panel overflow-hidden p-0">
+      <div className="cmp-empty px-6 pb-6 pt-8 text-center">
+        {/* two traces crossing where the two slots sit — the shape of the
+            question this page answers. Fixed width and centred: stretched to
+            the panel it flattened into a row of unrelated dashes. */}
+        <svg className="cmp-empty-art" viewBox="0 0 440 92" aria-hidden="true">
+          <path d="M0 76 C 110 76, 150 16, 230 16 S 340 16, 440 16" />
+          <path d="M0 16 C 110 16, 150 76, 230 76 S 340 76, 440 76" />
+        </svg>
+
+        <div className="relative flex items-center justify-center gap-5">
+          <Slot code={a} driver={drvOf(a)} color={colorOf(a)} label="Driver one" />
+          <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-ink-faint">vs</span>
+          <Slot code={b} driver={drvOf(b)} color={colorOf(b)} label="Driver two" />
+        </div>
+
+        <h3 className="mt-5 text-lg font-bold text-ink">
+          {picked ? `Who should ${drvOf(picked)?.name ?? picked} be measured against?` : "Pick two drivers to compare"}
+        </h3>
+        <p className="mx-auto mt-1.5 max-w-md text-[13px] leading-relaxed text-ink-muted">
+          {picked
+            ? "Choose the second car and the duel is drawn: who led when, what each stop cost, and where the race between them was decided."
+            : "Choose two cars and this page draws the duel between them — lap by lap position, the gap in plain language, and a verdict on who got more out of the race."}
+        </p>
+      </div>
+
+      {duels.length > 0 && (
+        <div className="border-t border-white/[0.06] p-3">
+          <div className="label mb-2 px-1">
+            {picked ? "Suggested opponents" : "Duels in this session"}
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {duels.map((d) => (
+              <button key={d.key} type="button" onClick={() => onPick(d.a, d.b)}
+                className="cmp-duel group/duel text-left">
+                <span className="flex items-center gap-2">
+                  <DriverAvatar driver={drvOf(d.a)} size={26} />
+                  <DriverAvatar driver={drvOf(d.b)} size={26} />
+                  <span className="ml-1 truncate text-[13px] font-semibold text-ink">{d.title}</span>
+                  <span className="ml-auto shrink-0 text-[11px] font-semibold text-ink-faint opacity-0 transition-opacity group-hover/duel:opacity-100">
+                    Compare →
+                  </span>
+                </span>
+                <span className="mt-1.5 block text-[12px] leading-relaxed text-ink-muted">{d.why}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Slot({ code, driver, color, label }: {
+  code: string; driver?: RaceBundle["session"]["drivers"][number]; color: string; label: string;
+}) {
+  const filled = code && driver;
+  return (
+    <span className="flex flex-col items-center gap-1.5">
+      {filled ? <DriverAvatar driver={driver} size={54} /> : <span className="cmp-slot" />}
+      <span className={cx("text-[12px] font-semibold", filled ? "font-bold" : "text-ink-faint")}
+        style={filled ? { color } : undefined}>
+        {filled ? code : label}
+      </span>
+    </span>
   );
 }
 

@@ -237,7 +237,7 @@ export function PaceAnalysis({
                 <span className="label">Lap-time trend</span>
               </span>
               <span className="text-[11px] text-ink-faint">
-                outliers, in/out laps &amp; neutralized laps excluded
+                outliers, in/out laps &amp; neutralised laps excluded
               </span>
               <InfoTip label="Reading pace" text="Lower is faster. Rising lines within a stint show tyre degradation; a step down marks fresh tyres after a stop. Pit and safety-car laps are removed so only representative green-flag pace is shown." />
             </div>
@@ -396,7 +396,7 @@ function TeamTrend({ session, pace, teams }: {
   return (
     <div>
       <div className="mb-2 flex items-center gap-2 text-xs text-ink-muted">
-        Constructor lap-time trend — average of each constructor&apos;s cars (top 5; outliers, in/out &amp; neutralized laps excluded)
+        Constructor lap-time trend — average of each constructor&apos;s cars (top 5; outliers, in/out &amp; neutralised laps excluded)
         <InfoTip label="Reading constructor pace" text="Each line averages a constructor's drivers lap by lap. Lower is faster; diverging lines show one constructor's tyres holding on longer than another's." />
       </div>
       <div className="h-[300px] w-full">
