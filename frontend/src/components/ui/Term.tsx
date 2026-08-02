@@ -1,6 +1,6 @@
 "use client";
-import { useState } from "react";
 import { createPortal } from "react-dom";
+import { useHoverTip } from "@/lib/useHoverTip";
 import { cx } from "@/lib/format";
 
 // Plain-English glossary for F1 jargon. A <Term> renders the word with a dotted
@@ -97,15 +97,15 @@ export function Term({ children, term }: { children: React.ReactNode; term?: str
   const def = GLOSSARY[key];
   // rendered via a body portal at a fixed position — an absolutely positioned
   // popup gets clipped invisible inside any overflow-hidden card
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const { at: pos, open, close } = useHoverTip<{ x: number; y: number }>();
   if (!def) return <>{children}</>;
   return (
     <span className="relative inline"
       onMouseEnter={(e) => {
         const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        setPos({ x: r.left, y: r.top });
+        open({ x: r.left, y: r.top });
       }}
-      onMouseLeave={() => setPos(null)}>
+      onMouseLeave={close}>
       <span className={cx("cursor-help underline decoration-dotted decoration-ink-faint underline-offset-2 transition-colors duration-200 hover:decoration-accent-soft")}>
         {children}
       </span>

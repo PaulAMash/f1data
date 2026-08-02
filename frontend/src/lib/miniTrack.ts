@@ -152,12 +152,22 @@ export class TrackPath {
   private cum: number[] = [];
   readonly length: number;
 
-  constructor(readonly layout: Layout, resolution = 40) {
-    let p0 = layout.start;
-    this.pts.push(p0);
-    for (const s of layout.segs) {
-      for (let i = 1; i <= resolution; i++) this.pts.push(cubic(p0, s, i / resolution));
-      p0 = [s[4], s[5]];
+  /** An open path from points already in normalised space — see pitLane. */
+  static fromPoints(pts: [number, number][]): TrackPath {
+    const t = new TrackPath(EMPTY_LAYOUT, 1, pts);
+    return t;
+  }
+
+  constructor(readonly layout: Layout, resolution = 40, points?: [number, number][]) {
+    if (points) {
+      this.pts = points;
+    } else {
+      let p0 = layout.start;
+      this.pts.push(p0);
+      for (const s of layout.segs) {
+        for (let i = 1; i <= resolution; i++) this.pts.push(cubic(p0, s, i / resolution));
+        p0 = [s[4], s[5]];
+      }
     }
     let total = 0;
     this.cum.push(0);
@@ -195,69 +205,115 @@ export class TrackPath {
   path(): Path2D {
     if (this.cachedPath) return this.cachedPath;
     const p = new Path2D();
-    p.moveTo(this.layout.start[0], this.layout.start[1]);
-    for (const s of this.layout.segs) p.bezierCurveTo(s[0], s[1], s[2], s[3], s[4], s[5]);
-    p.closePath();
+    if (this.layout === EMPTY_LAYOUT) {
+      // an open path built from samples: still one source of truth with at()
+      p.moveTo(this.pts[0][0], this.pts[0][1]);
+      for (let i = 1; i < this.pts.length; i++) p.lineTo(this.pts[i][0], this.pts[i][1]);
+    } else {
+      p.moveTo(this.layout.start[0], this.layout.start[1]);
+      for (const s of this.layout.segs) p.bezierCurveTo(s[0], s[1], s[2], s[3], s[4], s[5]);
+      p.closePath();
+    }
     this.cachedPath = p;
     return p;
   }
 }
 
+const EMPTY_LAYOUT: Layout = { name: "", start: [0, 0], segs: [] };
+
 /**
- * The lap, the layout, and the transition between layouts.
+ * The layout, and the transition between layouts.
  *
- * A lap takes `LAP_S`; at the end of one, the next circuit is chosen and the
- * shape is interpolated into it over `MORPH_S` while the car keeps running —
- * the road bends into a different road underneath it rather than cutting.
+ * THE CIRCUIT CHANGES WHEN THE RACE DOES, NOT ON A CLOCK OF ITS OWN.
+ *
+ * This used to run a thirty-four second lap timer and pick a new circuit at the
+ * end of each one, which meant the tracker was showing Suzuka while the timing
+ * panel was thirty laps into a race that had started at Monza. Two clocks, and
+ * the reader can always tell — it is the same mistake the hero itself was built
+ * to avoid, one widget down.
+ *
+ * The morph is now requested by whoever owns the race, at the moment a race
+ * ends. Between those moments this class does exactly one thing: bend one road
+ * into another over MORPH_S while cars keep running on it.
  */
 export class MiniTrack {
   private i = 0;
   private next = 0;
   private morph = 0;          // 0 = settled, >0 = fraction through a morph
-  private lap = 0;
   private cache: TrackPath;
+  private pit: TrackPath;
 
-  static LAP_S = 34;
-  static MORPH_S = 2.2;
+  static MORPH_S = 2.6;
 
   constructor(private rnd: () => number = Math.random) {
     this.i = Math.floor(this.rnd() * LAYOUTS.length);
     this.next = this.i;
     this.cache = new TrackPath(LAYOUTS[this.i]);
+    this.pit = pitLane(this.cache);
+  }
+
+  /** Begin bending into a different circuit. Ignored if one is already bending. */
+  toNext() {
+    if (this.morph > 0) return;
+    let n = Math.floor(this.rnd() * LAYOUTS.length);
+    if (n === this.i) n = (n + 1) % LAYOUTS.length;
+    this.next = n;
+    this.morph = 0.0001;
   }
 
   step(dt: number) {
-    const wasLap = this.lap;
-    this.lap += dt / MiniTrack.LAP_S;
-
-    if (this.morph > 0) {
-      this.morph += dt / MiniTrack.MORPH_S;
-      if (this.morph >= 1) {
-        this.morph = 0;
-        this.i = this.next;
-        this.cache = new TrackPath(LAYOUTS[this.i]);
-      } else {
-        this.cache = new TrackPath(blend(LAYOUTS[this.i], LAYOUTS[this.next], ease(this.morph)));
-      }
-      return;
+    if (this.morph <= 0) return;
+    this.morph += dt / MiniTrack.MORPH_S;
+    if (this.morph >= 1) {
+      this.morph = 0;
+      this.i = this.next;
+      this.cache = new TrackPath(LAYOUTS[this.i]);
+    } else {
+      this.cache = new TrackPath(blend(LAYOUTS[this.i], LAYOUTS[this.next], ease(this.morph)));
     }
-
-    // a lap just completed: pick a different circuit and start bending into it
-    if (Math.floor(this.lap) !== Math.floor(wasLap)) {
-      let n = Math.floor(this.rnd() * LAYOUTS.length);
-      if (n === this.i) n = (n + 1) % LAYOUTS.length;
-      this.next = n;
-      this.morph = 0.0001;
-    }
+    this.pit = pitLane(this.cache);
   }
 
   get track() { return this.cache; }
-  /** where the car is, 0..1 of the current lap */
-  get u() { return this.lap % 1; }
+  /** the pit lane, as its own path, so a stopping car has somewhere to go */
+  get lane() { return this.pit; }
   /** 1 while settled, dipping while the road is changing shape */
   get settled() { return this.morph > 0 ? 1 - Math.sin(ease(this.morph) * Math.PI) * 0.4 : 1; }
   /** the circuit's name, for the widget's header */
   get name() { return this.cache.layout.name; }
+  /** true while one circuit is becoming another */
+  get morphing() { return this.morph > 0; }
+}
+
+/* -------------------------------------------------------------------------- */
+/**
+ * A pit lane, derived from the road rather than drawn per circuit.
+ *
+ * Seven hand-drawn pit lanes would be seven more things to keep in step with
+ * seven layouts, and they would all have to be re-drawn the moment a layout
+ * changed. This takes the stretch of road either side of the line and pushes it
+ * toward the middle of the circuit — which is where a pit lane is, on every
+ * circuit, for the same reason. It morphs with the road for free.
+ */
+function pitLane(road: TrackPath): TrackPath {
+  const FROM = 0.9, TO = 1.12, STEPS = 12, INSET = 0.055;
+  // the middle of the whole shape, so "inward" means something
+  let cx = 0, cy = 0;
+  for (let i = 0; i <= 24; i++) {
+    const [x, y] = road.at(i / 24);
+    cx += x / 25; cy += y / 25;
+  }
+  const pts: [number, number][] = [];
+  for (let i = 0; i <= STEPS; i++) {
+    const u = FROM + (TO - FROM) * (i / STEPS);
+    const [x, y] = road.at(u);
+    // ease the inset in and out so the lane leaves and rejoins the road
+    const k = Math.sin((i / STEPS) * Math.PI) * INSET;
+    const dx = cx - x, dy = cy - y;
+    const d = Math.hypot(dx, dy) || 1;
+    pts.push([x + (dx / d) * k, y + (dy / d) * k]);
+  }
+  return TrackPath.fromPoints(pts);
 }
 
 const ease = (k: number) => k * k * (3 - 2 * k);

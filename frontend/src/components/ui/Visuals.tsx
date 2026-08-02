@@ -18,7 +18,7 @@ export const TONE_COLOR = {
   accent: "#ff6a5a",
   speed: "#00e0c6",
   amber: "#ffb020",
-  good: "#34d399",
+  good: "rgb(var(--good))",
   bad: "#fb7185",
   violet: "#c4b5fd",
   sky: "#7dd3fc",
@@ -50,7 +50,7 @@ export const TONE_LABEL: Record<VisualTone, string> = {
   bad: "#f5a6b5",
   violet: "#cbc0fa",
   sky: "#a4daf6",
-  neutral: "#8b98b2",
+  neutral: "rgb(var(--axis))",
 };
 
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
@@ -181,7 +181,7 @@ export function Meter({
         </div>
       )}
       <div className="relative h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-        <div className="h-full rounded-full transition-[width] duration-700 ease-out"
+        <div className="draw-in h-full rounded-full"
           style={{ width: grown ? `${Math.max(3, clamp(pct))}%` : "0%",
                    background: `linear-gradient(90deg, ${c}59, ${c})` }} />
         {marker != null && (
@@ -236,7 +236,7 @@ export function DeltaBar({
         <span className="ml-auto truncate text-xs font-semibold text-ink-faint">{right}</span>
       </div>
       <div className="flex h-1.5 gap-0.5 overflow-hidden rounded-full">
-        <span className="rounded-full transition-[width] duration-700 ease-out"
+        <span className="draw-in rounded-full"
           style={{ width: grown ? `${pct}%` : "50%", background: leftColor }} />
         <span className="flex-1 rounded-full" style={{ background: `${rightColor}40` }} />
       </div>
@@ -405,21 +405,18 @@ function SparkBody({
           <line x1={0} y1={y0} x2={width} y2={y0} stroke="currentColor"
             className="text-ink-faint/45" strokeWidth={1} strokeDasharray="2 3" />
           <path d={`${d} L${width},${height} L0,${height} Z`} fill={c}
-            opacity={grown ? 0.1 : 0} style={{ transition: "opacity .7s ease" }} />
+            opacity={grown ? 0.1 : 0} className="draw-in" />
           {/* the line draws itself in — the chart arrives rather than appearing */}
           <path d={d} fill="none" stroke={c} strokeWidth={1.75}
-            strokeLinecap="round" strokeLinejoin="round"
-            style={{
-              strokeDasharray: width * 2.5, strokeDashoffset: grown ? 0 : width * 2.5,
-              transition: "stroke-dashoffset 1.1s ease-out",
-            }} />
+            strokeLinecap="round" strokeLinejoin="round" className="draw-in"
+            style={{ strokeDasharray: width * 2.5, strokeDashoffset: grown ? 0 : width * 2.5 }} />
           <circle cx={0} cy={y(points[0])} r={2} fill={c} opacity={0.6} />
           <circle cx={width} cy={y(last)} r={2.75} fill={c} />
           {hover && (
             <>
               <line x1={hover.i * step} y1={0} x2={hover.i * step} y2={height}
                 stroke={c} strokeWidth={1} opacity={0.45} />
-              <circle cx={hover.i * step} cy={y(points[hover.i])} r={3.5} fill="#0b0e16"
+              <circle cx={hover.i * step} cy={y(points[hover.i])} r={3.5} fill="rgb(var(--base-900))"
                 stroke={c} strokeWidth={2} />
             </>
           )}

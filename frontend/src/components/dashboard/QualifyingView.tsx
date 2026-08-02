@@ -309,7 +309,7 @@ function Story({ q, session }: { q: QualifyingSummary; session: RaceSession }) {
               sub={tmate?.team}
               visual={tmate?.vs_teammate != null && tmatePartner ? (
                 <DeltaBar left={tmate.driver} right={tmatePartner.driver}
-                  leftColor={tmate.team_color} rightColor="#5f6b84"
+                  leftColor={tmate.team_color} rightColor="rgb(var(--ink-faint))"
                   lean={0.5 + Math.min(0.4, (Math.abs(tmate.vs_teammate) / (topSpread || 1)) * 0.5)}
                   value={`${Math.abs(tmate.vs_teammate).toFixed(3)}s`} unit="quicker"
                   leftSub={posLabel(q, tmate.driver)} rightSub={posLabel(q, tmatePartner.driver)} />

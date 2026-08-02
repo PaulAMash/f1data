@@ -29,11 +29,21 @@
   --ink: 232 236 245;
   --ink-muted: 168 180 203;
   --ink-faint: 125 138 165;
+  /* An axis is read at a glance and never dwelt on, so it sits a step above
+     --ink-faint rather than on it. Declared per theme because "one step above
+     faint" is a different number on paper — see lib/chartTheme.ts. */
+  --axis: 139 152 178;
 
   --accent: 255 59 59;
   --accent-soft: 255 106 90;
   --speed: 0 224 198;
   --amber: 255 176 32;
+  /* The two semantic colours that were only ever hex literals. "Gained" and
+     "best of the session" mean the same thing in both rooms and have to be
+     legible in both — #34d399 and #a78bfa are tuned for black and go pale and
+     weightless on white. */
+  --good: 52 211 153;
+  --best: 167 139 250;
 
   --tint: 255 255 255;
 
@@ -55,6 +65,21 @@
   --ease-in-out: cubic-bezier(.4, 0, .2, 1);
   --ease-spring: cubic-bezier(.34, 1.4, .64, 1);
 
+  /* ---- tempo and amplitude ----------------------------------------------
+     Every ambient loop in this file states its period as
+     `calc(<base> * var(--m))`, and the few whose movement is large enough to
+     notice scale their travel by `--amp`. Together they are what makes Calm
+     a different tempo rather than an off switch — see the note on the calm
+     block further down. `--chart-ms` is the same idea for the chart library,
+     which animates in JavaScript and cannot read a stylesheet. */
+  --m: 1;
+  --amp: 1;
+  --chart-ms: 900ms;
+  /* how long a hover waits before it explains itself */
+  --tip-delay: 260ms;
+  /* how much light the accent throws; see [data-intensity] */
+  --glow-k: 1;
+
   /* ---- elevation --------------------------------------------------------
      Three levels, and a panel's level is a statement about its importance —
      see the hierarchy notes in DESIGN_SYSTEM.md. Every shadow is built from
@@ -64,8 +89,8 @@
   --el-3: 0 4px 8px -4px var(--shadow-card), 0 24px 56px -28px var(--shadow-strong);
   --el-lift: 0 6px 12px -6px var(--shadow-card), 0 28px 60px -30px var(--shadow-strong);
   /* the ambient wash behind the page — a pit wall at night */
-  --glow-a: rgba(255, 59, 59, 0.10);
-  --glow-b: rgba(0, 224, 198, 0.06);
+  --glow-a: rgba(255, 59, 59, calc(0.10 * var(--glow-k)));
+  --glow-b: rgba(0, 224, 198, calc(0.06 * var(--glow-k)));
   --shadow-strong: rgba(0, 0, 0, 0.6);
   --shadow-card: rgba(0, 0, 0, 0.8);
   color-scheme: dark;
@@ -89,6 +114,7 @@
   --ink: 13 21 34;
   --ink-muted: 71 83 107;
   --ink-faint: 104 116 138;
+  --axis: 91 103 126;
 
   /* the broadcast red is tuned for a dark surface; on white it vibrates, so
      the light theme uses F1's deeper print red */
@@ -97,10 +123,12 @@
   /* likewise, #00e0c6 on white is barely a colour at all */
   --speed: 0 150 132;
   --amber: 176 108 4;
+  --good: 4 132 94;
+  --best: 109 63 219;
 
   --tint: 15 23 42;
-  --glow-a: rgba(217, 4, 0, 0.07);
-  --glow-b: rgba(0, 150, 132, 0.05);
+  --glow-a: rgba(217, 4, 0, calc(0.07 * var(--glow-k)));
+  --glow-b: rgba(0, 150, 132, calc(0.05 * var(--glow-k)));
   --shadow-strong: rgba(15, 23, 42, 0.16);
   --shadow-card: rgba(15, 23, 42, 0.10);
   color-scheme: light;
@@ -115,8 +143,67 @@ body {
      enlarges the whole interface proportionally instead of enlarging body copy
      and leaving the labels behind. */
   transition: background-color var(--dur-4, 520ms) ease, color var(--dur-4, 520ms) ease;
+  font-size: var(--root-size, 100%);
 }
-:root[data-text="large"] { font-size: 112.5%; }
+
+/* ---------------------------------------------------------------------------
+   Size and density are the same axis, held at two ends.
+
+   Scaling the root is what makes "larger text" real: every size in the product
+   is in rem or in a px value derived from this ramp, so one number enlarges the
+   whole interface proportionally instead of enlarging body copy and leaving the
+   labels behind.
+
+   Compact is that mechanism run the other way — the reason it is not a separate
+   set of paddings is that a paddings-only density control tightens the boxes
+   and leaves the type marooned inside them, which reads as a bug rather than as
+   a density. The two compose, because a reader who needs larger type and wants
+   more of the timing screen on one page is asking for both and is not confused.
+   --------------------------------------------------------------------------- */
+:root                                    { --root-size: 100%; }
+:root[data-text="large"]                 { --root-size: 112.5%; }
+:root[data-density="compact"]            { --root-size: 91%; }
+:root[data-text="large"][data-density="compact"] { --root-size: 103%; }
+
+/* ---------------------------------------------------------------------------
+   Accent intensity.
+
+   The accent lights the room as well as marking the controls. On a bright
+   office display the standard wash is atmosphere; on an OLED in the dark it is
+   a glare, and on a colour-managed laptop somebody just wants less of it. One
+   multiplier feeds the page wash, every accent shadow and the hero's own lamps
+   — the canvas reads it out of the computed style, so the light in the picture
+   and the light on the page can never disagree.
+   --------------------------------------------------------------------------- */
+:root[data-intensity="subtle"] { --glow-k: .45; }
+:root[data-intensity="vivid"]  { --glow-k: 1.65; }
+
+/* ---------------------------------------------------------------------------
+   How long a chart takes to draw itself.
+
+   Every bar, trace and dial in the product arrives through `.draw-in`, which
+   reads this one number — so a reader who finds the draw-in slow, or who wants
+   to watch it, changes one setting and the whole product obeys. `instant` is
+   not "no animation": it is one millisecond, which keeps the transition in
+   place for anything that later changes value under the reader.
+   --------------------------------------------------------------------------- */
+.draw-in {
+  transition-property: width, height, stroke-dashoffset, opacity, transform;
+  transition-duration: var(--chart-ms);
+  transition-timing-function: var(--ease-out);
+}
+:root[data-chart="instant"]   { --chart-ms: 1ms; }
+:root[data-chart="standard"]  { --chart-ms: 900ms; }
+:root[data-chart="cinematic"] { --chart-ms: 2100ms; }
+:root[data-motion="calm"][data-chart="instant"]   { --chart-ms: 1ms; }
+:root[data-motion="calm"][data-chart="standard"]  { --chart-ms: 1600ms; }
+:root[data-motion="calm"][data-chart="cinematic"] { --chart-ms: 3200ms; }
+
+/* Hover explanations. `none` is for readers who already know the vocabulary
+   and find a tooltip appearing under the cursor an interruption. */
+:root[data-tip="none"]  { --tip-delay: 0ms; }
+:root[data-tip="short"] { --tip-delay: 260ms; }
+:root[data-tip="long"]  { --tip-delay: 700ms; }
 
 body {
   background-image:
@@ -171,16 +258,26 @@ body {
 
      Hierarchy comes from weight and space, not from louder borders.
      --------------------------------------------------------------------- */
+  /* `min-w-0` is load-bearing, not tidiness.
+
+     A grid or flex child defaults to `min-width: auto`, which means it refuses
+     to shrink below its content — so a panel containing a wide results table
+     grows to the table's full width, and the `overflow-x-auto` inside it never
+     gets the chance to scroll. On a phone that pushed the Race Explorer 114px
+     wider than the screen and the whole page scrolled sideways. Declaring it
+     here fixes the class of bug rather than the instance: a panel is a
+     container, and a container that cannot be narrower than its contents is
+     not a container. */
   .panel {
-    @apply rounded-2xl border border-white/[0.06] bg-base-850/60 backdrop-blur-sm;
+    @apply min-w-0 rounded-2xl border border-white/[0.06] bg-base-850/60 backdrop-blur-sm;
     box-shadow: var(--el-1);
   }
   .panel-raised {
-    @apply rounded-2xl border border-white/[0.08] bg-base-850/85 backdrop-blur-sm;
+    @apply min-w-0 rounded-2xl border border-white/[0.08] bg-base-850/85 backdrop-blur-sm;
     box-shadow: var(--el-2);
   }
   .panel-hero {
-    @apply relative overflow-hidden rounded-2xl border border-white/[0.10] backdrop-blur-sm;
+    @apply relative min-w-0 overflow-hidden rounded-2xl border border-white/[0.10] backdrop-blur-sm;
     background:
       radial-gradient(120% 100% at 0% 0%, rgb(var(--accent) / 0.07), transparent 58%),
       rgb(var(--base-850) / 0.9);
@@ -190,7 +287,7 @@ body {
      to churn, defined once so the two can never drift apart. */
   .card { @apply panel; }
   .tile {
-    @apply rounded-xl border border-white/[0.06] bg-base-800/50;
+    @apply min-w-0 rounded-xl border border-white/[0.06] bg-base-800/50;
   }
 
   .chip {
@@ -317,34 +414,34 @@ a.chip:active,
 @keyframes mi-bang { 0%, 100% { opacity: 1; } 25%, 75% { opacity: .25; } }
 
 /* Host hover drives all of it. .ic-host is for anything that isn't a card. */
-.group\/card:hover .mi-cloth-a, .group\/ins:hover .mi-cloth-a, .ic-host:hover .mi-cloth-a { animation: mi-cloth 1.15s ease-in-out infinite; }
-.group\/card:hover .mi-cloth-b, .group\/ins:hover .mi-cloth-b, .ic-host:hover .mi-cloth-b { animation: mi-cloth 1.15s ease-in-out .16s infinite; }
+.group\/card:hover .mi-cloth-a, .group\/ins:hover .mi-cloth-a, .ic-host:hover .mi-cloth-a { animation: mi-cloth calc(1.15s * var(--m)) ease-in-out infinite; }
+.group\/card:hover .mi-cloth-b, .group\/ins:hover .mi-cloth-b, .ic-host:hover .mi-cloth-b { animation: mi-cloth calc(1.15s * var(--m)) ease-in-out calc(.16s * var(--m)) infinite; }
 
 .mi-draw { stroke-dasharray: 100; }
 .group\/card:hover .mi-draw, .group\/ins:hover .mi-draw, .ic-host:hover .mi-draw { animation: mi-draw .72s cubic-bezier(.32,.72,.3,1); }
 .group\/card:hover .mi-head, .group\/ins:hover .mi-head, .ic-host:hover .mi-head,
 .group\/card:hover .mi-dot, .group\/ins:hover .mi-dot, .ic-host:hover .mi-dot { animation: mi-late .95s ease-out; }
 
-.group\/card:hover .mi-tick, .group\/ins:hover .mi-tick, .ic-host:hover .mi-tick { animation: mi-tick 2.4s steps(12, end) infinite; }
+.group\/card:hover .mi-tick, .group\/ins:hover .mi-tick, .ic-host:hover .mi-tick { animation: mi-tick calc(2.4s * var(--m)) steps(12, end) infinite; }
 .group\/card:hover .mi-needle, .group\/ins:hover .mi-needle, .ic-host:hover .mi-needle { animation: mi-needle 1.15s cubic-bezier(.34,.66,.28,1) forwards; }
 .group\/card:hover .mi-mercury, .group\/ins:hover .mi-mercury, .ic-host:hover .mi-mercury { animation: mi-mercury 1s cubic-bezier(.3,.7,.3,1); }
-.group\/card:hover .mi-bulb, .group\/ins:hover .mi-bulb, .ic-host:hover .mi-bulb { animation: mi-bulb 1.4s ease-in-out infinite; }
-.group\/card:hover .mi-rays, .group\/ins:hover .mi-rays, .ic-host:hover .mi-rays { animation: mi-rays 6s linear infinite; }
-.group\/card:hover .mi-sun, .group\/ins:hover .mi-sun, .ic-host:hover .mi-sun { animation: mi-sun 2.6s ease-in-out infinite; }
-.group\/card:hover .mi-cloud, .group\/ins:hover .mi-cloud, .ic-host:hover .mi-cloud { animation: mi-cloud 3.4s ease-in-out infinite; }
+.group\/card:hover .mi-bulb, .group\/ins:hover .mi-bulb, .ic-host:hover .mi-bulb { animation: mi-bulb calc(1.4s * var(--m)) ease-in-out infinite; }
+.group\/card:hover .mi-rays, .group\/ins:hover .mi-rays, .ic-host:hover .mi-rays { animation: mi-rays calc(6s * var(--m)) linear infinite; }
+.group\/card:hover .mi-sun, .group\/ins:hover .mi-sun, .ic-host:hover .mi-sun { animation: mi-sun calc(2.6s * var(--m)) ease-in-out infinite; }
+.group\/card:hover .mi-cloud, .group\/ins:hover .mi-cloud, .ic-host:hover .mi-cloud { animation: mi-cloud calc(3.4s * var(--m)) ease-in-out infinite; }
 .group\/card:hover .mi-gleam, .group\/ins:hover .mi-gleam, .group\/team:hover .mi-gleam, .ic-host:hover .mi-gleam { animation: mi-gleam 1.05s cubic-bezier(.4,0,.3,1); }
 .mi-gleam { transform: translateX(0) skewX(-18deg); }
 
-.group\/card:hover .mi-star-a, .group\/ins:hover .mi-star-a, .ic-host:hover .mi-star-a { animation: mi-twinkle 1.5s ease-in-out infinite; }
-.group\/card:hover .mi-star-b, .group\/ins:hover .mi-star-b, .ic-host:hover .mi-star-b { animation: mi-twinkle 1.5s ease-in-out .25s infinite; }
-.group\/card:hover .mi-star-c, .group\/ins:hover .mi-star-c, .ic-host:hover .mi-star-c { animation: mi-twinkle 1.5s ease-in-out .5s infinite; }
+.group\/card:hover .mi-star-a, .group\/ins:hover .mi-star-a, .ic-host:hover .mi-star-a { animation: mi-twinkle calc(1.5s * var(--m)) ease-in-out infinite; }
+.group\/card:hover .mi-star-b, .group\/ins:hover .mi-star-b, .ic-host:hover .mi-star-b { animation: mi-twinkle calc(1.5s * var(--m)) ease-in-out calc(.25s * var(--m)) infinite; }
+.group\/card:hover .mi-star-c, .group\/ins:hover .mi-star-c, .ic-host:hover .mi-star-c { animation: mi-twinkle calc(1.5s * var(--m)) ease-in-out calc(.5s * var(--m)) infinite; }
 
 .group\/card:hover .mi-ring-1, .group\/ins:hover .mi-ring-1, .ic-host:hover .mi-ring-1 { animation: mi-ring .6s cubic-bezier(.3,.8,.3,1); }
 .group\/card:hover .mi-ring-2, .group\/ins:hover .mi-ring-2, .ic-host:hover .mi-ring-2 { animation: mi-ring .6s cubic-bezier(.3,.8,.3,1) .08s; }
 .group\/card:hover .mi-hit, .group\/ins:hover .mi-hit, .ic-host:hover .mi-hit { animation: mi-hit .7s cubic-bezier(.3,1.5,.5,1); }
 
 .group\/card:hover .mi-strike, .group\/ins:hover .mi-strike, .ic-host:hover .mi-strike { animation: mi-strike .85s ease-out; }
-.group\/card:hover .mi-loop, .group\/ins:hover .mi-loop, .ic-host:hover .mi-loop { animation: mi-loop 2.4s cubic-bezier(.5,0,.5,1) infinite; }
+.group\/card:hover .mi-loop, .group\/ins:hover .mi-loop, .ic-host:hover .mi-loop { animation: mi-loop calc(2.4s * var(--m)) cubic-bezier(.5,0,.5,1) infinite; }
 .group\/card:hover .mi-ticks line, .group\/ins:hover .mi-ticks line, .ic-host:hover .mi-ticks line { animation: mi-ticks .5s ease-out; transform-origin: center top; }
 .group\/card:hover .mi-ticks line:nth-child(2), .ic-host:hover .mi-ticks line:nth-child(2) { animation-delay: .07s; }
 .group\/card:hover .mi-ticks line:nth-child(3), .ic-host:hover .mi-ticks line:nth-child(3) { animation-delay: .14s; }
@@ -354,7 +451,7 @@ a.chip:active,
 .group\/card:hover .mi-bar-1, .group\/ins:hover .mi-bar-1, .ic-host:hover .mi-bar-1 { animation: mi-bar .5s ease-out; }
 .group\/card:hover .mi-bar-2, .group\/ins:hover .mi-bar-2, .ic-host:hover .mi-bar-2 { animation: mi-bar .5s ease-out .08s; }
 .group\/card:hover .mi-bar-3, .group\/ins:hover .mi-bar-3, .ic-host:hover .mi-bar-3 { animation: mi-bar .5s ease-out .16s; }
-.group\/card:hover .mi-bang, .group\/ins:hover .mi-bang, .ic-host:hover .mi-bang { animation: mi-bang .9s steps(1, end) infinite; }
+.group\/card:hover .mi-bang, .group\/ins:hover .mi-bang, .ic-host:hover .mi-bang { animation: mi-bang calc(.9s * var(--m)) steps(1, end) infinite; }
 
 /* The legacy whole-glyph set, kept only for any stock lucide icon still in
    place. New work uses MotionIcon. */
@@ -422,27 +519,27 @@ a.chip:active,
 /* a specular highlight travelling around the rim */
 @keyframes rl-gleam { to { transform: rotate(360deg); } }
 
-.rl-roll { animation: rl-roll 1.15s linear infinite; }
-.rl-roll-fast { animation: rl-roll .62s linear infinite; }
+.rl-roll { animation: rl-roll calc(1.15s * var(--m)) linear infinite; }
+.rl-roll-fast { animation: rl-roll calc(.62s * var(--m)) linear infinite; }
 .rl-launch { animation: rl-launch 1.5s cubic-bezier(.16,.72,.28,1) both; }
 .rl-smear { animation: rl-blur-in .9s ease-out both; }
 .rl-smear-soft { animation: rl-blur-in-soft .9s ease-out both; }
-.rl-road { animation: rl-road .26s linear infinite; }
-.rl-seams { animation: rl-seams .2s linear infinite; }
-.rl-brake { animation: rl-brake 2.3s ease-in-out infinite; }
-.rl-susp { animation: rl-susp 1.37s cubic-bezier(.36,.66,.3,1) infinite; }
-.rl-patch { animation: rl-patch 1.37s cubic-bezier(.36,.66,.3,1) infinite; }
-.rl-speed { animation: rl-speed 1.1s ease-in-out infinite; }
-.rl-gleam { animation: rl-gleam 2.9s linear infinite; }
+.rl-road { animation: rl-road calc(.26s * var(--m)) linear infinite; }
+.rl-seams { animation: rl-seams calc(.2s * var(--m)) linear infinite; }
+.rl-brake { animation: rl-brake calc(2.3s * var(--m)) ease-in-out infinite; }
+.rl-susp { animation: rl-susp calc(1.37s * var(--m)) cubic-bezier(.36,.66,.3,1) infinite; }
+.rl-patch { animation: rl-patch calc(1.37s * var(--m)) cubic-bezier(.36,.66,.3,1) infinite; }
+.rl-speed { animation: rl-speed calc(1.1s * var(--m)) ease-in-out infinite; }
+.rl-gleam { animation: rl-gleam calc(2.9s * var(--m)) linear infinite; }
 .rl-puff, .rl-spark, .rl-haze { opacity: 0; }
-.rl-puff-1 { animation: rl-puff 1.9s ease-out infinite; }
-.rl-puff-2 { animation: rl-puff 1.9s ease-out .63s infinite; }
-.rl-puff-3 { animation: rl-puff 1.9s ease-out 1.26s infinite; }
-.rl-spark-1 { animation: rl-spark .74s cubic-bezier(.3,.6,.5,1) infinite; }
-.rl-spark-2 { animation: rl-spark .74s cubic-bezier(.3,.6,.5,1) .29s infinite; }
-.rl-spark-3 { animation: rl-spark .74s cubic-bezier(.3,.6,.5,1) .51s infinite; }
-.rl-haze-1 { animation: rl-haze 1.7s ease-out infinite; }
-.rl-haze-2 { animation: rl-haze 1.7s ease-out .85s infinite; }
+.rl-puff-1 { animation: rl-puff calc(1.9s * var(--m)) ease-out infinite; }
+.rl-puff-2 { animation: rl-puff calc(1.9s * var(--m)) ease-out calc(.63s * var(--m)) infinite; }
+.rl-puff-3 { animation: rl-puff calc(1.9s * var(--m)) ease-out calc(1.26s * var(--m)) infinite; }
+.rl-spark-1 { animation: rl-spark calc(.74s * var(--m)) cubic-bezier(.3,.6,.5,1) infinite; }
+.rl-spark-2 { animation: rl-spark calc(.74s * var(--m)) cubic-bezier(.3,.6,.5,1) calc(.29s * var(--m)) infinite; }
+.rl-spark-3 { animation: rl-spark calc(.74s * var(--m)) cubic-bezier(.3,.6,.5,1) calc(.51s * var(--m)) infinite; }
+.rl-haze-1 { animation: rl-haze calc(1.7s * var(--m)) ease-out infinite; }
+.rl-haze-2 { animation: rl-haze calc(1.7s * var(--m)) ease-out calc(.85s * var(--m)) infinite; }
 
 /* Under reduced motion the wheel stops but stays *drawn* — a loading state that
    vanishes tells the reader less than one that simply holds still. */
@@ -458,15 +555,23 @@ a.chip:active,
 .tyre-unrecorded {
   background-image: repeating-linear-gradient(
     -45deg,
-    rgba(255, 255, 255, 0.16) 0 3px,
+    rgb(var(--tint) / 0.16) 0 3px,
     transparent 3px 7px
   );
 }
 
-/* recharts dark polish */
-.recharts-cartesian-grid line { stroke: rgba(255, 255, 255, 0.05); }
+/* Recharts chrome, in whichever room the page is in. These were white-on-white
+   in light mode: a grid that is simply absent, and a near-black tooltip card
+   floating in a daylight interface. */
+.recharts-cartesian-grid line { stroke: rgb(var(--tint) / 0.07); }
 .recharts-tooltip-wrapper:focus { outline: none; }
-.recharts-default-tooltip { background: #0f131d !important; border: 1px solid rgba(255,255,255,0.1) !important; border-radius: 12px !important; }
+.recharts-default-tooltip {
+  background: rgb(var(--base-900) / .97) !important;
+  border: 1px solid rgb(var(--tint) / 0.12) !important;
+  border-radius: 12px !important;
+  color: rgb(var(--ink)) !important;
+  box-shadow: var(--el-3);
+}
 
 /* Track-position chart: emphasis changes glide instead of snapping, so
    focusing a driver reads as a calm, premium transition. */
@@ -474,39 +579,39 @@ a.chip:active,
 .pos-edge { transition: opacity .28s ease; }
 /* the "jump to a moment" accent line breathes so the eye lands on it */
 @keyframes moment-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .38; } }
-.moment-line line { animation: moment-pulse 1.6s ease-in-out infinite; }
+.moment-line line { animation: moment-pulse calc(1.6s * var(--m)) ease-in-out infinite; }
 /* the focused driver's halo gently breathes — "this is the active driver" */
 @keyframes focus-breath { 0%, 100% { stroke-opacity: .1; } 50% { stroke-opacity: .36; } }
-.focus-halo path.recharts-curve { animation: focus-breath 2.4s ease-in-out infinite; }
+.focus-halo path.recharts-curve { animation: focus-breath calc(2.4s * var(--m)) ease-in-out infinite; }
 /* the open Key-Moment card pulses in its OWN accent colour (var set inline) */
 @keyframes accent-breath {
-  0%, 100% { box-shadow: 0 0 0 1px var(--pulse, rgba(255,255,255,.2)), 0 10px 26px -12px rgba(0,0,0,.6); }
-  50%      { box-shadow: 0 0 0 4px var(--pulse, rgba(255,255,255,.12)), 0 10px 26px -10px rgba(0,0,0,.6); }
+  0%, 100% { box-shadow: 0 0 0 1px var(--pulse, rgb(var(--tint) / .2)), 0 10px 26px -12px var(--shadow-strong); }
+  50%      { box-shadow: 0 0 0 4px var(--pulse, rgb(var(--tint) / .12)), 0 10px 26px -10px var(--shadow-strong); }
 }
-.accent-breathing { animation: accent-breath 1.9s ease-in-out infinite; }
+.accent-breathing { animation: accent-breath calc(1.9s * var(--m)) ease-in-out infinite; }
 /* SC / VSC hover card: the WHOLE tooltip softly pulses in the event colour so a
    neutralised lap is unmistakable at a glance */
 @keyframes tip-breath {
-  0%, 100% { box-shadow: 0 0 0 1px rgba(255,255,255,.06), 0 8px 40px -12px rgba(0,0,0,.6); }
-  50%      { box-shadow: 0 0 0 1.5px var(--pulse), 0 0 22px -4px var(--pulse), 0 8px 40px -12px rgba(0,0,0,.6); }
+  0%, 100% { box-shadow: 0 0 0 1px rgb(var(--tint) / .06), 0 8px 40px -12px var(--shadow-strong); }
+  50%      { box-shadow: 0 0 0 1.5px var(--pulse), 0 0 22px -4px var(--pulse), 0 8px 40px -12px var(--shadow-strong); }
 }
-.tip-breathing { animation: tip-breath 1.9s ease-in-out infinite; }
+.tip-breathing { animation: tip-breath calc(1.9s * var(--m)) ease-in-out infinite; }
 /* the selected Key-Moment marker, drawn above the dimmed plot */
 @keyframes overlay-breath { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
-.moment-line-overlay { animation: overlay-breath 1.8s ease-in-out infinite; }
+.moment-line-overlay { animation: overlay-breath calc(1.8s * var(--m)) ease-in-out infinite; }
 /* A neutralisation spans laps, so the whole region breathes — not just the
    marker at its start. The pulse is the region telling you it IS a region. */
 @keyframes band-breath {
   0%, 100% { opacity: .95; box-shadow: inset 0 0 0 1px var(--pulse), 0 0 18px -6px var(--pulse); }
   50%      { opacity: .55; box-shadow: inset 0 0 0 1px var(--pulse), 0 0 4px -2px var(--pulse); }
 }
-.moment-band { animation: band-breath 2.2s ease-in-out infinite; }
+.moment-band { animation: band-breath calc(2.2s * var(--m)) ease-in-out infinite; }
 /* pit-stop markers breathe gently so they're easy to pick out while scanning */
 @keyframes pit-breath { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
-.pit-dot { animation: pit-breath 1.8s ease-in-out infinite; }
+.pit-dot { animation: pit-breath calc(1.8s * var(--m)) ease-in-out infinite; }
 /* a neutralisation badge softly glows so SC / VSC never blend in */
 @keyframes badge-breath { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 3px var(--pulse, rgba(255,210,30,.28)); } }
-.badge-breathing { animation: badge-breath 1.9s ease-in-out infinite; }
+.badge-breathing { animation: badge-breath calc(1.9s * var(--m)) ease-in-out infinite; }
 /* Dim the PLOT, not the chrome. Putting opacity on the chart container also
    faded the Recharts tooltip, so exploring a selected Safety Car period made
    the card you were reading harder to read — the selected state must always be
@@ -558,19 +663,48 @@ html.theme-sweep::view-transition-new(root) {
 }
 
 /* ---------------------------------------------------------------------------
-   Animation intensity.
+   CALM IS A TEMPO, NOT AN OFF SWITCH.
 
-   `prefers-reduced-motion` is the operating system's answer and is always
-   obeyed. This is the reader's own answer for when the OS setting is not what
-   they want here specifically — same effect, chosen rather than inherited.
+   This used to be `animation-duration: 0.01ms !important` across every element
+   in the document, which is the correct answer to `prefers-reduced-motion` and
+   the wrong answer to a reader who simply wants the room quieter. It stopped
+   the product being alive: the timing screen froze, the tracker parked, the
+   cards stopped arriving, and the reader who had asked for calm was shown a
+   screenshot of a product that had been moving a second earlier.
+
+   Two settings, two different meanings:
+
+     prefers-reduced-motion   an accessibility need. Movement is a symptom
+                              trigger, so it stops. Obeyed unconditionally,
+                              in the @media block further down.
+
+     Calm                     a preference about pace. Everything still runs;
+                              it runs slower, travels less far, and settles
+                              instead of springing. Bloomberg Terminal against
+                              an Apple TV screensaver, which is exactly how the
+                              brief put it.
+
+   The whole difference is carried by two numbers. `--m` stretches every
+   ambient period (each loop in this file states its own as
+   `calc(<base> * var(--m))`), and `--amp` shortens how far the largest of them
+   travel. The transition scale is lengthened rather than shortened, because a
+   slow transition is calm and a 60ms one is abrupt — the old rule made the
+   interface *snappier* under a setting whose name promises the opposite.
    --------------------------------------------------------------------------- */
-:root[data-motion="calm"] *,
-:root[data-motion="calm"] *::before,
-:root[data-motion="calm"] *::after {
-  animation-duration: 0.01ms !important;
-  animation-iteration-count: 1 !important;
-  transition-duration: 0.06s !important;
+:root[data-motion="calm"] {
+  --m: 2.7;
+  --amp: .45;
+  --dur-1: 150ms;
+  --dur-2: 280ms;
+  --dur-3: 460ms;
+  --dur-4: 760ms;
+  --chart-ms: 1600ms;
+  /* nothing overshoots when the room is calm: a spring is an exuberance */
+  --ease-out: cubic-bezier(.25, .8, .35, 1);
+  --ease-spring: cubic-bezier(.25, .8, .35, 1);
 }
+/* The one thing that does stop. A full-screen circular wipe is not a quiet
+   animation at any speed, and the swap it covers is instantaneous anyway. */
 :root[data-motion="calm"]::view-transition-new(root),
 :root[data-motion="calm"]::view-transition-old(root) { animation: none !important; }
 
@@ -634,7 +768,9 @@ html.theme-sweep::view-transition-new(root) {
   .reveal { opacity: 1; transform: none; }
   .reveal-on { transition: none; }
 }
-:root[data-motion="calm"] .reveal { opacity: 1; transform: none; }
+/* Calm still reveals — it reveals from closer, over longer. A section that
+   simply exists when you scroll to it is the frozen product again. */
+:root[data-motion="calm"] .reveal { transform: translateY(calc(18px * var(--amp))); }
 
 
 /* ---------------------------------------------------------------------------
@@ -654,7 +790,9 @@ html.theme-sweep::view-transition-new(root) {
 .build > *:nth-child(n+7) { animation-delay: .38s; }
 
 @media (prefers-reduced-motion: reduce) { .build > * { animation: none; } }
-:root[data-motion="calm"] .build > * { animation: none; }
+/* The page still assembles itself; it assembles more slowly and from less far
+   away, and the stagger between children stays so the order is still readable. */
+:root[data-motion="calm"] .build > * { animation-duration: calc(var(--dur-4) * 1.2); }
 
 
 /* ---------------------------------------------------------------------------
@@ -827,7 +965,7 @@ html.theme-sweep::view-transition-new(root) {
 .tele-flag-on {
   background: rgb(var(--amber));
   box-shadow: 0 0 0 3px rgb(var(--amber) / .18);
-  animation: tele-pulse 1.1s var(--ease-in-out) infinite;
+  animation: tele-pulse calc(1.1s * var(--m)) var(--ease-in-out) infinite;
 }
 @keyframes tele-pulse { 50% { box-shadow: 0 0 0 6px rgb(var(--amber) / .05); } }
 
@@ -856,13 +994,108 @@ html.theme-sweep::view-transition-new(root) {
 @keyframes tele-move-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
 
 /* compound, age, DRS — the three things a strategist reads before the gap */
+/* THE LETTER IS CENTRED ON ITS CAP, NOT ON ITS EM BOX.
+   `place-items: center` centres the line box, and a line box contains descender
+   space no capital letter uses — so an S in an 11px circle sits visibly high and
+   the whole pill reads as misaligned. The glyph is given its own block with no
+   line height of its own and nudged by the half-pixel that the descender is
+   worth. A monospace face was also the wrong choice at 6.5px: at that size the
+   sans has the cleaner letterform, and there is nothing here to align in a
+   column. */
 .tele-tyre {
-  width: 11px; height: 11px; flex: none;
+  width: 11.5px; height: 11.5px; flex: none;
   display: grid; place-items: center;
   border: 1px solid; border-radius: 999px;
-  font-size: 6.5px; font-weight: 700;
+  font-family: var(--font-sans);
+}
+.tele-tyre > i {
+  display: block;
+  font-style: normal;
+  font-size: 7px; font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
+  transform: translateY(.5px);
 }
 .tele-age { width: 10px; font-size: 8px; opacity: .7; }
+
+/* ---- the feed itself -------------------------------------------------------
+   Three bars filling and emptying. The only thing on this panel that runs on a
+   clock rather than on the race, and it is allowed to because it is not
+   reporting the race — it is reporting that there is a link to the car at all,
+   which is the one fact a timing screen states about itself. */
+.tele-sig { display: inline-flex; align-items: flex-end; gap: 1.5px; height: 7px; flex: none; }
+.tele-sig > i {
+  width: 2px; border-radius: 1px;
+  background: rgb(var(--good));
+  animation: tele-sig calc(1.7s * var(--m)) var(--ease-in-out) infinite;
+}
+.tele-sig > i:nth-child(1) { height: 3px; animation-delay: 0s; }
+.tele-sig > i:nth-child(2) { height: 5px; animation-delay: calc(.18s * var(--m)); }
+.tele-sig > i:nth-child(3) { height: 7px; animation-delay: calc(.36s * var(--m)); }
+@keyframes tele-sig { 0%, 100% { opacity: .28; } 45% { opacity: .95; } }
+
+/* ---- the pedals ------------------------------------------------------------
+   Both scale from the left, because a pedal trace is read the way it is
+   driven. `transform: scaleX` rather than `width` on purpose: five of these
+   update eleven times a second beside a canvas, and a width animates on the
+   main thread while a transform does not. */
+.tele-thr {
+  position: relative; width: 20px; height: 3px; flex: none;
+  border-radius: 999px; overflow: hidden;
+  background: rgb(var(--tint) / .1);
+}
+.tele-thr > i, .tele-thr > u {
+  position: absolute; inset: 0; border-radius: 999px;
+  transform-origin: left center;
+  transition: transform 90ms linear, opacity 140ms linear;
+}
+.tele-thr > i { background: rgb(var(--good) / .85); }
+/* braking is drawn over the throttle, in the colour of a warning, because on
+   a real trace they overlap for exactly as long as the car is trail-braking */
+.tele-thr > u { background: rgb(var(--accent) / .9); }
+
+/* which way the interval is going, as a mark rather than as a number */
+.tele-trend {
+  display: inline-block; width: 0; height: 0; margin-left: 3px;
+  border-left: 2.5px solid transparent; border-right: 2.5px solid transparent;
+  opacity: 0; transition: opacity var(--dur-2) var(--ease-out);
+  vertical-align: middle;
+}
+.tele-trend.is-in  { border-bottom: 4px solid rgb(var(--good)); opacity: .9; }
+.tele-trend.is-out { border-top: 4px solid rgb(var(--amber)); opacity: .9; }
+
+/* ---- one car, in detail ----------------------------------------------------
+   The strip is what turns a table into a pit wall. It moves an order of
+   magnitude faster than the rows above it, which is true of the real thing:
+   the order changes a few times a race and the pedals change a few times a
+   second. */
+.tele-strip {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 11px;
+  border-top: 1px solid rgb(var(--tint) / .07);
+  background: rgb(var(--tint) / .015);
+  font-size: 8.5px; letter-spacing: .06em;
+  color: rgb(var(--ink-faint));
+}
+.tele-strip-code { font-weight: 700; letter-spacing: .08em; flex: none; }
+.tele-strip-num { flex: none; }
+.tele-strip-num em { font-style: normal; opacity: .5; margin-left: 1px; }
+.tele-pedal { display: inline-flex; align-items: center; gap: 3px; flex: 1; min-width: 0; }
+.tele-pedal > b { font-weight: 700; opacity: .55; font-size: 7.5px; }
+/* the track the bar runs in, so a pedal at rest is still a readout rather
+   than an absence */
+.tele-pedal > span {
+  position: relative; display: block; flex: 1; min-width: 0;
+  height: 3px; border-radius: 999px; overflow: hidden;
+  background: rgb(var(--tint) / .1);
+}
+.tele-pedal > span > i {
+  position: absolute; inset: 0; border-radius: 999px;
+  transform-origin: left center;
+  transition: transform 90ms linear;
+}
+.tele-pedal .is-thr { background: linear-gradient(90deg, rgb(var(--good) / .45), rgb(var(--good))); }
+.tele-pedal .is-brk { background: linear-gradient(90deg, rgb(var(--accent) / .45), rgb(var(--accent))); }
 
 /* how much tyre is left — a bar that only ever drains, and resets on a stop */
 .tele-wear {
@@ -916,12 +1149,12 @@ html.theme-sweep::view-transition-new(root) {
 .ann-spark { opacity: .9; flex: none; }
 .ann-gauge {
   stroke-dashoffset: 26;
-  animation: ann-gauge 2.4s var(--ease-out) infinite alternate;
+  animation: ann-gauge calc(2.4s * var(--m)) var(--ease-out) infinite alternate;
 }
 @keyframes ann-gauge { from { stroke-dashoffset: 30; } to { stroke-dashoffset: 9; } }
 .ann-ring {
   width: 8px; height: 8px; border-radius: 999px; flex: none;
-  animation: ann-ring 1.5s var(--ease-in-out) infinite;
+  animation: ann-ring calc(1.5s * var(--m)) var(--ease-in-out) infinite;
 }
 @keyframes ann-ring {
   0%, 100% { box-shadow: 0 0 0 0 currentColor; opacity: .9; }
@@ -934,7 +1167,7 @@ html.theme-sweep::view-transition-new(root) {
 }
 .ann-scan > i {
   position: absolute; top: 0; bottom: 0; width: 9px; border-radius: 999px;
-  animation: ann-scan 1.5s var(--ease-in-out) infinite;
+  animation: ann-scan calc(1.5s * var(--m)) var(--ease-in-out) infinite;
 }
 @keyframes ann-scan { from { left: -9px; } to { left: 30px; } }
 
@@ -976,12 +1209,13 @@ html.theme-sweep::view-transition-new(root) {
   .tele, .ann-card, .tele-flag-on, .ann-gauge, .ann-ring, .ann-scan > i,
   .tele-line.is-purple::before, .tele-line.is-green::before { animation: none; }
 }
-:root[data-motion="calm"] .tele,
-:root[data-motion="calm"] .ann-card,
-:root[data-motion="calm"] .ann-gauge,
-:root[data-motion="calm"] .ann-ring,
-:root[data-motion="calm"] .ann-scan > i,
-:root[data-motion="calm"] .tele-flag-on { animation: none; }
+/* The instruments keep running when the room is calm. They run at the calm
+   tempo — which they get for free, because every period in this block is
+   stated as a multiple of --m — and the two that travel furthest have their
+   travel cut, so the panel reads as quietly working rather than as idling. */
+:root[data-motion="calm"] .ann-scan > i { opacity: .55; }
+:root[data-motion="calm"] .tele-line.is-purple::before,
+:root[data-motion="calm"] .tele-line.is-green::before { opacity: .6; }
 
 /* The ambient lamps used to live here as three fixed CSS gradients. They are
    now drawn on the canvas instead, because one of them tracks the leader — the
@@ -1001,13 +1235,159 @@ html.theme-sweep::view-transition-new(root) {
    because "is there more?" is the only question a hero cannot answer with
    words. Long, soft, and never at rest for less than half its cycle — an idle
    loop that hurries is an irritation rather than an invitation. */
-.cue-bob { animation: cue-bob 2.8s var(--ease-in-out) infinite; }
+.cue-bob { animation: cue-bob calc(2.8s * var(--m)) var(--ease-in-out) infinite; }
 @keyframes cue-bob {
   0%, 62%, 100% { transform: translateY(0); }
-  80%           { transform: translateY(2.5px); }
+  80%           { transform: translateY(calc(2.5px * var(--amp))); }
 }
 @media (prefers-reduced-motion: reduce) { .cue-bob { animation: none; } }
-:root[data-motion="calm"] .cue-bob { animation: none; }
+
+/* ---------------------------------------------------------------------------
+   The controls a preferences screen is made of.
+
+   The indicator on a segmented control is ONE element that moves, not a
+   background that switches. A reader watching a choice slide from one side to
+   the other understands they changed a single setting; a reader watching one
+   highlight vanish and another appear has to work out that those two events
+   were the same event. It costs one transform either way.
+   --------------------------------------------------------------------------- */
+.seg {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  border: 1px solid rgb(var(--tint) / .08);
+  background: rgb(var(--base-800) / .8);
+}
+.seg-thumb {
+  position: absolute;
+  top: 2px; bottom: 2px; left: 2px;
+  width: calc((100% - 4px) / var(--n));
+  transform: translateX(calc(var(--i) * 100%));
+  border-radius: 8px;
+  background: rgb(var(--accent) / .16);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent) / .35);
+  transition: transform var(--dur-3) var(--ease-out);
+}
+.seg-opt {
+  position: relative;
+  padding: 5px 11px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: rgb(var(--ink-muted));
+  transition: color var(--dur-2) var(--ease-out);
+  cursor: pointer;
+}
+.seg-opt:hover { color: rgb(var(--ink)); }
+.seg-opt.is-on { color: rgb(var(--ink)); font-weight: 600; }
+.seg-sm .seg-opt { padding: 3.5px 8px; font-size: 11px; }
+
+.sw {
+  position: relative;
+  width: 36px; height: 20px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--tint) / .1);
+  background: rgb(var(--base-800));
+  transition: background-color var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out);
+  cursor: pointer;
+}
+.sw.is-on { background: rgb(var(--accent) / .9); border-color: rgb(var(--accent)); }
+.sw-knob {
+  position: absolute; top: 2px; left: 2px;
+  width: 14px; height: 14px; border-radius: 999px;
+  background: rgb(var(--ink-muted));
+  transition: transform var(--dur-3) var(--ease-out), background-color var(--dur-2) var(--ease-out);
+}
+.sw.is-on .sw-knob { transform: translateX(16px); background: #fff; }
+
+/* The preview's bars draw themselves at whatever speed the reader chose, which
+   is the only way to demonstrate a duration in a still panel. `--chart-ms` is
+   the same variable the real charts read. */
+.pv-grow { animation: pv-grow var(--chart-ms) var(--ease-out) both; transform-origin: left center; }
+@keyframes pv-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .pv-grow { animation: none; } }
+
+/* ---------------------------------------------------------------------------
+   The windows in the three doors.
+
+   A card that only moves when you touch it has to be found before it can
+   invite. These are alive on arrival — one slow loop each, all of them under
+   ten per cent of amplitude, staggered by `--i` so no two elements in a window
+   are ever in phase. Hovering RAISES the motion rather than starting it, which
+   is the difference between a card waking up and a card switching on.
+
+   Everything here is transform and opacity, so three animated cards on a page
+   with a canvas hero cost the compositor and nothing else.
+   --------------------------------------------------------------------------- */
+.art-drift {
+  animation: art-drift calc(9s * var(--m)) var(--ease-in-out) infinite;
+  animation-delay: calc(var(--i) * -2.1s);
+  transform-origin: center;
+}
+@keyframes art-drift {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  50%      { transform: translateY(calc(-2.5px * var(--amp))) scaleY(1.035); }
+}
+
+.art-halo { animation: art-halo calc(3.4s * var(--m)) var(--ease-in-out) infinite; }
+@keyframes art-halo {
+  0%, 100% { opacity: .1; transform: scale(1); }
+  50%      { opacity: .26; transform: scale(calc(1 + .12 * var(--amp))); }
+}
+
+.art-blink {
+  animation: art-blink calc(2.6s * var(--m)) var(--ease-in-out) infinite;
+  animation-delay: calc(var(--i) * -.62s);
+}
+@keyframes art-blink { 0%, 100% { opacity: .38; } 42% { opacity: 1; } }
+
+/* the evidence travelling toward the answer, one feed at a time */
+.art-feed {
+  stroke-dasharray: 14 122;
+  animation: art-feed calc(4.6s * var(--m)) linear infinite;
+  animation-delay: calc(var(--i) * -1.5s);
+}
+@keyframes art-feed { from { stroke-dashoffset: 136; } to { stroke-dashoffset: 0; } }
+
+.art-tick {
+  animation: art-tick calc(5.2s * var(--m)) var(--ease-in-out) infinite;
+  animation-delay: calc(var(--i) * -.36s);
+}
+@keyframes art-tick { 0%, 100% { opacity: .5; } 46% { opacity: 1; } }
+
+/* one soft pass across the window, so it reads as a display */
+.art-scan {
+  left: -5rem;
+  background: linear-gradient(90deg, transparent, rgb(var(--tint) / .05), transparent);
+  animation: art-scan calc(7.5s * var(--m)) linear infinite;
+}
+/* far enough to clear any column at this grid's widest, so the pass always
+   leaves the frame — a scan that stops halfway is a bar sitting in the picture */
+@keyframes art-scan { to { transform: translateX(42rem); } }
+.art-host:hover .art-drift,
+.art-host:hover .art-blink,
+.art-host:hover .art-tick,
+.art-host:hover .art-halo { animation-duration: calc(1.9s * var(--m)); }
+.art-host:hover .art-feed { animation-duration: calc(1.6s * var(--m)); }
+.art-host:hover .art-scan { animation-duration: calc(2.4s * var(--m)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .art-drift, .art-halo, .art-blink, .art-feed, .art-tick, .art-scan { animation: none; }
+  .art-feed { stroke-dasharray: none; }
+  .art-scan { opacity: 0; }
+}
+
+/* The accent's own light on the primary control, scaled by the reader's
+   intensity setting — this used to be an inline box-shadow, which no
+   preference could reach. */
+/* the timer on an auto-advancing tour beat: it promises how long you have */
+@keyframes tour-hold { from { transform: translateX(-100%); } to { transform: none; } }
+
+.cta-glow { box-shadow: 0 12px 40px -12px rgb(var(--accent) / calc(.85 * var(--glow-k))); }
 
 /* The oversized numeral behind a step. A tint at 7% is a whisper on black and
    very nearly nothing on white, so paper gets a little more of it. */

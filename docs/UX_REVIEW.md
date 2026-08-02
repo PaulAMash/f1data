@@ -3,8 +3,114 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V58**. Reviewed at 1440×900 and 390×844, in both themes, with motion full and
-calm.
+Last pass: **V59**. Reviewed at 1440×900 and 390×844, in both themes, with motion full and
+calm, and in both language styles.
+
+---
+
+## Fixed in V59
+
+### 1. Light mode was unfinished, and charts were where it showed — *critical*
+
+`lib/chartTheme.ts` was six dark-theme literals: a grey tick, a white grid line at
+5.5% and a near-black tooltip. On white the grid was simply absent and the
+tooltip was a black card in a daylight interface. Every value now resolves
+through a variable, which Recharts writes into SVG attributes and inline styles —
+both of which resolve `var()` at paint time, so the charts re-theme on the same
+frame the page does.
+
+The reported symptom — the Key Moments chart losing its line and keeping only its
+points — was `RaceTimeline.tsx:159`, a spine stroked in `rgba(255,255,255,0.12)`.
+Nineteen more dark-only literals across ten files were found by the same sweep and
+given the same treatment, and two semantic colours that only ever existed as hex
+(`#34d399`, `#a78bfa`) became `--good` and `--best` with a value per theme.
+
+### 2. Team liveries vanished on white — *high, found in review*
+
+Not a token problem: Mercedes, Williams and Haas are genuinely light colours, and
+a 2px stroke of any of them on a 96%-white page is invisible. Lightness only,
+light theme only, hue untouched — see *A livery is data; its lightness is not*.
+
+### 3. Calm Motion was an off switch — *high*
+
+It froze the timing screen, parked the tracker and stopped the cards. A reader who
+asked for a quieter room was shown a still photograph. It is a tempo now: about a
+third the speed, half the travel, longer transitions, and nothing stops.
+
+### 4. Four settings-page controls did nothing — *high*
+
+Pressing "Motion" filtered the list rather than going anywhere, so on a screen
+tall enough to show every section at once the rail was inert. It scrolls now, and
+a scrollspy brings the highlight back when the reader scrolls by hand — a rail
+that only leads is half a rail.
+
+### 5. The Live Preview claimed to be live and was not — *high*
+
+It changed for Simple/Advanced and for nothing else, which is the worst possible
+arrangement: a reader who changes density and sees nothing move concludes the
+setting is broken rather than that the preview is. It is built from the product's
+own tokens and locale helpers now, so theme, accent, intensity, density, text
+size, units, clock, number grouping and spelling all arrive without being wired,
+and changing chart animation replays the draw — the one setting a still image
+cannot show.
+
+### 6. There was no way back — *high*
+
+Opening Settings from the middle of a race left the wordmark and two links to
+somewhere else, so the session was lost. Back and Forward now sit in the bar,
+counting navigations made *inside* the product — `history.length` would have sent
+a reader who arrived from a search result back out of the product entirely, by a
+control that looks like part of it.
+
+### 7. The landing statistics were literals, two of them meaningless — *high*
+
+"2026 · Season" is the date, not a claim. Derived from the archive now, and the
+race count stops at the last complete season so the page cannot claim a Grand
+Prix that has not been run. Closes item **B** from the standing list.
+
+### 8. Being asked to choose an experience on every visit — *medium*
+
+Shown until answered, then never again; Settings holds it permanently. The chapter
+numerals below it are computed rather than typed, because the page is no longer
+the same length on every visit.
+
+### 9. The worked example demonstrated nothing — *medium*
+
+A modal playing a hand-written transcript, on a page whose claim is that nothing
+is invented. It now walks five real screens of a real session. Same twenty-five
+seconds; at the end of them the reader has used the product.
+
+### 10. The tutorial taught the furniture — *medium*
+
+Four modals inside the Race Explorer, opening halfway through a session, with
+nothing about asking a question, comparing two drivers, the archive or the
+preferences. Ten beats across the whole product now, starting on the page that
+says what it is for.
+
+### 11. The Race Explorer scrolled sideways on a phone — *medium, found in review*
+
+114px of horizontal overflow from a results table inside a panel that could not
+shrink below it. `min-width: 0` on all four surface levels.
+
+### 12. Tooltips fired on the first pixel of a hover — *low*
+
+Crossing a row of six explained metrics opened six popups. A hover only means
+"explain this" if the pointer stays; the wait is the reader's own.
+
+### 13. The compound letter sat high in its circle — *low, reported*
+
+`place-items: center` centres the line box, and a line box contains descender
+space no capital uses. Given its own block, no line height, and the half-pixel
+the descender was worth.
+
+### 14. Two lint warnings, standing since V54 — *low*
+
+Both were correct as written; both now say so in a comment rather than sitting in
+the output where a real warning would be missed. Closes item **E**.
+
+### 15. The footer was on the landing page only — *low*
+
+Now on every page a reader can land on. Closes item **C**.
 
 ---
 
@@ -255,38 +361,39 @@ Recommendation: **bundle one complete sample session** and fall back to it, labe
 as a sample, so the product is never empty on a first impression. This is a data decision as
 much as a UI one, so it is flagged rather than taken.
 
-### B. The landing statistics are hardcoded — *medium*
+### B. A phone gets the hero without the instruments — *low*
 
-Season, race count and driver count are literals in `page.tsx`. They are currently true, and
-they will quietly stop being true. `/api/meta` already knows the season and the calendar.
-Wiring them costs a loading state in the stat band, which is why it has not been done — but
-the standing rule in this repo is that a flourish may fail to *no* flourish and may never make
-the product lie, and a stale literal is exactly that failure in slow motion.
+The tracker and the live timing panel are both hidden below 1024px, because at 390px a
+circuit is a smudge and a timing row is unreadable. The phone therefore gets the racing lines
+and the cards and none of the evidence that something is being measured. A phone-sized
+instrument — one row, or a single live readout — would close it; three columns squeezed into
+one would not.
 
-### C. The footer is on the landing page only — *low*
+### C. The guided tour cannot point at anything inside a modal — *low*
 
-Closed for the page that needed it most. `/explorer`, `/history` and `/settings` are still
-application views that simply stop, and the unaffiliated-with-Formula-1 line arguably belongs
-on every one of them rather than on the one page a visitor might not reach.
-
-### D. Only the logo goes home — *low*
-
-`/explorer` and `/history` offer no route back to the landing page except the wordmark, which
-is a convention rather than an affordance. The footer closes this on the landing page; a
-"Home" item in the nav would close it everywhere.
-
-### E. Two lint warnings are still standing — *low*
-
-`PaceAnalysis.tsx:112` (missing `plot` dependency) and `HistoricalExplorer.tsx:72`
-(unnecessary `nonce` dependency). Neither is currently a bug; both are the kind of dependency
-drift that becomes one after an unrelated edit.
+Every beat resolves a selector in the page, which is right for the ten it has. A future beat
+about a dialog would need the tour to open it first, and `Beat` has no verb for that yet —
+`tab` is the only drive it knows. Worth generalising the first time it is actually needed and
+not before.
 
 ---
 
 ## Verification notes
 
-One trap worth recording for anyone repeating this review with Playwright: **headless Chromium
-at `device_scale_factor: 2` does not run smooth scrolling at all.** A bare
+Three traps worth recording for anyone repeating this review with Playwright.
+
+**A full-page screenshot lies about a page with `vh` units in it.** Chromium expands the
+viewport to the full document height before capturing, so a hero declared `min-h-[80vh]`
+becomes 80% of *the whole page* — 1,722px instead of 720 — and everything below it appears to
+have vanished into empty space. Scroll a real viewport and capture that instead.
+
+**`get_by_role("button", name="Next")` is not specific enough on a page with data in it.** A
+race card whose accessible name happens to contain the word resolved alongside the tour's
+control and every click timed out, which reads exactly like a broken button and is not one.
+`exact=True`, always.
+
+**And the original one: headless Chromium at `device_scale_factor: 2` does not run smooth
+scrolling at all.** A bare
 `window.scrollTo({top, behavior: "smooth"})` on any page is a no-op there, while instant
 scrolling works normally. It looks exactly like a broken click handler and it is not — check
 at DSF 1 before believing it.

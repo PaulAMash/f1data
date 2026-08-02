@@ -13,11 +13,26 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 /* Everything here is a *stated* preference. The operating system's own         */
 /* answers (prefers-reduced-motion, prefers-color-scheme) are the default and   */
 /* are never overwritten silently — see resolveInitial below.                   */
+/*                                                                            */
+/* THE RULE FOR ADDING ONE. A preference earns its place when the product      */
+/* cannot pick correctly on the reader's behalf — when two readers would want  */
+/* genuinely different answers and neither is wrong. Celsius against           */
+/* Fahrenheit is that. "Show tooltips" is not; tooltips should simply be good. */
+/* Every key below is read by real code, and a setting that controls nothing   */
+/* is a bug rather than a feature.                                             */
 /* -------------------------------------------------------------------------- */
 
 export type Mode = "simple" | "advanced";
 export type Theme = "dark" | "light";
 export type MotionPref = "full" | "calm";
+export type Units = "metric" | "imperial";
+export type Spelling = "en-GB" | "en-US";
+export type Clock = "24h" | "12h";
+export type Density = "comfortable" | "compact";
+export type ChartSpeed = "instant" | "standard" | "cinematic";
+export type TipDelay = "none" | "short" | "long";
+export type Intensity = "subtle" | "standard" | "vivid";
+export type Landing = "home" | "explorer" | "history";
 
 /**
  * The accent is already a CSS variable, so letting the reader choose one costs
@@ -40,16 +55,65 @@ export interface Prefs {
   accent: AccentKey;
   /** Scales the whole type ramp. A real accessibility control, not a toggle. */
   textScale: "normal" | "large";
-  /** Has the reader been through the landing choice? Gates the walkthrough. */
+
+  /* ---- localisation ------------------------------------------------------
+     Not a translation. Formula 1 is reported in two dialects of one language,
+     and a reader who says "tires" and reads Fahrenheit is not reading a
+     different product — they are reading the same product spelled their way. */
+  units: Units;
+  spelling: Spelling;
+  clock: Clock;
+  /** Thousands separators. Off suits anyone pasting figures into a sheet. */
+  groupDigits: boolean;
+
+  /* ---- interface ---------------------------------------------------------- */
+  /** Vertical rhythm. Compact fits a strategist's screen; comfortable reads. */
+  density: Density;
+  /** How long a chart takes to draw itself in. */
+  chartSpeed: ChartSpeed;
+  /** How long a hover waits before explaining itself. */
+  tipDelay: TipDelay;
+  /** How much light the accent throws. Vivid is a pit wall; subtle is a desk. */
+  intensity: Intensity;
+
+  /* ---- where the product opens ------------------------------------------- */
+  landing: Landing;
+  /** Season the archive opens on. 0 means "whatever is current". */
+  season: number;
+
+  /* ---- one-time gates ----------------------------------------------------- */
+  /** Has the reader been through the guided tour? */
   onboarded: boolean;
+  /** Has the reader chosen Simple or Advanced? Gates the landing panel. */
+  pickedMode: boolean;
 }
 
 export const PREFS_KEY = "pitwall-iq:prefs";
 
 export const DEFAULT_PREFS: Prefs = {
-  mode: "simple", theme: "dark", motion: "full", accent: "f1",
-  textScale: "normal", onboarded: false,
+  mode: "simple", theme: "dark", motion: "full", accent: "f1", textScale: "normal",
+  units: "metric", spelling: "en-GB", clock: "24h", groupDigits: true,
+  density: "comfortable", chartSpeed: "standard", tipDelay: "short", intensity: "standard",
+  landing: "home", season: 0,
+  onboarded: false, pickedMode: false,
 };
+
+/**
+ * Which preferences belong to which panel of Settings.
+ *
+ * Declared here rather than in the page because "reset this section" has to
+ * mean exactly the same set of keys the section shows — two lists that drift
+ * apart produce a reset button that quietly misses one control.
+ */
+export const PREF_GROUPS = {
+  experience:    ["mode"],
+  appearance:    ["theme", "accent", "intensity"],
+  localisation:  ["units", "spelling", "clock", "groupDigits"],
+  interface:     ["density", "chartSpeed", "tipDelay", "landing", "season"],
+  motion:        ["motion"],
+  accessibility: ["textScale"],
+} as const satisfies Record<string, readonly (keyof Prefs)[]>;
+export type PrefGroup = keyof typeof PREF_GROUPS;
 
 /**
  * The script that runs before first paint.
@@ -71,6 +135,10 @@ export const NO_FLASH_SCRIPT = `
     root.dataset.motion = p.motion || (sysCalm ? "calm" : "full");
     if (p.accent) root.dataset.accent = p.accent;
     if (p.textScale) root.dataset.text = p.textScale;
+    if (p.density) root.dataset.density = p.density;
+    if (p.intensity) root.dataset.intensity = p.intensity;
+    if (p.tipDelay) root.dataset.tip = p.tipDelay;
+    if (p.chartSpeed) root.dataset.chart = p.chartSpeed;
   } catch (e) {
     document.documentElement.dataset.theme = "dark";
   }
@@ -85,6 +153,11 @@ function readStored(): Partial<Prefs> {
   }
 }
 
+/** Falls back to the default for anything stored that is not a legal value. */
+function oneOf<T extends string>(v: unknown, allowed: readonly T[], fallback: T): T {
+  return allowed.includes(v as T) ? (v as T) : fallback;
+}
+
 /**
  * Stored answer first, then a default per preference.
  *
@@ -96,18 +169,41 @@ function readStored(): Partial<Prefs> {
  * visit opens in the identity it was designed in rather than in whatever the
  * machine happens to say. Colour scheme is a taste, not an access requirement,
  * and one click in the nav (or Settings) changes it for good.
+ *
+ * Spelling and units are the exception to "never guess": the browser already
+ * knows the reader's locale, and opening in Fahrenheit for a reader in Ohio is
+ * a better first guess than opening in Celsius. It remains a guess — one that
+ * a single control overrides for good.
  */
 function resolveInitial(): Prefs {
   if (typeof window === "undefined") return DEFAULT_PREFS;
   const stored = readStored();
   const sysCalm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const loc = (navigator.language || "en-GB").toLowerCase();
+  // Fahrenheit survives in a handful of places; American English in rather more
+  const usish = /^en-(us|ph)|^en$/.test(loc);
   return {
-    mode: stored.mode ?? DEFAULT_PREFS.mode,
-    theme: stored.theme ?? DEFAULT_PREFS.theme,
-    motion: stored.motion ?? (sysCalm ? "calm" : "full"),
-    accent: (stored.accent && stored.accent in ACCENTS ? stored.accent : DEFAULT_PREFS.accent) as AccentKey,
-    textScale: stored.textScale ?? DEFAULT_PREFS.textScale,
+    mode: oneOf(stored.mode, ["simple", "advanced"], DEFAULT_PREFS.mode),
+    theme: oneOf(stored.theme, ["dark", "light"], DEFAULT_PREFS.theme),
+    motion: oneOf(stored.motion, ["full", "calm"], sysCalm ? "calm" : "full"),
+    accent: oneOf(stored.accent, Object.keys(ACCENTS) as AccentKey[], DEFAULT_PREFS.accent),
+    textScale: oneOf(stored.textScale, ["normal", "large"], DEFAULT_PREFS.textScale),
+
+    units: oneOf(stored.units, ["metric", "imperial"], usish ? "imperial" : "metric"),
+    spelling: oneOf(stored.spelling, ["en-GB", "en-US"], usish ? "en-US" : "en-GB"),
+    clock: oneOf(stored.clock, ["24h", "12h"], usish ? "12h" : "24h"),
+    groupDigits: stored.groupDigits ?? DEFAULT_PREFS.groupDigits,
+
+    density: oneOf(stored.density, ["comfortable", "compact"], DEFAULT_PREFS.density),
+    chartSpeed: oneOf(stored.chartSpeed, ["instant", "standard", "cinematic"], DEFAULT_PREFS.chartSpeed),
+    tipDelay: oneOf(stored.tipDelay, ["none", "short", "long"], DEFAULT_PREFS.tipDelay),
+    intensity: oneOf(stored.intensity, ["subtle", "standard", "vivid"], DEFAULT_PREFS.intensity),
+
+    landing: oneOf(stored.landing, ["home", "explorer", "history"], DEFAULT_PREFS.landing),
+    season: typeof stored.season === "number" ? stored.season : DEFAULT_PREFS.season,
+
     onboarded: stored.onboarded ?? false,
+    pickedMode: stored.pickedMode ?? false,
   };
 }
 
@@ -116,11 +212,15 @@ interface Ctx {
   set: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
   /** Theme change with the circular reveal, anchored to whatever was pressed. */
   setThemeFrom: (theme: Theme, origin?: { x: number; y: number }) => void;
+  /** Put one panel of Settings back to its defaults, leaving the rest alone. */
+  resetGroup: (group: PrefGroup) => void;
+  resetAll: () => void;
   ready: boolean;
 }
 
 const PrefsCtx = createContext<Ctx>({
-  prefs: DEFAULT_PREFS, set: () => {}, setThemeFrom: () => {}, ready: false,
+  prefs: DEFAULT_PREFS, set: () => {}, setThemeFrom: () => {},
+  resetGroup: () => {}, resetAll: () => {}, ready: false,
 });
 
 export function PrefsProvider({ children }: { children: React.ReactNode }) {
@@ -142,6 +242,11 @@ export function PrefsProvider({ children }: { children: React.ReactNode }) {
     root.dataset.motion = prefs.motion;
     root.dataset.accent = prefs.accent;
     root.dataset.text = prefs.textScale;
+    root.dataset.density = prefs.density;
+    root.dataset.intensity = prefs.intensity;
+    root.dataset.tip = prefs.tipDelay;
+    root.dataset.chart = prefs.chartSpeed;
+    root.dataset.spelling = prefs.spelling;
     // written as variables rather than as a stylesheet rule per accent: five
     // accents times two themes would be ten rules that all have to stay in step
     const a = ACCENTS[prefs.accent] ?? ACCENTS.f1;
@@ -157,6 +262,20 @@ export function PrefsProvider({ children }: { children: React.ReactNode }) {
     setPrefs((p) => (p[key] === value ? p : { ...p, [key]: value }));
   }, []);
 
+  const resetGroup = useCallback((group: PrefGroup) => {
+    setPrefs((p) => {
+      const next = { ...p };
+      for (const k of PREF_GROUPS[group]) (next[k] as Prefs[typeof k]) = DEFAULT_PREFS[k];
+      return next;
+    });
+  }, []);
+
+  const resetAll = useCallback(() => {
+    // the gates are deliberately left alone: "reset my preferences" is not
+    // "make me sit through onboarding again", which is its own action
+    setPrefs((p) => ({ ...DEFAULT_PREFS, onboarded: p.onboarded, pickedMode: p.pickedMode }));
+  }, []);
+
   const setThemeFrom = useCallback((theme: Theme, origin?: { x: number; y: number }) => {
     const root = document.documentElement;
     const apply = () => setPrefs((p) => ({ ...p, theme }));
@@ -166,7 +285,7 @@ export function PrefsProvider({ children }: { children: React.ReactNode }) {
     };
     // Progressive enhancement, not a branch in the product: browsers without
     // view transitions get the swap, and it is still correct — just instant.
-    if (!doc.startViewTransition || root.dataset.motion === "calm") { apply(); return; }
+    if (!doc.startViewTransition) { apply(); return; }
 
     if (origin) {
       root.style.setProperty("--sweep-x", `${(origin.x / window.innerWidth) * 100}%`);
@@ -177,7 +296,10 @@ export function PrefsProvider({ children }: { children: React.ReactNode }) {
     t.finished.finally(() => root.classList.remove("theme-sweep"));
   }, []);
 
-  const value = useMemo(() => ({ prefs, set, setThemeFrom, ready }), [prefs, set, setThemeFrom, ready]);
+  const value = useMemo(
+    () => ({ prefs, set, setThemeFrom, resetGroup, resetAll, ready }),
+    [prefs, set, setThemeFrom, resetGroup, resetAll, ready],
+  );
   return <PrefsCtx.Provider value={value}>{children}</PrefsCtx.Provider>;
 }
 

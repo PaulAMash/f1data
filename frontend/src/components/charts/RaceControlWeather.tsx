@@ -112,14 +112,14 @@ export function RaceControlWeather({ session }: { session: RaceSession }) {
                   {/* explicit x bounds: without them Recharts stops the band at
                       the last data point, which leaves a hard edge mid-chart */}
                   <ReferenceArea x1={1} x2={session.total_laps}
-                    y1={WINDOW_LO} y2={WINDOW_HI} fill="#34d399" fillOpacity={0.1}
-                    stroke="#34d399" strokeOpacity={0.22} ifOverflow="hidden" />
+                    y1={WINDOW_LO} y2={WINDOW_HI} fill="rgb(var(--good))" fillOpacity={0.1}
+                    stroke="rgb(var(--good))" strokeOpacity={0.22} ifOverflow="hidden" />
                   {/* rain, lap by lap */}
                   {weatherData.map((d, i) => (d.rain ? (
                     <ReferenceArea key={`r${i}`} x1={d.x - 0.5} x2={d.x + 0.5}
                       fill="#3aa0ff" fillOpacity={0.16} stroke="none" ifOverflow="hidden" />
                   ) : null))}
-                  <ReferenceLine y={WINDOW_HI} stroke="#34d399" strokeOpacity={0.35} strokeDasharray="3 4"
+                  <ReferenceLine y={WINDOW_HI} stroke="rgb(var(--good))" strokeOpacity={0.35} strokeDasharray="3 4"
                     label={{ value: `${WINDOW_HI}°`, position: "right", fill: "#8bd9bd", fontSize: 10 }} />
                   <XAxis dataKey="x" type="number" domain={[1, session.total_laps]}
                     tick={axisTick()} tickLine={false} tickMargin={6} height={26} axisLine={axisLine} />

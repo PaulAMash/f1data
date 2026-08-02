@@ -24,6 +24,7 @@ from .analysis.practice import compute_practice
 from .analysis.qualifying import compute_qualifying
 from .analysis.qa import QAContext, answer_question
 from .analysis.whatif import simulate_whatif
+from .archive_scale import archive_scale
 from .config import get_settings
 from .models import DataSource
 
@@ -66,6 +67,16 @@ def meta():
         "default_year": settings.default_year,
         "source_labels": {s.value: service.source_label(s) for s in DataSource},
     }
+
+
+@app.get("/api/archive/scale")
+def archive_scale_route():
+    """How much of Formula 1 the product covers, derived rather than typed.
+
+    Powers the landing page's statistics band. See app/archive_scale.py for why
+    this is reference data rather than seventy-six archive requests.
+    """
+    return archive_scale()
 
 
 @app.get("/api/health/data-sources")

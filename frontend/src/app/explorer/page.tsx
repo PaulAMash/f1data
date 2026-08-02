@@ -5,7 +5,8 @@ import {
   Gauge, Layers, LineChart, Timer, Wind, Braces, RefreshCw, AlertTriangle,
 } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
-import { Walkthrough, type Step } from "@/components/ui/Walkthrough";
+import { useTourDrive } from "@/lib/tour";
+import { Footer } from "@/components/layout/Footer";
 import { RaceSelector, type Selection } from "@/components/explorer/RaceSelector";
 import { Tabs } from "@/components/ui/Tabs";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
@@ -58,20 +59,6 @@ const PRACTICE_TABS = [
 // Practice sessions are fully mode-free.
 const MODE_AWARE_TABS = new Set(["story", "charts", "pace"]);
 
-/* Four steps, one line each, every one pointing at something already on screen
-   with the reader's own race in it. Anything that needs a paragraph is a sign
-   the interface underneath needs the work instead. */
-const TOUR: Step[] = [
-  { target: "[data-tour='selector']", title: "Pick any session",
-    body: "Season, Grand Prix and session — practice and qualifying included. It opens on the most recent completed race." },
-  { target: "[data-tour='tabs']", title: "One race, several readings",
-    body: "Story is the recap. The others go deeper into the charts, the strategy calls, the pace and the tyres." },
-  { target: "[data-tour='sources']", title: "Always checkable",
-    body: "Every number says which F1 source it came from, and what wasn't available. Nothing here is invented." },
-  { target: "[data-tour='mode']", title: "Change the depth whenever",
-    body: "Settings holds the reading depth — Simple reads like a commentator, Advanced shows every measurement — along with theme and motion. Your choice is remembered." },
-];
-
 export default function ExplorerPage() {
   const { mode } = useMode();
   const isAdvanced = mode === "advanced";
@@ -89,6 +76,10 @@ export default function ExplorerPage() {
   // prevents the season label flashing and prevents fetching a race that hasn't
   // happened yet (the backend now picks the latest *completed* Grand Prix).
   const [booted, setBooted] = useState(false);
+
+  /* A guided tour can open any tab. The Explorer answers on the tour's channel
+     rather than lifting this state into a global store — see lib/tour.tsx. */
+  useTourDrive(setTab);
 
   useEffect(() => {
     api.meta().then(setMeta).catch(() => setMeta(null));
@@ -164,9 +155,6 @@ export default function ExplorerPage() {
   return (
     <div className="min-h-screen">
       <NavBar active="explorer" />
-      {/* Only once the session is actually on screen: a tour that spotlights a
-          skeleton teaches the shape of a loading state. */}
-      <Walkthrough steps={TOUR} enabled={!!bundle && !loading} />
       <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-6">
         {/* clean header — the race is the hero */}
         <div className="mb-5">
@@ -243,7 +231,7 @@ export default function ExplorerPage() {
         )}
 
         {bundle && session && !loading && !error && (
-          <div className="animate-fade-in">
+          <div className="animate-fade-in" data-tour="panel">
             {isRaceLike && tab === "story" && <RaceStory bundle={bundle} onJump={setTab} />}
             {isRaceLike && tab === "charts" && (
               <div className="space-y-4">
@@ -314,6 +302,11 @@ export default function ExplorerPage() {
           <Card><EmptyState title="Pick a session to begin" hint="Choose a season, Grand Prix and session above." /></Card>
         )}
       </div>
+
+      {/* Every view ends somewhere. The line about not being affiliated with
+          Formula 1 belongs on every page a reader can land on, not only on the
+          one they might never scroll to. */}
+      <Footer />
     </div>
   );
 }

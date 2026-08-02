@@ -2,12 +2,14 @@
 import { useEffect, useState } from "react";
 import { Trophy, Users } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
+import { Footer } from "@/components/layout/Footer";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Tabs } from "@/components/ui/Tabs";
 import { Skeleton, EmptyState } from "@/components/ui/misc";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { HistoricalExplorer } from "@/components/history/HistoricalExplorer";
 import { useIsAdvanced } from "@/lib/mode";
+import { usePrefs } from "@/lib/prefs";
 import { api } from "@/lib/api";
 import type { DataSource } from "@/lib/types";
 import { cx } from "@/lib/format";
@@ -23,7 +25,17 @@ function SourceTag({ source }: { source: DataSource }) {
 const YEARS = Array.from({ length: 9 }, (_, i) => 2026 - i);
 
 export default function History() {
+  const { prefs, ready } = usePrefs();
   const [year, setYear] = useState(2025);
+  const [touched, setTouched] = useState(false);
+
+  /* The archive opens on the reader's season, once their answer has landed —
+     and stops doing so the moment they choose one themselves, because a
+     preference is a starting point and not an override. */
+  useEffect(() => {
+    if (!ready || touched || !prefs.season) return;
+    setYear(prefs.season);
+  }, [ready, touched, prefs.season]);
   const [type, setType] = useState<"driver" | "constructor">("driver");
   const [rows, setRows] = useState<any[]>([]);
   const [source, setSource] = useState<DataSource>("mock");
@@ -42,7 +54,7 @@ export default function History() {
   return (
     <div className="min-h-screen">
       <NavBar active="history" />
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+      <div data-tour="history" className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="label">Historical</div>
@@ -67,7 +79,7 @@ export default function History() {
               right={
                 <div className="flex items-center gap-2">
                   <SourceTag source={source} />
-                  <select value={year} onChange={(e) => setYear(Number(e.target.value))}
+                  <select value={year} onChange={(e) => { setTouched(true); setYear(Number(e.target.value)); }}
                     className="rounded-lg border border-white/10 bg-base-800 px-2.5 py-1.5 text-sm outline-none">
                     {YEARS.map((y) => <option key={y} value={y} className="bg-base-800">{y}</option>)}
                   </select>
@@ -110,6 +122,7 @@ export default function History() {
           </Card>
         </div>
       </div>
+      <Footer />
     </div>
   );
 }

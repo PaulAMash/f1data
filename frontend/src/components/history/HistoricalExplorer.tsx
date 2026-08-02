@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, RefreshCw } from "lucide-react";
 import { AlertTriangle } from "@/components/ui/MotionIcon";
 import { api } from "@/lib/api";
@@ -8,6 +8,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { LoadingState } from "@/components/ui/misc";
 import { cx } from "@/lib/format";
+import { usePrefs } from "@/lib/prefs";
 
 const CURRENT = new Date().getFullYear();
 const FALLBACK_YEARS = Array.from({ length: CURRENT - 1949 }, (_, i) => CURRENT - i);
@@ -21,6 +22,14 @@ export function HistoricalExplorer() {
   const simple = useIsSimple();
   const [years, setYears] = useState<number[]>(FALLBACK_YEARS);
   const [year, setYear] = useState(CURRENT - 1);
+  // the reader's default season, applied once their stored answer has landed
+  const { prefs, ready } = usePrefs();
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (!ready || seeded.current || !prefs.season) return;
+    seeded.current = true;
+    setYear(prefs.season);
+  }, [ready, prefs.season]);
   const [events, setEvents] = useState<{ name: string }[]>([]);
   const [event, setEvent] = useState("");
   const [sessions, setSessions] = useState<{ available: string[]; unavailable: string[]; note?: string }>({
@@ -69,6 +78,9 @@ export function HistoricalExplorer() {
       .then(setResults)
       .catch((e) => setResults({ available: false, error: "source_unavailable", message: e?.message }))
       .finally(() => setLoading(false));
+    // `nonce` is not read in here; it is the retry signal. Bumping it has to
+    // produce a new callback so the effect below re-runs and fetches again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, event, session, nonce]);
 
   useEffect(() => { fetchResults(); }, [fetchResults]);

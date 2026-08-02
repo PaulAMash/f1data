@@ -65,7 +65,7 @@ export function HoverCard({
       )}
       {value != null && (
         <div className="mt-0.5 text-[17px] font-bold leading-none tabular-nums"
-          style={{ color: accent ?? "#e8ecf5" }}>
+          style={{ color: accent ?? "rgb(var(--ink))" }}>
           {value}
         </div>
       )}

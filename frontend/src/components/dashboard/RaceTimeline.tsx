@@ -156,7 +156,7 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img"
         aria-label="Race timeline with safety-car windows and podium pit stops"
         onMouseLeave={() => setTip(null)}>
-        <line x1={PAD} y1={Y} x2={W - PAD} y2={Y} stroke="rgba(255,255,255,0.12)" strokeWidth={4} strokeLinecap="round" />
+        <line x1={PAD} y1={Y} x2={W - PAD} y2={Y} stroke="rgb(var(--tint) / 0.12)" strokeWidth={4} strokeLinecap="round" />
 
         {/* neutralization windows — label lives in its own top band (LABEL_Y),
             above the marker band, so it can never be covered by or cover the
@@ -172,9 +172,9 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
               onMouseMove={(e) => show(e, w.label ?? "Neutralization", windowTip(w))}
               onMouseLeave={() => setTip(null)}>
               <rect x={x1} y={Y - 8} width={Math.max(5, x2 - x1)} height={16} rx={8}
-                fill="rgba(255,176,32,0.30)" stroke="rgba(255,176,32,0.55)" strokeWidth={1} />
+                fill="rgb(var(--amber) / 0.30)" stroke="rgb(var(--amber) / 0.6)" strokeWidth={1} />
               <text x={labelX} y={LABEL_Y} textAnchor="middle" pointerEvents="none"
-                fill="#ffb020" fontSize={11} fontWeight={600}>
+                fill="rgb(var(--amber))" fontSize={11} fontWeight={600}>
                 {windowCode(w)}
               </text>
             </g>
@@ -192,7 +192,7 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
               {/* generous invisible hit area */}
               <circle cx={x(p.lap)} cy={Y} r={11} fill="transparent" />
               <circle cx={x(p.lap)} cy={Y} r={5} pointerEvents="none"
-                fill={c?.team_color ?? "#888"} stroke="#0b0e16" strokeWidth={2} />
+                fill={c?.team_color ?? "rgb(var(--ink-faint))"} stroke="rgb(var(--base-900))" strokeWidth={2} />
             </g>
           );
         })}
@@ -206,7 +206,7 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
             <rect x={x(lc.lap) - 9} y={Y - 24} width={18} height={18} fill="transparent" />
             <polygon pointerEvents="none"
               points={`${x(lc.lap)},${Y - 20} ${x(lc.lap) - 5},${Y - 11} ${x(lc.lap) + 5},${Y - 11}`}
-              fill="#34d399" />
+              fill="rgb(var(--good))" />
           </g>
         ))}
 
@@ -218,7 +218,7 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
             onMouseLeave={() => setTip(null)}>
             <circle cx={x(fastest.lap)} cy={Y} r={11} fill="transparent" />
             <circle cx={x(fastest.lap)} cy={Y} r={5} pointerEvents="none"
-              fill="#a78bfa" stroke="#0b0e16" strokeWidth={2} />
+              fill="rgb(var(--best))" stroke="rgb(var(--base-900))" strokeWidth={2} />
           </g>
         )}
 
@@ -258,7 +258,7 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
         {/* lap ticks */}
         {ticks.map((l) => (
           <g key={l} pointerEvents="none">
-            <line x1={x(l)} y1={Y + 8} x2={x(l)} y2={Y + 12} stroke="rgba(255,255,255,0.18)" />
+            <line x1={x(l)} y1={Y + 8} x2={x(l)} y2={Y + 12} stroke="rgb(var(--tint) / 0.2)" />
             <text x={x(l)} y={Y + 24} textAnchor="middle" fill={AXIS_TICK_COLOR} fontSize={11}>{l}</text>
           </g>
         ))}

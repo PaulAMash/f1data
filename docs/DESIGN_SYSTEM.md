@@ -1427,3 +1427,202 @@ green for a good sector while purple stays reserved for the genuinely quickest.
 The same logic governs the wear bar, which is scaled to a stint rather than to a
 lap count so it spends most of its life somewhere in the middle rather than
 pinned at an end.
+
+---
+
+## A preference earns its place when the product cannot choose for you
+
+Settings grew from four controls to eighteen in V59, which is exactly the change
+that turns a preferences screen into a junk drawer. The rule that kept it from
+becoming one:
+
+> A preference is warranted when two readers would want genuinely different
+> answers and **neither is wrong**. It is not warranted when one answer is simply
+> better and the product has not done the work to find it.
+
+Celsius against Fahrenheit passes. "Tyres" against "tires" passes. "Show
+tooltips" fails — tooltips should just be good. "Enable animations" fails, and is
+the reason Calm exists as a *tempo* instead.
+
+The corollary is enforced rather than intended: **every key in `Prefs` is read by
+real code**, and `PREF_GROUPS` — which drives per-section reset — is declared
+beside the type, so a control the reset button forgets is a compile-time concern
+rather than a bug somebody notices in six months.
+
+---
+
+## Localisation is a rendering concern, never a data concern
+
+Units are converted at the point of display and nowhere else. Everything
+upstream of a component — the API, the simulation, every threshold and
+comparison — stays in Celsius and kph, and nothing in `lib/locale.tsx` has a
+setter. A converted value that leaks back into a calculation is the classic way
+a units feature becomes a bug, and the defence against it is architectural
+rather than careful.
+
+### Spelling is a document pass, not four hundred call sites
+
+Two hundred and forty-nine British spellings live in forty-one files. Wrapping
+each in a helper would be a large diff **and a permanent tax**: the four
+hundredth string somebody writes will not be wrapped, and the interface will be
+half-American with nothing to catch it.
+
+So the transform runs over the rendered document — after hydration, never
+before, because React compares text during hydration and would report a
+mismatch. Three details make it correct rather than clever:
+
+- **Each node's authored text is cached**, so switching back restores the
+  original exactly instead of applying a guessed inverse. Several classic pairs
+  are not bijective in this vocabulary — `storey→story` would rewrite Race
+  Story — and are excluded for that reason rather than forgotten.
+- **The alternation is longest-first.** Without it `colour` inside `colourful`
+  matches the short entry and the word survives as `colourful`: the classic
+  find-and-replace bug, invisible in exactly the words a reader notices.
+- **A MutationObserver re-applies** whatever React writes over, so the newest
+  string in the product is covered without anybody remembering to cover it.
+
+Anything painted onto a canvas has no text node to observe, so `sp()` is
+exported for those.
+
+---
+
+## Calm is a tempo, not an off switch
+
+`prefers-reduced-motion` and a reader who wants a quieter room are two different
+requests, and V58 answered both with `animation-duration: 0.01ms !important`.
+That is right for the first and wrong for the second: it froze the timing screen,
+parked the tracker, stopped the cards arriving, and showed a reader who asked for
+calm a **screenshot of a product that had been alive a second earlier**.
+
+Two numbers carry the whole difference now. `--m` stretches every ambient period
+— each loop in the stylesheet states its own as `calc(<base> * var(--m))` — and
+`--amp` shortens how far the largest of them travel. The canvas reads the same
+constant. Transitions get *longer* under Calm, not shorter: the old rule made the
+interface snappier under a setting whose name promises the opposite.
+
+Measured: the race advances about a third as fast, the idle chevron cycles at
+7.6s instead of 2.8s, and nothing stops.
+
+| | prefers-reduced-motion | Calm |
+|---|---|---|
+| what it means | an access requirement | a preference about pace |
+| ambient loops | stop | ×2.7 slower, ×0.45 travel |
+| the simulation | frozen | 0.37× tempo |
+| transitions | instant | longer, no overshoot |
+
+---
+
+## A statistic that has gone stale undermines every number beside it
+
+The landing band read `2026 · Season`, `24 · Races`, `500+ · Drivers`. Two of
+those were the wrong *kind* of statistic before they were the wrong number: the
+year is not a claim about this product, and a reader deciding whether to trust an
+archive learns nothing from being told what today's date is.
+
+They are derived now — `1,149 Grands Prix`, `77 seasons`, `24 races this
+season` — from `backend/app/archive_scale.py`, which counts them from one table
+of reference data and the current date. The race count stops at the last
+**complete** season, so the page can never claim a Grand Prix that has not been
+run. If the backend is unreachable the band falls back to the single figure a
+calendar alone can prove.
+
+> A flourish may fail to *no* flourish. It may never make the product wrong.
+
+---
+
+## Teach with the product, not with a picture of it
+
+Two features were the same feature done badly.
+
+The **tutorial** was four modals inside the Race Explorer that taught the
+furniture of a screen to somebody who had not yet been told what the product was
+for. The **worked example** was a modal playing a transcript of an answer being
+assembled — a good short film that demonstrated nothing, because not one pixel of
+it was the product, and every figure in it was written by hand on a page whose
+whole claim is that nothing is invented.
+
+Both are now one engine (`lib/tour.tsx`) driving the real interface. A beat names
+the page it belongs to, the element on that page it is about, and one sentence
+about **why that thing exists**. The engine navigates, waits for the target,
+scrolls it into view and cuts a hole in the scrim around it.
+
+Nothing is illustrated and nothing is re-implemented, so the tour cannot drift
+out of date: if a control moves the spotlight moves with it, and if a control is
+removed the beat is skipped rather than pointing at nothing.
+
+Three things it took two rewrites to get right:
+
+- **A missing target is derived, never stored.** A `missing` flag never cleared
+  while the next beat was resolving, so the skip fired repeatedly and the tour
+  raced from beat two to the end in one frame.
+- **A late target is not a missing one.** On a page whose job is fetching a
+  session, "not rendered yet" is the common case. It waits three seconds —
+  longer than any render, shorter than anyone's patience — before deciding.
+- **A target taller than the window has no outside.** "Below it" is off the
+  bottom and "above it" is off the top, and the card was being placed at a
+  negative offset: present, invisible, un-pressable. A large target is docked to
+  rather than pointed at.
+
+The scrim is `pointer-events: none` with the card `auto`, so the control being
+explained stays live under the spotlight.
+
+---
+
+## A livery is data; its lightness is not
+
+Formula 1's team colours are chosen to read on a dark broadcast graphic, and
+several do not survive being put on white — Mercedes' petrol green, Williams'
+pale blue, Haas white. A position chart where four of twenty cars have no visible
+line is not a chart.
+
+The fix is **not** to recolour the teams. A livery is how the reader identifies a
+car without a legend; swapping Mercedes to navy because navy shows up better
+invents a fact about the sport. `lib/liveryColor.ts` adjusts lightness only, only
+in the light theme, and only far enough to clear a contrast floor — hue is never
+touched, and saturation is nudged back up because a colour darkened without it
+reads grey. Dark mode passes the livery through untouched, which is the point of
+only doing this on the theme that needs it.
+
+---
+
+## `min-width: 0` is load-bearing on any container
+
+A grid or flex child defaults to `min-width: auto`, which means it refuses to
+shrink below its content. A panel containing a wide results table therefore grows
+to the table's full width and the `overflow-x-auto` inside it never gets the
+chance to scroll — on a phone the Race Explorer was 114px wider than the screen
+and the whole page moved sideways.
+
+Declared on `.panel`, `.panel-raised`, `.panel-hero` and `.tile`, which fixes the
+class of bug rather than the instance. A container that cannot be narrower than
+its contents is not a container.
+
+---
+
+## What the hero actually costs, measured honestly
+
+The V58 notes recorded 60fps. Re-measured in this environment against the same
+build, V58 draws at **24.7fps** and V59 at **24.2** — the figure had been taken
+some other way, and repeating it would have been repeating a number rather than a
+measurement.
+
+Instrumenting the frame by phase gives 6.2ms of JavaScript at 1440×900:
+
+| phase | ms |
+|---|---|
+| bloom composite (upscale + `lighter`) | 2.63 |
+| the tracker | 1.49 |
+| bloom source | 1.01 |
+| ambient room | 0.72 |
+| crisp pass + DOM | 0.35 |
+
+Six milliseconds inside a sixteen-millisecond budget, and still 24fps — so **the
+ceiling is rasterisation, not our code.** Canvas2D records commands and defers
+the work, which is exactly why `performance.now()` around draw calls under-reports
+and why a JS profile alone would have sent the next hour in the wrong direction.
+Headless Chromium here rasterises in software; the same page on a GPU is a
+different measurement entirely.
+
+> Two ways to be wrong about a frame rate: counting rAF callbacks instead of
+> draws (V55), and trusting JS timings around deferred draw calls (this one).
+> Both over-report, and both are only caught by measuring the thing itself.

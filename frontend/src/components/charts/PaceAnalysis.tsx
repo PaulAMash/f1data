@@ -17,6 +17,7 @@ import {
 import { PaceBoard } from "./PaceBoard";
 import { useIsSimple } from "@/lib/mode";
 import { cx, fmtLap } from "@/lib/format";
+import { useLivery } from "@/lib/liveryColor";
 
 type PaceView = "drivers" | "teams";
 
@@ -94,7 +95,8 @@ export function PaceAnalysis({
   // which drivers to plot: highlighted set, else top 5 on pace
   const plot = selected.length ? selected : ranked.slice(0, 5).map((p) => p.driver);
   const plotKey = plot.join(",");
-  const colorFor = (code: string) => session.drivers.find((d) => d.code === code)?.team_color ?? "#888";
+  const paint = useLivery();
+  const colorFor = (code: string) => paint(session.drivers.find((d) => d.code === code)?.team_color);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const { data, yDomain } = useMemo(() => {
@@ -109,6 +111,10 @@ export function PaceAnalysis({
     const arr = Array.from(byLap.values()).sort((a, b) => a.lap - b.lap);
     const pad = (hi - lo) * 0.1 || 1;
     return { data: arr, yDomain: [lo - pad, hi + pad] as [number, number] };
+    // `plotKey` is the join of `plot` and is what actually decides whether this
+    // has to run again — listing the array itself would rebuild the series on
+    // every render, because a new array identity is not a new selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, plotKey]);
 
   // constructor pace: average of each team's cars, in official team colours
