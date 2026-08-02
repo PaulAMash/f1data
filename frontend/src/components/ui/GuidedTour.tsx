@@ -32,6 +32,8 @@ export function GuidedTour() {
   const { prefs } = usePrefs();
   const [box, setBox] = useState<Box | null>(null);
   const [el, setEl] = useState<Element | null>(null);
+  // has the page stopped moving? the card is not shown until it has
+  const [settled, setSettled] = useState(false);
   const beat = running ? beats[index] : undefined;
 
   /* FIND THE TARGET — AND WAIT FOR IT.
@@ -59,12 +61,51 @@ export function GuidedTour() {
     return () => clearInterval(id);
   }, [beat, ready, next]);
 
-  /* Measure, and keep measuring. The spotlight is drawn in viewport
-     coordinates, so it has to follow the page rather than be painted once. */
-  useLayoutEffect(() => {
-    if (!el) { setBox(null); return; }
+  /* SCROLL ONLY HAPPENS BECAUSE THE TOUR ASKED FOR IT.
+     A reader who nudges the wheel while a beat is up slides the highlighted
+     control out from under its own spotlight, and the tour is then explaining
+     something they cannot see. `overflow: hidden` on the body would stop that
+     and also stop the tour scrolling, which is the one thing that still has to
+     work — so the *input* is blocked rather than the scrolling. Wheel and touch
+     are cancellable, the scroll keys are intercepted, and `scrollIntoView` is
+     untouched because it is not an input event.
 
-    // bring it into view before measuring, or the first frame points off-screen
+     Non-passive listeners, deliberately: a passive listener cannot preventDefault
+     and would silently do nothing at all. */
+  useEffect(() => {
+    if (!running) return;
+    const swallow = (e: Event) => e.preventDefault();
+    const KEYS = new Set([" ", "PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown"]);
+    const keys = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      // never swallow typing, and never swallow the tour's own arrow keys
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      if (KEYS.has(e.key)) e.preventDefault();
+    };
+    window.addEventListener("wheel", swallow, { passive: false });
+    window.addEventListener("touchmove", swallow, { passive: false });
+    window.addEventListener("keydown", keys);
+    document.documentElement.classList.add("tour-open");
+    return () => {
+      window.removeEventListener("wheel", swallow);
+      window.removeEventListener("touchmove", swallow);
+      window.removeEventListener("keydown", keys);
+      document.documentElement.classList.remove("tour-open");
+    };
+  }, [running]);
+
+  /* MOVE FIRST, THEN SPEAK.
+     The first cut rendered the card as soon as the target had a box — while the
+     page was still smooth-scrolling toward it. So the card appeared, slid,
+     resized and settled, all inside the half second the reader was trying to
+     read it: the "choppy" feeling was three correct behaviours arriving at
+     once. The spotlight follows the scroll, because it is attached to the
+     thing being scrolled to; the card waits until the page has actually stopped
+     and then fades in at its final position, and never moves again. */
+  useLayoutEffect(() => {
+    if (!el) { setBox(null); setSettled(false); return; }
+    setSettled(false);
+
     el.scrollIntoView({
       block: "center", behavior: prefs.motion === "calm" ? "auto" : "smooth",
     });
@@ -74,7 +115,21 @@ export function GuidedTour() {
       setBox({ top: r.top, left: r.left, width: r.width, height: r.height });
     };
     measure();
-    const raf = requestAnimationFrame(measure);
+
+    // "stopped" is two consecutive frames at the same offset, with a ceiling so
+    // a scroll that never settles cannot hold the card back forever
+    let last = -1, same = 0, raf = 0;
+    const t0 = performance.now();
+    const watch = () => {
+      measure();
+      const y = window.scrollY;
+      same = y === last ? same + 1 : 0;
+      last = y;
+      if (same >= 2 || performance.now() - t0 > 900) { setSettled(true); return; }
+      raf = requestAnimationFrame(watch);
+    };
+    raf = requestAnimationFrame(watch);
+
     window.addEventListener("scroll", measure, { passive: true });
     window.addEventListener("resize", measure);
     return () => {
@@ -168,8 +223,13 @@ export function GuidedTour() {
         <div onClick={stop} className="pointer-events-auto absolute inset-0 bg-base-950/84" />
       )}
 
+      {/* The card is mounted only once the page has stopped, and it fades in
+          where it will stay. Nothing about it animates position — a card that
+          slides into place while being read is the "choppy" report. */}
       <div
-        className="pointer-events-auto absolute w-[min(23rem,calc(100vw-2rem))] animate-fade-in rounded-xl border border-white/[0.12] bg-base-900 p-4 shadow-glow"
+        className={cx("modal-scroll pointer-events-auto absolute w-[min(23rem,calc(100vw-2rem))] max-h-[min(24rem,calc(100vh-2rem))] rounded-xl border border-white/[0.12] bg-base-900 p-4 shadow-glow",
+          "transition-opacity duration-[--dur-3] ease-[--ease-out]",
+          settled ? "opacity-100" : "pointer-events-none opacity-0")}
         style={place}>
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">

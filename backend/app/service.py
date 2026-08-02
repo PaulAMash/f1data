@@ -14,7 +14,27 @@ def get_seasons() -> tuple[list[Season], DataSource]:
 
 
 def get_grands_prix(year: int) -> tuple[list[GrandPrix], DataSource]:
-    return dsm.get_grands_prix(year)
+    gps, src = dsm.get_grands_prix(year)
+    return mark_completed(gps), src
+
+
+def mark_completed(gps: list[GrandPrix]) -> list[GrandPrix]:
+    """Stamp every event with whether its race has actually been run.
+
+    THE ROOT CAUSE THIS EXISTS TO CLOSE. `event_completed` was already the
+    server's answer to "has this happened", and `get_current` was the only thing
+    that asked. Both calendar endpoints returned the whole season — so the Race
+    Explorer's picker offered Brazil 2026 in August, and loading it produced an
+    empty session that looked like a broken product rather than a race that has
+    not been run yet. The same list fed the Historical page.
+
+    Every client re-deriving that rule from `date` would be three copies of one
+    decision, drifting apart the first time a session slips. It is decided here,
+    once, and travels with the data.
+    """
+    for g in gps:
+        g.completed = event_completed(g)
+    return gps
 
 
 def get_session(year: int, gp: str, session_type: str = "Race",

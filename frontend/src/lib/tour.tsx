@@ -107,15 +107,24 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const [running, setRunning] = useState(false);
   const [ready, setReady] = useState(false);
 
+  /* LEAVING THE TOUR AND FINISHING IT ARE THE SAME EVENT.
+     Both mark it done — nobody wants to be taught twice — and both land in the
+     same place. The last beat used to be Settings, so a reader who saw the tour
+     through was abandoned on a preferences screen holding no session, which is
+     the least useful room in the product to be left standing in. Explore is
+     where the tour was always taking them; Skip is a reader saying "I would
+     rather just get there", and it should get them there too. */
   const stop = useCallback(() => {
     setRunning(false);
     setReady(false);
     setBeats([]);
     setIndex(0);
-    // finishing or skipping both count: nobody wants to be taught twice
-    if (label === "tour") set("onboarded", true);
+    if (label === "tour") {
+      set("onboarded", true);
+      if (path !== "/explorer") router.push("/explorer");
+    }
     setLabel("");
-  }, [label, set]);
+  }, [label, set, path, router]);
 
   const start = useCallback((next: Beat[], what: string) => {
     setBeats(next);
@@ -182,9 +191,6 @@ export const useTour = () => useContext(TourCtx);
  * a screen before the reader knew why they were on it.
  */
 export const TOUR: Beat[] = [
-  { path: "/", target: "[data-tour='cta']",
-    title: "Start here",
-    body: "Everything in Pitwall IQ hangs off one session — a practice, a qualifying or a race. This is the way in." },
   { path: "/explorer", target: "[data-tour='selector']",
     title: "Any session, back to 1950",
     body: "Season, Grand Prix, session. It opens on the most recent completed race, so there is always something to read." },
@@ -211,7 +217,7 @@ export const TOUR: Beat[] = [
     body: "Official results and championship standings for every season since 1950." },
   { path: "/settings", target: "[data-tour='settings-main']",
     title: "Make it yours",
-    body: "Reading depth, theme, units, spelling, density and how much the interface moves. Every choice applies everywhere and is remembered." },
+    body: "Reading depth, theme, units, spelling, density and how much the interface moves. Every choice applies everywhere and is remembered — and this is where you change the Simple or Advanced answer you gave on the way in." },
 ];
 
 /**

@@ -5,6 +5,7 @@ import type { Driver } from "@/lib/types";
 import { cx } from "@/lib/format";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
 import { ConstructorMark } from "@/components/ui/ConstructorMark";
+import { useScrollLock } from "@/lib/useScrollLock";
 
 /* -------------------------------------------------------------------------- */
 /* The driver gallery.                                                        */
@@ -73,6 +74,9 @@ export function DriverPalette({
 
   function pick(code: string) { onFocus(code); onClose(); }
 
+  // the page behind a dialog does not move — see lib/useScrollLock
+  useScrollLock(open);
+
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-[5vh]"
@@ -109,7 +113,7 @@ export function DriverPalette({
         </div>
 
         {/* ---- the gallery ------------------------------------------------ */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="modal-scroll min-h-0 flex-1 p-4">
           {filtered.length === 0 ? (
             <p className="px-4 py-12 text-center text-sm text-ink-muted">No drivers match “{q}”.</p>
           ) : (

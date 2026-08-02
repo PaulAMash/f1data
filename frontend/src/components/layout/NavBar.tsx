@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Radar, Settings } from "lucide-react";
+import { ArrowLeft, Radar, Settings } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { useNavHistory } from "@/lib/nav";
 import { cx } from "@/lib/format";
@@ -22,7 +22,7 @@ import { cx } from "@/lib/format";
 /* -------------------------------------------------------------------------- */
 
 export function NavBar({ active }: { active?: "home" | "explorer" | "history" | "settings" }) {
-  const { canBack, canForward, back, forward } = useNavHistory();
+  const { canBack, back } = useNavHistory();
 
   return (
     // 90%, not 80%: on a phone the column is narrow and the copy passes
@@ -38,23 +38,14 @@ export function NavBar({ active }: { active?: "home" | "explorer" | "history" | 
           </span>
         </Link>
 
-        {/* The pair only exists once there is a journey to retrace. Width
-            animates rather than the element appearing, so the row beside it
-            does not jump when the first navigation happens. */}
+        {/* One level up, and there is only one level. Width animates rather
+            than the element appearing, so the row beside it does not jump. */}
         <div className={cx("flex items-center overflow-hidden transition-all duration-[--dur-3] ease-[--ease-out]",
-          canBack ? "ml-1 w-auto opacity-100" : "w-0 opacity-0")}>
-          <button type="button" onClick={back} disabled={!canBack}
-            aria-label="Back" title="Back"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-muted transition-colors hover:bg-white/[0.06] hover:text-ink disabled:opacity-30">
+          canBack ? "ml-1 w-8 opacity-100" : "w-0 opacity-0")}>
+          <button type="button" onClick={back} tabIndex={canBack ? 0 : -1}
+            aria-label="Back to home" title="Back to home"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-muted transition-colors hover:bg-white/[0.06] hover:text-ink">
             <ArrowLeft size={15} />
-          </button>
-          <button type="button" onClick={forward} disabled={!canForward}
-            aria-label="Forward" title="Forward"
-            className={cx("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-all duration-[--dur-2]",
-              canForward
-                ? "text-ink-muted hover:bg-white/[0.06] hover:text-ink"
-                : "pointer-events-none w-0 opacity-0")}>
-            <ArrowRight size={15} />
           </button>
         </div>
 

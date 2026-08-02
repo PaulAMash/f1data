@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Activity, BookOpen, Database, GitCompareArrows, MessageSquareText,
+  Activity, BookOpen, Trophy, Database, GitCompareArrows, MessageSquareText,
   Gauge, Layers, LineChart, Timer, Wind, Braces, RefreshCw, AlertTriangle,
 } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
@@ -27,6 +27,7 @@ import { useMode } from "@/lib/mode";
 import { api, ApiError } from "@/lib/api";
 import { cx } from "@/lib/format";
 import type { Meta, RaceBundle } from "@/lib/types";
+import { Standings } from "@/components/history/Standings";
 
 // Three purpose-built experiences: a race asks "why did it unfold this way?",
 // qualifying asks "who earned the grid?", practice asks "what did we learn?".
@@ -37,6 +38,16 @@ const RACE_TABS = [
   { id: "pace", label: "Pace", icon: <Gauge size={14} /> },
   { id: "compare", label: "Compare", icon: <GitCompareArrows size={14} /> },
   { id: "ask", label: "Ask", icon: <MessageSquareText size={14} /> },
+  /* The season, beside the session.
+
+     Historical has carried championship standings since it was built, and the
+     Race Explorer — which is where a reader actually is when the question
+     "so where does that leave the title?" occurs to them — had none. It is the
+     same component and the same visual language; the only difference is that
+     this one has no season picker, because this page already has a season and
+     two contradictory ones on a screen is how a reader ends up reading a table
+     that does not belong to the race above it. */
+  { id: "standings", label: "Standings", icon: <Trophy size={14} /> },
 ];
 const QUALI_TABS = [
   { id: "story", label: "Qualifying Story", icon: <BookOpen size={14} /> },
@@ -289,6 +300,12 @@ export default function ExplorerPage() {
               <Section title="Ask about this session">
                 <QuestionBox year={sel.year} gp={session.grand_prix} session={sel.session}
                   llmAvailable={meta?.llm_available ?? false} category={category} />
+              </Section>
+            )}
+            {tab === "standings" && (
+              <Section title={`${sel.year} championship`}
+                info="Points and wins as they stand this season. The bar is the gap to the leader.">
+                <Standings year={sel.year} />
               </Section>
             )}
             {tab === "data" && (

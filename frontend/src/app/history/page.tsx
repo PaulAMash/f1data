@@ -1,11 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Trophy, Users } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
 import { Footer } from "@/components/layout/Footer";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
-import { Tabs } from "@/components/ui/Tabs";
-import { Skeleton, EmptyState } from "@/components/ui/misc";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { HistoricalExplorer } from "@/components/history/HistoricalExplorer";
 import { useIsAdvanced } from "@/lib/mode";
@@ -13,6 +10,8 @@ import { usePrefs } from "@/lib/prefs";
 import { api } from "@/lib/api";
 import type { DataSource } from "@/lib/types";
 import { cx } from "@/lib/format";
+import { Select } from "@/components/ui/Select";
+import { Standings } from "@/components/history/Standings";
 
 /** Accurate, non-misleading source label. Only flags non-archive data (sample);
  *  real archive results carry no badge at all. */
@@ -36,34 +35,38 @@ export default function History() {
     if (!ready || touched || !prefs.season) return;
     setYear(prefs.season);
   }, [ready, touched, prefs.season]);
-  const [type, setType] = useState<"driver" | "constructor">("driver");
-  const [rows, setRows] = useState<any[]>([]);
+  /* The table fetches its own rows — see components/history/Standings. What is
+     left here is the one thing this page knows and the component does not:
+     whether the archive answered at all, which is what the source badge is
+     about. One probe rather than a duplicate of the component's fetch. */
   const [source, setSource] = useState<DataSource>("mock");
-  const [loading, setLoading] = useState(true);
-
   useEffect(() => {
-    setLoading(true);
-    api.historyStandings(year, type)
-      .then((r) => { setRows(r.standings); setSource(r.source as DataSource); })
-      .catch(() => setRows([]))
-      .finally(() => setLoading(false));
-  }, [year, type]);
-
-  const maxPts = Math.max(1, ...rows.map((r) => r.points ?? 0));
+    api.historyStandings(year, "driver")
+      .then((r) => setSource(r.source as DataSource))
+      .catch(() => setSource("mock"));
+  }, [year]);
 
   return (
     <div className="min-h-screen">
       <NavBar active="history" />
       <div data-tour="history" className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <div className="label">Historical</div>
-            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Explore F1 history</h1>
-            <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-              Real results, qualifying and standings from 1950 to today.
-            </p>
-          </div>
-        </div>
+        {/* The archive earns the same header the Race Explorer has. It was a
+            14px label over a 20px heading — the plainest page in the product,
+            introducing the largest thing in it. */}
+        <header className="mb-7">
+          <p className="flex items-center gap-2.5 text-[11px] font-semibold uppercase tracking-[0.22em] text-ink-faint">
+            <span className="font-mono text-accent-soft">1950</span>
+            <span className="h-px w-6 bg-white/[0.14]" />
+            The archive
+          </p>
+          <h1 className="mt-3 bg-gradient-to-br from-white to-ink-muted bg-clip-text text-3xl font-bold tracking-[-0.03em] text-transparent sm:text-4xl">
+            Every season, every result
+          </h1>
+          <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-ink-muted">
+            Official classifications, qualifying and championship standings for every
+            Grand&nbsp;Prix that has been run — seventy-seven seasons of them.
+          </p>
+        </header>
 
         {/* Functional data explorer: year → Grand Prix → session → results */}
         <div className="mb-4">
@@ -75,49 +78,18 @@ export default function History() {
           <Card>
             <CardHeader
               title="Championship standings"
-              info={<InfoTip text="Points and wins for the selected season." />}
+              info={<InfoTip text="Points and wins for the selected season. The bar is the gap to the leader, not the points total." />}
               right={
                 <div className="flex items-center gap-2">
                   <SourceTag source={source} />
-                  <select value={year} onChange={(e) => { setTouched(true); setYear(Number(e.target.value)); }}
-                    className="rounded-lg border border-white/10 bg-base-800 px-2.5 py-1.5 text-sm outline-none">
-                    {YEARS.map((y) => <option key={y} value={y} className="bg-base-800">{y}</option>)}
-                  </select>
+                  <Select value={year} ariaLabel="Season"
+                    onChange={(y) => { setTouched(true); setYear(y); }}
+                    options={YEARS.map((y) => ({ value: y, label: String(y) }))} />
                 </div>
               }
             />
             <CardBody>
-              <Tabs items={[
-                { id: "driver", label: "Drivers", icon: <Users size={14} /> },
-                { id: "constructor", label: "Constructors", icon: <Trophy size={14} /> },
-              ]} active={type} onChange={(t) => setType(t as any)} className="mb-4" />
-
-              {loading ? (
-                <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-9" />)}</div>
-              ) : rows.length ? (
-                <div className="space-y-1.5">
-                  {rows.map((r) => (
-                    <div key={r.position} className="flex items-center gap-3">
-                      <span className="w-5 text-right tabular-nums text-sm text-ink-faint">{r.position}</span>
-                      <div className="flex-1">
-                        <div className="mb-1 flex items-center justify-between">
-                          <span className="text-sm font-medium">
-                            {r.name}
-                            {r.team && <span className="ml-2 text-xs text-ink-faint">{r.team}</span>}
-                          </span>
-                          <span className="tabular-nums text-sm text-ink-muted">
-                            {r.points} pts{r.wins ? ` · ${r.wins}W` : ""}
-                          </span>
-                        </div>
-                        <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-                          <div className={cx("h-full rounded-full", r.position === 1 ? "bg-accent" : "bg-speed/70")}
-                            style={{ width: `${((r.points ?? 0) / maxPts) * 100}%` }} />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : <EmptyState title="No standings available" />}
+              <Standings year={year} />
             </CardBody>
           </Card>
         </div>

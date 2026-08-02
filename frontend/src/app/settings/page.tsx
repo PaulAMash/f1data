@@ -7,12 +7,10 @@ import {
 } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
 import { Footer } from "@/components/layout/Footer";
-import { DriverAvatar } from "@/components/ui/DriverBadge";
 import { Choice, Choose, Field, Segmented, Switch } from "@/components/ui/Field";
 import {
   usePrefs, ACCENTS, PREF_GROUPS, type AccentKey, type PrefGroup,
 } from "@/lib/prefs";
-import { useLocale } from "@/lib/locale";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
@@ -26,11 +24,21 @@ import { cx } from "@/lib/format";
 /*   once the four items were inert. They scroll now, and the rail follows    */
 /*   the reader back — a rail that only leads is half a rail.                 */
 /*                                                                            */
-/*   THE PREVIEW WAS A PICTURE OF A PANEL. It changed for Simple/Advanced and */
-/*   for nothing else, which is the worst possible arrangement: it claims to  */
-/*   be live, so a reader who changes density and sees nothing move concludes */
-/*   the setting is broken rather than that the preview is. It is now built   */
-/*   from the same tokens the product is and shows every axis this page has.  */
+/*   THE PREVIEW WAS A PICTURE OF A PANEL, AND IS NOW GONE. Building it from  */
+/*   the product's own tokens made it honest and did not make it useful: a    */
+/*   miniature of one card cannot show what density does to a timing screen,  */
+/*   what motion does to the hero, or what chart speed does to a chart, so a  */
+/*   reader still had to leave to find out. It was also the third column of a */
+/*   three-column layout that squeezed the controls into the middle third.    */
+/*   The right answer to "is this preview representative" was no, and the     */
+/*   right response to that was to take the space back — the settings         */
+/*   themselves now have room to breathe, which is what they needed.          */
+/*                                                                            */
+/*   INSTEAD, THE SETTINGS ARE FELT. Every axis on this page reaches further  */
+/*   than it did: density retimes the row rhythm of every table as well as    */
+/*   the type ramp, intensity reaches all five accent-lit surfaces rather     */
+/*   than the page wash alone, chart speed drives every bar and trace in the  */
+/*   product through one variable, and Calm is a tempo rather than a switch.  */
 /*                                                                            */
 /*   THE LIST WAS TOO SHORT TO BE A DESTINATION. Four preferences is a menu.  */
 /*   The ones added are the ones a reader arrives looking for — how heat is   */
@@ -120,7 +128,7 @@ export default function SettingsPage() {
       <NavBar active="settings" />
 
       <div className="mx-auto max-w-[86rem] px-4 py-8 sm:px-6 sm:py-10">
-        <div className="grid gap-6 lg:grid-cols-[15rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)_21rem]">
+        <div className="grid gap-8 lg:grid-cols-[15rem_minmax(0,1fr)]">
 
           {/* ---- navigation ------------------------------------------- */}
           <aside className="lg:sticky lg:top-20 lg:self-start">
@@ -154,13 +162,30 @@ export default function SettingsPage() {
               })}
             </nav>
 
-            <div className="panel mt-5 p-3.5">
-              <p className="text-[12.5px] font-semibold text-ink">Changes apply everywhere</p>
-              <p className="mt-1 text-[11.5px] leading-relaxed text-ink-muted">
-                Every choice here syncs across the whole application instantly and is
-                remembered on this device.
-              </p>
+            {/* The actions came out of a third column and belong here: they are
+                things you do to your preferences, which is what this rail is
+                about, rather than a fourth kind of preference. */}
+            <div className="panel mt-5 p-2">
+              <p className="label px-2 pb-1 pt-2">Actions</p>
+              <Action label="Replay the guided tour"
+                icon={<RotateCcw size={14} />}
+                onClick={() => { set("onboarded", false); say("The tour will run the next time you press Start exploring."); }} />
+              <Action label="Reset every preference"
+                icon={<RotateCcw size={14} />}
+                onClick={() => { resetAll(); say("All preferences reset to defaults."); }} />
+              <Action label="Open the Race Explorer" icon={<Zap size={14} />} href="/explorer" />
             </div>
+
+            <div aria-live="polite"
+              className={cx("mt-3 flex items-start gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] px-3 py-2.5 text-[12px] leading-snug text-emerald-300 transition-all duration-300",
+                flash ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-1 opacity-0")}>
+              <Check size={14} className="mt-px shrink-0" /> {flash ?? ""}
+            </div>
+
+            <p className="mt-5 px-2 text-[11.5px] leading-relaxed text-ink-faint">
+              Every choice here applies across the whole application instantly and is
+              remembered on this device.
+            </p>
           </aside>
 
           {/* ---- the controls ------------------------------------------ */}
@@ -366,41 +391,6 @@ export default function SettingsPage() {
             </div>
           </main>
 
-          {/* ---- live preview + actions --------------------------------- */}
-          <aside className="hidden xl:sticky xl:top-20 xl:block xl:self-start">
-            <div className="panel-hero p-4">
-              <div className="flex items-center gap-2">
-                <p className="label">Live preview</p>
-                <span className="ml-auto flex items-center gap-1.5 text-[10px] text-ink-faint">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                  live
-                </span>
-              </div>
-              <p className="mt-0.5 text-[11.5px] text-ink-muted">
-                Every setting on this page, applied.
-              </p>
-              <div className="mt-3.5">
-                <PreviewPanel />
-              </div>
-            </div>
-
-            <div className="panel mt-4 p-2">
-              <p className="label px-2 pb-1 pt-2">Quick actions</p>
-              <Action label="Replay the guided tour"
-                icon={<RotateCcw size={14} />}
-                onClick={() => { set("onboarded", false); say("The tour will run next time you open the home page."); }} />
-              <Action label="Reset every preference"
-                icon={<RotateCcw size={14} />}
-                onClick={() => { resetAll(); say("All preferences reset to defaults."); }} />
-              <Action label="Open the Race Explorer" icon={<Zap size={14} />} href="/explorer" />
-            </div>
-
-            <div aria-live="polite"
-              className={cx("mt-3 flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] px-3 py-2.5 text-[12px] text-emerald-300 transition-all duration-300",
-                flash ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-1 opacity-0")}>
-              <Check size={14} className="shrink-0" /> {flash ?? ""}
-            </div>
-          </aside>
         </div>
       </div>
 
@@ -448,111 +438,6 @@ function ThemeSwatch({ bg, panel, fg, accent }: {
         <span className="mt-1.5 block h-1.5 w-1/2 rounded-full" style={{ background: accent }} />
       </span>
     </span>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/**
- * A real Pitwall IQ panel, rendered with whatever is currently selected.
- *
- * THE POINT IS THAT NOTHING IN HERE IS A MOCK-UP. It is built from the same
- * surface classes, the same type ramp, the same accent variable and the same
- * locale helpers as the Race Explorer, so it does not need to be told what a
- * setting did — theme, accent, intensity, density, text size, units, clock,
- * number grouping and spelling all arrive by themselves. Simple and Advanced
- * genuinely rewrite it, because that is genuinely what they do.
- *
- * The one thing it adds is a redraw: changing chart animation replays the
- * bars, because a duration is the one setting you cannot see in a still image.
- */
-function PreviewPanel() {
-  const { prefs } = usePrefs();
-  const { temp, time, num } = useLocale();
-  const advanced = prefs.mode === "advanced";
-  const [beat, setBeat] = useState(0);
-
-  // replay the draw when the speed changes, so the setting demonstrates itself
-  useEffect(() => { setBeat((b) => b + 1); }, [prefs.chartSpeed, prefs.mode]);
-
-  const rows = [
-    { code: "NOR", c: "#FF8000", w: 100, t: "1:24.350" },
-    { code: "VER", c: "#3671C6", w: 76, t: "+0.240" },
-    { code: "PIA", c: "#FF9E3D", w: 54, t: "+0.412" },
-  ];
-
-  return (
-    <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-base-950/70">
-      <div className="border-b border-white/[0.06] px-3.5 py-2.5">
-        <div className="flex items-center gap-2">
-          <p className="text-[9.5px] font-semibold uppercase tracking-[0.16em] text-accent-soft">
-            Race summary
-          </p>
-          <span className="ml-auto font-mono text-[9.5px] tabular-nums text-ink-faint">
-            {time(new Date(2026, 6, 26, 15, 5))}
-          </span>
-        </div>
-        <p className="mt-0.5 text-[14px] font-bold tracking-tight text-ink">Hungarian Grand Prix</p>
-        <p className="text-[11px] text-ink-faint">Hungaroring · {num(70)} laps</p>
-      </div>
-
-      <div className="flex items-center gap-2.5 px-3.5 py-3">
-        <DriverAvatar size={34}
-          driver={{ code: "NOR", name: "Lando Norris", number: "4", team: "McLaren",
-                    team_color: "#FF8000", headshot_url: null }} />
-        <div className="min-w-0">
-          <p className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Winner</p>
-          <p className="truncate text-[13.5px] font-bold text-ink">Lando Norris</p>
-          <p className="text-[11px] text-ink-muted">McLaren</p>
-        </div>
-        {/* the units setting, on something a reader recognises as a real value */}
-        <div className="ml-auto text-right">
-          <p className="text-[9.5px] uppercase tracking-wider text-ink-faint">Track</p>
-          <p className="font-mono text-[12px] font-bold tabular-nums text-ink">{temp(47)}</p>
-        </div>
-      </div>
-
-      {advanced ? (
-        <div key={beat} className="space-y-2 border-t border-white/[0.06] px-3.5 py-3">
-          <p className="text-[9.5px] font-semibold uppercase tracking-[0.16em] text-speed">
-            Clean-air pace
-          </p>
-          {rows.map((r) => (
-            <div key={r.code} className="flex items-center gap-2">
-              <span className="w-8 shrink-0 text-[10.5px] font-bold" style={{ color: r.c }}>{r.code}</span>
-              <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.07]">
-                <span className="block h-full rounded-full pv-grow"
-                  style={{ width: `${r.w}%`, background: r.c }} />
-              </span>
-              <span className="w-14 shrink-0 text-right font-mono text-[10.5px] tabular-nums text-ink-muted">
-                {r.t}
-              </span>
-            </div>
-          ))}
-          <p className="pt-1 text-[10px] text-ink-faint">
-            Analysed over {num(1204)} laps, fuel and tyre corrected.
-          </p>
-        </div>
-      ) : (
-        <div key={beat} className="border-t border-white/[0.06] px-3.5 py-3">
-          <p className="text-[9.5px] font-semibold uppercase tracking-[0.16em] text-ink-faint">
-            The race in a line
-          </p>
-          <p className="mt-1 text-[13px] font-semibold leading-snug text-ink">
-            Norris won from pole, 15.1s clear, on a three-stop.
-          </p>
-          <div className="mt-2.5 flex gap-5">
-            <div>
-              <p className="text-[9.5px] uppercase tracking-wider text-ink-faint">Key moment</p>
-              <p className="text-[12px] font-bold text-ink">Lap 54</p>
-            </div>
-            <div>
-              <p className="text-[9.5px] uppercase tracking-wider text-ink-faint">Race time</p>
-              <p className="font-mono text-[12px] font-bold tabular-nums text-ink">1:38:21.654</p>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
   );
 }
 

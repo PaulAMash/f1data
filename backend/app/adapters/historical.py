@@ -22,7 +22,16 @@ def seasons() -> list[dict]:
 
 
 def events(year: int) -> list[dict]:
-    return [g.model_dump() for g in jol.list_grands_prix(year)]
+    """The season's calendar, with each event stamped as run or not yet run.
+
+    Historical was offering the whole 2026 calendar in August 2026, so a reader
+    could pick a Grand Prix that has not happened and be shown "no results found
+    for this event" — an accurate message about a question nobody meant to ask.
+    Same stamp as the Race Explorer's calendar, from the same function, so the
+    two lists can never disagree about what has been run.
+    """
+    from ..service import mark_completed
+    return [g.model_dump() for g in mark_completed(jol.list_grands_prix(year))]
 
 
 def sessions_for(year: int, event: str) -> dict:

@@ -2,14 +2,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Check, MessageSquareText, Timer, Trophy } from "lucide-react";
+import { ArrowRight, MessageSquareText, Timer, Trophy } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
 import { Footer } from "@/components/layout/Footer";
 import { HeroField } from "@/components/landing/HeroField";
 import { ExploreCue } from "@/components/landing/ExploreCue";
-import { SampleStory } from "@/components/landing/SampleStory";
-import { Flag, Gauge, LineChart, Sparkles } from "@/components/ui/MotionIcon";
-import { usePrefs, type Mode } from "@/lib/prefs";
+import { FeaturedRace } from "@/components/landing/FeaturedRace";
+import { Flag, Gauge, LineChart } from "@/components/ui/MotionIcon";
+import { usePrefs } from "@/lib/prefs";
 import { useTour, TOUR } from "@/lib/tour";
 import { useLocale } from "@/lib/locale";
 import { useReveal } from "@/lib/useReveal";
@@ -48,59 +48,50 @@ import { cx } from "@/lib/format";
 /* -------------------------------------------------------------------------- */
 
 export default function Landing() {
-  const { prefs, set, ready } = usePrefs();
+  const { prefs, ready } = usePrefs();
   const router = useRouter();
-  const [picked, setPicked] = useState(false);
   const statBand = useReveal<HTMLDivElement>();
-  const modeBand = useReveal<HTMLElement>();
-  const startBand = useReveal<HTMLElement>();
+  const featureBand = useReveal<HTMLElement>();
   const doorBand = useReveal<HTMLElement>();
+  const { start } = useTour();
+
+  /* THE CHOICE HAPPENS BEFORE THIS PAGE, NOT ON IT.
+     "Choose your experience" used to be a band a screen and a half down here,
+     which put the first decision the product asks for underneath a headline,
+     five statistics and a scroll. It is a screen of its own now — see
+     app/welcome — and this page is what a reader arrives at once they have
+     answered. Anyone who has not is sent there; `replace`, so Back from the
+     welcome screen cannot land them in a page they have not qualified for. */
+  useEffect(() => {
+    if (ready && !prefs.pickedMode) router.replace("/welcome");
+  }, [ready, prefs.pickedMode, router]);
 
   /* WHERE THE PRODUCT OPENS.
      A reader whose answer is "the Race Explorer" should not have to pass
      through the front door every time, but they must never be trapped behind
-     it either — pressing the wordmark has to bring them home. The redirect
-     therefore happens once per tab, on arrival, and never again, so Home is
-     always reachable by the control that says Home. */
+     it either — pressing Home has to bring them home. The redirect therefore
+     happens once per tab, on arrival, and never again. */
   useEffect(() => {
-    if (!ready || prefs.landing === "home") return;
+    if (!ready || prefs.landing === "home" || !prefs.pickedMode) return;
     try {
       if (sessionStorage.getItem("pitwall-iq:opened")) return;
       sessionStorage.setItem("pitwall-iq:opened", "1");
     } catch { return; }        // private browsing: stay put rather than loop
     router.replace(prefs.landing === "explorer" ? "/explorer" : "/history");
-  }, [ready, prefs.landing, router]);
+  }, [ready, prefs.landing, prefs.pickedMode, router]);
 
-  /* THE TOUR STARTS HERE, NOT IN THE MIDDLE OF A SESSION.
-     It used to run inside the Race Explorer, which meant a first-time reader
-     was taught the furniture of a screen before being told what the product
-     was for. It now starts on the page that answers that, and walks outward
-     from it — see TOUR in lib/tour.tsx.
-
-     The wait is not decoration: the hero's own entrance runs for about a
-     second, and a spotlight that lands on a control still animating into
-     place points at where it used to be. */
-  const { start } = useTour();
-  useEffect(() => {
-    if (!ready || prefs.onboarded || prefs.landing !== "home") return;
-    const t = setTimeout(() => start(TOUR, "tour"), 1400);
-    return () => clearTimeout(t);
-  }, [ready, prefs.onboarded, prefs.landing, start]);
-
-  // the choice panel exists until it has been answered, and then it does not.
-  // It is NOT suppressed while the tour runs: hiding it would renumber the
-  // chapters underneath the reader the moment the tour ended, and the tour's
-  // own scrim already settles which of the two has their attention.
-  const asking = ready && !prefs.pickedMode;
-
-  function choose(m: Mode) {
-    set("mode", m);
-    set("pickedMode", true);
-    setPicked(true);
+  /* THE TOUR STARTS WHEN THE READER SAYS SO.
+     It used to open itself a second and a half after the page loaded, which
+     takes the page away from somebody who has not finished looking at it —
+     and the first thing a landing page has to be allowed to do is be looked
+     at. Pressing the primary control is an unambiguous "I am ready to begin",
+     so that is where it begins. A reader who has already been taught skips
+     straight through to the Explorer, which is where the tour ends anyway. */
+  function begin(e: React.MouseEvent) {
+    if (!ready || prefs.onboarded) return;      // let the link do its job
+    e.preventDefault();
+    start(TOUR, "tour");
   }
-
-  // chapter numerals depend on how much of the page there is
-  const n = (i: number) => String(asking || picked ? i : i - 1).padStart(2, "0");
 
   return (
     <div className="min-h-screen">
@@ -138,12 +129,12 @@ export default function Landing() {
               decided the Grand&nbsp;Prix.
             </p>
             <div className="stagger-4 mt-9 flex flex-wrap items-center gap-3">
-              <Link href="/explorer" data-tour="cta"
+              <Link href="/explorer" data-tour="cta" onClick={begin}
                 className="cta-glow pressable-glow group/cta inline-flex items-center gap-2 rounded-xl bg-accent px-6 py-3.5 text-sm font-semibold text-pure">
                 Start exploring
                 <ArrowRight size={16} className="transition-transform duration-200 group-hover/cta:translate-x-0.5" />
               </Link>
-              {/* The second control guides rather than competes — see ExploreCue. */}
+              {/* The second control answers its own label — see ExploreCue. */}
               <ExploreCue />
             </div>
           </div>
@@ -159,82 +150,31 @@ export default function Landing() {
         <ScaleBand ref_={statBand.ref} className={statBand.className} />
       </section>
 
-      {/* ---- 3. the choice, on a first visit only ----------------------- */}
-      {/* tabIndex -1 so the hero's cue can hand focus here: a keyboard reader
-          who presses "See how it works" must arrive, not just scroll. */}
-      {(asking || picked) && (
-        <section id="mode" tabIndex={-1} ref={modeBand.ref}
-          className={cx("mx-auto max-w-7xl scroll-mt-16 px-4 pb-4 pt-20 outline-none sm:px-6 sm:pt-24",
-            modeBand.className)}>
-          <SectionHead n="02" chapter="Choose" title="Choose your experience"
-            line="Two ways to read the same race. You decide your depth."
-            aside={<span className="chip">Asked once — change it any time in Settings</span>} />
-
-          <div className="mt-7 grid gap-4 lg:grid-cols-2">
-            <ModeCard
-              id="simple" on={picked && prefs.mode === "simple"} onPick={choose}
-              title="Simple" tag="Watch the race like a commentator"
-              tint="var(--speed)"
-              points={["Story-first insights", "Plain English", "No jargon"]}
-              preview={<SimplePreview />} />
-            <ModeCard
-              id="advanced" on={picked && prefs.mode === "advanced"} onPick={choose}
-              title="Advanced" tag="Think like a strategist"
-              tint="var(--accent)"
-              points={["Every metric", "Every stint", "Every decision"]}
-              preview={<AdvancedPreview />} />
-          </div>
-
-          <div aria-live="polite"
-            className={cx("mt-4 flex flex-wrap items-center gap-2 text-sm transition-all duration-[--dur-3] ease-[--ease-out]",
-              picked ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-1 opacity-0")}>
-            <Check size={15} className="text-emerald-400" />
-            <span className="text-ink-muted">
-              Saved. Every page will use {prefs.mode === "simple" ? "Simple" : "Advanced"} from now
-              on, and we won&rsquo;t ask again.
-            </span>
-            <Link href="/explorer"
-              className="inline-flex items-center gap-1 font-semibold text-accent-soft transition-colors hover:text-accent">
-              Start reading <ArrowRight size={14} />
-            </Link>
-          </div>
-        </section>
-      )}
-
-      {/* ---- 4. the way in ---------------------------------------------- */}
-      <section ref={startBand.ref}
-        className={cx("mx-auto max-w-7xl px-4 pt-20 sm:px-6 sm:pt-24", startBand.className)}>
-        <SectionHead n={n(3)} chapter="Start" title="Quick start"
-          line="Thirty seconds to get comfortable." />
-        <div className="mt-7 grid gap-3 sm:grid-cols-3">
-          <Step n={1} tint="var(--accent)" title="Read a race"
-            line="The story, the key moments and the turning point." />
-          <Step n={2} tint="var(--speed)" title="Compare drivers"
-            line="Head-to-head pace, stints and race impact." />
-          <Step n={3} tint="var(--amber)" title="Ask any question"
-            line="Answered from the real lap data, not a template." />
-        </div>
-        {/* "Show me" is the reader's next thought once the three steps have
-            said what the product does. It is answered here, quietly. */}
-        <div className="mt-5">
-          <SampleStory />
+      {/* ---- 3. a real race, right now ----------------------------------- */}
+      <section ref={featureBand.ref}
+        className={cx("mx-auto max-w-7xl px-4 pt-20 sm:px-6 sm:pt-24", featureBand.className)}>
+        <SectionHead n="02" chapter="Read" title="Start with the last one"
+          line="The most recent Grand Prix, already analysed." />
+        <div className="mt-7">
+          <FeaturedRace />
         </div>
       </section>
 
+      {/* ---- 4. the way in ---------------------------------------------- */}
       <section ref={doorBand.ref}
         className={cx("mx-auto max-w-7xl px-4 pb-20 pt-20 sm:px-6 sm:pb-28 sm:pt-24", doorBand.className)}>
-        <SectionHead n={n(4)} chapter="Enter" title="Three ways in"
+        <SectionHead n="03" chapter="Enter" title="Three ways in"
           line="Pick the one that matches the question you arrived with." />
         <div className="mt-7 grid gap-4 sm:grid-cols-3">
           <Door href="/explorer" icon={<Timer size={16} />} title="Read a race"
             line="Story, strategy, pace and tyres for any session."
-            art={<ArtRace />} />
+            art={<ArtRace />} tint="var(--accent)" />
           <Door href="/explorer?tab=ask" icon={<MessageSquareText size={16} />} title="Ask a question"
             line="“Why did Leclerc lose places?” — answered from the data."
-            art={<ArtAsk />} />
+            art={<ArtAsk />} tint="var(--speed)" />
           <Door href="/history" icon={<Trophy size={16} />} title="Look something up"
             line="Official results and standings, 1950 to today."
-            art={<ArtArchive />} />
+            art={<ArtArchive />} tint="var(--amber)" />
         </div>
       </section>
 
@@ -281,10 +221,6 @@ function SectionHead({ n, chapter, title, line, aside }: {
  * about this product; it is the date, and a reader deciding whether to trust
  * an archive learns nothing from being told what year it is.
  *
- * These answer what the band is actually being asked. How much is in here? How
- * far back does it go? Is it current? And the last two state the thing that
- * separates this from a results table: nothing is sampled, and it is read live.
- *
  * The numbers come from /api/archive/scale, which counts them — see
  * backend/app/archive_scale.py. If the backend is unreachable the band falls
  * back to the one figure a calendar alone can prove rather than to a
@@ -301,7 +237,7 @@ function ScaleBand({ ref_, className }: {
   useEffect(() => {
     let alive = true;
     api.archiveScale()
-      .then((s) => { if (alive) setScale(s); })
+      .then((sc) => { if (alive) setScale(sc); })
       .catch(() => { if (alive) setFailed(true); });
     return () => { alive = false; };
   }, []);
@@ -375,196 +311,56 @@ function Stat({ icon, value, label, note, literal, format }: {
 }
 
 /* -------------------------------------------------------------------------- */
-function ModeCard({
-  id, on, onPick, title, tag, tint, points, preview,
-}: {
-  id: Mode; on: boolean; onPick: (m: Mode) => void;
-  title: string; tag: string; tint: string; points: string[]; preview: React.ReactNode;
-}) {
-  return (
-    <button type="button" onClick={() => onPick(id)} aria-pressed={on}
-      data-on={on ? "true" : "false"}
-      className={cx(
-        "mode-card group/mode relative overflow-hidden rounded-2xl border p-5 text-left sm:p-6",
-        "transition-all duration-[--dur-3] ease-[--ease-out]",
-        on ? "-translate-y-0.5" : "hover:-translate-y-1")}
-      // `--pick` carries the card's own colour into the stylesheet so the
-      // chosen-state shadow can be tuned per theme — a bloom that reads as
-      // light on black reads as spilled paint on white.
-      style={{
-        ["--pick" as string]: tint,
-        borderColor: on ? `rgb(${tint} / .5)` : "rgb(var(--tint) / .07)",
-        background: `linear-gradient(155deg, rgb(${tint} / ${on ? ".10" : ".045"}), rgb(var(--base-900) / .8) 58%)`,
-      }}>
-      {/* the light in the card's own colour, brightening as you reach for it */}
-      <span aria-hidden
-        className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full transition-opacity duration-[--dur-4]"
-        style={{
-          background: `radial-gradient(closest-side, rgb(${tint} / .3), transparent)`,
-          opacity: on ? 0.9 : 0.35,
-        }} />
-
-      <span className="relative flex items-center gap-3">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-transform duration-[--dur-3] ease-[--ease-spring] group-hover/mode:scale-110"
-          style={{ background: `rgb(${tint} / .16)`, color: `rgb(${tint})` }}>
-          <Sparkles size={17} />
-        </span>
-        <span className="text-[22px] font-bold tracking-tight text-ink">{title}</span>
-        <span className={cx("ml-auto grid h-6 w-6 shrink-0 place-items-center rounded-full border transition-all duration-[--dur-3] ease-[--ease-spring]",
-          on ? "scale-100 text-pure" : "scale-90 border-white/15 text-transparent")}
-          style={on ? { background: `rgb(${tint})`, borderColor: `rgb(${tint})` } : undefined}>
-          <Check size={13} strokeWidth={3} />
-        </span>
-      </span>
-
-      <span className="relative mt-3 block text-[11px] font-semibold uppercase tracking-[0.16em]"
-        style={{ color: `rgb(${tint})` }}>
-        {tag}
-      </span>
-
-      <ul className="relative mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
-        {points.map((p) => (
-          <li key={p} className="flex items-center gap-2 text-[13px] text-ink-muted">
-            <span className="h-1 w-1 rounded-full" style={{ background: `rgb(${tint})` }} />{p}
-          </li>
-        ))}
-      </ul>
-
-      {/* the actual panel this mode produces — the argument, shown */}
-      <span className="relative mt-5 block overflow-hidden rounded-xl border border-white/[0.07] bg-base-950/75 p-3.5">
-        {preview}
-      </span>
-    </button>
-  );
-}
-
-function SimplePreview() {
-  return (
-    <span className="block">
-      <span className="block text-[10.5px] font-semibold uppercase tracking-[0.16em] text-speed">
-        The race in a line
-      </span>
-      <span className="mt-2 block text-[15.5px] font-semibold leading-snug text-ink">
-        “Norris wins a dramatic race in mixed conditions.”
-      </span>
-      <span className="mt-3.5 flex items-end gap-6">
-        <span className="block">
-          <span className="block text-[10px] uppercase tracking-wider text-ink-faint">Turning point</span>
-          <span className="block text-[13px] font-bold text-ink">Virtual Safety Car</span>
-        </span>
-        <span className="block">
-          <span className="block text-[10px] uppercase tracking-wider text-ink-faint">Laps</span>
-          <span className="block text-[13px] font-bold tabular-nums text-ink">54–57</span>
-        </span>
-      </span>
-    </span>
-  );
-}
-
-function AdvancedPreview() {
-  const ROWS = [
-    { code: "NOR", c: "#FF8000", pace: "1:24.490", d: "—", w: 100 },
-    { code: "PIA", c: "#FF8000", pace: "1:24.730", d: "+0.240", w: 74 },
-    { code: "ANT", c: "#27F4D2", pace: "1:24.902", d: "+0.412", w: 55 },
-  ];
-  return (
-    <span className="block">
-      <span className="flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.16em] text-accent-soft">
-        Clean-air pace
-        <span className="ml-auto font-normal normal-case tracking-normal text-ink-faint">
-          fuel &amp; tyre corrected
-        </span>
-      </span>
-      <span className="mt-2.5 block space-y-2">
-        {ROWS.map((r) => (
-          <span key={r.code} className="flex items-center gap-2.5">
-            <span className="w-9 shrink-0 text-[11.5px] font-bold tabular-nums" style={{ color: r.c }}>
-              {r.code}
-            </span>
-            <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.07]">
-              <span className="block h-full rounded-full"
-                style={{ width: `${r.w}%`, background: `linear-gradient(90deg, ${r.c}55, ${r.c})` }} />
-            </span>
-            <span className="w-[4.2rem] shrink-0 text-right text-[11px] tabular-nums text-ink-muted">{r.pace}</span>
-            <span className="w-[3.1rem] shrink-0 text-right text-[11px] tabular-nums text-ink-faint">{r.d}</span>
-          </span>
-        ))}
-      </span>
-    </span>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/**
- * A step in a sequence.
- *
- * These used to carry small chart doodles in the corner. Two of the three were
- * grey bars on a dark card, which is the universal picture of content that has
- * not loaded yet — a landing page cannot afford to look like it is still
- * fetching. The artwork has moved to the doors, where it can be large enough to
- * say something, and a step now looks like what it is: an ordered instruction,
- * with an oversized ghost numeral doing the decorative work and a tint that
- * tells the three apart at a glance.
- */
-function Step({ n, title, line, tint }: {
-  n: number; title: string; line: string; tint: string;
-}) {
-  return (
-    <div className="panel group/step relative flex items-start gap-3 overflow-hidden p-4 sm:p-5">
-      <span aria-hidden
-        className="ghost-num pointer-events-none absolute -bottom-7 -right-2 select-none font-mono text-[104px] font-bold leading-none tracking-tighter transition-transform duration-[--dur-4] ease-[--ease-out] group-hover/step:-translate-y-1"
-        style={{ ["--gn" as string]: tint }}>
-        {n}
-      </span>
-      <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg text-[12px] font-bold tabular-nums"
-        style={{ background: `rgb(${tint} / .14)`, color: `rgb(${tint})` }}>
-        {n}
-      </span>
-      <span className="relative min-w-0 flex-1">
-        <span className="block text-[14.5px] font-semibold text-ink">{title}</span>
-        <span className="mt-1 block max-w-[16rem] text-[12.5px] leading-relaxed text-ink-muted">{line}</span>
-      </span>
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
 /**
  * A door, with a window in it.
  *
- * These were three identical icon-and-two-lines rows, which told the reader
- * nothing about how the three destinations differ — the icon was decoration
- * standing in for information. Each now carries a small true picture of what
- * is on the other side.
+ * These were three identical icon-and-two-lines rows, then three flat SVGs, and
+ * both readings were the same problem: the window looked like clip art beside a
+ * hero that looks like a render. The gap between the two was the most obvious
+ * unfinished thing on the page.
  *
- * AND THE PICTURES ARE NEVER STILL.
+ * A window is now built the way the hero is — as a lit room rather than as a
+ * drawing on a card:
  *
- * A card that only moves once you touch it has to be discovered before it can
- * invite; a card that is quietly working when you arrive has already said it
- * is a live thing. Every window carries one slow ambient loop — traces that
- * drift, indicators that pulse, a scan that passes — pitched low enough that
- * three of them side by side never compete with the copy. Hovering does not
- * start the motion, it raises it, which is the difference between a card
- * waking up and a card switching on. See `.art-*` in globals.css.
+ *   1. a LAMP in the door's own colour, behind everything and off-centre
+ *   2. a GRID at three per cent, so the space has a floor
+ *   3. a BLOOM of the artwork — the same picture, blurred and brightened, sat
+ *      underneath the crisp one, which is the whole difference between a shape
+ *      that is coloured and a shape that is emitting
+ *   4. the ARTWORK, the only layer carrying information
+ *   5. a SWEEP that crosses on a slow loop, and a VIGNETTE that closes the box
+ *
+ * Everything moves at rest and moves faster on hover — waking up rather than
+ * switching on. All of it is transform, opacity and a filter on composited
+ * layers, so three of these beside a canvas hero cost the compositor and
+ * nothing else.
  */
-function Door({ href, icon, title, line, art }: {
-  href: string; icon: React.ReactNode; title: string; line: string; art: React.ReactNode;
+function Door({ href, icon, title, line, art, tint }: {
+  href: string; icon: React.ReactNode; title: string; line: string;
+  art: React.ReactNode; tint: string;
 }) {
   return (
-    <Link href={href} className="group/door pressable panel art-host relative flex flex-col overflow-hidden">
-      <span className="relative block h-[112px] overflow-hidden border-b border-white/[0.06] bg-base-950/50">
+    <Link href={href}
+      className="group/door pressable panel art-host relative flex flex-col overflow-hidden"
+      style={{ ["--door" as string]: tint }}>
+      <span className="relative block h-[132px] overflow-hidden border-b border-white/[0.06] bg-base-950/60">
+        <span aria-hidden className="door-lamp pointer-events-none absolute inset-0" />
+        <span aria-hidden className="door-grid pointer-events-none absolute inset-0" />
         <span aria-hidden
-          className="absolute inset-0 transition-transform duration-[--dur-4] ease-[--ease-out] group-hover/door:scale-[1.04]">
+          className="door-bloom pointer-events-none absolute inset-0 transition-transform duration-[--dur-4] ease-[--ease-out] group-hover/door:scale-[1.05]">
           {art}
         </span>
-        {/* the pass that says the window is a display rather than a picture */}
+        <span aria-hidden
+          className="absolute inset-0 transition-transform duration-[--dur-4] ease-[--ease-out] group-hover/door:scale-[1.05]">
+          {art}
+        </span>
         <span aria-hidden className="art-scan pointer-events-none absolute inset-y-0 w-20" />
-        {/* the artwork sits behind the card's own light, so it recedes */}
-        <span aria-hidden className="absolute inset-0"
-          style={{ background: "linear-gradient(to bottom, transparent 45%, rgb(var(--base-900) / .55))" }} />
+        <span aria-hidden className="door-vignette pointer-events-none absolute inset-0" />
       </span>
+
       <span className="flex items-start gap-3 p-4">
-        <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent-soft transition-transform duration-[--dur-3] ease-[--ease-spring] group-hover/door:scale-110">
+        <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-all duration-[--dur-3] ease-[--ease-spring] group-hover/door:scale-110"
+          style={{ background: `rgb(${tint} / .13)`, color: `rgb(${tint})` }}>
           {icon}
         </span>
         <span className="min-w-0">
@@ -584,23 +380,29 @@ function Door({ href, icon, title, line, art }: {
    band at any column width without a media query. */
 const ART = "h-full w-full";
 
+/**
+ * Position traces crossing.
+ *
+ * The same picture the Race Explorer draws and the same one the hero draws:
+ * four cars, and the moment two of them swap. The marker sits on the crossing
+ * because that is the only point in a position chart worth marking.
+ */
 function ArtRace() {
   const LINES = [
-    { d: "M0 46 C 40 44, 70 18, 110 22 S 180 40, 240 14", c: "rgb(var(--accent))", o: 0.95 },
-    { d: "M0 30 C 44 32, 72 52, 116 50 S 182 24, 240 30", c: "rgb(var(--speed))", o: 0.8 },
-    { d: "M0 62 C 46 58, 78 66, 120 62 S 186 70, 240 58", c: "rgb(var(--best))", o: 0.6 },
-    { d: "M0 76 C 50 80, 84 74, 128 78 S 190 86, 240 74", c: "rgb(var(--amber))", o: 0.45 },
+    { d: "M0 46 C 40 44, 70 18, 110 22 S 180 40, 240 14", c: "rgb(var(--accent))", o: 0.95, w: 2.2 },
+    { d: "M0 30 C 44 32, 72 52, 116 50 S 182 24, 240 30", c: "rgb(var(--speed))", o: 0.8, w: 2 },
+    { d: "M0 62 C 46 58, 78 66, 120 62 S 186 70, 240 58", c: "rgb(var(--best))", o: 0.55, w: 1.8 },
+    { d: "M0 76 C 50 80, 84 74, 128 78 S 190 86, 240 74", c: "rgb(var(--amber))", o: 0.4, w: 1.6 },
   ];
   return (
     <svg className={ART} viewBox="0 0 240 100" preserveAspectRatio="none" fill="none" aria-hidden>
       {LINES.map((l, i) => (
-        <path key={l.d} d={l.d} stroke={l.c} strokeWidth="2" strokeLinecap="round"
+        <path key={l.d} d={l.d} stroke={l.c} strokeWidth={l.w} strokeLinecap="round"
           opacity={l.o} vectorEffect="non-scaling-stroke"
           className="art-drift" style={{ ["--i" as string]: i }} />
       ))}
-      {/* the crossing point is the only thing in a position chart worth marking */}
-      <circle cx="110" cy="22" r="3" fill="rgb(var(--accent))" />
       <circle cx="110" cy="22" r="7" fill="rgb(var(--accent))" opacity="0.18" className="art-halo" />
+      <circle cx="110" cy="22" r="2.8" fill="rgb(var(--accent))" />
     </svg>
   );
 }
@@ -608,11 +410,10 @@ function ArtRace() {
 /**
  * Three pieces of evidence converging on one answer.
  *
- * The first draft of this was a stack of grey bars, which is indistinguishable
- * from a loading skeleton — and a skeleton is the one thing a landing page must
- * never look like. This draws the product's actual claim instead: separate
- * measurements, each in its own colour, resolving into a single conclusion,
- * each arriving on its own beat.
+ * A stack of grey bars was the first draft, which is indistinguishable from a
+ * loading skeleton — the one thing a landing page must never look like. This
+ * draws the product's actual claim: separate measurements, each in its own
+ * colour, each arriving on its own beat, resolving into a single conclusion.
  */
 function ArtAsk() {
   const FEEDS = [
@@ -624,21 +425,23 @@ function ArtAsk() {
     <svg className={ART} viewBox="0 0 240 100" preserveAspectRatio="xMidYMid slice" fill="none" aria-hidden>
       {FEEDS.map((f, i) => (
         <g key={f.y}>
-          <circle cx="26" cy={f.y} r="4.5" fill={f.c} opacity="0.9"
-            className="art-blink" style={{ ["--i" as string]: i }} />
-          <path d={`M34 ${f.y} C 74 ${f.y}, 106 50, 146 50`} stroke={f.c} strokeWidth="1.6"
-            opacity="0.55" strokeLinecap="round"
+          {/* the route, then the packet travelling along it */}
+          <path d={`M34 ${f.y} C 74 ${f.y}, 106 50, 146 50`} stroke={f.c} strokeWidth="1.4"
+            opacity="0.16" strokeLinecap="round" />
+          <path d={`M34 ${f.y} C 74 ${f.y}, 106 50, 146 50`} stroke={f.c} strokeWidth="1.8"
+            opacity="0.7" strokeLinecap="round"
             className="art-feed" style={{ ["--i" as string]: i }} />
+          <circle cx="26" cy={f.y} r="4" fill={f.c} opacity="0.9"
+            className="art-blink" style={{ ["--i" as string]: i }} />
         </g>
       ))}
-      {/* the answer they arrive at */}
       <circle cx="158" cy="50" r="19" fill="rgb(var(--accent))" opacity="0.12" className="art-halo" />
       <circle cx="158" cy="50" r="11" fill="rgb(var(--accent))" opacity="0.22" />
       <circle cx="158" cy="50" r="5" fill="rgb(var(--accent))" />
-      <path d="M177 50 H 214" stroke="rgb(var(--accent))" strokeWidth="2" strokeLinecap="round"
-        opacity="0.75" />
-      <path d="M206 44 L 214 50 L 206 56" stroke="rgb(var(--accent))" strokeWidth="2"
-        strokeLinecap="round" strokeLinejoin="round" opacity="0.75" />
+      <path d="M177 50 H 212" stroke="rgb(var(--accent))" strokeWidth="1.8" strokeLinecap="round"
+        opacity="0.7" />
+      <path d="M204 44.5 L 212 50 L 204 55.5" stroke="rgb(var(--accent))" strokeWidth="1.8"
+        strokeLinecap="round" strokeLinejoin="round" opacity="0.7" />
     </svg>
   );
 }
@@ -646,10 +449,10 @@ function ArtAsk() {
 /**
  * The seasons, and a podium at the end of them.
  *
- * Same reasoning as above: a fake results table drawn in grey reads as a table
- * that failed to load. A podium is legible in a quarter of a second and cannot
- * be mistaken for anything else. The seasons behind it come up one at a time,
- * which is what an archive being read looks like.
+ * Same reasoning: a fake results table drawn in grey reads as a table that
+ * failed to load. A podium is legible in a quarter of a second and cannot be
+ * mistaken for anything else. The seasons behind it light one at a time, which
+ * is what an archive being read looks like.
  */
 function ArtArchive() {
   const STEPS = [
@@ -659,7 +462,6 @@ function ArtArchive() {
   ];
   return (
     <svg className={ART} viewBox="0 0 240 100" preserveAspectRatio="xMidYMid slice" fill="none" aria-hidden>
-      {/* the seasons stretching back behind it, thinning as they recede */}
       {Array.from({ length: 12 }, (_, i) => (
         <rect key={i} x={16 + i * 5.5} y={78 - (4 + i * 1.6)} width="2.5" height={4 + i * 1.6} rx="1.25"
           fill="rgb(var(--tint))" opacity={0.07 + i * 0.013}
@@ -671,7 +473,6 @@ function ArtArchive() {
           <rect x={s.x} y={78 - s.h} width={s.w} height="2.5" rx="1.25" fill={s.c} opacity={s.o} />
         </g>
       ))}
-      {/* the winner, standing on the top step rather than floating above it */}
       <circle cx="154" cy="24" r="4.5" fill="rgb(var(--accent))" />
       <path d="M147 32 C 147 27, 161 27, 161 32 Z" fill="rgb(var(--accent))" />
       <line x1="16" y1="79.25" x2="224" y2="79.25" stroke="rgb(var(--tint))" strokeWidth="1.5"

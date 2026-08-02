@@ -164,3 +164,73 @@ def test_archive_scale_route():
     body = r.json()
     assert body["first_season"] == 1950
     assert body["races"] > 1000
+
+
+# --------------------------------------------------------------------------- #
+# A race that has not been run is never offered
+# --------------------------------------------------------------------------- #
+def test_calendar_marks_races_that_have_not_happened():
+    """The root cause of the future-race bug: the rule existed and only one
+    caller asked. Every calendar now carries the answer."""
+    from datetime import date
+    from app.service import get_grands_prix
+
+    gps, _ = get_grands_prix(date.today().year)
+    assert gps, "the current season should have a calendar"
+    # each stamp has to agree with the event's own date
+    for g in gps:
+        if g.date:
+            assert g.completed == (str(g.date)[:10] <= date.today().isoformat())
+    # and a season in progress must have at least one of each, or the fixture
+    # has stopped exercising the thing this test is about
+    assert any(g.completed for g in gps)
+
+
+def test_finished_seasons_are_entirely_complete():
+    from datetime import date
+    from app.service import get_grands_prix
+
+    gps, _ = get_grands_prix(date.today().year - 1)
+    assert gps and all(g.completed for g in gps)
+
+
+def test_races_route_exposes_completion():
+    from datetime import date
+
+    r = client.get(f"/api/seasons/{date.today().year}/races")
+    assert r.status_code == 200
+    races = r.json()["races"]
+    assert races and all("completed" in g for g in races)
+
+
+def test_current_never_opens_on_an_unrun_race():
+    from app.service import get_current, get_grands_prix
+
+    cur = get_current()
+    gps, _ = get_grands_prix(cur["year"])
+    match = next((g for g in gps if g.name == cur["gp"]), None)
+    assert match is not None and match.completed
+
+
+# --------------------------------------------------------------------------- #
+# The featured race — one true fact for the landing page
+# --------------------------------------------------------------------------- #
+def test_featured_returns_a_headline_not_a_payload():
+    r = client.get("/api/featured")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["available"] is True
+    assert d["winner"]["code"] and d["winner"]["team_color"].startswith("#")
+    assert d["story"], "the landing card is built around this sentence"
+    assert d["laps"] > 0 and d["entries"] >= d["finishers"]
+    # it is a summary: no laps array, no classification, no telemetry
+    assert not any(k in d for k in ("laps_data", "classification", "session"))
+
+
+def test_featured_is_never_a_race_that_has_not_run():
+    from app.service import get_grands_prix
+
+    d = client.get("/api/featured").json()
+    gps, _ = get_grands_prix(d["year"])
+    match = next((g for g in gps if g.name == d["gp"]), None)
+    assert match is not None and match.completed

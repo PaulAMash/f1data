@@ -79,6 +79,57 @@ def archive_scale_route():
     return archive_scale()
 
 
+@app.get("/api/featured")
+def featured():
+    """The most recent completed Grand Prix, as a headline rather than a payload.
+
+    The landing page wants one true fact about one real race: who won it, by how
+    much, and the sentence that explains it. Fetching a whole RaceBundle to
+    render six values would put a megabyte and a full analysis on the critical
+    path of a first impression, so this returns only what is shown — and it is
+    cheap, because the session it reads is the same cached one the Race Explorer
+    opens on a moment later.
+
+    Never a race that has not been run: `get_current` is the same resolver the
+    Explorer uses, and it only ever returns a completed event.
+    """
+    cur = service.get_current()
+    if not cur.get("gp"):
+        return {"available": False}
+    try:
+        bundle = service.get_session(cur["year"], cur["gp"], "Race")
+        strategy, _pace = analyze(bundle)
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger("pitwall_iq").info("featured race unavailable: %s", exc)
+        return {"available": False}
+
+    rows = sorted([c for c in bundle.classification if c.position],
+                  key=lambda c: c.position or 99)
+    win = rows[0] if rows else None
+    second = rows[1] if len(rows) > 1 else None
+    turn = strategy.turning_points[0] if strategy.turning_points else None
+
+    return {
+        "available": bool(win),
+        "year": cur["year"],
+        "gp": cur["gp"],
+        "circuit": bundle.circuit.name if bundle.circuit else None,
+        "laps": bundle.total_laps,
+        "winner": None if not win else {
+            "code": win.driver, "name": win.name, "team": win.team,
+            "team_color": win.team_color, "grid": win.grid,
+        },
+        "margin": (second.gap if second else None),
+        "story": (strategy.story or [None])[0],
+        "turning_point": None if not turn else {
+            "title": turn.title, "lap": getattr(turn, "lap", None),
+        },
+        "finishers": sum(1 for c in bundle.classification if not c.retired),
+        "entries": len(bundle.classification),
+        "source": bundle.data_source.value,
+    }
+
+
 @app.get("/api/health/data-sources")
 def health_data_sources():
     """Reachability of every real source — powers the Data Sources diagnostics."""

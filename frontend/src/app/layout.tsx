@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { PrefsProvider, NO_FLASH_SCRIPT } from "@/lib/prefs";
 import { SpellingBridge } from "@/lib/locale";
-import { NavHistoryProvider } from "@/lib/nav";
 import { TourProvider } from "@/lib/tour";
 import { GuidedTour } from "@/components/ui/GuidedTour";
 
@@ -30,15 +29,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               see the note in lib/locale.tsx for why this is a document pass
               rather than four hundred call sites. */}
           <SpellingBridge />
-          <NavHistoryProvider>
-            {/* The tour crosses pages, so it cannot be owned by one — a page
-                that unmounts halfway through a sentence takes the tour with
-                it. See lib/tour.tsx. */}
-            <TourProvider>
-              {children}
-              <GuidedTour />
-            </TourProvider>
-          </NavHistoryProvider>
+          {/* The tour crosses pages, so it cannot be owned by one — a page
+              that unmounts halfway through a sentence takes the tour with it.
+              See lib/tour.tsx. */}
+          <TourProvider>
+            {children}
+            <GuidedTour />
+          </TourProvider>
         </PrefsProvider>
       </body>
     </html>

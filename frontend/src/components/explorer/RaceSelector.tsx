@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Calendar, ChevronDown, History, RefreshCw } from "lucide-react";
+import { Calendar, History, RefreshCw } from "lucide-react";
+import { Select } from "@/components/ui/Select";
 import { api } from "@/lib/api";
 import type { GrandPrix } from "@/lib/types";
 import { cx } from "@/lib/format";
@@ -37,9 +38,27 @@ export function RaceSelector({
     });
   };
 
-  // A Grand Prix appears as soon as its first session has run (fixes ongoing
-  // weekends being hidden until race day). Undated events are kept.
-  const availableRaces = races.filter((r) => startedSessions(r).length > 0);
+  /* A Grand Prix appears as soon as its first session has run (fixes ongoing
+     weekends being hidden until race day). Undated events are kept.
+
+     `completed` is the server's own answer and is checked first, because a
+     session-time table can be missing or stale while the date never is — see
+     service.mark_completed for why that decision lives there rather than here. */
+  const availableRaces = races.filter(
+    (r) => r.completed !== false || startedSessions(r).length > 0);
+
+  /* AND A SELECTION IS NEVER ALLOWED TO OUTLIVE THE LIST.
+     Filtering the dropdown is only half the fix: the selection can also arrive
+     from a `?gp=` link or from state restored by a back navigation, and the
+     Explorer would fetch it regardless — which is how a reader ended up staring
+     at an empty Brazilian Grand Prix in August. If what is selected is not on
+     offer, we snap to the most recent race that is. */
+  useEffect(() => {
+    if (!races.length || !availableRaces.length) return;
+    if (availableRaces.some((r) => r.name === value.gp)) return;
+    onChange({ ...value, gp: availableRaces[availableRaces.length - 1].name });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [races, value.gp]);
 
   const currentRace = availableRaces.find((r) => r.name === value.gp);
   const sessions = currentRace ? startedSessions(currentRace)
@@ -70,11 +89,13 @@ export function RaceSelector({
 
       <Field label="Grand Prix" className="col-span-2">
         <Select value={value.gp} onChange={(v) => onChange({ ...value, gp: v })} wide
+          ariaLabel="Grand Prix"
           options={(availableRaces.length ? availableRaces : [{ name: value.gp } as GrandPrix]).map((r) => ({ value: r.name, label: r.name }))} />
       </Field>
 
       <Field label="Session">
         <Select value={value.session} onChange={(v) => onChange({ ...value, session: v })}
+          ariaLabel="Session"
           options={(sessions.length ? sessions : [value.session]).map((s) => ({ value: s, label: s }))} />
       </Field>
 
@@ -104,16 +125,3 @@ function Field({ label, icon, className, children }: {
   );
 }
 
-function Select({ value, onChange, options, wide }: {
-  value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; wide?: boolean;
-}) {
-  return (
-    <span className={cx("relative inline-flex w-full items-center sm:w-auto", wide ? "sm:min-w-[220px]" : "sm:min-w-[120px]")}>
-      <select value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full appearance-none rounded-lg border border-white/10 bg-base-800 px-3 py-2 pr-8 text-sm text-ink outline-none focus:border-white/25">
-        {options.map((o) => <option key={o.value} value={o.value} className="bg-base-800">{o.label}</option>)}
-      </select>
-      <ChevronDown size={14} className="pointer-events-none absolute right-2.5 text-ink-faint" />
-    </span>
-  );
-}
