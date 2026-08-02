@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { AlertTriangle } from "@/components/ui/MotionIcon";
 import { api } from "@/lib/api";
 import { useIsSimple } from "@/lib/mode";
@@ -9,6 +9,9 @@ import { InfoTip } from "@/components/ui/InfoTip";
 import { LoadingState } from "@/components/ui/misc";
 import { cx } from "@/lib/format";
 import { usePrefs } from "@/lib/prefs";
+import { Select } from "@/components/ui/Select";
+import { useLivery } from "@/lib/liveryColor";
+import { teamColour } from "@/lib/constructors";
 
 const CURRENT = new Date().getFullYear();
 const FALLBACK_YEARS = Array.from({ length: CURRENT - 1949 }, (_, i) => CURRENT - i);
@@ -31,6 +34,11 @@ export function HistoricalExplorer() {
     setYear(prefs.season);
   }, [ready, prefs.season]);
   const [events, setEvents] = useState<{ name: string }[]>([]);
+  /* Whether the CALENDAR could be read, which is a different failure from
+     whether a RESULT could be. Both used to land on "No results found for this
+     selection" — a sentence about a selection the reader was never able to
+     make, under a picker showing an em dash. */
+  const [calendarFailed, setCalendarFailed] = useState(false);
   const [event, setEvent] = useState("");
   const [sessions, setSessions] = useState<{ available: string[]; unavailable: string[]; note?: string }>({
     available: ["Qualifying", "Race"], unavailable: [],
@@ -47,16 +55,28 @@ export function HistoricalExplorer() {
       .catch(() => setYears(FALLBACK_YEARS));
   }, []);
 
-  // events for the selected year
+  /* Events for the selected year — the ones that have actually been run.
+
+     A season in progress used to list its whole calendar, so choosing a Grand
+     Prix three months away produced "no results found for this event": an
+     accurate sentence about a question the reader never meant to ask. The
+     server stamps each event (see service.mark_completed) and the Race
+     Explorer's picker reads the same stamp, so the two lists cannot disagree.
+
+     The most recent race is selected rather than the first, because the thing
+     somebody opening a season in progress wants is what just happened. */
   useEffect(() => {
-    setEvents([]); setEvent("");
+    setEvents([]); setEvent(""); setCalendarFailed(false);
     api.histEvents(year)
       .then((r) => {
-        const evs = (r.events ?? []).map((e: any) => ({ name: e.name }));
+        const evs = (r.events ?? [])
+          .filter((e: any) => e.completed !== false)
+          .map((e: any) => ({ name: e.name }));
         setEvents(evs);
-        if (evs.length) setEvent(evs[0].name);
+        setCalendarFailed(evs.length === 0);
+        if (evs.length) setEvent(evs[evs.length - 1].name);
       })
-      .catch(() => setEvents([]));
+      .catch(() => { setEvents([]); setCalendarFailed(true); });
   }, [year]);
 
   // sessions for the selected event
@@ -100,7 +120,9 @@ export function HistoricalExplorer() {
           <Sel label="Season" value={String(year)} onChange={(v) => setYear(Number(v))}
             options={years.map((y) => ({ value: String(y), label: String(y) }))} />
           <Sel label="Grand Prix" className="col-span-2 sm:col-span-1" value={event} onChange={setEvent}
-            options={(events.length ? events : [{ name: event || "—" }]).map((e) => ({ value: e.name, label: e.name }))} />
+            options={events.length
+              ? events.map((e) => ({ value: e.name, label: e.name }))
+              : [{ value: "", label: calendarFailed ? "No calendar for this season" : "Loading…" }]} />
           <Sel label="Session" value={session} onChange={setSession}
             options={allSessions.map((s) => ({ value: s, label: s }))} />
           <button onClick={() => setNonce((n) => n + 1)} disabled={loading}
@@ -115,6 +137,10 @@ export function HistoricalExplorer() {
             hint="Pulling the official classification from the archive — this is usually quick." size={32} />
         ) : isUnavailableSession ? (
           <Unavailable note={sessions.note ?? `${session} isn't available from the historical source for this event.`} />
+        ) : calendarFailed ? (
+          <ErrorRetry
+            message={`The archive did not return a calendar for ${year}. That is the source being unreachable rather than a season with no races in it.`}
+            onRetry={() => setNonce((n) => n + 1)} />
         ) : results?.error ? (
           <ErrorRetry message={results.message ?? "The historical source was unreachable."} onRetry={() => setNonce((n) => n + 1)} />
         ) : results && results.available && results.rows?.length ? (
@@ -127,63 +153,137 @@ export function HistoricalExplorer() {
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/**
+ * A classification, in the product's own language.
+ *
+ * This was a plain HTML table: eight grey columns, one weight of type, and
+ * nothing to tell a Ferrari from a Haas except reading the word. In a product
+ * whose entire visual argument is that colour is how you recognise a car, the
+ * archive was the one screen where colour did no work at all.
+ *
+ * Three changes, and all three are hierarchy rather than decoration:
+ *
+ *   THE LIVERY IS THE ROW'S LEFT EDGE. Constructors are found before they are
+ *   read — which is what a reader scanning twenty rows for their team is
+ *   actually doing.
+ *
+ *   THE PODIUM IS THE HEADLINE. A classification is read from the top, so the
+ *   first three carry more weight and a gold, silver and bronze position mark.
+ *   Everyone else is a list, which is what everyone else is.
+ *
+ *   RETIREMENTS RECEDE. A car that did not finish is not a result at the same
+ *   level as one that did, and dimming it is how a timing screen has always
+ *   said so.
+ */
 function ResultsTable({ rows, session, simple }: {
   rows: any[]; session: string; simple: boolean;
 }) {
   const isQuali = /qual/i.test(session);
+  const paint = useLivery();
+  const tintOf = (r: any) => paint(teamColour(r.constructorName));
+  const out = (r: any) => !!r.status && !/finish|^\+\d+ lap/i.test(String(r.status));
+
   return (
     <div>
       {/* desktop table */}
-      <div className="hidden overflow-x-auto sm:block">
+      <div className="modal-scroll hidden sm:block">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/[0.06] text-left text-[11px] uppercase tracking-wider text-ink-faint">
-              <th className="py-2 pl-1">Pos</th><th className="py-2">Driver</th><th className="py-2">Constructor</th>
-              <th className="py-2">{isQuali ? "Best" : "Time / Gap"}</th>
-              {!simple && !isQuali && <th className="py-2">Laps</th>}
-              {!simple && !isQuali && <th className="py-2">Grid</th>}
-              {!simple && !isQuali && <th className="py-2">Pts</th>}
-              {!simple && <th className="py-2 pr-1">Status</th>}
+            <tr className="border-b border-white/[0.07] text-left text-[10.5px] uppercase tracking-[0.12em] text-ink-faint">
+              <th className="w-10 py-2.5 pl-1">Pos</th>
+              <th className="py-2.5">Driver</th>
+              <th className="py-2.5">Constructor</th>
+              <th className="py-2.5 text-right">{isQuali ? "Best" : "Time / Gap"}</th>
+              {!simple && !isQuali && <th className="py-2.5 text-right">Laps</th>}
+              {!simple && !isQuali && <th className="py-2.5 text-right">Grid</th>}
+              {!simple && !isQuali && <th className="py-2.5 text-right">Pts</th>}
+              {!simple && <th className="py-2.5 pr-1 text-right">Status</th>}
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={i} className="border-b border-white/[0.04]">
-                <td className="py-2 pl-1 tabular-nums font-semibold">{r.position ?? "—"}</td>
-                <td className="py-2 font-medium">{r.driverName ?? r.driverCode}</td>
-                <td className="py-2 text-ink-muted">{r.constructorName ?? "—"}</td>
-                <td className="py-2 tabular-nums text-ink-muted">{r.time ?? r.gap ?? r.sessionBest ?? "—"}</td>
-                {!simple && !isQuali && <td className="py-2 tabular-nums text-ink-muted">{r.laps ?? "—"}</td>}
-                {!simple && !isQuali && <td className="py-2 tabular-nums text-ink-muted">{r.grid ?? "—"}</td>}
-                {!simple && !isQuali && <td className="py-2 tabular-nums text-ink-muted">{r.points ?? "—"}</td>}
-                {!simple && <td className="py-2 pr-1 text-xs text-ink-faint">{r.status ?? "—"}</td>}
-              </tr>
-            ))}
+            {rows.map((r, i) => {
+              const pos = Number(r.position) || 99;
+              const podium = pos <= 3;
+              const tint = tintOf(r);
+              return (
+                <tr key={i}
+                  className={cx("den-row group/res border-b border-white/[0.04] transition-colors hover:bg-white/[0.025]",
+                    out(r) && "opacity-55")}>
+                  <td className="relative py-2.5 pl-1">
+                    <span aria-hidden
+                      className="absolute inset-y-1.5 left-0 w-[2.5px] rounded-full transition-all duration-[--dur-2] group-hover/res:inset-y-0"
+                      style={{ background: tint, opacity: podium ? 1 : 0.5 }} />
+                    <span className={cx("ml-2.5 inline-block tabular-nums",
+                      podium ? "text-[15px] font-bold text-ink" : "font-semibold text-ink-muted")}>
+                      {r.position ?? "—"}
+                    </span>
+                  </td>
+                  <td className={cx("py-2.5", podium ? "font-semibold text-ink" : "font-medium text-ink")}>
+                    {r.driverName ?? r.driverCode}
+                  </td>
+                  <td className="py-2.5">
+                    <span className="inline-flex items-center gap-2 text-ink-muted">
+                      <span aria-hidden className="h-2 w-2 shrink-0 rounded-sm"
+                        style={{ background: tint }} />
+                      {r.constructorName ?? "—"}
+                    </span>
+                  </td>
+                  <td className="py-2.5 text-right font-mono tabular-nums text-ink-muted">
+                    {r.time ?? r.gap ?? r.sessionBest ?? "—"}
+                  </td>
+                  {!simple && !isQuali && <td className="py-2.5 text-right tabular-nums text-ink-faint">{r.laps ?? "—"}</td>}
+                  {!simple && !isQuali && <td className="py-2.5 text-right tabular-nums text-ink-faint">{r.grid ?? "—"}</td>}
+                  {!simple && !isQuali && (
+                    <td className="py-2.5 text-right tabular-nums">
+                      <span className={r.points ? "font-semibold text-ink" : "text-ink-faint"}>
+                        {r.points ?? "—"}
+                      </span>
+                    </td>
+                  )}
+                  {!simple && (
+                    <td className="py-2.5 pr-1 text-right text-[11.5px] text-ink-faint">{r.status ?? "—"}</td>
+                  )}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
       {/* mobile cards */}
       <div className="space-y-1.5 sm:hidden">
-        {rows.map((r, i) => (
-          <div key={i} className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-base-800/40 px-3 py-2">
-            <span className="w-6 text-center text-sm font-bold text-ink-muted">{r.position ?? "—"}</span>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium">{r.driverName ?? r.driverCode}</div>
-              <div className="truncate text-xs text-ink-faint">{r.constructorName ?? ""}</div>
+        {rows.map((r, i) => {
+          const pos = Number(r.position) || 99;
+          const tint = tintOf(r);
+          return (
+            <div key={i}
+              className={cx("relative flex items-center gap-3 overflow-hidden rounded-xl bg-white/[0.02] py-2.5 pl-4 pr-3",
+                out(r) && "opacity-55")}>
+              <span aria-hidden className="absolute inset-y-1.5 left-0 w-[2.5px] rounded-full"
+                style={{ background: tint, opacity: pos <= 3 ? 1 : 0.5 }} />
+              <span className={cx("w-5 shrink-0 text-right tabular-nums",
+                pos <= 3 ? "text-[15px] font-bold text-ink" : "text-[13px] text-ink-muted")}>
+                {r.position ?? "—"}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13.5px] font-medium text-ink">
+                  {r.driverName ?? r.driverCode}
+                </span>
+                <span className="block truncate text-[11.5px] text-ink-faint">
+                  {r.constructorName ?? "—"}
+                </span>
+              </span>
+              <span className="shrink-0 text-right font-mono text-[12.5px] tabular-nums text-ink-muted">
+                {r.time ?? r.gap ?? r.sessionBest ?? "—"}
+              </span>
             </div>
-            <span className="shrink-0 text-right text-xs tabular-nums text-ink-muted">
-              {r.time ?? r.gap ?? r.sessionBest ?? "—"}
-              {!isQuali && r.points != null && <div className="text-ink-faint">{r.points} pts</div>}
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
-
     </div>
   );
 }
-
 function Unavailable({ note }: { note: string }) {
   return (
     <div className="rounded-lg border border-white/[0.06] bg-base-800/30 px-4 py-8 text-center">
@@ -204,18 +304,12 @@ function ErrorRetry({ message, onRetry }: { message: string; onRetry: () => void
 
 function Sel({ label, value, onChange, options, className }: {
   label: string; value: string; onChange: (v: string) => void;
-  options: { value: string; label: string }[]; className?: string;
+  options: { value: string; label: string; hint?: string }[]; className?: string;
 }) {
   return (
-    <label className={cx("flex min-w-0 flex-col gap-1", className)}>
+    <div className={cx("flex min-w-0 flex-col gap-1", className)}>
       <span className="label">{label}</span>
-      <span className="relative inline-flex items-center">
-        <select value={value} onChange={(e) => onChange(e.target.value)}
-          className="w-full appearance-none rounded-lg border border-white/10 bg-base-800 px-3 py-2 pr-8 text-sm text-ink outline-none focus:border-white/25">
-          {options.map((o) => <option key={o.value} value={o.value} className="bg-base-800">{o.label}</option>)}
-        </select>
-        <ChevronDown size={14} className="pointer-events-none absolute right-2.5 text-ink-faint" />
-      </span>
-    </label>
+      <Select value={value} onChange={onChange} options={options} ariaLabel={label} wide />
+    </div>
   );
 }

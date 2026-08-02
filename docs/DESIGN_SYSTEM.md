@@ -1626,3 +1626,216 @@ different measurement entirely.
 > Two ways to be wrong about a frame rate: counting rAF callbacks instead of
 > draws (V55), and trusting JS timings around deferred draw calls (this one).
 > Both over-report, and both are only caught by measuring the thing itself.
+
+---
+
+## A first screen has one job
+
+The choice between Simple and Advanced was a band a screen and a half down the
+landing page: underneath a headline, five statistics and a scroll. So the first
+decision the product asks for was the third thing on the second screen, and a
+reader who never scrolled never made it.
+
+It has a screen of its own now, and what is **absent** from that screen is the
+design. No navigation, no statistics, no race cards, no scroll — because every
+additional thing on a first screen competes with the one job it has. Even the
+instruments are gone: the field behind it is the same renderer the landing hero
+uses, in an `ambient` configuration with the tracker, the timing panel and the
+event cards switched off.
+
+> The instruments **are** the product. Showing them before somebody has said
+> what kind of reader they are is exactly the overwhelm the screen exists to
+> avoid.
+
+One renderer, two configurations, rather than a second canvas — a second
+implementation is a second place for the lighting, the bloom chain and the
+simulation to drift out of agreement, and the welcome screen's whole promise is
+that it is the same product.
+
+---
+
+## A tour starts when the reader says so
+
+V59's tour opened itself 1.4 seconds after the landing page loaded. It taught
+the right things in the right order and it took the page away from somebody who
+had not finished looking at it — and the first thing a landing page has to be
+allowed to do is *be looked at*.
+
+Pressing the primary control is an unambiguous "I am ready to begin", so that is
+where it begins. Three consequences, and each was a bug the first version had:
+
+**Scrolling is locked, but only the reader's.** `overflow: hidden` on the body
+would also stop the tour scrolling, which is the one thing that still has to
+work. So the *input* is blocked — wheel, touch and the scroll keys — and
+`scrollIntoView` is untouched, because it is not an input event.
+
+**Move first, then speak.** The card used to render as soon as its target had a
+box, while the page was still smooth-scrolling toward it: it appeared, slid,
+resized and settled inside the half-second the reader was trying to read it. The
+"choppy" report was three correct behaviours arriving at once. The spotlight
+follows the scroll because it is attached to the thing being scrolled to; the
+card waits for two consecutive frames at the same offset and then fades in where
+it will stay.
+
+**Finishing and leaving are the same event.** Both mark the tour done and both
+land on Explore. The last beat is Settings, so seeing it through used to abandon
+the reader on a preferences screen holding no session — the least useful room in
+the product to be left standing in. Skip is a reader saying "I would rather just
+get there", and it should get them there too.
+
+---
+
+## Back is a structure, not a history
+
+The bar's back control walked the reader's own history of in-app navigations. It
+was correct, and it was the wrong model: after Explore → Historical → Settings →
+Compare, getting home took five presses and no one press was predictable.
+
+Pitwall IQ has a structure and it is one level deep. Home is the parent; Explore,
+Historical and Settings are siblings under it. So Back means the only thing it
+can mean here — **up** — and the deepest it can ever be is one press.
+
+Forward went with the history stack. Forward through a structure is not a
+direction, and a control that is meaningless half the time is worse than no
+control.
+
+> `history.length` is not the application's history. It counts every page the
+> tab has ever visited, so a reader who arrived from a search result and pressed
+> a control that looks like part of the product would have been sent back out of
+> the product.
+
+---
+
+## The rule that produced the future-race bug
+
+A reader picked the Brazilian Grand Prix in August and got an empty session. The
+tempting fix is to filter the picker. The actual fault is one level up:
+
+> `event_completed` was already the server's answer to "has this happened", and
+> exactly one caller asked it.
+
+Both calendar endpoints returned whole seasons. The Race Explorer offered every
+round; Historical offered every round; and neither client knew it was supposed
+to care. Three copies of one decision, none of them written down.
+
+It is stamped onto the model now — `GrandPrix.completed`, set in one function
+that every calendar passes through — so the answer travels with the data and no
+client re-derives it. Three things follow from that, and the third is the one
+that matters:
+
+1. The Explorer's picker offers only races that have been run.
+2. Historical's picker offers only races that have been run, from the same stamp,
+   so the two lists cannot disagree.
+3. **A selection is never allowed to outlive the list.** The choice can also
+   arrive from a `?gp=` link or from state a back navigation restored, and
+   filtering a dropdown does nothing about either. If what is selected is not on
+   offer, the Explorer snaps to the most recent race that is.
+
+The demo obeys the same rule. The mock calendar had no dates, so every fixture
+event counted as run — a real bug wearing the costume of a data problem. Rounds
+are now spread across a plausible season, which puts the back half of the
+calendar in the future for most of the year exactly as a real one does.
+
+---
+
+## Leaving the native `<select>` behind, and what it costs
+
+Natives are excellent at three things — keyboard, accessibility, and never being
+wrong on a phone — and hopeless at the one thing this product is about. The menu
+is drawn by the operating system: platform radius, platform type, platform
+shadow, platform placement. On a page built out of 13px Inter and soft shadows it
+reads as a hole punched through to another application. Chrome also opens it
+*upward* whenever the trigger is in the lower half of the window, which is why a
+season picker near the fold covered the heading it belonged to.
+
+So the whole cost of replacing it is paying for those three things explicitly:
+
+| what a native gave us | what replaces it |
+|---|---|
+| arrow keys, Home/End, Enter, Escape | handled; plus type-ahead, because a 24-race calendar is a list you type at |
+| a menu the screen reader understands | real `listbox`/`option` roles and `aria-activedescendant` |
+| a menu that is never clipped | portalled to `<body>`, so no `overflow-hidden` ancestor can cut it |
+| a menu that fits on screen | measured against the viewport: down unless it genuinely does not fit, and `max-height` is what is actually available rather than a constant |
+
+It is not a modal, so it closes on scroll rather than following the trigger. A
+menu that rides the page while you scroll is a menu you have to dismiss.
+
+---
+
+## A preview that is not representative is worse than no preview
+
+Settings had a LIVE PREVIEW panel built from the product's own tokens. That made
+it honest and did not make it useful: a miniature of one card cannot show what
+density does to a timing screen, what motion does to the hero, or what chart
+speed does to a chart — so a reader still had to leave the page to find out. It
+was also the third column of a three-column layout, squeezing eighteen controls
+into the middle third.
+
+The right answer to "is this representative?" was no, and the right response to
+that was to take the space back.
+
+**What replaced it is the settings actually being felt.** Every axis reaches
+further than it did: density retimes the row rhythm of every table as well as
+the type ramp, accent intensity reaches all five accent-lit surfaces rather than
+the page wash alone, chart speed drives every bar and trace through one variable,
+and Calm is a tempo rather than a switch.
+
+> A setting that changes one of five surfaces reads as broken. The reader is not
+> wrong; they are reporting that four of them did not get the message.
+
+---
+
+## Colour is how you recognise a car
+
+The archive was the one screen in the product where colour did no work at all: a
+classification was eight grey columns, and championship standings were a grey
+list with a bar that was accent for first and teal for everyone else. In a
+product whose entire visual argument is that a livery is how you identify a car
+without a legend, that is the wrong screen to make plain.
+
+Three changes, all hierarchy rather than decoration:
+
+- **The livery is the row's left edge**, so a reader scanning twenty rows for
+  their team finds it before reading a word.
+- **The podium is the headline.** A classification is read from the top, so the
+  first three carry more weight; everyone else is a list, which is what everyone
+  else is.
+- **The bar is a gap, not a score.** Scaled to the leader, so the picture is
+  "how far behind" — which is what a championship table is actually about, and
+  why the leader's bar is always full.
+
+Standings are one component now, because the Race Explorer needs exactly this for
+the season in progress. Two implementations of a championship table would be two
+places to fix the next time one of them is wrong.
+
+---
+
+## Scroll chaining is the default and it is never what you want
+
+An overlay taller than the window is the common case. When the pointer is over
+it the wheel should move the overlay; when the overlay reaches its end, nothing
+should happen. What happened instead was the page underneath taking over, so the
+reader's content slid away behind a dialog they had not dismissed and was in the
+wrong place when they did.
+
+Two halves, and both are needed. `overflow: hidden` on the root stops the page —
+and shifts the whole layout left by the scrollbar's width unless the gutter is
+measured and paid back as padding, which is a worse artefact than the one being
+fixed. `overscroll-behavior: contain` on the overlay's own scrolling box stops
+the chain from the other side, and belongs to the overlay because only the
+overlay knows which of its boxes scrolls.
+
+---
+
+## `.panel` had one job and could not do it
+
+A grid or flex child defaults to `min-width: auto` — it refuses to shrink below
+its content. So a panel containing a wide results table grew to the table's full
+width and the `overflow-x-auto` inside it never got the chance to scroll: on a
+phone the Race Explorer was 114px wider than the screen and the whole page moved
+sideways.
+
+Declared on all four surface levels, which fixes the class rather than the
+instance.
+
+> A container that cannot be narrower than its contents is not a container.

@@ -390,6 +390,16 @@ export function PositionChart({
     return out;
   })();
 
+  /* ONE BUTTON, EVERYTHING RESET.
+     There are two kinds of focus on this chart and they were cleared by
+     different means: a driver by the Clear focus button, a key moment only by
+     pressing that moment again. So a reader who had chosen both — which is the
+     normal way to use it — pressed Clear focus, watched half the emphasis go
+     away, and had to work out where the rest of it was coming from. Anything
+     that dims the plot is focus, and focus is one state. */
+  const anyFocusAt = anyFocus || openMoment != null;
+  const clearAll = () => { onSelect([]); setOpenMoment(null); };
+
   return (
     <div className="space-y-5">
       <KeyMoments moments={moments} narratives={narratives} open={openMoment} simple={simple}
@@ -398,7 +408,7 @@ export function PositionChart({
       {focusCode && driverByCode[focusCode] && (
         <PositionFocusCard driver={driverByCode[focusCode]} stat={stats[focusCode]} pace={paceByCode[focusCode]}
           stints={session.stints.filter((s) => s.driver === focusCode)} posAt={posAt} simple={simple}
-          takeaway={takeaway(focusCode)} onClear={() => onSelect([])} onDeepDive={onDeepDive} />
+          takeaway={takeaway(focusCode)} onClear={clearAll} onDeepDive={onDeepDive} />
       )}
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -418,8 +428,10 @@ export function PositionChart({
             className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:text-ink">
             <Users size={13} /> Pick a driver
           </button>
-          {anyFocus && (
-            <button onClick={() => onSelect([])} className="inline-flex items-center gap-1.5 rounded-lg border border-white/12 bg-white/[0.03] px-2.5 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:border-white/25 hover:text-ink">
+          {anyFocusAt && (
+            <button onClick={clearAll}
+              title="Clear the focused driver and the open key moment"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/12 bg-white/[0.03] px-2.5 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:border-white/25 hover:text-ink">
               <X size={13} /> Clear focus
             </button>
           )}
@@ -904,7 +916,7 @@ function OrderTooltip({ active, label, info, drivers, visible, focus, simple, la
         <span className="text-right">Pos</span><span /><span>{simple ? "Driver" : "Code"}</span>
         {!simple && <span>Driver</span>}<span>Tyre·age</span>{!simple && <span className="text-right">Gap</span>}
       </div>
-      <div className="max-h-[54vh] overflow-y-auto px-1.5 pb-1.5">
+      <div className="modal-scroll max-h-[54vh] px-1.5 pb-1.5">
         {rows.map(({ d, i }) => {
           const isFocus = d.code === focus; const onPod = podiumSet.has(d.code); const tc = paint(d.team_color);
           return (

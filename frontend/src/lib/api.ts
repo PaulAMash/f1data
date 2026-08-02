@@ -2,7 +2,7 @@
 // The backend base URL is configurable so the app works whether the API runs
 // locally (default) or elsewhere. Never contains secrets.
 import type {
-  ArchiveScale,
+  ArchiveScale, Featured,
   GrandPrix, Meta, QuestionAnswer, RaceBundle, Season, SimulationResult,
 } from "./types";
 
@@ -89,6 +89,8 @@ export const api = {
   meta: () => get<Meta>("/api/meta"),
   /** Coverage figures for the landing band — derived server-side, never typed. */
   archiveScale: () => get<ArchiveScale>("/api/archive/scale"),
+  /** The most recent completed race, as a headline. Powers the landing card. */
+  featured: () => get<Featured>("/api/featured"),
   seasons: () => get<{ source: string; seasons: Season[] }>("/api/seasons"),
   races: (year: number) =>
     get<{ source: string; year: number; races: GrandPrix[] }>(`/api/seasons/${year}/races`),

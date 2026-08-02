@@ -23,6 +23,7 @@ import {
 } from "@/lib/chartTheme";
 import { cx, fmtLap, fmtSec } from "@/lib/format";
 import { useLivery } from "@/lib/liveryColor";
+import { Select } from "@/components/ui/Select";
 
 /* -------------------------------------------------------------------------- */
 /* Compare — a duel, told as a story.                                          */
@@ -515,14 +516,11 @@ function CompoundSeq({ seq }: { seq: string[] }) {
 function DriverSelect({ value, onChange, options, color }: {
   value: string; onChange: (v: string) => void; options: string[]; color: string;
 }) {
+  // the chip carries the driver's livery into the trigger and into every row,
+  // so the two sides of a comparison are told apart before they are read
   return (
-    <span className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-base-800 px-3 py-2 transition-colors hover:border-white/20">
-      <span className="h-2.5 w-2.5 rounded-full" style={{ background: color }} />
-      <select value={value} onChange={(e) => onChange(e.target.value)}
-        className="bg-transparent text-sm font-semibold text-ink outline-none">
-        {options.map((o) => <option key={o} value={o} className="bg-base-800">{o}</option>)}
-      </select>
-    </span>
+    <Select value={value} onChange={onChange} ariaLabel="Driver"
+      options={options.map((o) => ({ value: o, label: o, tint: o === value ? color : undefined }))} />
   );
 }
 

@@ -70,9 +70,24 @@ def mock_seasons() -> list[Season]:
     return [Season(year=y, events=len(_CALENDAR)) for y in _MOCK_YEARS]
 
 
+def _mock_date(year: int, rnd: int) -> str:
+    """A plausible date for a demo round.
+
+    THE DEMO HAS TO OBEY THE SAME RULE AS THE PRODUCT. Without dates every mock
+    event counted as run, so demo mode offered the Brazilian Grand Prix in
+    August and then reported no results for it — a real bug wearing the costume
+    of a data problem. Rounds are spread eleven days apart from early March,
+    which puts the back half of the calendar in the future for most of the year
+    exactly as a real season does.
+    """
+    from datetime import date, timedelta
+    return (date(year, 3, 8) + timedelta(days=(rnd - 1) * 11)).isoformat()
+
+
 def mock_grands_prix(year: int) -> list[GrandPrix]:
     return [GrandPrix(round=e["round"], name=e["name"], location=e["location"],
-                      country=e["country"], sessions=list(_SESSIONS)) for e in _CALENDAR]
+                      country=e["country"], sessions=list(_SESSIONS),
+                      date=_mock_date(year, e["round"])) for e in _CALENDAR]
 
 
 def _mock_report() -> SourceReport:

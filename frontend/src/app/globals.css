@@ -160,10 +160,17 @@ body {
    a density. The two compose, because a reader who needs larger type and wants
    more of the timing screen on one page is asking for both and is not confused.
    --------------------------------------------------------------------------- */
-:root                                    { --root-size: 100%; }
+:root                                    { --root-size: 100%; --row-y: 0.625rem; }
 :root[data-text="large"]                 { --root-size: 112.5%; }
-:root[data-density="compact"]            { --root-size: 91%; }
-:root[data-text="large"][data-density="compact"] { --root-size: 103%; }
+:root[data-density="compact"]            { --root-size: 88%; --row-y: 0.42rem; }
+:root[data-text="large"][data-density="compact"] { --root-size: 100%; }
+
+/* Compact also tightens the things the ramp cannot reach on its own: the rows
+   of a results table and a standings table, which are where "more of it on one
+   screen" is actually cashed in. `--row-y` is theirs alone — a density control
+   that squeezed prose as hard as it squeezes a timing screen would make the
+   Race Story unreadable in exchange for four more rows nobody was reading. */
+.den-row { padding-top: var(--row-y); padding-bottom: var(--row-y); }
 
 /* ---------------------------------------------------------------------------
    Accent intensity.
@@ -175,8 +182,21 @@ body {
    — the canvas reads it out of the computed style, so the light in the picture
    and the light on the page can never disagree.
    --------------------------------------------------------------------------- */
-:root[data-intensity="subtle"] { --glow-k: .45; }
-:root[data-intensity="vivid"]  { --glow-k: 1.65; }
+:root[data-intensity="subtle"] { --glow-k: .4; }
+:root[data-intensity="vivid"]  { --glow-k: 1.8; }
+
+/* Intensity is a property of the ROOM, so it has to reach everything the accent
+   lights and not only the wash behind the page: the primary control's throw,
+   the raised panel's corner, a chosen card's bloom, the focus ring, and the
+   hero's own lamps (which the canvas reads out of the computed style). A
+   setting that changes one of five accent-lit surfaces reads as broken. */
+.shadow-glow {
+  box-shadow:
+    0 0 0 1px rgb(var(--tint) / .04),
+    0 18px 50px -18px rgb(var(--accent) / calc(.35 * var(--glow-k))),
+    var(--el-3);
+}
+:focus-visible { outline-color: rgb(var(--accent-soft) / calc(.75 * var(--glow-k))); }
 
 /* ---------------------------------------------------------------------------
    How long a chart takes to draw itself.
@@ -211,6 +231,24 @@ body {
     radial-gradient(700px 500px at 5% 0%, var(--glow-b), transparent 55%);
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------------------
+   The page, held still behind an overlay. See lib/useScrollLock.
+
+   The padding is the scrollbar's own width, paid back so that removing the
+   scrollbar does not move the layout. `.modal-scroll` is the other half: it
+   marks the box inside an overlay that is allowed to scroll, and stops the
+   scroll chaining out of it when it reaches an end.
+   --------------------------------------------------------------------------- */
+:root[data-locked] {
+  overflow: hidden;
+  padding-right: var(--lock-gutter, 0px);
+}
+.modal-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* thin custom scrollbars */
@@ -279,7 +317,8 @@ body {
   .panel-hero {
     @apply relative min-w-0 overflow-hidden rounded-2xl border border-white/[0.10] backdrop-blur-sm;
     background:
-      radial-gradient(120% 100% at 0% 0%, rgb(var(--accent) / 0.07), transparent 58%),
+      radial-gradient(120% 100% at 0% 0%,
+        rgb(var(--accent) / calc(0.07 * var(--glow-k))), transparent 58%),
       rgb(var(--base-850) / 0.9);
     box-shadow: var(--el-3);
   }
@@ -725,6 +764,34 @@ html.theme-sweep::view-transition-new(root) {
 .stagger-2 { animation-delay: .13s; }
 .stagger-3 { animation-delay: .23s; }
 .stagger-4 { animation-delay: .33s; }
+
+/* ---------------------------------------------------------------------------
+   The welcome screen's entrance.
+
+   Six elements, a beat apart, in the order they have to be read: the mark, the
+   claim, the sentence, the question, the two answers, the reassurance. It is
+   the landing hero's stagger stretched — this screen is looked at rather than
+   scanned, so it can afford to take a second longer to assemble, and the extra
+   air between beats is most of what separates "premium" from "quick".
+   --------------------------------------------------------------------------- */
+.wc-1, .wc-2, .wc-3, .wc-4, .wc-5, .wc-6 {
+  animation: hero-in .85s cubic-bezier(.22, 1, .36, 1) both;
+}
+.wc-1 { animation-delay: .10s; }
+.wc-2 { animation-delay: .20s; }
+.wc-3 { animation-delay: .32s; }
+.wc-4 { animation-delay: .52s; }
+.wc-5 { animation-delay: .62s; }
+.wc-6 { animation-delay: .80s; }
+.wc-pick { box-shadow: var(--el-2); }
+.wc-pick[aria-pressed="true"] {
+  box-shadow:
+    0 0 0 1.5px rgb(var(--pick) / .6),
+    0 24px 60px -28px rgb(var(--pick) / calc(.9 * var(--glow-k)));
+}
+@media (prefers-reduced-motion: reduce) {
+  .wc-1, .wc-2, .wc-3, .wc-4, .wc-5, .wc-6 { animation: none; }
+}
 
 @keyframes hero-trace { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
 .hero-trace {
@@ -1286,6 +1353,85 @@ html.theme-sweep::view-transition-new(root) {
 .seg-opt.is-on { color: rgb(var(--ink)); font-weight: 600; }
 .seg-sm .seg-opt { padding: 3.5px 8px; font-size: 11px; }
 
+/* ---------------------------------------------------------------------------
+   The dropdown, drawn by us rather than by the operating system.
+
+   The trigger is the same object as every other control on the page — same
+   radius, same border weight, same hover — so a row of a picker, a button and a
+   pill reads as one row. The menu opens from the edge it is attached to, which
+   is the only transform-origin that makes an opening look like an opening
+   rather than a card fading in near a button.
+   --------------------------------------------------------------------------- */
+.sel-trigger {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; min-width: 0;
+  height: 38px; padding: 0 10px 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgb(var(--tint) / .1);
+  background: rgb(var(--base-800));
+  font-size: 13.5px;
+  color: rgb(var(--ink));
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color var(--dur-2) var(--ease-out),
+    background-color var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out);
+}
+.sel-trigger:hover { border-color: rgb(var(--tint) / .22); }
+.sel-trigger.is-open {
+  border-color: rgb(var(--accent) / .5);
+  box-shadow: 0 0 0 3px rgb(var(--accent) / .12);
+}
+@media (min-width: 640px) {
+  .sel-trigger { min-width: 132px; width: auto; }
+  .sel-wide { min-width: 232px; }
+}
+
+.sel-chip { width: 3px; height: 15px; border-radius: 2px; flex: none; }
+
+.sel-menu {
+  position: fixed;
+  z-index: 90;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 5px;
+  border-radius: 12px;
+  border: 1px solid rgb(var(--tint) / .12);
+  background: rgb(var(--base-850));
+  box-shadow: var(--el-3), 0 0 0 1px rgb(var(--base-950) / .5);
+  animation: sel-in calc(var(--dur-2)) var(--ease-out) both;
+  transform-origin: top left;
+}
+.sel-menu.is-up { transform-origin: bottom left; animation-name: sel-in-up; }
+@keyframes sel-in {
+  from { opacity: 0; transform: translateY(-4px) scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes sel-in-up {
+  from { opacity: 0; transform: translateY(4px) scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .sel-menu { animation: none; } }
+
+.sel-opt {
+  display: flex; align-items: center; gap: 8px;
+  min-height: 30px; padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: rgb(var(--ink-muted));
+  cursor: pointer;
+  /* colour only — a row that moves under the pointer is a row you can miss */
+  transition: color var(--dur-1) linear, background-color var(--dur-1) linear;
+}
+.sel-opt.is-active { background: rgb(var(--tint) / .06); color: rgb(var(--ink)); }
+.sel-opt.is-on { color: rgb(var(--ink)); font-weight: 600; }
+.sel-hint {
+  margin-left: 6px; flex: none;
+  font-size: 11px; color: rgb(var(--ink-faint));
+  font-variant-numeric: tabular-nums;
+}
+
 .sw {
   position: relative;
   width: 36px; height: 20px;
@@ -1303,14 +1449,6 @@ html.theme-sweep::view-transition-new(root) {
   transition: transform var(--dur-3) var(--ease-out), background-color var(--dur-2) var(--ease-out);
 }
 .sw.is-on .sw-knob { transform: translateX(16px); background: #fff; }
-
-/* The preview's bars draw themselves at whatever speed the reader chose, which
-   is the only way to demonstrate a duration in a still panel. `--chart-ms` is
-   the same variable the real charts read. */
-.pv-grow { animation: pv-grow var(--chart-ms) var(--ease-out) both; transform-origin: left center; }
-@keyframes pv-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-@media (prefers-reduced-motion: reduce) { .pv-grow { animation: none; } }
-
 /* ---------------------------------------------------------------------------
    The windows in the three doors.
 
@@ -1359,6 +1497,60 @@ html.theme-sweep::view-transition-new(root) {
 }
 @keyframes art-tick { 0%, 100% { opacity: .5; } 46% { opacity: 1; } }
 
+/* ---------------------------------------------------------------------------
+   The doors' windows, lit.
+
+   Four layers between the card and the drawing, and the one that does the work
+   is `.door-bloom`: the same artwork, blurred and brightened, sitting under the
+   crisp copy. It is the cheapest possible version of what the hero's mip chain
+   does — light pooling where the picture is bright rather than colour sitting
+   on a shape — and next to the hero it is the difference between a window and
+   a sticker. The lamp behind it means that light has somewhere to land.
+   --------------------------------------------------------------------------- */
+.door-lamp {
+  background:
+    radial-gradient(78% 120% at 78% 8%, rgb(var(--door) / .20), transparent 62%),
+    radial-gradient(90% 130% at 10% 100%, rgb(var(--door) / .09), transparent 58%);
+  transition: opacity var(--dur-4) var(--ease-out);
+  opacity: .8;
+}
+.art-host:hover .door-lamp { opacity: 1; }
+
+.door-grid {
+  background-image:
+    linear-gradient(rgb(var(--tint) / .028) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--tint) / .028) 1px, transparent 1px);
+  background-size: 26px 26px;
+  -webkit-mask-image: radial-gradient(120% 90% at 50% 60%, #000, transparent 78%);
+  mask-image: radial-gradient(120% 90% at 50% 60%, #000, transparent 78%);
+}
+
+.door-bloom {
+  filter: blur(7px) saturate(150%) brightness(1.5);
+  opacity: .55;
+  transition: opacity var(--dur-4) var(--ease-out), filter var(--dur-4) var(--ease-out);
+}
+.art-host:hover .door-bloom { opacity: .8; filter: blur(9px) saturate(165%) brightness(1.7); }
+/* On paper an additive-looking bloom is just a smudge — light needs a dark room
+   to pool in. Light mode keeps the layer and all but removes it. */
+:root[data-theme="light"] .door-bloom { opacity: .3; filter: blur(6px) saturate(120%); }
+:root[data-theme="light"] .art-host:hover .door-bloom { opacity: .42; }
+
+.door-vignette {
+  background:
+    linear-gradient(to bottom, rgb(var(--base-950) / .35) 0%, transparent 26%,
+                    transparent 52%, rgb(var(--base-900) / .62) 100%);
+}
+:root[data-theme="light"] .door-vignette {
+  background:
+    linear-gradient(to bottom, rgb(var(--base-900) / .3) 0%, transparent 26%,
+                    transparent 52%, rgb(var(--base-900) / .7) 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .door-lamp, .door-bloom { transition: none; }
+}
+
 /* one soft pass across the window, so it reads as a display */
 .art-scan {
   left: -5rem;
@@ -1384,6 +1576,14 @@ html.theme-sweep::view-transition-new(root) {
 /* The accent's own light on the primary control, scaled by the reader's
    intensity setting — this used to be an inline box-shadow, which no
    preference could reach. */
+/* While a tour is up the reader's own scrolling is swallowed (see GuidedTour),
+   so the scrollbar would sit there looking operable while doing nothing. Hiding
+   it removes the invitation without changing the layout — `scrollbar-gutter`
+   keeps the page exactly where it was. */
+.tour-open { scrollbar-gutter: stable; }
+.tour-open::-webkit-scrollbar { width: 0; height: 0; }
+.tour-open { scrollbar-width: none; }
+
 /* the timer on an auto-advancing tour beat: it promises how long you have */
 @keyframes tour-hold { from { transform: translateX(-100%); } to { transform: none; } }
 
@@ -1396,7 +1596,9 @@ html.theme-sweep::view-transition-new(root) {
 
 .mode-card { box-shadow: var(--el-2); }
 .mode-card[data-on="true"] {
-  box-shadow: 0 0 0 1px rgb(var(--pick) / .35), 0 26px 60px -30px rgb(var(--pick) / .75);
+  box-shadow:
+    0 0 0 1px rgb(var(--pick) / .35),
+    0 26px 60px -30px rgb(var(--pick) / calc(.75 * var(--glow-k)));
 }
 :root[data-theme="light"] .mode-card[data-on="true"] {
   box-shadow: 0 0 0 1.5px rgb(var(--pick) / .45), 0 10px 26px -20px rgb(var(--pick) / .5);
@@ -1428,6 +1630,28 @@ html.theme-sweep::view-transition-new(root) {
   );
   -webkit-mask-image: linear-gradient(100deg, #000 0%, #000 40%, rgba(0,0,0,.55) 62%, transparent 84%);
   mask-image: linear-gradient(100deg, #000 0%, #000 40%, rgba(0,0,0,.55) 62%, transparent 84%);
+}
+
+/* THE WELCOME SCREEN'S SCRIM.
+   Centred type has no side to fall off toward, so the falloff is radial: a pool
+   of page colour under the words, opening out to the full field at the edges of
+   the frame. Two stops rather than five, because there is far less to protect —
+   one paragraph and two cards, not a headline, a sentence and a button row. */
+.hero-pool {
+  background:
+    radial-gradient(120% 78% at 50% 46%,
+      rgb(var(--base-950) / .90) 0%,
+      rgb(var(--base-950) / .74) 34%,
+      rgb(var(--base-950) / .30) 62%,
+      transparent 88%);
+}
+:root[data-theme="light"] .hero-pool {
+  background:
+    radial-gradient(120% 78% at 50% 46%,
+      rgb(var(--base-900) / .92) 0%,
+      rgb(var(--base-900) / .78) 34%,
+      rgb(var(--base-900) / .34) 62%,
+      transparent 88%);
 }
 
 /* In light mode the page colour is a warm grey, and 94% of a warm grey laid

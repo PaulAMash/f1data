@@ -203,6 +203,8 @@ export interface GrandPrix {
   location?: string | null; country?: string | null; circuit?: Circuit | null;
   date?: string | null; sessions: string[];
   session_times?: Record<string, string>;   // session name -> ISO start time
+  /** Has the race been run? Decided server-side — see service.mark_completed. */
+  completed?: boolean;
 }
 export interface Meta {
   app: string; mock_mode: boolean; live_fetch_enabled: boolean; llm_available: boolean;
@@ -217,4 +219,20 @@ export interface ArchiveScale {
   races: number;
   season_races: number;
   through: number;
+}
+
+/** The landing page's featured race. See backend /api/featured. */
+export interface Featured {
+  available: boolean;
+  year?: number;
+  gp?: string;
+  circuit?: string | null;
+  laps?: number;
+  winner?: { code: string; name: string; team: string; team_color: string; grid?: number | null } | null;
+  margin?: string | null;
+  story?: string | null;
+  turning_point?: { title: string; lap?: number | null } | null;
+  finishers?: number;
+  entries?: number;
+  source?: string;
 }

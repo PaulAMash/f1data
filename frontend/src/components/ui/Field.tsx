@@ -1,5 +1,6 @@
 "use client";
 import { Check } from "lucide-react";
+import { Select } from "@/components/ui/Select";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
@@ -81,29 +82,13 @@ export function Switch({ on, onChange, label }: {
   );
 }
 
-/** A native select, dressed. Used only where the list is genuinely long. */
+/** A list too long for a segmented control. See components/ui/Select. */
 export function Choose<T extends string | number>({ value, onChange, options, id }: {
   value: T; onChange: (v: T) => void;
   options: readonly { value: T; label: string }[];
   id?: string;
 }) {
-  return (
-    <div className="relative">
-      <select id={id} value={String(value)}
-        onChange={(e) => {
-          const raw = e.target.value;
-          const match = options.find((o) => String(o.value) === raw);
-          if (match) onChange(match.value);
-        }}
-        className="appearance-none rounded-lg border border-white/[0.1] bg-base-800 py-1.5 pl-3 pr-8 text-[12.5px] text-ink outline-none transition-colors hover:border-white/[0.2] focus:border-accent/50">
-        {options.map((o) => <option key={String(o.value)} value={String(o.value)}>{o.label}</option>)}
-      </select>
-      <span aria-hidden
-        className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] text-ink-faint">
-        ▼
-      </span>
-    </div>
-  );
+  return <Select value={value} onChange={onChange} options={options} id={id} />;
 }
 
 /** The big one. A card that previews the thing it selects. */

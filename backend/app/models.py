@@ -76,6 +76,10 @@ class GrandPrix(BaseModel):
     # session name -> ISO start time, so the UI can offer a session only once it
     # has actually begun (an in-progress weekend shows P1 but not yet the race)
     session_times: dict[str, str] = Field(default_factory=dict)
+    # Has the race itself been run? Stamped server-side by the service layer so
+    # every consumer gets the same answer — see service.mark_completed for why
+    # this is not left to each client to work out from `date`.
+    completed: bool = True
 
 
 class Season(BaseModel):

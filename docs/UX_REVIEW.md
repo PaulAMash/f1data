@@ -3,8 +3,106 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V59**. Reviewed at 1440×900 and 390×844, in both themes, with motion full and
-calm, and in both language styles.
+Last pass: **V60**. Reviewed at 1440×950 and 390×844, in both themes, with motion full and
+calm, in both language styles, and walked end to end as a first-time visitor.
+
+---
+
+## Fixed in V60
+
+### 1. Races that had not been run were offered, and loaded — *critical*
+
+Picking the Brazilian Grand Prix in August produced an empty session. The rule
+existed (`event_completed`) and exactly one caller asked it, so both calendar
+endpoints returned whole seasons and both pickers offered them. It is stamped on
+the model now and travels with the data — and, because a selection can also
+arrive from a link or from restored state, the Explorer snaps to the most recent
+race that *is* on offer rather than fetching whatever it was handed. Verified:
+a deep link to `?gp=Brazilian Grand Prix` corrects itself. The demo obeys the
+same rule, which it previously could not, because its fixture calendar had no
+dates at all.
+
+### 2. The first decision was the third thing on the second screen — *critical*
+
+"Choose your experience" sat below a headline, five statistics and a scroll. It
+has a screen of its own now, and the landing page — which a reader reaches after
+answering — has that band removed entirely.
+
+### 3. The tutorial took the page away before it had been looked at — *high*
+
+It opened itself 1.4s after load. It begins on Start exploring now, which is an
+unambiguous "I am ready". It also locks the reader's own scrolling (the input,
+not the scrolling, so the tour can still move the page), waits for the page to
+stop before showing its card, and ends on Explore whether it is finished or
+skipped — rather than abandoning the reader in Settings holding no session.
+
+### 4. Back walked the browser's history — *high*
+
+Five presses to get home from a fourth page, and no press predictable. One level,
+one destination, one press. Forward is gone with the stack it belonged to.
+
+### 5. "See how it works" did not show how it works — *high*
+
+It scrolled down the page: a control whose label is a question, answering it with
+a section heading. It opens the five-screen demo on a real session now, which
+also retires the duplicate entry point that had been sitting in Quick start.
+
+### 6. Quick start explained a product the page had already explained twice — *high*
+
+Three cards describing what Pitwall IQ does, under a headline describing what it
+does, above three doors describing what it does. Replaced with the most recent
+Grand Prix — real winner, real margin, the sentence the product wrote about it —
+and three questions that open it. Not an explanation: the thing itself.
+
+### 7. Every dropdown was drawn by the operating system — *high*
+
+Platform radius, platform type, platform shadow, and on Chrome a menu that opened
+*upward* whenever the trigger was below the fold. Replaced with one listbox used
+in all six places, portalled so nothing can clip it and measured so it opens
+downward unless it genuinely cannot.
+
+### 8. Settings existed more than they were felt — *high*
+
+Density moved the type ramp and nothing else; intensity reached the page wash and
+not the four other accent-lit surfaces. Both reach everything now, and the row
+rhythm of every table moves with density — which is where "more on one screen" is
+actually cashed in.
+
+### 9. The Live Preview was not representative — *medium*
+
+A miniature of one card cannot show what density does to a timing screen or what
+chart speed does to a chart, so a reader still had to leave to find out. Removed,
+and its column given back to the controls, which needed it more.
+
+### 10. Historical was the plainest screen in the product — *medium*
+
+A 14px label over a 20px heading, introducing the largest thing in the product,
+above eight grey columns. It has the header the Race Explorer has, and both its
+tables now carry team liveries, a podium hierarchy and dimmed retirements.
+
+### 11. Current-season standings existed only in the archive — *medium*
+
+Historical has carried a championship table since it was built; the Race
+Explorer — where a reader actually is when "so where does that leave the title?"
+occurs to them — had none. Same component, same visual language, no second season
+picker to contradict the one the page already has.
+
+### 12. Clear focus cleared half the focus — *medium*
+
+A driver and a key moment both dim the plot and only one of them was cleared, so
+pressing it removed half the emphasis and left the reader to work out where the
+rest came from. Anything that dims the plot is focus, and focus is one state.
+
+### 13. Overlays scrolled the page behind them — *medium*
+
+Scroll chaining is the default. The root is locked with the scrollbar gutter paid
+back as padding, and every scrolling box inside an overlay contains its own
+chain.
+
+### 14. The archive could not tell a missing calendar from a missing result — *low*
+
+Both produced "No results found for this selection" — a sentence about a
+selection the reader was never able to make, under a picker showing an em dash.
 
 ---
 
@@ -376,11 +474,26 @@ about a dialog would need the tour to open it first, and `Beat` has no verb for 
 `tab` is the only drive it knows. Worth generalising the first time it is actually needed and
 not before.
 
+### D. The welcome screen is the only place the ambient field is used — *low*
+
+`HeroField` now has two configurations and the second one has one caller. That is the right
+number for now, but a loading screen or an empty state would both be better with it than with
+a spinner, and the moment there is a third caller the variant list should become a prop bag
+rather than a widening union.
+
+### E. Density cannot reach px-based type — *low, by design for now*
+
+Compact scales the root, so every rem-based padding, gap and size moves with it — but the
+product also uses a lot of arbitrary px sizes (`text-[13.5px]`), and those hold still. In
+practice this reads well: the layout tightens while small labels stay legible. It is recorded
+because it is a decision, not an oversight, and a future ramp built entirely in rem would make
+the control stronger.
+
 ---
 
 ## Verification notes
 
-Three traps worth recording for anyone repeating this review with Playwright.
+Four traps worth recording for anyone repeating this review.
 
 **A full-page screenshot lies about a page with `vh` units in it.** Chromium expands the
 viewport to the full document height before capturing, so a hero declared `min-h-[80vh]`
@@ -391,6 +504,14 @@ have vanished into empty space. Scroll a real viewport and capture that instead.
 race card whose accessible name happens to contain the word resolved alongside the tour's
 control and every click timed out, which reads exactly like a broken button and is not one.
 `exact=True`, always.
+
+**A dev server whose `.next` has been rebuilt under it serves a page that never hydrates.**
+Running `npm run build` while `next dev` is up replaces the development chunks with production
+ones, so the HTML renders, every chunk 404s, and no effect ever runs — which looks exactly like
+a broken redirect, a broken effect or a broken component, and cost an hour twice now. If a
+page renders but nothing reacts, check `/_next/static/chunks/main-app.js` before reading any
+more code. Kill by PID (the process is `next-server`, not `next dev`, so `pkill -f "next dev"`
+misses it), delete `.next`, and start one server.
 
 **And the original one: headless Chromium at `device_scale_factor: 2` does not run smooth
 scrolling at all.** A bare
