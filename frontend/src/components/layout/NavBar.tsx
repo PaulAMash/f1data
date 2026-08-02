@@ -1,7 +1,6 @@
 "use client";
 import Link from "next/link";
 import { ArrowLeft, Radar, Settings } from "lucide-react";
-import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { useNavHistory } from "@/lib/nav";
 import { cx } from "@/lib/format";
 
@@ -19,6 +18,11 @@ import { cx } from "@/lib/format";
 /* WHAT THE BAR GAINED INSTEAD: a way back. See lib/nav.tsx — the controls     */
 /* appear only when there is somewhere inside the product to go, so on a first */
 /* page they are absent rather than present and dead.                          */
+/*                                                                            */
+/* AND WHAT IT LOST: the theme toggle, for the same reason Simple/Advanced     */
+/* went. Both are now asked once, on the welcome screen, where the choice can  */
+/* be explained and felt — and both live permanently in Settings. A toggle in  */
+/* the chrome is a preference pretending to be a tool.                         */
 /* -------------------------------------------------------------------------- */
 
 export function NavBar({ active }: { active?: "home" | "explorer" | "history" | "settings" }) {
@@ -56,9 +60,12 @@ export function NavBar({ active }: { active?: "home" | "explorer" | "history" | 
           <Link href="/history" data-tour="nav-history" className={link(active === "history")}>Historical</Link>
         </nav>
 
-        {/* The room controls: how it looks, and everything else. */}
-        <div className="ml-auto flex items-center gap-1.5">
-          <ThemeToggle />
+        {/* One control, because there is one thing here that is not navigation.
+            The theme toggle used to sit beside it — see the note above: it is a
+            preference, it is now asked for on the way in, and it lives in
+            Settings with every other answer. A bar with two competing gestures
+            in the corner is a bar that has not decided what it is for. */}
+        <div className="ml-auto flex items-center">
           <Link href="/settings" aria-label="Settings" title="Settings — mode, theme, units, motion"
             data-tour="settings"
             className={cx("grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-all duration-[--dur-2] ease-[--ease-out]",

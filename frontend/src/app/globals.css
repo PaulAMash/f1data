@@ -1098,13 +1098,89 @@ html.theme-sweep::view-transition-new(root) {
 .wc-5 { animation-delay: .62s; }
 .wc-6 { animation-delay: .80s; }
 .wc-pick { box-shadow: var(--el-2); }
+/* `--pick` is only set on the depth cards; the other two questions fall back to
+   the accent, so one rule lights the chosen answer on all three rows.
+
+   The quiet variant exists because three lit cards down one screen is three
+   things shouting. The first question is the one that changes what the product
+   IS, so it keeps the full halo; the other two get the ring and the tick and
+   nothing else. Selection still reads instantly — it just stops competing. */
 .wc-pick[aria-pressed="true"] {
   box-shadow:
-    0 0 0 1.5px rgb(var(--pick) / .6),
-    0 24px 60px -28px rgb(var(--pick) / calc(.9 * var(--glow-k)));
+    0 0 0 1.5px rgb(var(--pick, var(--accent)) / .6),
+    0 24px 60px -28px rgb(var(--pick, var(--accent)) / calc(.9 * var(--glow-k)));
 }
+.wc-pick.is-quiet[aria-pressed="true"] {
+  box-shadow:
+    0 0 0 1.5px rgb(var(--accent) / .5),
+    var(--el-2);
+}
+
+/* The three pillars of the introduction, and the three questions of the setup:
+   both arrive in sequence rather than as a block, because a row of three
+   identical cards appearing at once reads as a table and a row that assembles
+   reads as an argument being made. */
+.wc-pillar, .wc-row {
+  animation: hero-in .7s cubic-bezier(.22, 1, .36, 1) both;
+  animation-delay: calc(.62s + var(--i) * .1s);
+}
+.wc-row { animation-delay: calc(.08s + var(--i) * .09s); }
+
+/* ---------------------------------------------------------------------------
+   The room the welcome screen is in.
+
+   The field behind it is the product actually running — a real race, drawn as
+   light, by the same renderer the landing hero uses. Two layers sit on top of
+   it and neither draws anything of its own:
+
+   ::after   the falloff. Without it the canvas ends at a hard straight line
+             down the side of the window, which is the single clearest tell
+             that a background is a rectangle rather than a room.
+   ::before  one slow sweep, top to bottom, about every twelve seconds. It is
+             the only thing on this screen with a period longer than a second,
+             and it is what turns "a nice gradient" into "something is running
+             behind this" — the operations-terminal note, spent once.
+   --------------------------------------------------------------------------- */
+.wc-room::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 85% at 50% 42%, transparent 38%, rgb(var(--base-950) / .55) 78%, rgb(var(--base-950) / .82)),
+    linear-gradient(to bottom, rgb(var(--base-950) / .35), transparent 22%, transparent 76%, rgb(var(--base-950) / .5));
+}
+
+.wc-room::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 34vh;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgb(var(--speed) / .05) 45%,
+    rgb(var(--speed) / .09) 52%,
+    rgb(var(--speed) / .05) 59%,
+    transparent
+  );
+  animation: wc-sweep calc(12s * var(--m)) cubic-bezier(.5, 0, .5, 1) infinite;
+}
+@keyframes wc-sweep {
+  0%       { transform: translateY(-40vh); opacity: 0; }
+  12%      { opacity: 1; }
+  55%      { opacity: 1; }
+  70%, 100% { transform: translateY(115vh); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .wc-room::before { display: none; } }
+
 @media (prefers-reduced-motion: reduce) {
-  .wc-1, .wc-2, .wc-3, .wc-4, .wc-5, .wc-6 { animation: none; }
+  .wc-1, .wc-2, .wc-3, .wc-4, .wc-5, .wc-6,
+  .wc-pillar, .wc-row { animation: none; }
 }
 
 @keyframes hero-trace { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
@@ -1922,6 +1998,45 @@ html.theme-sweep::view-transition-new(root) {
 @keyframes tour-hold { from { transform: translateX(-100%); } to { transform: none; } }
 
 .cta-glow { box-shadow: 0 12px 40px -12px rgb(var(--accent) / calc(.85 * var(--glow-k))); }
+
+/* ---------------------------------------------------------------------------
+   The tour, waiting.
+
+   A reader who asked for a guided tour lands on the home page and nothing
+   happens to them — the page is the argument for the product and opening a
+   modal over it two seconds in takes that argument away before it is heard.
+   The tour attaches itself to the control the page already wanted pressed and
+   waits there indefinitely.
+
+   Which makes the ring the whole feature: it has to be impossible to miss and
+   possible to ignore. One element breathes, nothing moves, and it is the ONLY
+   thing on the page doing either — the rule that nothing may happen to
+   everything at once is exactly what buys this one thing its authority.
+   --------------------------------------------------------------------------- */
+.cta-armed { position: relative; }
+.cta-armed::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 16px;
+  border: 1.5px solid rgb(var(--accent) / .55);
+  pointer-events: none;
+  animation: cta-breathe calc(2.8s * var(--m)) var(--ease-in-out) infinite;
+}
+@keyframes cta-breathe {
+  0%, 100% { opacity: .22; transform: scale(1); }
+  50%      { opacity: .85; transform: scale(1.035); }
+}
+.tour-cue { animation: cue-in .7s cubic-bezier(.22, 1, .36, 1) .55s both; }
+@keyframes cue-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* the ring stays — it is information, not decoration — it simply holds still */
+  .cta-armed::after { animation: none; opacity: .7; }
+  .tour-cue { animation: none; }
+}
 
 /* The oversized numeral behind a step. A tint at 7% is a whisper on black and
    very nearly nothing on white, so paper gets a little more of it. */

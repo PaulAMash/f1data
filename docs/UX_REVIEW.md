@@ -3,9 +3,44 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V61**. Reviewed at 1440×1000 and 390×844, in both themes, in both language
-styles, and walked end to end as a first-time visitor down both branches of the welcome
-screen — tutorial taken and tutorial declined.
+Last pass: **V62**. Reviewed at 1440×1000, 1440×900 and 390×844, in both themes, in both
+language styles, and walked end to end as a first-time visitor down both branches of the
+welcome screen — tutorial taken and tutorial declined — plus the return path through
+Settings.
+
+---
+
+## Fixed in V62
+
+### 1. The landing page was doing onboarding's job — *was high*
+
+It had to be the argument for the product and the place a stranger was introduced to it, and
+those want opposite things. Split into three pages with one job each: Welcome answers "what is
+this", Home answers "I want to explore", Explorer answers "teach me the race".
+
+### 2. The welcome screen introduced nothing — *was medium*
+
+It asked two questions under a headline. It now opens on what the product is, why anyone would
+use it and what makes it different — three pillars, the third of which is the one nothing else
+in this category claims: every figure names its source, and anything missing is said out loud.
+
+### 3. Setup was two disconnected steps — *was medium*
+
+Depth, theme and the tour are now three rows on one screen, all pre-answered, with the primary
+control live from the first frame. Choosing the theme changes the screen under the press.
+
+### 4. The theme toggle was a preference pretending to be a tool — *was low*
+
+It took permanent space in the chrome of every page to hold an answer given once. Asked on the
+welcome screen, kept in Settings, removed from the bar. `ThemeToggle.tsx` deleted rather than
+left orphaned, and the tour beat that pointed at it folded into the Settings beat.
+
+### 5. Nothing told the reader the tour was waiting — *was medium*
+
+A reader who asked for the tour landed on Home with one faint line of grey text. There is now a
+pill above the control, a breathing ring around it — the only motion on the page — a line
+explaining that nothing starts until they press it, and a way to decline. Verified that the
+page stays fully scrollable and that the tour still does not begin on its own.
 
 ---
 
@@ -586,6 +621,11 @@ a broken redirect, a broken effect or a broken component, and cost an hour twice
 page renders but nothing reacts, check `/_next/static/chunks/main-app.js` before reading any
 more code. Kill by PID (the process is `next-server`, not `next dev`, so `pkill -f "next dev"`
 misses it), delete `.next`, and start one server.
+
+**`add_init_script` runs on every navigation, not once.** A probe that seeds `localStorage`
+unconditionally silently undoes anything the page stored between navigations — which made
+"Replay the guided tour" in Settings look completely broken while the pref it writes was
+provably correct one line earlier. Seed behind an `if (!localStorage.getItem(...))`.
 
 **A probe that waits for "a dialog" will pass the wrong dialog.** The tour now renders a
 holding card while it fetches its first route, and the first-run script broke on it — reporting
