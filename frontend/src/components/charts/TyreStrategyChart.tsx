@@ -97,7 +97,7 @@ export function TyreStrategyChart({
                           style={{
                             left: `${left}%`, width: `${width}%`,
                             background: COMPOUND_COLOR[s.compound],
-                            color: named ? "#0b0e16" : "#dbe2ee",
+                            color: named ? "#0b0e16" : "rgb(var(--ink))",
                           }}>
                           {width > 5 ? `${COMPOUND_SHORT[s.compound]}${s.laps}` : ""}
                         </div>
@@ -212,7 +212,7 @@ function StintTooltip({ s, name, x, y }: { s: Stint; name: string; x: number; y:
       }}>
       {/* the compound as a band across the top: the card is colour-coded to the
           bar you're pointing at without tinting any of the text */}
-      <span className="block h-[3px] w-full" style={{ background: named ? c : "rgba(255,255,255,.22)" }} />
+      <span className="block h-[3px] w-full" style={{ background: named ? c : "rgb(var(--tint) / .22)" }} />
       <div className="p-3">
         {/* the row this bar belongs to — in a twenty-row chart, "whose stint is
             this?" is the first question the tooltip should answer */}

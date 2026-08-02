@@ -125,3 +125,42 @@ def test_qa_answers_everyday_questions():
     assert a.kind == "loser"
     # and no fallback should ever demand "a more specific question"
     assert "more specific question" not in " ".join(a.missing_data)
+
+
+# --------------------------------------------------------------------------- #
+# Archive coverage — the landing page's statistics
+# --------------------------------------------------------------------------- #
+def test_archive_scale_is_derived_not_asserted():
+    """Every figure on the landing band has to come out of the table."""
+    from datetime import date
+    from app.archive_scale import archive_scale, RACES_PER_SEASON
+
+    s = archive_scale(date(2026, 8, 1))
+    assert s["first_season"] == 1950
+    assert s["season"] == 2026
+    # inclusive of the season in progress
+    assert s["seasons"] == 77
+    # and the race count must stop at the last COMPLETE season, so the page can
+    # never claim a Grand Prix that has not been run
+    assert s["races"] == sum(n for y, n in RACES_PER_SEASON.items() if y <= 2025)
+    assert s["through"] == 2025
+    assert s["season_races"] == RACES_PER_SEASON[2026]
+
+
+def test_archive_scale_rolls_over_with_the_calendar():
+    """The whole point is that it is not a literal — it has to move on its own."""
+    from datetime import date
+    from app.archive_scale import archive_scale
+
+    a = archive_scale(date(2026, 12, 31))
+    b = archive_scale(date(2027, 1, 1))
+    assert b["seasons"] == a["seasons"] + 1
+    assert b["races"] > a["races"]
+
+
+def test_archive_scale_route():
+    r = client.get("/api/archive/scale")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["first_season"] == 1950
+    assert body["races"] > 1000

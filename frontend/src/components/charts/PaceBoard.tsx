@@ -153,7 +153,7 @@ export function PaceBoard({
                   {/* every bar in the product measures itself into place on
                       arrival; a staggered delay makes the board fill like a
                       timing screen rather than a static table */}
-                  <span className="block h-full rounded-full transition-[width] duration-700 ease-out"
+                  <span className="draw-in block h-full rounded-full"
                     style={{
                       width: grown ? `${Math.max(6, 100 - (e.gap / maxGap) * 72)}%` : "0%",
                       background: e.color,

@@ -19,8 +19,10 @@ import { deriveWindows, EVENT, type Win } from "@/lib/raceEvents";
 import {
   CHART_MARGIN, GRID_COLOR, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE, TOOLTIP_STYLE,
   axisLine, axisTick,
+  SURFACE_COLOR,
 } from "@/lib/chartTheme";
 import { cx, fmtLap, fmtSec } from "@/lib/format";
+import { useLivery } from "@/lib/liveryColor";
 
 /* -------------------------------------------------------------------------- */
 /* Compare — a duel, told as a story.                                          */
@@ -45,8 +47,10 @@ export function DriverComparison({
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // liveries are tuned for a dark broadcast graphic; several vanish on white
+  const paint = useLivery();
   const drvOf = (c: string) => bundle.session.drivers.find((d) => d.code === c);
-  const colorOf = (c: string) => drvOf(c)?.team_color ?? "#888";
+  const colorOf = (c: string) => paint(drvOf(c)?.team_color);
   const nameOf = (c: string) => drvOf(c)?.name ?? c;
 
   useEffect(() => {
@@ -159,7 +163,7 @@ export function DriverComparison({
                           const y = posAt(code, lap);
                           return y == null ? null : (
                             <ReferenceDot key={`${code}p${i}`} x={lap} y={y} r={4}
-                              fill="#0b0e16" stroke={colorOf(code)} strokeWidth={2} ifOverflow="hidden" />
+                              fill={SURFACE_COLOR} stroke={colorOf(code)} strokeWidth={2} ifOverflow="hidden" />
                           );
                         })).filter(Boolean)}
                       </LineChart>
@@ -292,7 +296,7 @@ function GapChart({ data, a, b, colorOf, total, windows, sameLivery }: any) {
               tick={axisTick()} tickLine={false} tickMargin={6} height={26} axisLine={axisLine} />
             <YAxis tick={axisTick()} width={46} tickFormatter={(v) => `${v}s`}
               tickLine={false} padding={{ top: 6, bottom: 2 }} axisLine={axisLine} />
-            <ReferenceLine y={0} stroke="rgba(255,255,255,0.25)" />
+            <ReferenceLine y={0} stroke="rgb(var(--tint) / 0.28)" />
             <Tooltip isAnimationActive={false} contentStyle={TOOLTIP_STYLE}
               labelStyle={TOOLTIP_LABEL_STYLE} itemStyle={TOOLTIP_ITEM_STYLE}
               labelFormatter={(l) => `Lap ${l}`}
@@ -408,7 +412,7 @@ function MetricRow({ r, a, b, colorOf }: { r: Cmp; a: string; b: string; colorOf
       <span className={cx("w-[4.5rem] shrink-0 text-right text-xs tabular-nums",
         winner === "a" ? "font-bold text-ink" : "text-ink-muted")}>{r.fmt(av)}</span>
       <span className="flex h-2 flex-1 overflow-hidden rounded-full bg-white/[0.05]">
-        <span className="h-full transition-[width,opacity] duration-700 ease-out"
+        <span className="draw-in h-full"
           style={{ width: grown ? `${aPct}%` : "50%", background: colorOf(a), opacity: winner === "b" ? 0.35 : 1 }} />
         <span className="h-full flex-1 transition-opacity duration-500"
           style={{ background: colorOf(b), opacity: winner === "a" ? 0.35 : 1 }} />
@@ -498,7 +502,7 @@ function CompoundSeq({ seq }: { seq: string[] }) {
               title={named ? COMPOUND_LABEL[key] : COMPOUND_MISSING_HINT}
               style={named
                 ? { background: COMPOUND_COLOR[key], color: "#0b0e16" }
-                : { boxShadow: "inset 0 0 0 1px rgba(255,255,255,.22)", color: "#a8b4cb" }}>
+                : { boxShadow: "inset 0 0 0 1px rgb(var(--tint) / .22)", color: "rgb(var(--ink-muted))" }}>
               {named ? COMPOUND_SHORT[key] : "?"}
             </span>
           </span>

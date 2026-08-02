@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { Driver } from "@/lib/types";
 import { curatedPortrait } from "@/lib/portraits";
 import { cx } from "@/lib/format";
+import { useLivery } from "@/lib/liveryColor";
 
 // A friendly driver identity: the official Formula1.com portrait where the
 // provider resolved one, else a clean team-coloured initials avatar. Used
@@ -15,7 +16,7 @@ export function DriverAvatar({ driver, size = 28, ring = true }: { driver?: Driv
   // React reuses component instances across prop changes — without this reset,
   // one broken URL would blank the portrait of the NEXT driver rendered here.
   useEffect(() => setBroken(false), [url]);
-  const color = driver?.team_color ?? "#8892a6";
+  const color = useLivery()(driver?.team_color);
   const initials = (driver?.name ?? driver?.code ?? "?")
     .split(" ").map((s) => s[0]).slice(0, 2).join("").toUpperCase();
   const showImg = url && !broken;

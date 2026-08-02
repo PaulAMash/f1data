@@ -51,8 +51,8 @@ export function RaceLoader({
             <stop offset="100%" stopColor="#5a1e06" />
           </radialGradient>
           <linearGradient id="rl-rim" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#e8ecf5" />
-            <stop offset="45%" stopColor="#8b98b2" />
+            <stop offset="0%" stopColor="rgb(var(--ink))" />
+            <stop offset="45%" stopColor="rgb(var(--axis))" />
             <stop offset="100%" stopColor="#4a5468" />
           </linearGradient>
           <linearGradient id="rl-tarmac" x1="0" y1="0" x2="1" y2="0">
@@ -72,9 +72,9 @@ export function RaceLoader({
           {/* the rim highlight: a short bright arc that travels round, which is
               what tells the eye the rim is metal and not a printed ring */}
           <linearGradient id="rl-gleam-g" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#ffffff" stopOpacity="0" />
-            <stop offset="50%" stopColor="#ffffff" stopOpacity="0.85" />
-            <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+            <stop offset="0%" stopColor="rgb(var(--tint))" stopOpacity="0" />
+            <stop offset="50%" stopColor="rgb(var(--tint))" stopOpacity="0.85" />
+            <stop offset="100%" stopColor="rgb(var(--tint))" stopOpacity="0" />
           </linearGradient>
           <clipPath id="rl-road-clip"><rect x="4" y="88" width="112" height="14" /></clipPath>
         </defs>

@@ -154,6 +154,22 @@ export interface Row {
   wear: number;
   /** km/h at the speed trap, live */
   speed: number;
+
+  /* ---- the pedals ---------------------------------------------------------
+     Both come from where the car actually is around the lap, not from a timer,
+     which is why they agree with the tracker and with each other: the car
+     braking in the panel is the dot entering a corner on the minimap. A trace
+     that moves on its own clock is a screensaver; this one is a readout. */
+  throttle: number;
+  brake: number;
+  /** kg on board. Falls all race — the slowest number on the panel. */
+  fuel: number;
+  /** the lap this car last completed, in seconds. Changes on its own lap. */
+  lastLap: number;
+  /** how the interval to the car ahead is trending: <0 closing, >0 dropping */
+  trend: number;
+  /** which stint this is */
+  stint: number;
 }
 
 export interface Snapshot {
@@ -220,6 +236,28 @@ interface Car {
   /** pace plus every situational term — written by drivePace, read by
       integrateGaps. Derived state, so it lives here rather than in any input. */
   effective: number;
+
+  /* ---- the instruments ----------------------------------------------------
+     Everything below is derived from where the car is and how it is going,
+     never from a clock of its own. The pedals come from `trackU`, the lap time
+     from `effective`, the fuel from the race distance run — so all three agree
+     with the trace, with the tracker and with each other, and none of them can
+     be caught cycling on a period the eye can learn. */
+  throttle: number;
+  brake: number;
+  fuel: number;
+  lastLap: number;
+  lastU: number;
+  trend: number;
+  prevInterval: number;
+  stint: number;
+  /** this car's own corner layout, so no two pedal traces are in phase */
+  cornerPhase: number;
+  cornerCount: number;
+  /* 1 the instant a stop begins, decaying to 0 as the car rejoins. The tracker
+     reads it to run the car down the pit lane instead of the road, which is
+     the one moment in a race when a dot legitimately leaves the circuit. */
+  pitPhase: number;
 }
 
 export class RaceEngine {
@@ -253,6 +291,9 @@ export class RaceEngine {
   /* ---- the broadcast ----------------------------------------------------- */
   lap = 1;
   laps = 57;
+  /** Increments once per race. Whoever owns the tracker watches this so the
+      circuit changes when the race does rather than on a timer of its own. */
+  raceId = 0;
   weather = "DRY";
   circuit = "SECTOR 1";
   trackTemp = 41.4;
@@ -283,6 +324,9 @@ export class RaceEngine {
       flash: null, flashUntil: 0, rank: i, rankF: i, rankMoved: -99, rankDelta: 0,
       trackU: 0, form: [0.5, 0.5, 0.5, 0.5, 0.5], wobble: 0, pitOwed: 0,
       sectors: [0, 0, 0], sectorAt: 0, sectorPhase: 0, speed: 318,
+      throttle: 0.8, brake: 0, fuel: 100, lastLap: 88, lastU: 0, trend: 0,
+      prevInterval: 2, stint: 1,
+      cornerPhase: 0, cornerCount: 4, pitPhase: 0,
       paceRef: 0, paceEase: 0.5, rankEase: 0.7, closeRate: 1,
       effective: 0,
     };
@@ -301,6 +345,7 @@ export class RaceEngine {
 
     this.laps = [52, 53, 57, 58, 61, 63, 66, 71][Math.floor(this.rnd() * 8)];
     this.lap = 1;
+    this.raceId += 1;
     this.weather = WEATHER[Math.floor(this.rnd() * WEATHER.length)];
     this.trackTemp = 28 + this.rnd() * 22;
     this.span = 6;
@@ -337,6 +382,19 @@ export class RaceEngine {
       // on the array rather than an element, so the pips never changed at all
       c.sectorPhase = Math.floor(this.rnd() * 3);
       c.speed = 300 + this.rnd() * 40;
+      /* A CIRCUIT HAS A SHAPE, AND SO DOES A PEDAL TRACE.
+         Four to seven braking zones a lap, each car offset into its own place
+         in that layout, so seven throttle bars never rise together. The count
+         changes with the circuit; the phase is the car's own. */
+      c.cornerCount = 4 + Math.floor(this.rnd() * 4);
+      c.cornerPhase = this.rnd() * Math.PI * 2;
+      c.throttle = 0.7; c.brake = 0;
+      c.fuel = 103 + this.rnd() * 6;
+      c.lastLap = 84 + this.rnd() * 10;
+      c.lastU = 0;
+      c.trend = 0; c.prevInterval = 2;
+      c.stint = 1;
+      c.pitPhase = 0;
       if (first) this.hist[i].fill(i);
     }
     this.annotations.length = 0;
@@ -435,6 +493,8 @@ export class RaceEngine {
         // a stint, not a lap count: the bar should be somewhere in the middle
         // most of the time rather than pinned at either end
         wear: clamp01(c.tyreAge / (this.laps / 2.4 / COMPOUNDS[c.tyre].wear)),
+        throttle: c.throttle, brake: c.brake, fuel: c.fuel,
+        lastLap: c.lastLap, trend: c.trend, stint: c.stint,
         speed: c.speed,
       };
     });
@@ -569,7 +629,17 @@ export class RaceEngine {
            left three rows permanently amber, which is accurate and useless. */
         const own = c.effective < c.paceRef - 0.04;
         const best = c.effective <= fastest + 0.005;
-        c.sectors[c.sectorPhase] = best && this.rnd() > 0.4 ? 2 : own ? 1 : 3;
+        const grade = best && this.rnd() > 0.4 ? 2 : own ? 1 : 3;
+        c.sectors[c.sectorPhase] = grade;
+        /* THE ROW WASHES WHEN THE SECTOR LANDS, NOT WHEN A BEAT FIRES.
+           The flash used to be reserved for the handful of staged moments,
+           which made it a rare event on a panel that is supposed to look
+           continuously busy. It belongs to the thing it describes: a car sets
+           a sector, and its row says so. Purple always; a personal best about
+           a third of the time, so green stays worth noticing. Every car is on
+           its own sector clock, so no two rows can wash together. */
+        if (grade === 2) this.markFlash(ord[r], "purple", t);
+        else if (grade === 1 && this.rnd() < 0.34) this.markFlash(ord[r], "green", t);
       }
       // the trap speed follows the pace, with its own small tremor
       c.speed += ((332 - c.effective * 26 + Math.sin(t * 1.7 + c.ref) * 4) - c.speed)
@@ -579,6 +649,44 @@ export class RaceEngine {
       if (c.ers > 0.97) { c.ers = 0.97; c.ersUp = false; }
       if (c.ers < 0.13) { c.ers = 0.13; c.ersUp = true; }
 
+      /* ---- the pedals ----------------------------------------------------
+         A lap is a sequence of braking zones, and where the car is in that
+         sequence is already known: `trackU` is its place around the circuit.
+         Reading the pedals off it rather than off a timer is what stops this
+         being decoration — the bar that drops is the dot arriving at a corner,
+         and a car that is lapped drifts out of phase with the leader by
+         itself, because its trackU does.
+
+         Under a caution nobody is on the throttle, which the panel then shows
+         without being told: `neutral` is already in `effective`. */
+      const lapPh = c.trackU * Math.PI * 2 * c.cornerCount + c.cornerPhase;
+      const zone = 0.5 + 0.5 * Math.sin(lapPh);            // 1 at a corner, 0 on a straight
+      const lift = Math.pow(zone, 2.2);
+      const cap = this.status === "GREEN" ? 1 : 0.62;
+      const wantT = clamp01((1 - lift * 1.15) * cap + Math.sin(t * 5.1 + c.ref) * 0.03);
+      const wantB = clamp01((lift - 0.52) * 2.3 * cap);
+      // pedals move fast, but not instantly: 60ms of travel, not a square wave
+      c.throttle += (wantT - c.throttle) * Math.min(1, dt * 13);
+      c.brake += (wantB - c.brake) * Math.min(1, dt * 16);
+
+      // fuel burns with distance run, so it only ever falls, and slowly
+      c.fuel = Math.max(1.4, c.fuel - dt * (1.55 / LAP_S));
+      // the lane takes about as long to travel as the stop takes to cost
+      if (c.pitPhase > 0) c.pitPhase = Math.max(0, c.pitPhase - dt / 7);
+
+      // the interval's own direction of travel, eased hard enough to be read
+      const trendNow = ahead ? (interval - c.prevInterval) / Math.max(1e-4, dt) : 0;
+      c.prevInterval = interval;
+      c.trend += (Math.max(-1, Math.min(1, trendNow * 24)) - c.trend) * Math.min(1, dt * 1.6);
+
+      /* A lap time lands when the car crosses the line — its own line, at its
+         own moment. Eighty-odd seconds of real circuit, scaled from the pace
+         the simulation is actually carrying. */
+      if (c.trackU < c.lastU) {
+        c.lastLap = 84.6 + c.effective * 1.9 + (this.rnd() - 0.5) * 0.5
+          + (this.status === "GREEN" ? 0 : 14 + this.rnd() * 5);
+      }
+      c.lastU = c.trackU;
     }
   }
 
@@ -796,6 +904,8 @@ export class RaceEngine {
         c.pitOwed += 19 + this.rnd() * 4;
         c.tyreAge = 0;
         c.tyre = Math.floor(this.rnd() * 3);
+        c.stint += 1;
+        c.pitPhase = 1;
         this.note({ kind, car: mid, label: "PIT STOP",
           value: `${(2.1 + this.rnd() * 0.7).toFixed(1)}s`, viz: "bars",
           series: this.series(this.annId * 104729, 0), tone: "neutral" }, t, 4.5);
@@ -883,7 +993,7 @@ export class RaceEngine {
 
   private markFlash(car: number, kind: string, t: number) {
     this.cars[car].flash = kind;
-    this.cars[car].flashUntil = t + 3.2;
+    this.cars[car].flashUntil = t + 2.1;
   }
 
   private remember(k: BeatKind) {

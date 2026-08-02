@@ -91,9 +91,23 @@ export function HeroField({ className }: { className?: string }) {
     let miniSeed = 0x1f2e3d4c;
 
     const root = document.documentElement;
-    const calm = () =>
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      || root.dataset.motion === "calm";
+    /* THE SAME TWO SETTINGS, THE SAME TWO MEANINGS.
+       `prefers-reduced-motion` is an access requirement and stops the race.
+       Calm is a preference about pace, so the race carries on at a third of
+       the tempo — the field still moves, cards still arrive, the tracker
+       still laps. Freezing it was the bug: a reader who asked for a quieter
+       hero was shown a still photograph of one.
+       See the calm block in globals.css; this is the same number. */
+    const still = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const tempo = () => (still() ? 0 : root.dataset.motion === "calm" ? 0.37 : 1);
+    // how much light the room is allowed to throw — the page's own setting,
+    // read here so the lamps in the picture agree with the wash behind it
+    let glowK = 1;
+    const readGlow = () => {
+      const v = parseFloat(getComputedStyle(root).getPropertyValue("--glow-k"));
+      glowK = Number.isFinite(v) && v > 0 ? v : 1;
+    };
+    readGlow();
 
     /* ---- the engine, pre-rolled ------------------------------------------
        At t=0 every car sits exactly on its grid slot, so the opening frame
@@ -137,6 +151,11 @@ export function HeroField({ className }: { className?: string }) {
     resize();
     const ro = new ResizeObserver(resize);
     ro.observe(host);
+
+    // the room is cached for three frames at a time, so a change of intensity
+    // has to invalidate it rather than wait to be noticed
+    const intensity = new MutationObserver(() => { readGlow(); roomAge = 99; });
+    intensity.observe(root, { attributes: true, attributeFilter: ["data-intensity", "data-theme"] });
 
     /* ---- the cursor -------------------------------------------------------
        The hero acknowledges the reader and never announces that it has, and it
@@ -344,7 +363,7 @@ export function HeroField({ className }: { className?: string }) {
         rctx.fillStyle = g;
         rctx.fillRect(0, 0, w, h);
       };
-      const k = light ? 0.3 : 1;
+      const k = (light ? 0.3 : 1) * glowK;
       lamp(w * 0.72, leadY, Math.max(w, h) * 0.58, "255, 92, 62", 0.15 * k);
       lamp(w * 0.32, h * 0.28, Math.max(w, h) * 0.5, "0, 186, 220", 0.1 * k);
       lamp(w * 0.92, h * 0.84, Math.max(w, h) * 0.42, "255, 168, 44", 0.075 * k);
@@ -431,29 +450,92 @@ export function HeroField({ className }: { className?: string }) {
         : `rgba(${faint}, ${0.26 * mini.settled})`;
       ctx.lineWidth = 1.5 / cw;
       ctx.stroke(road);
+
+      /* The pit lane. Thinner and fainter than the road, because that is the
+         hierarchy — it is somewhere a car goes rather than somewhere it races.
+         Derived from the circuit rather than drawn per layout, so it bends
+         into shape along with everything else. See pitLane in miniTrack.ts. */
+      ctx.strokeStyle = `rgba(${faint}, ${0.13 * mini.settled})`;
+      ctx.lineWidth = 1 / cw;
+      ctx.setLineDash([3 / cw, 3 / cw]);
+      ctx.stroke(mini.lane.path());
+      ctx.setLineDash([]);
       ctx.restore();
+
+      /* ---- the detail that makes it a circuit rather than a shape ---------
+         Three sector marks and a start line, all read off the same arc-length
+         table the cars run on, so they sit exactly on the road at any width
+         and travel with it through a morph. Faint enough to be found rather
+         than noticed. */
+      const tick = (u: number, len: number, alpha: number) => {
+        const [ax, ay] = tp.at(u - 0.004);
+        const [bx, by] = tp.at(u + 0.004);
+        const dx = bx - ax, dy = by - ay;
+        const d = Math.hypot(dx * cw, dy * ch) || 1;
+        const nx = (-dy * ch / d) * len, ny = (dx * cw / d) * len;
+        const [px, py] = tp.at(u);
+        ctx.strokeStyle = `rgba(${faint}, ${alpha * mini.settled})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(ox + px * cw - nx, oy + py * ch - ny);
+        ctx.lineTo(ox + px * cw + nx, oy + py * ch + ny);
+        ctx.stroke();
+      };
+      tick(0, 5, light ? 0.5 : 0.38);
+      tick(0.34, 3, light ? 0.22 : 0.15);
+      tick(0.67, 3, light ? 0.22 : 0.15);
 
       /* the field, in running order. Drawn back to front so the leader's glow
          sits on top of the car it is lapping rather than under it. */
       for (let r = s.order.length - 1; r >= 0; r--) {
         const ci = s.order[r];
-        const [mx, my] = tp.at(race.cars[ci].trackU);
+        const car = race.cars[ci];
+        /* A CAR IN THE PITS IS NOT ON THE CIRCUIT.
+           `pitPhase` runs from 1 at the moment of the stop down to 0 as the
+           car rejoins, and while it does the dot is placed on the lane rather
+           than on the road — which is the only time in a race a dot should
+           ever be somewhere the leaders are not. It also dims, because a
+           stationary car has no business being as bright as a racing one. */
+        const [mx, my] = car.pitPhase > 0
+          ? mini.lane.at(1 - car.pitPhase)
+          : tp.at(car.trackU);
         const px = ox + mx * cw, py = oy + my * ch;
-        const colour = light ? POOL[race.cars[ci].ref].light : POOL[race.cars[ci].ref].dark;
+        const colour = light ? POOL[car.ref].light : POOL[car.ref].dark;
         const lead = 1 - r / (N - 1);
+        /* Cars arrive and leave with the race. `alive` dips to zero across a
+           changeover, so the old seven fade off the circuit and a different
+           seven — different colours, different spacing — fade back on to a
+           circuit that is bending into a different circuit at the same time. */
+        const here = race.alive * (car.pitPhase > 0 ? 0.55 : 1);
 
         const g = ctx.createRadialGradient(px, py, 0, px, py, 7 + lead * 3);
         g.addColorStop(0, colour);
         g.addColorStop(1, "transparent");
-        ctx.globalAlpha = light ? 0.16 + lead * 0.1 : 0.24 + lead * 0.16;
+        ctx.globalAlpha = (light ? 0.16 + lead * 0.1 : 0.24 + lead * 0.16) * here;
         ctx.fillStyle = g;
         ctx.fillRect(px - 10, py - 10, 20, 20);
 
-        ctx.globalAlpha = light ? 0.85 : 0.95;
+        ctx.globalAlpha = (light ? 0.85 : 0.95) * here;
         ctx.fillStyle = colour;
         ctx.beginPath();
         ctx.arc(px, py, 1.7 + lead * 0.9, 0, Math.PI * 2);
         ctx.fill();
+
+        /* The leader gets a short wake — where they have just been. Nothing
+           else does: seven trails is a light show, and one is a subject. */
+        if (r === 0 && car.pitPhase === 0) {
+          ctx.strokeStyle = colour;
+          ctx.lineWidth = 1.4;
+          for (let k = 1; k <= 5; k++) {
+            const [tx, ty] = tp.at(car.trackU - k * 0.012);
+            const [ux, uy] = tp.at(car.trackU - (k - 1) * 0.012);
+            ctx.globalAlpha = 0.3 * (1 - k / 5.5) * here;
+            ctx.beginPath();
+            ctx.moveTo(ox + ux * cw, oy + uy * ch);
+            ctx.lineTo(ox + tx * cw, oy + ty * ch);
+            ctx.stroke();
+          }
+        }
       }
       ctx.globalAlpha = 1;
 
@@ -472,6 +554,7 @@ export function HeroField({ className }: { className?: string }) {
     /* ---- the frame -------------------------------------------------------- */
     let raf = 0;
     let last = performance.now();
+    let lastRaceId = race.raceId;
     let publish = 0;
     let lastIds = "";
     let roomLight = false;
@@ -492,10 +575,18 @@ export function HeroField({ className }: { className?: string }) {
       if (now - last < MIN_FRAME) return;
       const dt = Math.min(0.06, (now - last) / 1000);
       last = now;
-      const still = calm();
-      if (!still) { race.step(dt); mini.step(dt); }
-      // the bend is an animation, so a reader who asked for less gets none
-      const want = still ? 0 : mWant;
+      const rate = tempo();
+      const frozen = rate === 0;
+      if (!frozen) {
+        race.step(dt * rate);
+        // ONE CLOCK. The circuit changes because a race ended, not because a
+        // timer expired — the tracker used to be at Suzuka while the panel was
+        // thirty laps into a race that started at Monza.
+        if (race.raceId !== lastRaceId) { lastRaceId = race.raceId; mini.toNext(); }
+        mini.step(dt * rate);
+      }
+      // the lamp is an animation, so a reader who asked for none gets none
+      const want = frozen ? 0 : mWant;
       mStrength += (want - mStrength) * Math.min(1, dt * (want ? 3.4 : 5));
 
       const s = race.snapshot();
@@ -578,7 +669,7 @@ export function HeroField({ className }: { className?: string }) {
 
       /* ---- the DOM layer -------------------------------------------------- */
       const Y = Y0;
-      const live = still ? [] : race.annotations;
+      const live = frozen ? [] : race.annotations;
       const ids = live.map((a) => a.id).join(",");
       if (ids !== lastIds) { lastIds = ids; setCards(live.slice()); }
 
@@ -624,6 +715,7 @@ export function HeroField({ className }: { className?: string }) {
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      intensity.disconnect();
       surface.removeEventListener("pointermove", track);
       surface.removeEventListener("pointerleave", leave);
     };

@@ -208,3 +208,13 @@ export interface Meta {
   app: string; mock_mode: boolean; live_fetch_enabled: boolean; llm_available: boolean;
   default_year: number; source_labels: Record<DataSource, string>;
 }
+
+/** What the archive covers. See backend/app/archive_scale.py. */
+export interface ArchiveScale {
+  first_season: number;
+  season: number;
+  seasons: number;
+  races: number;
+  season_races: number;
+  through: number;
+}

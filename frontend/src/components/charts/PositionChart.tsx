@@ -11,12 +11,13 @@ import {
   EVENT, MOMENT, deriveWindows, lapStatusMap, momentClassOf, rankedUndercuts, undercutStory,
   type EventKind, type MomentClass, type Win,
 } from "@/lib/raceEvents";
-import { AXIS_TICK_COLOR, axisLine, axisTick } from "@/lib/chartTheme";
+import { AXIS_TICK_COLOR, CURSOR_COLOR, SURFACE_COLOR, axisLine, axisTick } from "@/lib/chartTheme";
 import { useIsSimple } from "@/lib/mode";
 import { cx, fmtSec, fmtLap, ordinal } from "@/lib/format";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
 import { DriverPalette } from "./DriverPalette";
 import { FocusCardShell, CloseButton, type FocusTile } from "./FocusCardShell";
+import { useLivery } from "@/lib/liveryColor";
 
 const M = { top: 10, right: 58, bottom: 26, left: 8 };
 const Y_AXIS_W = 44;
@@ -357,6 +358,11 @@ export function PositionChart({
     return x0 + ((lap - 1) / (total - 1)) * (x1 - x0);
   };
 
+  // liveries are tuned for a dark broadcast graphic; several vanish on white.
+  // Declared with the other hooks, above the early return — a hook after one is
+  // a hook that runs in some renders and not others.
+  const paint = useLivery();
+
   const yMax = useMemo(() => {
     let mx = 5;
     for (const [, m] of posByLap) for (const [code, pos] of m) if (visible.some((d) => d.code === code)) mx = Math.max(mx, pos);
@@ -379,7 +385,7 @@ export function PositionChart({
     for (const code of codes) for (const p of session.pit_stops) {
       if (p.driver !== code) continue;
       const pos = posAt(code, p.lap);
-      if (pos != null) out.push({ code, lap: p.lap, pos, color: driverByCode[code]?.team_color ?? "#fff" });
+      if (pos != null) out.push({ code, lap: p.lap, pos, color: paint(driverByCode[code]?.team_color) });
     }
     return out;
   })();
@@ -466,7 +472,7 @@ export function PositionChart({
         <div className={cx("w-full select-none", simple ? "h-[420px]" : "h-[440px]")}>
           <ResponsiveContainer>
             <LineChart data={data} margin={M}>
-              {!simple && <CartesianGrid stroke="rgba(255,255,255,0.035)" strokeDasharray="1 6" vertical={false} />}
+              {!simple && <CartesianGrid stroke="rgb(var(--tint) / 0.06)" strokeDasharray="1 6" vertical={false} />}
               {windows.map((w, i) => (
                 <ReferenceArea key={`b${i}`} x1={w.start} x2={w.end} y1={1} y2={yMax}
                   fill={BAND[w.kind]} stroke={BAND_STROKE[w.kind]} strokeWidth={1} ifOverflow="hidden" />
@@ -495,14 +501,14 @@ export function PositionChart({
                 width={Y_AXIS_W} axisLine={axisLine}
                 label={{ value: "Position", angle: -90, position: "insideLeft", offset: 4, fill: AXIS_TICK_COLOR, fontSize: 11 }} />
               <Tooltip isAnimationActive={false} allowEscapeViewBox={{ x: false, y: false }}
-                cursor={{ stroke: "rgba(255,255,255,0.18)", strokeWidth: 1 }} wrapperStyle={{ zIndex: 30, outline: "none" }}
+                cursor={{ stroke: CURSOR_COLOR, strokeWidth: 1 }} wrapperStyle={{ zIndex: 30, outline: "none" }}
                 content={(p: any) => (
                   <OrderTooltip active={p.active} label={p.label} info={info} drivers={drivers} visible={visible}
                     focus={focusCode} simple={simple} lapStatus={lapStatus} surnameOf={surname} podiumSet={podiumSet}
                     driverByCode={driverByCode} />
                 )} />
               {drawOrder.filter((d) => emphasis(d.code).glow).map((d) => (
-                <Line key={`${d.code}-glow`} dataKey={d.code} type="monotone" className="focus-halo" stroke={d.team_color}
+                <Line key={`${d.code}-glow`} dataKey={d.code} type="monotone" className="focus-halo" stroke={paint(d.team_color)}
                   strokeWidth={emphasis(d.code).w + 7} strokeOpacity={0.16} dot={false} connectNulls isAnimationActive={false} legendType="none" />
               ))}
               {drawOrder.map((d) => {
@@ -510,11 +516,11 @@ export function PositionChart({
                 const canLabel = !retiredSet.has(d.code) && em.rank >= 1;
                 return (
                   <Line key={d.code} dataKey={d.code} type="monotone" className="pos-line"
-                    stroke={d.team_color} strokeWidth={em.w} strokeOpacity={em.op} dot={false} connectNulls isAnimationActive={false}
+                    stroke={paint(d.team_color)} strokeWidth={em.w} strokeOpacity={em.op} dot={false} connectNulls isAnimationActive={false}
                     onClick={() => focusOnly(d.code)} style={{ cursor: "pointer" }}
                     label={(props: any) =>
                       canLabel && props.index === lastIdx.get(d.code)
-                        ? <EdgeLabel x={props.x} y={props.y} code={d.code} color={d.team_color} op={em.op} onClick={() => focusOnly(d.code)} />
+                        ? <EdgeLabel x={props.x} y={props.y} code={d.code} color={paint(d.team_color)} op={em.op} onClick={() => focusOnly(d.code)} />
                         : <g />} />
                 );
               })}
@@ -527,7 +533,7 @@ export function PositionChart({
                   <ReferenceDot key={`pd${i}`} x={p.lap} y={p.pos} ifOverflow="hidden"
                     shape={(props: any) => (
                       <circle className={dim ? undefined : "pit-dot"} cx={props.cx} cy={props.cy}
-                        r={dim ? 3 : 3.6} fill="#0b0e16" stroke={p.color} strokeWidth={2}
+                        r={dim ? 3 : 3.6} fill={SURFACE_COLOR} stroke={p.color} strokeWidth={2}
                         opacity={dim ? 0.16 : 1} />
                     )} />
                 );
@@ -584,7 +590,7 @@ function KeyMoments({ moments, narratives, open, simple, onToggle, onClose, driv
               className={cx("group relative flex min-w-[248px] flex-1 basis-[248px] items-start gap-3 overflow-hidden rounded-xl border p-3 text-left",
                 "transition-all duration-200 ease-out",
                 on ? "accent-breathing -translate-y-0.5 bg-white/[0.09] hover:bg-white/[0.12]"
-                   : "bg-white/[0.02] hover:-translate-y-0.5 hover:bg-white/[0.05] hover:[box-shadow:0_0_0_1.5px_var(--mc),0_12px_26px_-10px_rgba(0,0,0,.6)]")}
+                   : "bg-white/[0.02] hover:-translate-y-0.5 hover:bg-white/[0.05] hover:[box-shadow:0_0_0_1.5px_var(--mc),0_12px_26px_-10px_var(--shadow-strong)]")}
               style={{ ["--mc" as any]: c, borderColor: on ? c : `${c}55`, ...(on ? { ["--pulse" as any]: `${c}66` } : {}) }}>
               {/* a wash of the moment's own colour, so the card is tinted by
                   what it is rather than relying on one small glyph */}
@@ -627,7 +633,7 @@ function KeyMoments({ moments, narratives, open, simple, onToggle, onClose, driv
         })}
       </div>
       {openM && (
-        <div className="animate-fade-in border-t p-4" style={{ borderTopColor: "rgba(255,255,255,0.06)" }}>
+        <div className="animate-fade-in border-t p-4" style={{ borderTopColor: "rgb(var(--tint) / 0.06)" }}>
           <div className="mb-2.5 flex items-start gap-3">
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl" style={{ background: `${momentColor(openM)}1f`, boxShadow: `inset 0 0 0 1.5px ${momentColor(openM)}66` }}>
               {(() => { const Ic = momentIcon(openM); return <Ic size={18} style={{ color: momentColor(openM) }} />; })()}
@@ -850,6 +856,7 @@ function OrderTooltip({ active, label, info, drivers, visible, focus, simple, la
   focus: string | null; simple: boolean; lapStatus: Map<number, EventKind>; surnameOf: (c: string) => string;
   podiumSet: Set<string>; driverByCode: Record<string, Driver>;
 }) {
+  const paint = useLivery();
   if (!active || label == null) return null;
   const lap = Number(label);
   const rows = visible.map((d) => ({ d, i: info.get(`${d.code}:${lap}`) }))
@@ -899,7 +906,7 @@ function OrderTooltip({ active, label, info, drivers, visible, focus, simple, la
       </div>
       <div className="max-h-[54vh] overflow-y-auto px-1.5 pb-1.5">
         {rows.map(({ d, i }) => {
-          const isFocus = d.code === focus; const onPod = podiumSet.has(d.code); const tc = d.team_color;
+          const isFocus = d.code === focus; const onPod = podiumSet.has(d.code); const tc = paint(d.team_color);
           return (
             <div key={d.code} className={cx(grid, "rounded px-1.5 py-[3px] leading-tight", onPod && !isFocus && "bg-white/[0.02]")}
               style={isFocus ? { background: `${tc}22`, boxShadow: `inset 3px 0 0 0 ${tc}` } : undefined}>
@@ -919,7 +926,7 @@ function OrderTooltip({ active, label, info, drivers, visible, focus, simple, la
               </span>
               {!simple && (
                 <span className="text-right text-[11px] tabular-nums">
-                  {i!.pit_in ? <span className="font-bold text-[#a78bfa]">PIT</span>
+                  {i!.pit_in ? <span className="font-bold text-[rgb(var(--best))]">PIT</span>
                     : <span className="text-ink-muted">{i!.position === 1 ? "leader" : i!.interval != null ? `+${fmtSec(i!.interval)}` : fmtSec(i!.gap)}</span>}
                 </span>
               )}

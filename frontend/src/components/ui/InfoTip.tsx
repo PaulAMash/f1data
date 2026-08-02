@@ -1,7 +1,7 @@
 "use client";
 import { Info } from "lucide-react";
-import { useState } from "react";
 import { HoverCard } from "./HoverCard";
+import { useHoverTip } from "@/lib/useHoverTip";
 
 /**
  * Small "why this matters" tooltip. Every advanced metric in the app is paired
@@ -13,20 +13,20 @@ import { HoverCard } from "./HoverCard";
  * metrics, Track conditions, every story) are exactly the rounded, clipped ones.
  */
 export function InfoTip({ text, label }: { text: string; label?: string }) {
-  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  const { at, open, close, toggle } = useHoverTip<{ x: number; y: number }>();
 
-  const show = (el: HTMLElement) => {
+  const where = (el: HTMLElement) => {
     const r = el.getBoundingClientRect();
-    setAt({ x: r.left + r.width / 2, y: r.top - 4 });
+    return { x: r.left + r.width / 2, y: r.top - 4 };
   };
 
   return (
     <span className="relative inline-flex items-center"
-      onMouseEnter={(e) => show(e.currentTarget)}
-      onMouseLeave={() => setAt(null)}>
+      onMouseEnter={(e) => open(where(e.currentTarget))}
+      onMouseLeave={close}>
       <button type="button" aria-label={label || "More info"}
         aria-expanded={at != null}
-        onClick={(e) => { e.stopPropagation(); at ? setAt(null) : show(e.currentTarget); }}
+        onClick={(e) => { e.stopPropagation(); toggle(where(e.currentTarget)); }}
         className="text-ink-faint transition-colors duration-200 hover:text-ink">
         <Info size={13} />
       </button>
