@@ -1081,3 +1081,79 @@ def test_standout_factors_survive_a_driver_with_nothing_to_report():
     driver, reason, factors = _driver_of_the_day(s, {})
     assert driver and reason
     assert factors == []
+
+
+# --------------------------------------------------------------------------- #
+# A championship table is a list of people, and it had no faces in it. The
+# standings source (Jolpica) knows a driver's name and nothing else; F1's own
+# driver listing knows the portrait and is keyed by exactly that. The join is
+# by name — with the surname fallback the session portraits already rely on —
+# and a name that does not resolve is simply absent, because the UI draws a
+# clean initials avatar for those and a wrong face is worse than no face.
+# --------------------------------------------------------------------------- #
+def test_portraits_join_standings_rows_by_name(monkeypatch):
+    from app.adapters import headshots
+    monkeypatch.setattr(headshots, "f1_listing_map", lambda year: {
+        "max verstappen": "https://media.formula1.com/x/max.png",
+        "surname:hamilton": "https://media.formula1.com/x/lewis.png",
+    })
+    out = headshots.portraits_by_name(
+        2025, ["Max Verstappen", "Sir Lewis Hamilton", "Nobody At All", ""])
+    assert out["Max Verstappen"].endswith("max.png")
+    # the exact name misses, the unique surname still finds the person
+    assert out["Sir Lewis Hamilton"].endswith("lewis.png")
+    # and an unknown driver gets no entry rather than someone else's portrait
+    assert "Nobody At All" not in out
+    assert "" not in out
+
+
+def test_portraits_are_absent_rather_than_wrong_when_the_listing_is_unavailable(monkeypatch):
+    from app.adapters import headshots
+    monkeypatch.setattr(headshots, "f1_listing_map", lambda year: {})
+    assert headshots.portraits_by_name(2025, ["Max Verstappen"]) == {}
+
+
+def test_standings_endpoint_stays_offline_in_demo_mode(monkeypatch):
+    """Demo mode never reaches the network, so the table must render without a
+    portrait rather than block on a fetch that isn't allowed."""
+    from fastapi.testclient import TestClient
+    from app import main
+    from app.adapters import headshots
+    from app.config import get_settings
+
+    called = []
+    monkeypatch.setattr(headshots, "portraits_by_name",
+                        lambda year, names: called.append(names) or {})
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "mock_mode", True)
+    client = TestClient(main.app)
+    r = client.get("/api/history/standings", params={"year": 2026, "type": "driver"})
+    assert r.status_code == 200
+    assert r.json()["standings"], "the table itself still comes back"
+    assert called == [], "no portrait lookup while the app is offline"
+
+    # and with the network allowed, the join is attempted exactly once
+    monkeypatch.setattr(settings, "mock_mode", False)
+    monkeypatch.setattr(settings, "enable_live_fetch", True)
+    r = client.get("/api/history/standings", params={"year": 2026, "type": "driver"})
+    assert r.status_code == 200
+    assert len(called) == 1 and called[0], "one lookup, for the whole table"
+
+
+def test_constructor_standings_never_ask_for_a_driver_portrait(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+    from app.adapters import headshots
+    from app.config import get_settings
+
+    called = []
+    monkeypatch.setattr(headshots, "portraits_by_name",
+                        lambda year, names: called.append(names) or {})
+    settings = get_settings()
+    monkeypatch.setattr(settings, "mock_mode", False)
+    monkeypatch.setattr(settings, "enable_live_fetch", True)
+    r = TestClient(main.app).get("/api/history/standings",
+                                 params={"year": 2026, "type": "constructor"})
+    assert r.status_code == 200
+    assert called == []

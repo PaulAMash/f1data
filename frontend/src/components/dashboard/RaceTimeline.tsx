@@ -169,7 +169,7 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
           const labelX = Math.min(Math.max((x1 + x2) / 2, PAD + 24), W - PAD - 24);
           return (
             <g key={i} className="cursor-help"
-              onMouseMove={(e) => show(e, w.label ?? "Neutralization", windowTip(w))}
+              onMouseMove={(e) => show(e, w.label ?? "Neutralisation", windowTip(w))}
               onMouseLeave={() => setTip(null)}>
               <rect x={x1} y={Y - 8} width={Math.max(5, x2 - x1)} height={16} rx={8}
                 fill="rgb(var(--amber) / 0.30)" stroke="rgb(var(--amber) / 0.6)" strokeWidth={1} />

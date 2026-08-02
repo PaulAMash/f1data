@@ -87,7 +87,7 @@ interface Ctx {
   start: (beats: Beat[], label: string) => void;
   next: () => void;
   prev: () => void;
-  stop: () => void;
+  stop: (opts?: { stay?: boolean }) => void;
   /** what this run was: "tour" marks onboarding done, "demo" does not */
   label: string;
 }
@@ -114,17 +114,31 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
      the least useful room in the product to be left standing in. Explore is
      where the tour was always taking them; Skip is a reader saying "I would
      rather just get there", and it should get them there too. */
-  const stop = useCallback(() => {
+  const stop = useCallback((opts?: { stay?: boolean }) => {
     setRunning(false);
     setReady(false);
     setBeats([]);
     setIndex(0);
     if (label === "tour") {
       set("onboarded", true);
-      if (path !== "/explorer") router.push("/explorer");
+      // `stay` is the reader having walked out of the tour by navigating
+      // somewhere themselves — they have chosen a page, and marching them to
+      // a different one would be the tour getting the last word.
+      if (!opts?.stay && path !== "/explorer") router.push("/explorer");
     }
     setLabel("");
   }, [label, set, path, router]);
+
+  // read inside the navigation effect below without making that effect depend
+  // on an identity that changes every time the path does
+  const stopRef = useRef(stop);
+  useEffect(() => { stopRef.current = stop; }, [stop]);
+
+  /* The last page the tour actually reached. It is how "we have not navigated
+     yet" is told apart from "we were here and the reader has gone elsewhere",
+     which are the same comparison (`beat.path !== path`) and need opposite
+     answers — push, or give up. */
+  const arrivedAt = useRef<string | null>(null);
 
   const start = useCallback((next: Beat[], what: string) => {
     setBeats(next);
@@ -132,6 +146,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     setIndex(0);
     setRunning(true);
     setReady(false);
+    arrivedAt.current = null;
   }, []);
 
   const go = useCallback((to: number) => {
@@ -157,7 +172,18 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!beat) return;
     let cancelled = false;
-    if (beat.path !== path) { router.push(beat.path); return; }
+    if (beat.path !== path) {
+      /* THE READER MAY LEAVE. The scrim is pointer-events-none so the nav bar
+         stays live during a tour, which is deliberate — but the tour then saw
+         a path that wasn't its own and pushed the reader straight back. The
+         effect was a product that would not let go: Back appeared to do
+         nothing, because every step out was answered by a step in. Walking
+         away from a tour ends it. */
+      if (arrivedAt.current === beat.path) { stopRef.current({ stay: true }); return; }
+      router.push(beat.path);
+      return;
+    }
+    arrivedAt.current = path;
     if (beat.tab) driveTo(beat.tab);
     // two frames for the tab switch, then a beat for anything that transitions in
     const t = setTimeout(() => { if (!cancelled) setReady(true); }, beat.tab ? 420 : 180);
@@ -184,11 +210,19 @@ export const useTour = () => useContext(TourCtx);
 /* -------------------------------------------------------------------------- */
 
 /**
- * The tour. About a minute, and it crosses the whole product.
+ * The tour. Orientation, not a product tour.
  *
- * It deliberately starts on the landing page rather than inside the Explorer:
- * the old one opened halfway through a session, which taught the furniture of
- * a screen before the reader knew why they were on it.
+ * V60's version walked the reader through Home, the Explorer, Historical and
+ * Settings — ten beats and three navigations — and by the end they had been
+ * driven around the product rather than shown where they were. A tour that
+ * moves the reader between pages also takes control away from them, which is
+ * exactly the feeling somebody trying to leave a tutorial already has.
+ *
+ * It stays on the Race Explorer now, because that is where the work happens,
+ * and the last three beats POINT AT the navigation rather than following it:
+ * "the archive is up here", "the theme is up here", "everything else is up
+ * here". Knowing where a thing is is what orientation means. Going there is
+ * the reader's decision, and they can make it the moment the tour ends.
  */
 export const TOUR: Beat[] = [
   { path: "/explorer", target: "[data-tour='selector']",
@@ -196,28 +230,25 @@ export const TOUR: Beat[] = [
     body: "Season, Grand Prix, session. It opens on the most recent completed race, so there is always something to read." },
   { path: "/explorer", target: "[data-tour='tabs']", tab: "story",
     title: "One race, several readings",
-    body: "Story is the recap in plain English. The tabs after it are the same race with the working shown." },
-  { path: "/explorer", target: "[data-tour='panel']", tab: "strategy",
-    title: "Strategy is where races are decided",
-    body: "Pit windows, undercuts and what each call actually bought — measured against what would have happened anyway." },
-  { path: "/explorer", target: "[data-tour='panel']", tab: "pace",
-    title: "Pace, corrected",
-    body: "Raw lap times flatter whoever had fresh tyres and a light car. These are corrected for both, which is the only way to compare two drivers fairly." },
+    body: "Story is the recap in plain English. Charts, Strategy and Pace are the same race with the working shown — and Standings is where the season stands." },
   { path: "/explorer", target: "[data-tour='panel']", tab: "compare",
     title: "Two drivers, side by side",
-    body: "Head to head over the same laps — where one gained, where the other answered, and what the stops did to both." },
+    body: "Head to head over the same laps: where one gained, where the other answered, and what the stops did to both." },
   { path: "/explorer", target: "[data-tour='panel']", tab: "ask",
-    title: "Ask it anything",
+    title: "Or just ask",
     body: "“Why did Leclerc lose places?” is answered from this session's own lap data. If the data cannot support an answer, it says so instead of inventing one." },
   { path: "/explorer", target: "[data-tour='sources']",
     title: "Always checkable",
     body: "Every figure states which F1 source it came from and what was unavailable. Nothing here is invented, and you can always see the seams." },
-  { path: "/history", target: "[data-tour='history']",
-    title: "The whole archive",
-    body: "Official results and championship standings for every season since 1950." },
-  { path: "/settings", target: "[data-tour='settings-main']",
-    title: "Make it yours",
-    body: "Reading depth, theme, units, spelling, density and how much the interface moves. Every choice applies everywhere and is remembered — and this is where you change the Simple or Advanced answer you gave on the way in." },
+  { path: "/explorer", target: "[data-tour='nav-history']",
+    title: "The whole archive is up here",
+    body: "Official results and championship standings for every season since 1950. It is one click away whenever you want it." },
+  { path: "/explorer", target: "[data-tour='theme']",
+    title: "Race control at night, or daylight",
+    body: "Both themes are designed rather than inverted. Whichever you pick is remembered." },
+  { path: "/explorer", target: "[data-tour='settings']",
+    title: "And everything else lives here",
+    body: "Reading depth, units, spelling, density and how much the interface moves — including the Simple or Advanced answer you gave on the way in." },
 ];
 
 /**

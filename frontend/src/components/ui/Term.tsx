@@ -53,6 +53,11 @@ export const GLOSSARY: Record<string, string> = {
   // defined is a term that ships unexplained.
   stoppage: "A red flag — the session is halted completely and cars return to the pit lane.",
   stoppages: "Red flags: moments the session was halted completely and cars returned to the pit lane.",
+  /* Both spellings are keys. The glossary is looked up on the AUTHORED text —
+     the spelling bridge rewrites the rendered document, not the source — so a
+     word the product spells one way in one file and the other way in another
+     has to answer to both, or the definition silently disappears on whichever
+     surface guessed wrong. */
   neutralisation: "Any period where racing is suspended but the session continues — a Safety Car or a Virtual Safety Car.",
   neutralisations: "Periods where racing was suspended but the session continued — Safety Cars and Virtual Safety Cars.",
   neutralization: "Any period where racing is suspended but the session continues — a Safety Car or a Virtual Safety Car.",

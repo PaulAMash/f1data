@@ -4,6 +4,7 @@ import { Trophy, Users } from "lucide-react";
 import { Tabs } from "@/components/ui/Tabs";
 import { Skeleton, EmptyState } from "@/components/ui/misc";
 import { ConstructorMark } from "@/components/ui/ConstructorMark";
+import { DriverAvatar } from "@/components/ui/DriverBadge";
 import { api } from "@/lib/api";
 import { teamColour } from "@/lib/constructors";
 import { useLivery } from "@/lib/liveryColor";
@@ -45,6 +46,8 @@ interface Row {
   team?: string | null;
   points: number;
   wins?: number | null;
+  /** Joined on by the API from F1's own driver listing; absent in demo mode. */
+  headshot_url?: string | null;
 }
 
 export function Standings({ year, compact }: { year: number; compact?: boolean }) {
@@ -118,7 +121,19 @@ function StandingRow({ row, lead, constructor }: {
         {row.position}
       </span>
 
-      {constructor && <ConstructorMark team={row.name} color={tint} size={22} />}
+      {constructor ? (
+        <ConstructorMark team={row.name} color={tint} size={22} />
+      ) : (
+        /* the face beside the name. A championship is a list of people, and it
+           had been reading like a spreadsheet of them. The avatar falls back to
+           team-coloured initials on its own, so a season F1 has published no
+           portraits for still gets a row that looks deliberate. */
+        <DriverAvatar size={top ? 32 : 27} driver={{
+          number: "", code: row.code ?? "", name: row.name,
+          team: row.team ?? "", team_color: teamColour(row.team ?? ""),
+          headshot_url: row.headshot_url ?? null,
+        }} />
+      )}
 
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline gap-2">

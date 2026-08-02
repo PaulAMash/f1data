@@ -599,6 +599,320 @@ a.chip:active,
   );
 }
 
+/* ---------------------------------------------------------------------------
+   Neutralisations on the tyre chart.
+
+   A tint behind twenty rows of opaque bars is the same as no tint at all, and
+   a tint in FRONT of them recolours the compounds, which is the one thing the
+   chart may not do. So the window is told three ways — a rail above the plot
+   that can be read at a glance, a hatch over the bars that leaves the compound
+   showing between its stripes, and a hard edge on the first and last lap.
+   See the note at the top of TyreStrategyChart.tsx.
+   --------------------------------------------------------------------------- */
+
+/* the strip is the race: green where it was racing, capsules where it wasn't */
+.neut-rail {
+  border-radius: 4px;
+  background:
+    linear-gradient(rgb(var(--speed) / .1), rgb(var(--speed) / .1)),
+    rgb(var(--tint) / .04);
+  box-shadow: inset 0 0 0 1px rgb(var(--tint) / .07);
+}
+
+.neut-chip {
+  position: absolute;
+  top: 0; bottom: 0;
+  min-width: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--nc);
+  color: #0b0e16;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  white-space: nowrap;
+  cursor: help;
+  outline: none;
+  transition: box-shadow .18s ease, transform .18s cubic-bezier(.22, 1, .36, 1);
+}
+.neut-chip.is-hot,
+.neut-chip:focus-visible {
+  z-index: 2;
+  transform: scaleY(1.18);
+  box-shadow:
+    0 0 0 1.5px rgb(var(--base-900)),
+    0 0 0 3px var(--nc),
+    0 0 14px var(--nc);
+}
+
+/* over the bars. Stripes, not paint: the gaps are what keeps the compound
+   underneath readable, and the reader has already met this texture on the
+   "tyre not recorded" bars. */
+.neut-band {
+  position: absolute;
+  top: -2px; bottom: -2px;
+  border-radius: 3px;
+  /* the edges live on the element and the hatch on its ::before, so raising the
+     texture on hover never dims the two rules that answer "which laps, exactly" */
+  box-shadow: inset 1.5px 0 0 0 var(--nc), inset -1.5px 0 0 0 var(--nc);
+  transition: box-shadow .2s ease;
+}
+.neut-band::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--nc) 0 1.5px,
+    transparent 1.5px 8px
+  );
+  opacity: .34;
+  transition: opacity .2s ease;
+}
+.neut-band.is-hot { box-shadow: inset 2px 0 0 0 var(--nc), inset -2px 0 0 0 var(--nc), 0 0 22px -2px var(--nc); }
+.neut-band.is-hot::before { opacity: .85; }
+
+/* The undercut mark: a head on the exact lap of the stop and a stem down the
+   row, coloured by whether the move actually worked. Stroked in the panel
+   colour so it cuts itself out of whatever compound it lands on. */
+.tyre-uc {
+  position: absolute;
+  top: -8px; bottom: -1px;
+  width: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 4;
+  cursor: help;
+  outline: none;
+}
+.tyre-uc-head {
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / .5));
+  transition: transform .2s cubic-bezier(.22, 1, .36, 1), filter .2s ease;
+}
+.tyre-uc-stem {
+  flex: 1;
+  width: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: var(--uc);
+  box-shadow: 0 0 0 1px rgb(var(--base-900) / .7);
+  opacity: .8;
+  transition: opacity .2s ease, box-shadow .2s ease;
+}
+.tyre-uc:hover .tyre-uc-head,
+.tyre-uc:focus-visible .tyre-uc-head {
+  transform: translateY(-2px) scale(1.16);
+  filter: drop-shadow(0 0 6px var(--uc));
+}
+.tyre-uc:hover .tyre-uc-stem,
+.tyre-uc:focus-visible .tyre-uc-stem {
+  opacity: 1;
+  box-shadow: 0 0 0 1px rgb(var(--base-900) / .85), 0 0 8px var(--uc);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .neut-chip, .neut-band, .neut-band::before, .tyre-uc-head, .tyre-uc-stem { transition: none; }
+  .neut-chip.is-hot { transform: none; }
+  .tyre-uc:hover .tyre-uc-head, .tyre-uc:focus-visible .tyre-uc-head { transform: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   Race control, as an operations console.
+
+   Fixed-width, hairline-separated, one row per message. The FIA feed is an
+   instrument and this is what an instrument looks like — the lap forms a
+   column, the tag forms a column, and the eye can run down either one.
+   See components/charts/RaceControlLog.tsx.
+   --------------------------------------------------------------------------- */
+
+.rc-console {
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid rgb(var(--tint) / .07);
+  background:
+    linear-gradient(rgb(var(--base-950) / .5), rgb(var(--base-950) / .5)),
+    rgb(var(--base-850) / .6);
+}
+
+/* the state lamp. One thing on the page glows, and it is the one that says
+   what the track is doing. */
+.rc-led {
+  width: 7px; height: 7px;
+  border-radius: 999px;
+  background: var(--led);
+  box-shadow: 0 0 0 2px rgb(var(--tint) / .06), 0 0 10px var(--led);
+}
+
+.rc-chip {
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: rgb(var(--ink-faint));
+  background: rgb(var(--tint) / .03);
+  border: 1px solid transparent;
+  transition: color .15s ease, background .15s ease, border-color .15s ease;
+}
+.rc-chip:hover { color: rgb(var(--ink)); background: rgb(var(--tint) / .07); }
+.rc-chip.is-on {
+  color: rgb(var(--ink));
+  background: rgb(var(--accent) / .12);
+  border-color: rgb(var(--accent) / .32);
+}
+
+.rc-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 12px;
+  border-bottom: 1px solid rgb(var(--tint) / .045);
+  transition: background .12s ease;
+}
+.rc-row:hover { background: rgb(var(--tint) / .04); }
+
+.rc-lap {
+  flex: none;
+  width: 30px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ink-faint));
+}
+.rc-tag {
+  flex: none;
+  width: 32px;
+  text-align: center;
+  border-radius: 3px;
+  padding: 1px 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  color: var(--tc);
+  background: color-mix(in srgb, var(--tc) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tc) 34%, transparent);
+}
+.rc-msg {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: rgb(var(--ink-muted));
+  overflow-wrap: anywhere;
+}
+.rc-row:hover .rc-msg { color: rgb(var(--ink)); }
+.rc-scope {
+  flex: none;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: rgb(var(--ink-faint) / .8);
+}
+
+/* a neutralisation is not a message, it is a state the whole track entered —
+   so it spans the feed instead of queueing in it */
+.rc-band {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 9px;
+  color: var(--nc);
+  border-top: 1px solid color-mix(in srgb, var(--nc) 30%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--nc) 30%, transparent);
+  border-left: 3px solid var(--nc);
+  background: color-mix(in srgb, var(--nc) 11%, transparent);
+}
+.rc-band-code {
+  flex: none;
+  border-radius: 3px;
+  padding: 1px 5px;
+  background: var(--nc);
+  color: #0b0e16;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .05em;
+}
+
+/* the end of the log, stated. Blinks at the reader's own tempo, and holds
+   still entirely under reduced motion — a caret that stops blinking is still
+   a caret, and a log that ends is still ended. */
+.rc-caret {
+  display: inline-block;
+  width: 6px; height: 11px;
+  background: rgb(var(--speed));
+  animation: rc-blink calc(1.15s * var(--m)) steps(2, jump-none) infinite;
+}
+@keyframes rc-blink { 0%, 100% { opacity: 1; } 50% { opacity: .15; } }
+@media (prefers-reduced-motion: reduce) {
+  .rc-caret { animation: none; opacity: .55; }
+  .rc-chip, .rc-row { transition: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   Compare, before anything has been chosen.
+   See components/driver-comparison/DriverComparison.tsx.
+   --------------------------------------------------------------------------- */
+
+.cmp-empty { position: relative; }
+
+/* two traces leaving the same grid slot and going different ways — the shape
+   of the question the page answers, drawn once and never animated */
+.cmp-empty-art {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(440px, 100%);
+  height: 92px;
+  fill: none;
+  stroke: rgb(var(--tint) / .12);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 5 7;
+  pointer-events: none;
+  /* fade out at both ends so the traces read as a fragment of a longer race
+     rather than two lines that begin and end inside a card */
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent);
+}
+
+.cmp-slot {
+  width: 54px; height: 54px;
+  border-radius: 999px;
+  border: 1.5px dashed rgb(var(--tint) / .2);
+  background: rgb(var(--tint) / .03);
+}
+
+.cmp-duel {
+  display: block;
+  border-radius: 12px;
+  padding: 11px 13px;
+  border: 1px solid rgb(var(--tint) / .07);
+  background: rgb(var(--base-850) / .6);
+  transition: transform var(--dur-2, .18s) var(--ease-out, ease),
+              border-color .18s ease, background .18s ease;
+}
+.cmp-duel:hover {
+  transform: translateY(-1px);
+  border-color: rgb(var(--accent) / .3);
+  background: rgb(var(--base-800) / .8);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cmp-duel { transition: none; }
+  .cmp-duel:hover { transform: none; }
+}
+
 /* Recharts chrome, in whichever room the page is in. These were white-on-white
    in light mode: a grid that is simply absent, and a near-black tooltip card
    floating in a daylight interface. */
@@ -1392,14 +1706,22 @@ html.theme-sweep::view-transition-new(root) {
 
 .sel-menu {
   position: fixed;
-  z-index: 90;
+  /* Above every other layer in the product, including a running tour: a menu
+     the reader deliberately opened is always the frontmost thing on screen. */
+  z-index: 120;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 5px;
   border-radius: 12px;
-  border: 1px solid rgb(var(--tint) / .12);
-  background: rgb(var(--base-850));
-  box-shadow: var(--el-3), 0 0 0 1px rgb(var(--base-950) / .5);
+  /* A raised surface, not the panel colour. The menu floats over a page that
+     is already made of 850s, and matching them made it read as part of the
+     card underneath rather than as something on top of it. */
+  border: 1px solid rgb(var(--tint) / .16);
+  background: rgb(var(--base-800));
+  box-shadow:
+    var(--el-3),
+    0 0 0 1px rgb(var(--base-950) / .8),
+    0 24px 60px -20px rgb(0 0 0 / .55);
   animation: sel-in calc(var(--dur-2)) var(--ease-out) both;
   transform-origin: top left;
 }
@@ -1583,6 +1905,18 @@ html.theme-sweep::view-transition-new(root) {
 .tour-open { scrollbar-gutter: stable; }
 .tour-open::-webkit-scrollbar { width: 0; height: 0; }
 .tour-open { scrollbar-width: none; }
+
+/* the tour, working. One sweeping arc in the accent — the same gesture as the
+   product's other waits, at the reader's own tempo. */
+.tour-wait {
+  width: 26px; height: 26px;
+  border-radius: 999px;
+  border: 2px solid rgb(var(--tint) / .14);
+  border-top-color: rgb(var(--accent));
+  animation: tour-wait calc(.9s * var(--m)) linear infinite;
+}
+@keyframes tour-wait { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .tour-wait { animation: none; } }
 
 /* the timer on an auto-advancing tour beat: it promises how long you have */
 @keyframes tour-hold { from { transform: translateX(-100%); } to { transform: none; } }
