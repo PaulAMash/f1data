@@ -2029,3 +2029,122 @@ not the source.
 
 > A one-way transform makes the authoring side load-bearing. Say so out loud, or
 > it drifts.
+
+---
+
+## Three pages, three jobs
+
+The landing page was doing two jobs badly. It had to be the argument for the
+product *and* the place a stranger was introduced to it, and those want opposite
+things: an argument wants to be looked at, an introduction wants to be answered.
+
+Split, they are each obvious:
+
+* **Welcome** — "What is Pitwall IQ?"
+* **Home** — "This looks incredible. I want to explore."
+* **Explorer** — "Now teach me the race."
+
+Everything else in this pass follows from that split. The welcome screen can
+afford to explain, because nobody is trying to read a race on it. The home page
+can afford to be pure spectacle, because nothing is being asked of the reader
+there. And the tour can start on the Explorer, because by the time anybody
+reaches it they have already said they want one.
+
+> A page that has two jobs will do the less interesting one first.
+
+---
+
+## Two acts, one screen
+
+The welcome screen introduces, then asks. Those are sequential — the setup has
+no meaning before somebody knows what they are setting up — but they are **acts,
+not pages**: no route change, no scroll, no history entry to get lost in. The
+first act lets go and the second arrives in its place.
+
+A wizard that spreads four decisions over four URLs is the thing every
+onboarding worth copying spent years learning not to build. The reasons are
+concrete: each URL is a place the back button can strand somebody, each
+transition is a full page load, and the count of steps becomes visible and
+therefore daunting.
+
+Both acts stay mounted, so the container has to be told which of the two heights
+to be. Reserving the taller leaves a screen of void under the shorter; letting
+the page reflow makes everything below jump. Measuring the live act with a
+`ResizeObserver` and animating between the two heights is the only version where
+nothing moves that should not.
+
+> Sequence is a rhythm, not a routing table.
+
+---
+
+## Every question is pre-answered
+
+The primary control on the setup act is live from its first frame. A setup
+screen that refuses to let you leave until you have touched three things is a
+form with a progress bar, and it teaches the reader that the product is going to
+be work.
+
+So all three questions arrive answered: Simple, whichever theme the browser is
+already in, and yes to the tour. Every card is a confirm-or-change rather than a
+blank waiting to be filled. The defaults are not "whatever was first in the
+list" — they are the answers we would give.
+
+The corollary is that selection has to read instantly at a glance, which is why
+the chosen answer gets a ring, a filled tick and a half-pixel lift. And why only
+the *first* question keeps the full coloured halo: three lit cards down one
+screen is three things shouting, and the depth question is the one that changes
+what the product is.
+
+> Ask three questions and answer them yourself. Let the reader disagree.
+
+---
+
+## One choice is felt rather than described
+
+Choosing the theme changes the welcome screen underneath the press, through the
+same circular reveal Settings uses — including the canvas behind it, because the
+field reads its colours from the same variables everything else does.
+
+It is the single most convincing thing a first run can do. The product responds
+before it has been entered, the preview and the result are the same object, and
+the gesture the reader will meet again in Settings is already familiar.
+
+This is also why the theme question could leave the navigation bar. A toggle in
+the chrome is a preference pretending to be a tool: it takes permanent space at
+the top of every page to hold an answer that is given once. Asked properly on
+the way in and kept permanently in Settings, it needed no third home — and the
+bar lost the second competing gesture in its corner.
+
+> A preference is best explained by doing it.
+
+---
+
+## The tour waits, and says so
+
+A reader who asked for a guided tour lands on the home page and **nothing happens
+to them**. That is the feature, not an oversight.
+
+The home page is the argument for the product. Opening a modal over it two
+seconds in takes the argument away before it has been heard — and the reader has
+not seen a single thing the tour is about to describe, so the first beat lands on
+somebody with no context and no reason to care.
+
+Instead the tour attaches itself to the one control the page already wanted
+pressed, and waits there indefinitely. Three parts, in decreasing loudness:
+
+* a pill above the control — *Your guided tour starts here*
+* a ring around the control that breathes, and is the **only** thing on the page
+  doing so. The standing rule that nothing may happen to everything at once is
+  exactly what buys this one element its authority
+* a line underneath: *have a look around first — nothing begins until you press
+  it* — and a way to decline
+
+Under reduced motion the ring stops breathing and stays drawn. It is
+information, not decoration.
+
+The invitation belongs to the answer, not to the visit: it is gated on the tour
+having been asked for and not yet taken, so declining removes it forever and
+"Replay the guided tour" in Settings brings all of it back.
+
+> An invitation that can be ignored indefinitely is worth more than a modal that
+> cannot.

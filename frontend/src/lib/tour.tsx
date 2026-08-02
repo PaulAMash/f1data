@@ -243,12 +243,14 @@ export const TOUR: Beat[] = [
   { path: "/explorer", target: "[data-tour='nav-history']",
     title: "The whole archive is up here",
     body: "Official results and championship standings for every season since 1950. It is one click away whenever you want it." },
-  { path: "/explorer", target: "[data-tour='theme']",
-    title: "Race control at night, or daylight",
-    body: "Both themes are designed rather than inverted. Whichever you pick is remembered." },
+  /* The theme used to have a beat of its own, pointing at a toggle in the bar.
+     The toggle has moved into Settings — it is a preference, it was asked on
+     the way in, and a bar is for identity and navigation — so the two beats
+     became one rather than the tour pointing at a control that is no longer
+     there. */
   { path: "/explorer", target: "[data-tour='settings']",
     title: "And everything else lives here",
-    body: "Reading depth, units, spelling, density and how much the interface moves — including the Simple or Advanced answer you gave on the way in." },
+    body: "Dark or daylight, reading depth, units, spelling, density and how much the interface moves — every answer you gave on the way in, and rather more besides." },
 ];
 
 /**

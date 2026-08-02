@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, MessageSquareText, Timer, Trophy } from "lucide-react";
+import { ArrowRight, MessageSquareText, Sparkles, Timer, Trophy } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
 import { Footer } from "@/components/layout/Footer";
 import { HeroField } from "@/components/landing/HeroField";
@@ -51,7 +51,7 @@ import { cx } from "@/lib/format";
 /* -------------------------------------------------------------------------- */
 
 export default function Landing() {
-  const { prefs, ready } = usePrefs();
+  const { prefs, set, ready } = usePrefs();
   const router = useRouter();
   const statBand = useReveal<HTMLDivElement>();
   const featureBand = useReveal<HTMLElement>();
@@ -95,6 +95,13 @@ export default function Landing() {
     e.preventDefault();
     start(TOUR, "tour");
   }
+
+  /* A tour that has been asked for and not yet taken. It is deliberately NOT
+     "is this a first visit" — a reader who declined on the welcome screen has
+     `onboarded` set and never sees any of this, and a reader who asks for the
+     tour again from Settings sees all of it a second time. The invitation
+     belongs to the answer, not to the visit. */
+  const armed = ready && prefs.pickedMode && !prefs.onboarded;
 
   return (
     <div className="min-h-screen">
@@ -141,16 +148,38 @@ export default function Landing() {
                 should ask for exactly that, once, and get out of the way. What
                 is below the fold is one scroll away and does not need a
                 button to announce it. */}
-            <div className="stagger-4 mt-9 flex flex-wrap items-center gap-4">
-              <Link href="/explorer" data-tour="cta" onClick={begin}
-                className="cta-glow pressable-glow group/cta inline-flex items-center gap-2 rounded-xl bg-accent px-7 py-4 text-[15px] font-semibold text-pure">
-                Start exploring
-                <ArrowRight size={17} className="transition-transform duration-200 group-hover/cta:translate-x-0.5" />
-              </Link>
-              {ready && !prefs.onboarded && (
-                <span className="text-[13px] text-ink-faint">
-                  We&rsquo;ll show you around on the way in.
-                </span>
+            {/* THE STANDING INVITATION.
+                A reader who asked for the tour on the welcome screen arrives
+                here and NOTHING HAPPENS TO THEM. That is the point: this page
+                is the argument for the product, and opening a modal over it
+                two seconds in is taking the argument away before it has been
+                heard. So the tour waits, attached to the one control the page
+                already wanted them to press, and says so loudly enough that it
+                cannot be missed and quietly enough that it can be ignored for
+                as long as they like. */}
+            <div className="stagger-4 mt-9">
+              {armed && (
+                <p className="tour-cue mb-3 inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/[0.09] px-3.5 py-1.5 text-[12.5px] font-semibold text-accent-soft backdrop-blur-md">
+                  <Sparkles size={13} />
+                  Your guided tour starts here
+                </p>
+              )}
+              <div className="flex flex-wrap items-center gap-4">
+                <Link href="/explorer" data-tour="cta" onClick={begin}
+                  className={cx("cta-glow pressable-glow group/cta inline-flex items-center gap-2 rounded-xl bg-accent px-7 py-4 text-[15px] font-semibold text-pure",
+                    armed && "cta-armed")}>
+                  Start exploring
+                  <ArrowRight size={17} className="transition-transform duration-200 group-hover/cta:translate-x-0.5" />
+                </Link>
+              </div>
+              {armed && (
+                <p className="mt-3.5 max-w-md text-[12.5px] leading-relaxed text-ink-faint">
+                  Have a look around first — nothing begins until you press it.{" "}
+                  <button type="button" onClick={() => set("onboarded", true)}
+                    className="font-semibold text-ink-muted underline decoration-dotted underline-offset-2 transition-colors hover:text-ink">
+                    Skip the tour
+                  </button>
+                </p>
               )}
             </div>
           </div>
