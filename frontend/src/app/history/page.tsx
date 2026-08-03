@@ -27,14 +27,31 @@ export default function History() {
   const { prefs, ready } = usePrefs();
   const [year, setYear] = useState(2025);
   const [touched, setTouched] = useState(false);
+  /** The season in progress — the one this page has to open on by default. */
+  const [current, setCurrent] = useState<number | null>(null);
 
-  /* The archive opens on the reader's season, once their answer has landed —
-     and stops doing so the moment they choose one themselves, because a
-     preference is a starting point and not an override. */
+  /* THIS PAGE OPENS ON THIS YEAR.
+     It is called Seasons and it carries the championship, so the first thing it
+     shows has to be the championship people are actually following. It used to
+     open on a hard-coded 2025 while calling itself "the archive", which is how
+     a reader concluded the current standings were somewhere else entirely.
+
+     Order of precedence: a season the reader named in Settings, then the season
+     actually in progress, then whatever a link asked for — and none of them
+     once the reader has used the picker, because a default is a starting point
+     and not an override. */
   useEffect(() => {
-    if (!ready || touched || !prefs.season) return;
-    setYear(prefs.season);
-  }, [ready, touched, prefs.season]);
+    let live = true;
+    api.current().then((c) => { if (live) setCurrent(c.year); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  useEffect(() => {
+    if (!ready || touched) return;
+    const asked = typeof window !== "undefined"
+      ? Number(new URLSearchParams(window.location.search).get("year")) : 0;
+    const want = asked || prefs.season || current;
+    if (want) setYear(want);
+  }, [ready, touched, prefs.season, current]);
   /* The table fetches its own rows — see components/history/Standings. What is
      left here is the one thing this page knows and the component does not:
      whether the archive answered at all, which is what the source badge is
@@ -57,14 +74,14 @@ export default function History() {
           <p className="flex items-center gap-2.5 text-[11px] font-semibold uppercase tracking-[0.22em] text-ink-faint">
             <span className="font-mono text-accent-soft">1950</span>
             <span className="h-px w-6 bg-white/[0.14]" />
-            The archive
+            Seasons
           </p>
           <h1 className="mt-3 bg-gradient-to-br from-white to-ink-muted bg-clip-text text-3xl font-bold tracking-[-0.03em] text-transparent sm:text-4xl">
             Every season, every result
           </h1>
           <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-ink-muted">
-            Official classifications, qualifying and championship standings for every
-            Grand&nbsp;Prix that has been run — seventy-seven seasons of them.
+            Championship standings and official classifications for every Grand&nbsp;Prix
+            that has been run — this season included, and seventy-six before it.
           </p>
         </header>
 
@@ -77,19 +94,22 @@ export default function History() {
           {/* standings */}
           <Card>
             <CardHeader
-              title="Championship standings"
+              title={`${year} championship`}
               info={<InfoTip text="Points and wins for the selected season. The bar is the gap to the leader, not the points total." />}
               right={
                 <div className="flex items-center gap-2">
                   <SourceTag source={source} />
                   <Select value={year} ariaLabel="Season"
                     onChange={(y) => { setTouched(true); setYear(y); }}
-                    options={YEARS.map((y) => ({ value: y, label: String(y) }))} />
+                    options={YEARS.map((y) => ({
+                      value: y, label: y === current ? `${y} · this season` : String(y),
+                    }))} />
                 </div>
               }
             />
             <CardBody>
-              <Standings year={year} />
+              {/* Faces only where every face exists — see components/history/Standings */}
+              <Standings year={year} portraits={year === current} />
             </CardBody>
           </Card>
         </div>

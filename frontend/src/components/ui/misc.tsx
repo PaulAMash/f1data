@@ -53,6 +53,32 @@ export function EmptyState({
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* A HOLE, NAMED.                                                             */
+/*                                                                            */
+/* Several panels used to `return null` when the facet they draw was not in    */
+/* the session — the timeline, the neutralisation rail, the weather readout.   */
+/* The panel simply was not there, and there is no way for a reader to tell a  */
+/* component that has nothing to say from a component that failed, or from a   */
+/* feature that does not exist. Absence is not an explanation.                 */
+/*                                                                            */
+/* So a missing facet says so, in one line, in the space it would have         */
+/* occupied — and it names the FACET rather than the component, because that   */
+/* is the word the Sources panel uses for the same gap. Small and quiet: this  */
+/* is a footnote about the data, not an error about the app.                   */
+/* -------------------------------------------------------------------------- */
+export function FacetGap({ what, why }: { what: string; why?: string }) {
+  return (
+    <p className="flex items-start gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] leading-relaxed text-ink-faint">
+      <Inbox size={13} className="mt-[3px] shrink-0" />
+      <span>
+        <span className="text-ink-muted">{what}</span>
+        {why ? ` ${why}` : " wasn\u2019t published for this session, so this part is empty rather than estimated."}
+      </span>
+    </p>
+  );
+}
+
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">

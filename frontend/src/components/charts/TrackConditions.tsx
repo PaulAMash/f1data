@@ -20,8 +20,14 @@ import { cx } from "@/lib/format";
 /** Cool blue → warm amber → hot orange-red, over the range F1 actually runs in. */
 export function tempColor(c: number): string {
   const stops: [number, string][] = [
-    [5, "#4da3ff"], [15, "#38bdf8"], [25, "#22d3a7"],
-    [35, "#facc15"], [45, "#fb923c"], [60, "#f43f5e"],
+    /* Pulled down out of the top of the value scale. `#facc15` and `#22d3a7`
+       are correct on a timing screen and both sit above 80% luma, which on a
+       white page is a swatch you cannot find — and this ramp is read as a
+       COLUMN of swatches, so one invisible step breaks the sequence. The
+       temperature is always printed beside the colour, which is the redundant
+       encoding a sequential ramp needs anyway. */
+    [5, "#3d8fe8"], [15, "#2ba3dd"], [25, "#12b48c"],
+    [35, "#d9a406"], [45, "#e8842a"], [60, "#e5354f"],
   ];
   if (c <= stops[0][0]) return stops[0][1];
   if (c >= stops[stops.length - 1][0]) return stops[stops.length - 1][1];

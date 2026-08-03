@@ -7,6 +7,7 @@ import {
 import { Thermometer } from "@/components/ui/MotionIcon";
 import type { RaceSession } from "@/lib/types";
 import { StatStrip, VisualLabel } from "@/components/ui/Visuals";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { Term } from "@/components/ui/Term";
 import { tempColor } from "./TrackConditions";
 import {
@@ -69,7 +70,7 @@ export function RaceControlWeather({ session }: { session: RaceSession }) {
       <div>
         <div className="mb-3 flex items-center gap-2">
           <VisualLabel term="track temp" tone="amber">How the track moved</VisualLabel>
-          <span className="text-[12px] text-ink-faint">· and what it did to the tyres</span>
+          <InfoTip text="Track temperature through the session, and how much of it was spent inside the compound's working window. Tarmac that swings twenty degrees is a different tyre every stint." />
         </div>
 
         {wx ? (
@@ -91,12 +92,12 @@ export function RaceControlWeather({ session }: { session: RaceSession }) {
                 <AreaChart data={weatherData} margin={CHART_MARGIN}>
                   <defs>
                     <linearGradient id="track" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#ff6a5a" stopOpacity={0.4} />
-                      <stop offset="100%" stopColor="#ff6a5a" stopOpacity={0} />
+                      <stop offset="0%" stopColor="rgb(var(--accent-soft))" stopOpacity={0.4} />
+                      <stop offset="100%" stopColor="rgb(var(--accent-soft))" stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="air" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#00e0c6" stopOpacity={0.3} />
-                      <stop offset="100%" stopColor="#00e0c6" stopOpacity={0} />
+                      <stop offset="0%" stopColor="rgb(var(--speed))" stopOpacity={0.3} />
+                      <stop offset="100%" stopColor="rgb(var(--speed))" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="2 4" stroke={GRID_COLOR} />
@@ -111,10 +112,10 @@ export function RaceControlWeather({ session }: { session: RaceSession }) {
                   {/* rain, lap by lap */}
                   {weatherData.map((d, i) => (d.rain ? (
                     <ReferenceArea key={`r${i}`} x1={d.x - 0.5} x2={d.x + 0.5}
-                      fill="#3aa0ff" fillOpacity={0.16} stroke="none" ifOverflow="hidden" />
+                      fill="rgb(var(--good))" fillOpacity={0.14} stroke="none" ifOverflow="hidden" />
                   ) : null))}
                   <ReferenceLine y={WINDOW_HI} stroke="rgb(var(--good))" strokeOpacity={0.35} strokeDasharray="3 4"
-                    label={{ value: `${WINDOW_HI}°`, position: "right", fill: "#8bd9bd", fontSize: 10 }} />
+                    label={{ value: `${WINDOW_HI}°`, position: "right", fill: "rgb(var(--good))", fontSize: 10 }} />
                   <XAxis dataKey="x" type="number" domain={[1, session.total_laps]}
                     tick={axisTick()} tickLine={false} tickMargin={6} height={26} axisLine={axisLine} />
                   <YAxis tick={axisTick()} width={38} tickLine={false}
@@ -122,18 +123,18 @@ export function RaceControlWeather({ session }: { session: RaceSession }) {
                   <Tooltip isAnimationActive={false} contentStyle={TOOLTIP_STYLE}
                     labelStyle={TOOLTIP_LABEL_STYLE} itemStyle={TOOLTIP_ITEM_STYLE}
                     labelFormatter={(l) => `Lap ${l}`} />
-                  <Area name="Track" dataKey="track" stroke="#ff6a5a" fill="url(#track)" strokeWidth={2} isAnimationActive={false} />
-                  <Area name="Air" dataKey="air" stroke="#00e0c6" fill="url(#air)" strokeWidth={2} isAnimationActive={false} />
+                  <Area name="Track" dataKey="track" stroke="rgb(var(--accent-soft))" fill="url(#track)" strokeWidth={2} isAnimationActive={false} />
+                  <Area name="Air" dataKey="air" stroke="rgb(var(--speed))" fill="url(#air)" strokeWidth={2} isAnimationActive={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
 
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11.5px] text-ink-muted">
               <span className="inline-flex items-center gap-1.5">
-                <span className="inline-block h-0.5 w-4 rounded bg-[#ff6a5a]" />Track
+                <span className="inline-block h-0.5 w-4 rounded" style={{ background: "rgb(var(--accent-soft))" }} />Track
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <span className="inline-block h-0.5 w-4 rounded bg-[#00e0c6]" />Air
+                <span className="inline-block h-0.5 w-4 rounded" style={{ background: "rgb(var(--speed))" }} />Air
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <span className="inline-block h-3 w-4 rounded-sm bg-emerald-400/20 ring-1 ring-emerald-400/30" />
@@ -192,7 +193,7 @@ export function RaceControlWeather({ session }: { session: RaceSession }) {
       <div>
         <div className="mb-3 flex items-center gap-2">
           <VisualLabel tone="amber">Race control</VisualLabel>
-          <span className="text-[12px] text-ink-faint">· the official log, as it was issued</span>
+          <InfoTip text="The FIA's own messages, in the order they were issued — flags, safety cars, investigations and penalties. Nothing here is summarised or reworded." />
         </div>
         <RaceControlLog session={session} />
       </div>

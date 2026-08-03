@@ -2642,3 +2642,187 @@ Two details that are easy to get wrong:
 
 > If a control promises a demonstration, the demonstration is the deliverable.
 > Getting the reader to the place where they could run it themselves is not it.
+
+---
+
+## A highlight tracks its target; it does not take a snapshot of it
+
+The tour measured the spotlight during the scroll and then stopped — two frames
+at the same offset and the watcher returned, leaving `scroll` and `resize`
+listeners behind. Neither fires when the **layout** changes under a stationary
+page, and on the Race Explorer it always does: the session lands a beat after
+the tour opens, the heading stops saying "Loading", a Demo-data chip appears
+beside it, a partial-data note may appear under it. Everything below moves down
+twenty-four pixels and the outline stays where it was. That is "it aligns, then
+shifts" exactly, and no amount of tuning the padding could have fixed it.
+
+The rect is read every frame for the life of the beat and written only when it
+has actually moved. One `getBoundingClientRect` per frame is nothing beside what
+the page is already doing, and the equality check means a stationary target
+costs zero renders.
+
+Two things follow from it:
+
+* **Travelling and tracking are different speeds.** The journey between beats is
+  a movement the reader watches; a correction for a layout shift is a thing that
+  should already have happened. One duration for both gives either a lurching
+  journey or a twenty-four-pixel glide half a second after the page settled, so
+  the transition duration is a variable and the tour sets it.
+* **The page only moves when it has to.** `scrollIntoView({block: "center"})` on
+  every beat is a camera flight even when the target is already in front of the
+  reader — the right number of pixels to scroll toward something you can already
+  see is zero. It scrolls only when the target is outside a comfortable band, and
+  then by the least it can. Most beats no longer move the page at all.
+
+> The spotlight is attached to the thing, not to the coordinates the thing was
+> at when the beat started.
+
+---
+
+## `fill-mode: both` redefines the viewport
+
+Every arrival animation in the product ends on `transform: none`. An animation
+with `fill-mode: both` holds its final keyframe for ever — and a held
+`transform: none` is not the keyword, it is the computed matrix
+`matrix(1, 0, 0, 1, 0, 0)`, which makes the element a **containing block for
+every descendant with `position: fixed`**.
+
+`.route-in` is on every page. `.build > *` is on every section. `animate-fade-in`
+is on most panels. So practically every panel in the product was quietly
+redefining what "fixed to the viewport" meant inside it, and the Driver focus
+dialog — declared `fixed inset-0` — opened 453 pixels down the page against a
+viewport that starts at zero. The reader could not scroll it back, because the
+dialog correctly locks the page behind it.
+
+Two fixes, and both are worth having:
+
+* Every entrance uses `backwards`, which applies the from-state during the delay
+  and then hands the element back to its own styles. That is what an entrance
+  should do, and it is the same lesson V64 learned when a held transform ate a
+  card's hover lift.
+* Dialogs render into `document.body` through one shell (`ui/Modal`). A dialog
+  with no ancestor but the body has nothing left to redefine the screen for it.
+
+> A transform you cannot see still changes what every `position: fixed`
+> descendant is positioned against.
+
+---
+
+## "Is this session complete?" is a question about the session
+
+Every adapter answered it for itself, and each answered a different question:
+the archive report declares five facets, OpenF1 declares a different five,
+Jolpica declares its own and hard-codes `partial=True`. **A facet an adapter
+never declared could never be reported missing** — so a race fetched through the
+archive with no position trace at all reported COMPLETE, and the reader got a
+Race Story with no timeline in it and nothing saying why.
+
+It was never about the race. It was about which source answered first.
+
+The report is settled once, at the end of the pipeline, by looking at the
+session that was built: one canonical facet list, filtered by what the category
+can have, each entry present or absent according to whether it is there. The
+adapters still say WHERE a facet came from — that is their job and they are the
+only ones who know — but WHETHER it is there is decided by whether it is there.
+
+Idempotent, because it runs on fetch, on cache heal and after every enrichment
+step; and provenance-preserving, because "found in the session" must not
+overwrite "fetched from OpenF1".
+
+> When two subsystems disagree about a fact, the fix is usually not to reconcile
+> them. It is to notice that neither of them owns it.
+
+---
+
+## A position column holds a position
+
+The product draws a classification in two places and they had drifted into two
+different tables of the same thing. One printed the literal word "DNF" in the
+POSITION column, then repeated the status in the badge beside the driver and
+again in the Status column. One showed "—" in Grid→Finish for every retirement,
+throwing away the classified position the FIA had actually awarded, so the same
+car read as P18 in one table and as nothing in the other. Neither sorted, so a
+classified finisher could appear in the middle of a run of retirements.
+
+One standard, and the rules are the sport's rather than ours:
+
+* **Order is classified position.** A car that retires having completed 90% of
+  the distance is still classified, and in the order it completed — so a
+  retirement legitimately sits above a car that finished further back. What is
+  not legitimate is an unsorted table.
+* **The position column holds a position**, retired or not. Where there is none
+  the row reads "NC", which is the sport's word and is a fact about the RESULT.
+  "DNF" is a fact about the CAR; it already has a badge and a time column.
+* **A retirement recedes.** Dimmed, in both tables.
+* **Badges get their own track.** Two penalties on one driver used to wrap onto
+  a second line, making that row taller than every other and breaking the column
+  the rest of them were aligned in.
+
+> Absence is not an explanation. A panel that renders nothing because a facet is
+> missing says so in the space it would have occupied.
+
+---
+
+## Colour vision is not a filter over the top
+
+Formula 1 is a colour-coded sport: the livery is the identifier, the compound is
+the colour of the sidewall, a green sector is a personal best. For roughly one
+man in twelve, that makes a position chart twenty grey lines.
+
+Shifting every hue by the same amount fixes none of it — two colours a protanope
+confuses are still confused after both are rotated. What works is mapping the
+whole circle onto a **ring of hues chosen so its members survive that specific
+deficiency**: Okabe-Ito for the red-green deficiencies, which is the published
+standard and was designed by measuring what dichromats can actually separate,
+and a red-cyan axis for tritanopia.
+
+Four things make it a feature rather than a toggle:
+
+* **It is interpolated, not snapped.** Snapping each hue to its nearest slot
+  collapsed colours that were only a little apart — "gained" green at 158° and
+  "fastest" teal at 172° came out identical. Walking the ring continuously keeps
+  relative distance, which is how meaning survives.
+* **Grey stays grey, and near-white counts as grey.** The hard compound is
+  `#e7ecf3`, which HSL calls 28% saturated because it is a hair off neutral at
+  very high lightness. Remapping it produced a pale blue tyre, and "the white
+  one" is that compound's whole identity.
+* **It composes with the surface.** Colour vision decides the hue; light mode's
+  lightness ceiling then decides whether that hue can be seen on paper. Both
+  readers exist at once, and the order matters — darkening for paper and then
+  rotating the hue throws the darkening away.
+* **It reaches everything through one call.** Every livery, compound, flag and
+  key-moment colour already went through `useLivery`, so one preference reaches
+  all of them; the semantic tokens move with them in CSS, and the reader's own
+  accent is adapted where it is written.
+
+> An accessibility feature that only recolours the chrome has recoloured the one
+> part that was never carrying the meaning.
+
+---
+
+## The championship is a property of the season
+
+Every tab in the Race Explorer is a reading of one session: the same ninety
+minutes told as a story, as charts, as strategy, as pace, as a duel, as an
+answer to a question. Standings was a seventh tab beside Ask, and it said to
+every reader who found it there that the championship belonged to the race above
+it.
+
+It belongs to the season, and the product has a season page. Three moves rather
+than one, because moving the table alone would have hidden it:
+
+* The tab goes. One table, in the place its own subject lives.
+* The nav item is **"Seasons"**, not "Historical" — a reader who reads the label
+  as "old stuff" will never look for this year's title race behind it.
+* That page opens on the season **in progress**, and the Race Story hands the
+  reader off to it at the point the question actually occurs to them: after the
+  result.
+
+And the table has two tiers, because seventy-seven seasons cannot carry
+portraits. F1 publishes them for the current grid and, patchily, a few years
+back; for 1961 there is nothing, and a table of team-coloured initials in
+circles reads as a page that FAILED to load its images rather than one that
+never had any. Historical seasons are typographic — heavier numeral, more air,
+the livery rail — and the current season keeps its faces. The rule is not "the
+current season" but "where the faces exist": all or none, checked against the
+data, because one row of initials among nineteen portraits is worse than either.

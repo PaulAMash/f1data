@@ -1,5 +1,6 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { forColourVision, type ColourVision } from "@/lib/palette";
 
 /* -------------------------------------------------------------------------- */
 /* What the reader has told us they want.                                     */
@@ -33,6 +34,7 @@ export type ChartSpeed = "instant" | "standard" | "cinematic";
 export type TipDelay = "none" | "short" | "long";
 export type Intensity = "subtle" | "standard" | "vivid";
 export type Landing = "home" | "explorer" | "history";
+export type { ColourVision };
 
 /**
  * The accent is already a CSS variable, so letting the reader choose one costs
@@ -55,6 +57,14 @@ export interface Prefs {
   accent: AccentKey;
   /** Scales the whole type ramp. A real accessibility control, not a toggle. */
   textScale: "normal" | "large";
+  /* THE SPORT IS COLOUR-CODED, so this is not a cosmetic option.
+     A livery is how a reader identifies a car, a compound is the colour of the
+     sidewall, and a green sector means a personal best — for a reader who
+     cannot separate the two hues that carry most of that, the charts are grey.
+     Every colour in the product passes through one adapter (lib/palette), so
+     this one answer reaches the liveries, the tyres, the flags, the key
+     moments, the standings and the semantic tokens together. */
+  colourVision: ColourVision;
 
   /* ---- localisation ------------------------------------------------------
      Not a translation. Formula 1 is reported in two dialects of one language,
@@ -92,6 +102,7 @@ export const PREFS_KEY = "pitwall-iq:prefs";
 
 export const DEFAULT_PREFS: Prefs = {
   mode: "simple", theme: "dark", motion: "full", accent: "f1", textScale: "normal",
+  colourVision: "none",
   units: "metric", spelling: "en-GB", clock: "24h", groupDigits: true,
   density: "comfortable", chartSpeed: "standard", tipDelay: "short", intensity: "standard",
   landing: "home", season: 0,
@@ -111,7 +122,7 @@ export const PREF_GROUPS = {
   localisation:  ["units", "spelling", "clock", "groupDigits"],
   interface:     ["density", "chartSpeed", "tipDelay", "landing", "season"],
   motion:        ["motion"],
-  accessibility: ["textScale"],
+  accessibility: ["textScale", "colourVision"],
 } as const satisfies Record<string, readonly (keyof Prefs)[]>;
 export type PrefGroup = keyof typeof PREF_GROUPS;
 
@@ -160,6 +171,7 @@ export const NO_FLASH_SCRIPT = `
     if (p.intensity) root.dataset.intensity = p.intensity;
     if (p.tipDelay) root.dataset.tip = p.tipDelay;
     if (p.chartSpeed) root.dataset.chart = p.chartSpeed;
+    if (p.colourVision && p.colourVision !== "none") root.dataset.cvd = p.colourVision;
   } catch (e) {
     document.documentElement.dataset.theme = "dark";
   }
@@ -209,6 +221,8 @@ function resolveInitial(): Prefs {
     motion: oneOf(stored.motion, ["full", "calm"], sysCalm ? "calm" : "full"),
     accent: oneOf(stored.accent, Object.keys(ACCENTS) as AccentKey[], DEFAULT_PREFS.accent),
     textScale: oneOf(stored.textScale, ["normal", "large"], DEFAULT_PREFS.textScale),
+    colourVision: oneOf(stored.colourVision,
+      ["none", "protanopia", "deuteranopia", "tritanopia"], DEFAULT_PREFS.colourVision),
 
     units: oneOf(stored.units, ["metric", "imperial"], usish ? "imperial" : "metric"),
     spelling: oneOf(stored.spelling, ["en-GB", "en-US"], usish ? "en-US" : "en-GB"),
@@ -267,13 +281,26 @@ export function PrefsProvider({ children }: { children: React.ReactNode }) {
     root.dataset.intensity = prefs.intensity;
     root.dataset.tip = prefs.tipDelay;
     root.dataset.chart = prefs.chartSpeed;
+    if (prefs.colourVision === "none") delete root.dataset.cvd;
+    else root.dataset.cvd = prefs.colourVision;
     root.dataset.spelling = prefs.spelling;
     // written as variables rather than as a stylesheet rule per accent: five
     // accents times two themes would be ten rules that all have to stay in step
     const a = ACCENTS[prefs.accent] ?? ACCENTS.f1;
     const dark = prefs.theme === "dark";
-    root.style.setProperty("--accent", dark ? a.dark : a.light);
-    root.style.setProperty("--accent-soft", dark ? a.soft : a.lightSoft);
+    /* The accent is written as a triplet rather than a hex, so it goes through
+       the adapter as one — a pitwall red that a protanope reads as brown is the
+       one colour in the product that must not be left alone. */
+    const adapt = (triplet: string) => {
+      if (prefs.colourVision === "none") return triplet;
+      const [r, g, b] = triplet.split(/\s+/).map(Number);
+      const hex = forColourVision(
+        `#${[r, g, b].map((c) => c.toString(16).padStart(2, "0")).join("")}`, prefs.colourVision);
+      const m = /^#(..)(..)(..)$/.exec(hex);
+      return m ? `${parseInt(m[1], 16)} ${parseInt(m[2], 16)} ${parseInt(m[3], 16)}` : triplet;
+    };
+    root.style.setProperty("--accent", adapt(dark ? a.dark : a.light));
+    root.style.setProperty("--accent-soft", adapt(dark ? a.soft : a.lightSoft));
     try {
       localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
     } catch { /* private browsing — the session still works, it just won't persist */ }

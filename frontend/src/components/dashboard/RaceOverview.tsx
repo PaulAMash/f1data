@@ -10,6 +10,7 @@ import { InfoTip } from "@/components/ui/InfoTip";
 import { IconTile, Meter, PositionShift, type IconAnim, type VisualTone } from "@/components/ui/Visuals";
 import { InsightCard } from "@/components/ui/InsightCard";
 import { cx, fmtGap, fmtLap, fmtSec, netBadge } from "@/lib/format";
+import { inFinishingOrder, NOT_CLASSIFIED_HINT, positionLabel } from "@/lib/classification";
 import { derivePenalties, finalPenalties, penaltiesByDriver } from "@/lib/penalties";
 import { PenaltyBadges } from "@/components/ui/PenaltyBadge";
 
@@ -20,8 +21,9 @@ export function RaceOverview({
   const dotd = session.classification.find((c) => c.driver === strategy.driver_of_the_day);
   // Everyone sees the whole field, DNFs included — Simple just reads it with
   // fewer, friendlier columns (like a TV results graphic) while Advanced keeps
-  // the full grid/pits/best-lap detail.
-  const rows = session.classification;
+  // the full grid/pits/best-lap detail. The ORDER is the shared standard: see
+  // lib/classification.ts, which the Historical Explorer's table uses too.
+  const rows = inFinishingOrder(session.classification);
 
   // Classic F1 classification timing, the way the FIA and every broadcast
   // present it: the winner carries the full classified race time, everyone
@@ -165,27 +167,47 @@ export function RaceOverview({
                 {rows.map((c) => {
                   const nb = netBadge(c.grid && c.position ? c.grid - c.position : null);
                   return (
-                    <tr key={c.driver} className="border-b border-white/[0.04]">
-                      <td className="py-2 pl-5 pr-2 tabular-nums font-semibold">
-                        {c.position ?? "DNF"}
+                    /* A retirement recedes rather than shouting. It is still a
+                       full row with a real classified position in it — it is
+                       simply not a result at the same level as a car that
+                       reached the flag, which is how a timing screen has always
+                       said so, and how the Historical Explorer already did. */
+                    <tr key={c.driver}
+                      className={cx("border-b border-white/[0.04]", c.retired && "opacity-60")}>
+                      <td className="py-2 pl-5 pr-2 font-semibold tabular-nums">
+                        {c.position == null ? (
+                          <span title={NOT_CLASSIFIED_HINT} className="text-ink-faint">NC</span>
+                        ) : positionLabel(c.position)}
                       </td>
                       <td className="py-2 pr-2">
+                        {/* The badges get their own track rather than trailing
+                            the name: two penalties on one driver used to wrap
+                            onto a second line, which made that row taller than
+                            every other and broke the column the rest of them
+                            were aligned in. */}
                         <span className="flex items-center gap-2">
                           {/* fixed-width identity block so status badges align in a
                               clean column regardless of name length */}
                           <DriverBadge driver={session.drivers.find((d) => d.code === c.driver)}
                             code={c.driver} name={c.name} team={c.team} teamColor={c.team_color}
                             size={26} className="w-56 min-w-0" />
-                          {c.retired && <DnfBadge row={c} />}
-                          <PenaltyBadges penalties={penaltyMap.get(c.driver)} />
+                          <span className="flex min-w-0 shrink items-center gap-1.5 overflow-hidden">
+                            {c.retired && <DnfBadge row={c} />}
+                            <PenaltyBadges penalties={penaltyMap.get(c.driver)} />
+                          </span>
                         </span>
                       </td>
                       {simple ? (
                         <td className="py-2 pr-2 tabular-nums text-ink-muted">{finishTime(c)}</td>
                       ) : (
                         <>
+                          {/* A classified retirement HAS a finishing position —
+                              the FIA awarded it — and hiding it behind an em
+                              dash threw away a fact the same car showed in the
+                              Historical Explorer. Only a car with no position
+                              at all has nothing to put here. */}
                           <td className="py-2 pr-2">
-                            {c.retired ? <span className="text-ink-faint">—</span> : (
+                            {c.position == null ? <span className="text-ink-faint">—</span> : (
                               <span className="inline-flex items-center gap-1.5 tabular-nums text-ink-muted">
                                 P{c.grid ?? "—"}→P{c.position}
                                 <span className={nb.tone === "up" ? "text-emerald-300" : nb.tone === "down" ? "text-rose-300" : "text-ink-faint"}>

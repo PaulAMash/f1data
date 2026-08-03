@@ -73,9 +73,16 @@ export function DataSourcesPanel({
   return (
     <div className="grid items-start gap-4 lg:grid-cols-2">
       <Card>
+        {/* The heading already says what the list is. What the subtitle carried
+            that the heading could not is the FETCH TIME, which is a fact about
+            this particular answer rather than a description of the panel — so
+            it stays, as a timestamp, and the sentence goes. */}
         <CardHeader title="Where this data came from"
-          subtitle={"Which service provided each part of this session."
-            + (report?.report?.fetched_at ? ` Fetched ${report.report.fetched_at}.` : "")} />
+          right={report?.report?.fetched_at ? (
+            <span className="font-mono text-[11px] tabular-nums text-ink-faint">
+              {String(report.report.fetched_at).replace("T", " ").slice(0, 16)}
+            </span>
+          ) : undefined} />
         <CardBody className="space-y-2">
           {loading && <div className="py-6 text-center"><Spinner /></div>}
           {!loading && facets.length === 0 && <p className="text-sm text-ink-faint">No source report available.</p>}

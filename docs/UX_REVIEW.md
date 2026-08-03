@@ -3,11 +3,128 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V66**. Reviewed at 1440×900, 820×900 and 420×860, in both themes, at both
-motion settings, and walked end to end as a first-time visitor down both branches of the
-welcome screen — tutorial taken and tutorial declined — plus the return path through
-Settings, the eight beats of the tour in both themes, and the landing page's example
-questions from press to answer.
+Last pass: **V67**. Reviewed at 1440×1000, 1440×900, 820×900 and 420×860, in both themes,
+at both motion settings, in all four colour-vision palettes, and walked end to end as a
+first-time visitor through the welcome screen, the seven beats of the tour, the landing
+page's example questions, and the navigation pair in both directions including the
+browser's own controls.
+
+---
+
+## Fixed in V67
+
+### 1. The tutorial shifted the page under its own spotlight — *was high*
+
+The highlight measured its target during the scroll and then stopped watching, leaving
+`scroll` and `resize` listeners that do not fire when the LAYOUT changes under a stationary
+page. On the Race Explorer it always does: the session lands a beat after the tour opens,
+the heading stops saying "Loading", a chip appears beside it, a note may appear under it —
+and everything below drops twenty-four pixels while the outline stays put. Measured: the
+target moving 141 → 165 with the ring left behind.
+
+The rect is now read every frame for the life of the beat and written only when it has moved
+(so a stationary target costs no renders), and the correction runs on a shorter curve than
+the journey between beats — a twenty-four-pixel glide over half a second is not a
+correction, it is a second animation. Worst tracking error through a deliberately delayed
+session load: 4px.
+
+Separately, the tour no longer scrolls to centre on every beat. It scrolls only when the
+target is outside a comfortable band, and then by the least it can. Measured over all seven
+beats at 1440×900: the page does not move at all.
+
+### 2. Partial data was decided by whichever source answered first — *was high*
+
+Every adapter declared its own facet list, so a facet an adapter never declared could never
+be reported missing. A race fetched through the archive with no position trace reported
+COMPLETE, and the reader got a Race Story with no timeline and no explanation — which is the
+"Monaco is missing data but doesn't say so" report, and it was never about Monaco.
+
+The report is settled once now, at the end of the pipeline, from the session that was
+actually built: one canonical facet list, filtered by what the category can have. Five tests
+pin it — a facet no adapter declared is still missing, a complete session is never flagged,
+the audit is idempotent, it preserves the adapter's provenance, and a qualifying hour is not
+missing things it cannot have.
+
+### 3. The two classifications were two different tables — *was medium*
+
+One printed "DNF" in the position column and then repeated the status twice more; the other
+printed an em dash. One hid the classified position of every retirement in Grid→Finish, so
+the same car read as P18 in one table and as nothing in the other. Neither sorted, so a
+classified finisher could appear mid-way through a run of retirements. And two penalties on
+one driver wrapped onto a second line, making that row taller than every other.
+
+One standard, in `lib/classification.ts`, used by both: order by classified position;
+"NC" where there is none, never a status; retirements recede; badges on their own track.
+
+### 4. The Driver focus dialog opened 453px down the page — *was high*
+
+`position: fixed` is only fixed to the viewport while no ancestor has a transform — and every
+arrival animation in the product used `fill-mode: both`, which holds `transform: none` for
+ever as the computed matrix. Practically every panel was a containing block. The dialog
+opened below the fold against a page it had itself locked, so it could not be scrolled back.
+
+Entrances use `backwards` now, and dialogs go through one shell that portals to `document.body`,
+centres in the viewport, locks the page, closes on Escape and on the backdrop. Verified: the
+overlay is exactly 0,0,1440,900 and its parent is BODY.
+
+### 5. The Historical classification trapped the mouse wheel — *was medium*
+
+It carried `.modal-scroll` — a rule for a box inside an overlay, `overflow-y: auto` plus
+`overscroll-behavior: contain`. With no height limit it could never scroll, but `contain`
+stops the wheel chaining out whether or not the box can use it, so the pointer resting
+anywhere over the results killed scrolling for the page. It takes `overflow-x` and nothing
+else now.
+
+### 6. Light mode's coloured hairlines were invisible — *was medium*
+
+`--tint` inverts, so 137 structural hairlines written `white/[0.06]` flip cleanly and keep
+their weight. A COLOURED hairline does not: a broadcast red at 30% on black is a bright edge,
+and the print red at 30% on white is pale pink. Key moments, strategy borders, turquoise
+accents and every thin accent ring are raised in light mode and only in light mode — same
+hues, at the weight they were always supposed to read at. The tyre compounds and the
+key-moment colours now go through the same adapter the liveries do, which is what finally
+fixed the hard compound disappearing on paper, and the temperature ramp came down out of the
+top of the value scale.
+
+### 7. Colour blindness had no answer at all — *was high*
+
+Roughly one man in twelve cannot separate the two hues carrying most of this product's
+meaning. Four palettes now: full colour, protanopia, deuteranopia, tritanopia, mapping every
+livery, compound, flag, key moment and semantic token onto a ring whose members survive that
+deficiency — Okabe-Ito for red-green, a red-cyan axis for tritanopia. Interpolated rather
+than snapped, so colours that were distinct stay distinct; near-white left alone, so the hard
+compound stays the white one; composed with the light-mode ceiling, because both readers
+exist at once.
+
+### 8. The championship sat inside the session's tabs — *was medium*
+
+Every other tab is a reading of one session. Standings is a property of the season, and a
+seventh tab beside Ask said otherwise. It lives on Seasons — renamed from "Historical",
+because a reader who reads the label as "old stuff" will not look for this year's title race
+behind it — that page opens on the season in progress, and the Race Story hands the reader
+off to it after the result.
+
+### 9. Navigation could go back but not forward — *was medium*
+
+Back was a counter, which is enough for one direction and useless for two — and it could not
+tell the browser's own Back button from a new navigation, so a browser-back counted as
+another step AWAY from home. It is two stacks of paths now: Back and Forward as one control
+with two halves, each disabled rather than hidden, truncating the forward history on a new
+navigation exactly as a browser does. Verified through nine transitions including the
+browser's own controls.
+
+### 10. Permanent explanatory copy was competing with its own tooltips — *was low*
+
+Several panels printed a sentence describing the metric directly above an info button whose
+tooltip explained the same thing at greater length. One of the two was pure clutter, and it
+was the one that could not be dismissed. Race control, weather, pace, the pace board,
+three qualifying panels and the sources panel keep their titles and lose their subtitles;
+what the subtitle genuinely carried that the heading could not — the fetch timestamp —
+stays, as a timestamp.
+
+### 11. A reduced-motion meter was fourteen identical bars — *found in review, was low*
+
+Carried over from V66's freeze rule; it holds an uneven static reading now.
 
 ---
 

@@ -61,18 +61,59 @@ export function onLight(hex: string): string {
   return `#${out.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
 }
 
-/** Pass-through in dark, adjusted in light. The only entry point components use. */
-export const livery = (hex: string | null | undefined, theme: "dark" | "light"): string => {
+/**
+ * The one entry point every component uses, and the order of the two
+ * corrections matters.
+ *
+ * COLOUR VISION FIRST, because it decides what hue the colour is going to be
+ * at all — mapping onto a dichromat-safe ring (see lib/palette) and then
+ * checking that result against the page it will sit on is right, while
+ * darkening for paper and then rotating the hue would throw the darkening away.
+ *
+ * SURFACE SECOND, because it is a question about contrast rather than about
+ * identity: a colour that survives deuteranopia can still be a pale line on a
+ * white page, and both readers exist at once.
+ */
+export const livery = (
+  hex: string | null | undefined,
+  theme: "dark" | "light",
+  cvd: ColourVision = "none",
+): string => {
   if (!hex) return theme === "light" ? "#5b677e" : "#8892a6";
-  return theme === "light" ? onLight(hex) : hex;
+  const safe = forColourVision(hex, cvd);
+  return theme === "light" ? onLight(safe) : safe;
 };
 
 /* -------------------------------------------------------------------------- */
 import { usePrefs } from "@/lib/prefs";
+import { COMPOUND_COLOR } from "@/lib/compounds";
 import { useCallback } from "react";
+import { forColourVision, type ColourVision } from "@/lib/palette";
 
-/** The livery, adjusted for whichever surface it is about to be drawn on. */
+/** A colour, adjusted for the surface it lands on and the eye reading it.
+ *  Every livery, compound, flag and key-moment colour in the product goes
+ *  through this one call — which is why one preference reaches all of them. */
 export function useLivery() {
-  const theme = usePrefs().prefs.theme;
-  return useCallback((hex: string | null | undefined) => livery(hex, theme), [theme]);
+  const { theme, colourVision } = usePrefs().prefs;
+  return useCallback(
+    (hex: string | null | undefined) => livery(hex, theme, colourVision),
+    [theme, colourVision]);
+}
+
+/* -------------------------------------------------------------------------- */
+/**
+ * A tyre compound's colour, adapted.
+ *
+ * Hard is `#e7ecf3` — very nearly white, which is exactly right on a black
+ * timing screen and is a blank rectangle on a white page. Soft and Medium are
+ * red and yellow, which a deuteranope reads as one colour. Both problems have
+ * the same answer and the product already owns it, so this is the same adapter
+ * with the compound table wired into it rather than a second set of rules.
+ */
+export function useCompoundColour() {
+  const paint = useLivery();
+  return useCallback(
+    (c: keyof typeof COMPOUND_COLOR | string) =>
+      paint(COMPOUND_COLOR[c as keyof typeof COMPOUND_COLOR] ?? COMPOUND_COLOR.UNKNOWN),
+    [paint]);
 }

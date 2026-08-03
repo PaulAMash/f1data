@@ -51,6 +51,25 @@ interface Row {
 }
 
 /* -------------------------------------------------------------------------- */
+/* TWO TIERS, AND THE LINE BETWEEN THEM IS WHETHER THE ASSETS EXIST.          */
+/*                                                                            */
+/* A championship table spanning seventy-seven seasons cannot carry portraits. */
+/* F1 publishes them for the current grid and, patchily, for a few years back; */
+/* for 1961 there is nothing. What that produced was the worst of both — a     */
+/* 1961 table of grey initials in circles, which reads as a page that FAILED   */
+/* to load its images rather than as a page that never had any.                */
+/*                                                                            */
+/* So the historical tiers do not attempt it. They are typographic: a heavier  */
+/* numeral, more air per row, the livery rail, and the points set as the       */
+/* figure they are. That reads as a deliberately minimal table rather than an  */
+/* unfinished one, and it is the same table at every scale of asset            */
+/* availability — which is the only way to be consistent across seven decades. */
+/*                                                                            */
+/* The CURRENT season keeps its faces, because they all exist and a grid you   */
+/* recognise is the whole argument for portraits in the first place.           */
+/* -------------------------------------------------------------------------- */
+
+/* -------------------------------------------------------------------------- */
 /* ONE PORTRAIT SYSTEM, NOT TWO.                                              */
 /*                                                                            */
 /* The Final Classification cards resolve a face by looking the driver up in   */
@@ -69,11 +88,13 @@ interface Row {
 /* one path, with a second only where the first cannot reach.                  */
 /* -------------------------------------------------------------------------- */
 
-export function Standings({ year, compact, roster }: {
+export function Standings({ year, compact, roster, portraits = false }: {
   year: number;
   compact?: boolean;
   /** The session's own enriched drivers, when a session is on screen. */
   roster?: Driver[];
+  /** Faces and constructor marks. True only where the assets all exist. */
+  portraits?: boolean;
 }) {
   const [type, setType] = useState<"driver" | "constructor">("driver");
   const [rows, setRows] = useState<Row[]>([]);
@@ -103,6 +124,16 @@ export function Standings({ year, compact, roster }: {
   const lead = Math.max(1, ...rows.map((r) => r.points ?? 0));
   const shown = compact ? rows.slice(0, 10) : rows;
 
+  /* FACES WHERE THE FACES EXIST, and nowhere else.
+     "The current season has portraits" is an assumption, not a fact — it is
+     false in demo mode and false the week a new driver is announced. So the
+     caller says whether portraits are ALLOWED for this season and the data says
+     whether there are any: a column of team-coloured initials is the "grey
+     placeholder" this was supposed to stop, and one row of initials among
+     nineteen faces is worse than either. All or none. */
+  const haveFaces = portraits && rows.some(
+    (r) => (r.code ? byCode.get(r.code)?.headshot_url : null) || r.headshot_url);
+
   return (
     <div>
       <Tabs data-tour="standings-switch" items={[
@@ -118,7 +149,7 @@ export function Standings({ year, compact, roster }: {
         <ol className="space-y-1">
           {shown.map((r) => (
             <StandingRow key={`${r.position}-${r.name}`} row={r} lead={lead}
-              constructor={type === "constructor"}
+              constructor={type === "constructor"} portraits={type === "constructor" ? portraits : haveFaces}
               driver={r.code ? byCode.get(r.code) : undefined} />
           ))}
         </ol>
@@ -130,10 +161,11 @@ export function Standings({ year, compact, roster }: {
   );
 }
 
-function StandingRow({ row, lead, constructor, driver }: {
+function StandingRow({ row, lead, constructor, driver, portraits }: {
   row: Row; lead: number; constructor: boolean;
   /** The session's own record for this driver, when there is one. */
   driver?: Driver;
+  portraits: boolean;
 }) {
   const paint = useLivery();
   const { num } = useLocale();
@@ -143,34 +175,43 @@ function StandingRow({ row, lead, constructor, driver }: {
   const pct = ((row.points ?? 0) / lead) * 100;
 
   return (
-    <li className={cx("den-row group/row relative flex items-center gap-3 overflow-hidden rounded-xl px-3 transition-colors duration-[--dur-2]",
-      "hover:bg-white/[0.03]")}>
+    <li className={cx("den-row group/row relative flex items-center overflow-hidden rounded-xl transition-colors duration-[--dur-2]",
+      "hover:bg-white/[0.03]", portraits ? "gap-3 px-3" : "gap-4 px-3.5")}>
       {/* the livery, as the row's own left edge */}
       <span aria-hidden className="absolute inset-y-1 left-0 w-[3px] rounded-full transition-all duration-[--dur-2] group-hover/row:inset-y-0"
         style={{ background: tint, opacity: top ? 1 : 0.55 }} />
 
-      <span className={cx("w-6 shrink-0 text-right font-mono tabular-nums",
-        top ? "text-[15px] font-bold text-ink" : "text-[13px] text-ink-faint")}>
+      {/* Without a portrait the numeral IS the anchor, so it grows into the
+          space the face used to hold and the row takes the air with it. */}
+      <span className={cx("shrink-0 text-right font-mono tabular-nums",
+        portraits ? "w-6" : "w-8",
+        top
+          ? cx("font-bold text-ink", portraits ? "text-[15px]" : "text-[19px]")
+          : cx("text-ink-faint", portraits ? "text-[13px]" : "text-[15px]"))}>
         {row.position}
       </span>
 
-      {constructor ? (
+      {/* Nothing in this slot at all for a historical season — not a
+          placeholder, not initials in a circle. An empty column is a design
+          decision; a column of fallbacks is a failure to load. */}
+      {portraits && (constructor ? (
         <ConstructorMark team={row.name} color={tint} size={22} />
       ) : (
         /* the face beside the name. A championship is a list of people, and it
-           had been reading like a spreadsheet of them. The avatar falls back to
-           team-coloured initials on its own, so a season F1 has published no
-           portraits for still gets a row that looks deliberate. */
+           had been reading like a spreadsheet of them. */
         <DriverAvatar size={top ? 32 : 27} driver={driver ?? {
           number: "", code: row.code ?? "", name: row.name,
           team: row.team ?? "", team_color: teamColour(row.team ?? ""),
           headshot_url: row.headshot_url ?? null,
         }} />
-      )}
+      ))}
 
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline gap-2">
-          <span className={cx("truncate", top ? "text-[15px] font-semibold text-ink" : "text-[13.5px] text-ink")}>
+          <span className={cx("truncate text-ink",
+            top
+              ? cx("font-semibold", portraits ? "text-[15px]" : "text-[16px] tracking-[-0.01em]")
+              : cx(portraits ? "text-[13.5px]" : "text-[14.5px]"))}>
             {row.name}
           </span>
           {!constructor && row.team && (

@@ -640,13 +640,47 @@ def test_health_lists_the_archive_once_under_the_host_it_probes(monkeypatch):
 # breaker's behaviour — skip a host that just failed, keep asking one that
 # works, and never count "this session isn't in the archive" as an outage.
 # --------------------------------------------------------------------------- #
+def _filled(session, *, without=()):
+    """Give a session the facets a complete one of its category would have.
+
+    The fixtures below used to be empty shells carrying only a `missing` list,
+    which was fine while "is this session complete" was answered by reading that
+    list. It is answered by reading the SESSION now (see `_audit_report`), so a
+    shell claiming to be "a real-shaped session" has to actually have the shape:
+    otherwise every one of these tests is exercising a session that, correctly,
+    is missing everything.
+    """
+    from app.models import (
+        ClassificationRow, Driver, Lap, Overtake, PitStop, PositionPoint,
+        RaceControlEvent, Stint, WeatherPoint,
+    )
+    have = {
+        "drivers": [Driver(number="1", code="VER", name="Max Verstappen",
+                           team="Red Bull Racing", team_color="#3671C6")],
+        "classification": [ClassificationRow(position=1, driver="VER", name="Max Verstappen",
+                                             team="Red Bull Racing", team_color="#3671C6",
+                                             status="Finished")],
+        "laps": [Lap(driver="VER", lap=1, lap_time=92.5)],
+        "positions": [PositionPoint(driver="VER", lap=1, position=1)],
+        "stints": [Stint(driver="VER", stint=1, compound="MEDIUM",
+                         start_lap=1, end_lap=20, laps=20)],
+        "pit_stops": [PitStop(driver="VER", lap=20, stationary_time=2.4)],
+        "overtakes": [Overtake(lap=5, overtaker="VER", overtaken="NOR")],
+        "race_control": [RaceControlEvent(lap=1, category="Flag", message="GREEN LIGHT")],
+        "weather": [WeatherPoint(minute=0, air_temp=24.0, track_temp=31.0)],
+    }
+    for name, value in have.items():
+        setattr(session, name, [] if name in without else value)
+    return session
+
+
 def _archive_session():
     """A real-shaped session that is missing exactly the archive's facets."""
     from app.models import RaceSession, SourceReport
-    return RaceSession(
+    return _filled(RaceSession(
         year=2025, grand_prix="Bahrain", session_type="Race", category="race",
         source_report=SourceReport(missing=["stints", "weather"]),
-    )
+    ), without=("stints", "weather"))
 
 
 def _fresh_breaker(monkeypatch, **kw):
@@ -889,12 +923,12 @@ def test_a_reachable_source_says_how_fast_it_answered(monkeypatch):
 def _report_with(missing, category):
     from app.models import RaceSession, SourceReport
     from app.models import FacetSource
-    return RaceSession(
+    return _filled(RaceSession(
         year=2025, grand_prix="Bahrain", session_type="Qualifying", category=category,
         source_report=SourceReport(
             missing=list(missing),
             facets=[FacetSource(facet=m, source="none", confidence="low") for m in missing]),
-    )
+    ), without=tuple(missing))
 
 
 def test_qualifying_is_not_partial_for_lacking_overtakes():
@@ -1157,3 +1191,77 @@ def test_constructor_standings_never_ask_for_a_driver_portrait(monkeypatch):
                                  params={"year": 2026, "type": "constructor"})
     assert r.status_code == 200
     assert called == []
+
+
+# --------------------------------------------------------------------------- #
+# "Is this session complete?" is asked once, of the session.
+#
+# Every adapter used to answer it for itself, and each declared a different set
+# of facets — so a facet an adapter never declared could never be reported
+# missing. A race fetched through the archive with no position trace at all
+# reported COMPLETE, and the reader got a Race Story with no timeline in it and
+# nothing saying why. `_audit_report` asks the session instead of the adapter.
+# --------------------------------------------------------------------------- #
+def test_a_facet_no_adapter_declared_is_still_missing():
+    from app.adapters import data_source_manager as dsm
+    from app.models import RaceSession, SourceReport
+    s = _filled(RaceSession(
+        year=2025, grand_prix="Monaco", session_type="Race", category="race",
+        # the archive's report shape: it never mentions positions at all
+        source_report=SourceReport(missing=[]),
+    ), without=("positions",))
+    dsm._audit_report(s)
+    assert "positions" in s.source_report.missing
+    assert s.partial is True and s.source_report.partial is True
+
+
+def test_a_complete_session_is_never_flagged_partial():
+    from app.adapters import data_source_manager as dsm
+    from app.models import RaceSession, SourceReport
+    s = _filled(RaceSession(year=2025, grand_prix="Monaco", session_type="Race",
+                            category="race", source_report=SourceReport()))
+    dsm._audit_report(s)
+    assert s.source_report.missing == []
+    assert s.partial is False
+
+
+def test_the_audit_is_idempotent():
+    """It runs on fetch, on cache heal and after every enrichment step, so
+    running it twice has to be the same as running it once."""
+    from app.adapters import data_source_manager as dsm
+    from app.models import RaceSession, SourceReport
+    s = _filled(RaceSession(year=2025, grand_prix="Monaco", session_type="Race",
+                            category="race", source_report=SourceReport()),
+                without=("weather",))
+    dsm._audit_report(s)
+    first = (list(s.source_report.missing), [f.facet for f in s.source_report.facets])
+    dsm._audit_report(s)
+    assert (list(s.source_report.missing), [f.facet for f in s.source_report.facets]) == first
+
+
+def test_the_audit_keeps_the_adapter_s_provenance():
+    """WHERE a facet came from is the adapter's answer and only it knows; WHETHER
+    the facet is there is decided by looking. The audit must not overwrite the
+    first with the second."""
+    from app.adapters import data_source_manager as dsm
+    from app.models import FacetSource, RaceSession, SourceReport
+    s = _filled(RaceSession(
+        year=2025, grand_prix="Monaco", session_type="Race", category="race",
+        source_report=SourceReport(facets=[
+            FacetSource(facet="laps", source="openf1", confidence="high",
+                        detail="Lap timing from OpenF1."),
+        ])))
+    dsm._audit_report(s)
+    laps = next(f for f in s.source_report.facets if f.facet == "laps")
+    assert laps.source == "openf1" and laps.detail == "Lap timing from OpenF1."
+
+
+def test_a_qualifying_hour_is_not_missing_things_it_cannot_have():
+    from app.adapters import data_source_manager as dsm
+    from app.models import RaceSession, SourceReport
+    s = _filled(RaceSession(year=2025, grand_prix="Monaco", session_type="Qualifying",
+                            category="qualifying", source_report=SourceReport()),
+                without=("overtakes", "pit_stops", "positions"))
+    dsm._audit_report(s)
+    assert s.source_report.missing == []
+    assert not any(f.facet in ("overtakes", "positions") for f in s.source_report.facets)

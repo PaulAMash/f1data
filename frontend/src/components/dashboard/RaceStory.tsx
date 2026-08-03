@@ -1,4 +1,6 @@
 "use client";
+import Link from "next/link";
+import { ArrowRight, Trophy } from "lucide-react";
 import { Crown, Flag, Sparkles, TrendingDown, TrendingUp } from "@/components/ui/MotionIcon";
 import type { RaceBundle } from "@/lib/types";
 import { useIsSimple } from "@/lib/mode";
@@ -163,6 +165,20 @@ export function RaceStory({ bundle, onJump }: { bundle: RaceBundle; onJump?: (ta
       {/* classification + movers + weather — points scorers in Simple,
           the full field with strategy verdicts in Advanced */}
       <RaceOverview bundle={bundle} simple={simple} maxNet={maxNet} />
+
+      {/* WHERE THE CHAMPIONSHIP WENT, AND WHY IT IS A LINK.
+          The standings used to be a tab in this row, beside Ask — which said
+          they were a reading of THIS session, and they are not: a championship
+          is a property of the season. It lives on Seasons now, with the season
+          picker that governs it, and the race hands the reader off to it at the
+          point the question actually occurs to them: after the result. */}
+      <Link href={`/history?year=${session.year}`}
+        className="group/champ flex items-center gap-2.5 rounded-xl border border-white/[0.07] bg-base-900/50 px-4 py-3 text-[13.5px] text-ink-muted transition-all duration-[--dur-2] ease-[--ease-out] hover:border-white/[0.16] hover:text-ink">
+        <Trophy size={15} className="shrink-0 text-accent-soft" />
+        Where the {session.year} championship stands after this Grand&nbsp;Prix
+        <ArrowRight size={14}
+          className="ml-auto shrink-0 text-ink-faint transition-transform duration-[--dur-2] group-hover/champ:translate-x-0.5 group-hover/champ:text-accent-soft" />
+      </Link>
     </div>
   );
 }

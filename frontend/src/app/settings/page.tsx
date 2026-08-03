@@ -9,6 +9,9 @@ import { NavBar } from "@/components/layout/NavBar";
 import { Footer } from "@/components/layout/Footer";
 import { Choice, Choose, Field, Segmented, Switch } from "@/components/ui/Field";
 import {
+  COLOUR_VISION_LABEL, COLOUR_VISION_NOTE, forColourVision, type ColourVision,
+} from "@/lib/palette";
+import {
   usePrefs, ACCENTS, PREF_GROUPS, type AccentKey, type PrefGroup,
 } from "@/lib/prefs";
 import { cx } from "@/lib/format";
@@ -65,10 +68,31 @@ const KEYWORDS: Record<SectionId, string[]> = {
   interface: ["density", "compact", "chart", "animation", "speed", "tooltip", "delay",
     "landing", "home", "start", "season", "year", "default"],
   motion: ["animation", "calm", "reduced", "movement", "tempo"],
-  accessibility: ["text", "larger", "size", "readability", "contrast"],
+  accessibility: ["text", "larger", "size", "readability", "contrast", "colour", "color",
+    "blind", "colourblind", "colorblind", "vision", "protanopia", "deuteranopia",
+    "tritanopia", "palette", "accessible"],
 };
 
 const CURRENT_SEASON = new Date().getFullYear();
+
+/* The five colours the sport actually uses to mean something, shown as this
+   palette would render them. A description of a colour adaptation is not
+   something anyone can check; the adaptation itself is. */
+const MEANINGFUL = [
+  ["#ff3b3b", "Soft tyre"], ["#ffcf3f", "Medium"], ["#e7ecf3", "Hard"],
+  ["#34d399", "Gained"], ["#00e0c6", "Fastest"], ["#a78bfa", "Session best"],
+] as const;
+
+function CvdSwatch({ mode }: { mode: ColourVision }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      {MEANINGFUL.map(([hex, what]) => (
+        <span key={what} title={what} className="h-4 flex-1 rounded-[3px]"
+          style={{ background: forColourVision(hex, mode) }} />
+      ))}
+    </span>
+  );
+}
 
 export default function SettingsPage() {
   const { prefs, set, setThemeFrom, resetGroup, resetAll, ready } = usePrefs();
@@ -387,6 +411,38 @@ export default function SettingsPage() {
                   <Choice on={prefs.textScale === "large"} onClick={() => set("textScale", "large")}
                     title="Larger text" tag="Increased readability"
                     body="Scales the whole interface proportionally — labels and figures included, not just body copy." />
+                </div>
+
+                {/* NOT A COSMETIC OPTION. Formula 1 is colour-coded: the livery
+                    is how a reader identifies a car, the compound is the colour
+                    of the sidewall, a green sector is a personal best. Every one
+                    of those goes through one adapter, so this one answer reaches
+                    the charts, the tyres, the flags, the standings and the
+                    interface's own accent together. */}
+                {/* Not inside a `Field`: that lays a label against a control in
+                    two columns, which is right for a switch and wrong for four
+                    cards — the cards were squeezed into the control column and
+                    the label wrapped into a forty-pixel ribbon beside them. This
+                    is a set of choices, so it is laid out like the set of
+                    choices above it. */}
+                <div className="mt-5 border-t border-white/[0.05] pt-5">
+                  <p className="text-[13.5px] font-medium text-ink">Colour vision</p>
+                  <p className="mt-0.5 max-w-2xl text-[12px] leading-relaxed text-ink-muted">
+                    Every colour in the product — liveries, tyre compounds, flags, key moments —
+                    is remapped onto a palette that stays separable, keeping the relationships
+                    between them intact. The swatches are the sport&rsquo;s six meaningful colours,
+                    shown as that palette would draw them.
+                  </p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    {(["none", "protanopia", "deuteranopia", "tritanopia"] as const).map((v) => (
+                      <Choice key={v} on={prefs.colourVision === v}
+                        onClick={() => { set("colourVision", v); say(`Colour vision: ${COLOUR_VISION_LABEL[v]}.`); }}
+                        title={COLOUR_VISION_LABEL[v]}
+                        tag={v === "none" ? "Default" : "Adapted palette"}
+                        body={COLOUR_VISION_NOTE[v]}
+                        swatch={<CvdSwatch mode={v} />} />
+                    ))}
+                  </div>
                 </div>
               </Group>
 

@@ -6,6 +6,7 @@ import {
   COMPOUND_COLOR, COMPOUND_LABEL, COMPOUND_MISSING_HINT, COMPOUND_SHORT, compoundKnown,
 } from "@/lib/compounds";
 import { EVENT, MOMENT, deriveWindows, undercutStory, type Win } from "@/lib/raceEvents";
+import { useCompoundColour } from "@/lib/liveryColor";
 import { cx, fmtLap } from "@/lib/format";
 import { FocusCardShell, type FocusTile } from "./FocusCardShell";
 
@@ -43,6 +44,7 @@ export function TyreStrategyChart({
   session: RaceSession; undercuts?: UndercutEvent[]; highlight?: string[];
   onSelect?: (codes: string[]) => void;
 }) {
+  const compoundHue = useCompoundColour();
   const total = session.total_laps;
   const [tip, setTip] = useState<{ s: Stint; name: string; x: number; y: number } | null>(null);
   const [hot, setHot] = useState<number | null>(null);
@@ -152,7 +154,7 @@ export function TyreStrategyChart({
                             !named && "tyre-unrecorded")}
                           style={{
                             left: `${left}%`, width: `${width}%`,
-                            background: COMPOUND_COLOR[s.compound],
+                            background: compoundHue(s.compound),
                             color: named ? "#0b0e16" : "rgb(var(--ink))",
                           }}>
                           {width > 5 ? `${COMPOUND_SHORT[s.compound]}${s.laps}` : ""}
@@ -187,7 +189,7 @@ export function TyreStrategyChart({
 
         <div className="mt-3 flex flex-wrap items-center gap-x-3.5 gap-y-2 pl-14 text-[11.5px] text-ink-muted">
           {(["SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET"] as const).map((c) => (
-            <span key={c} className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: COMPOUND_COLOR[c] }} /> {COMPOUND_LABEL[c]}</span>
+            <span key={c} className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: compoundHue(c) }} /> {COMPOUND_LABEL[c]}</span>
           ))}
           {/* only offered when the session actually contains one */}
           {session.stints.some((s) => !compoundKnown(s.compound)) && (
@@ -342,6 +344,7 @@ function LegendMark({ color }: { color: string }) {
 function TyreFocusCard({ driver, stints, row, onClear }: {
   driver: Driver; stints: Stint[]; row?: RaceSession["classification"][number]; onClear: () => void;
 }) {
+  const compoundHue = useCompoundColour();
   const ordered = [...stints].sort((a, b) => a.stint - b.stint);
   const stops = row?.pit_stops ?? Math.max(0, ordered.length - 1);
   const longest = ordered.reduce((mx, s) => Math.max(mx, s.laps), 0);
@@ -364,11 +367,11 @@ function TyreFocusCard({ driver, stints, row, onClear }: {
           <div className="flex gap-1">
             {ordered.map((s, i) => (
               <div key={i} className="min-w-0 rounded-md px-2 py-1.5 text-center"
-                style={{ flexGrow: s.laps, background: `${COMPOUND_COLOR[s.compound]}22`, boxShadow: `inset 0 -2px 0 0 ${COMPOUND_COLOR[s.compound]}` }}
+                style={{ flexGrow: s.laps, background: `${compoundHue(s.compound)}22`, boxShadow: `inset 0 -2px 0 0 ${compoundHue(s.compound)}` }}
                 title={compoundKnown(s.compound)
                   ? `${COMPOUND_LABEL[s.compound]} · laps ${s.start_lap}-${s.end_lap}`
                   : `${COMPOUND_MISSING_HINT} Laps ${s.start_lap}-${s.end_lap}.`}>
-                <div className="truncate text-[11px] font-bold" style={{ color: COMPOUND_COLOR[s.compound] }}>
+                <div className="truncate text-[11px] font-bold" style={{ color: compoundHue(s.compound) }}>
                   {COMPOUND_LABEL[s.compound]}
                 </div>
                 <div className="text-[11px] tabular-nums text-ink-muted">{s.laps}L · {s.start_lap}-{s.end_lap}</div>
@@ -430,8 +433,9 @@ function Float({ x, y, accent, width = 248, children }: {
 }
 
 function StintTooltip({ s, name, x, y }: { s: Stint; name: string; x: number; y: number }) {
+  const compoundHue = useCompoundColour();
   const named = compoundKnown(s.compound);
-  const c = COMPOUND_COLOR[s.compound];
+  const c = compoundHue(s.compound);
   return (
     <Float x={x} y={y} accent={named ? c : "rgb(var(--tint) / .22)"}>
       <div className="p-3">

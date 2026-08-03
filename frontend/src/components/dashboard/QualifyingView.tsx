@@ -680,7 +680,6 @@ function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSessio
       {segs.length > 0 && (
         <Card>
           <CardHeader title={<Term term="session progression">Session progression</Term>}
-            subtitle="The benchmark lap of each knockout segment, and where the time arrived"
             info={<InfoTip text="The best lap of each knockout segment. The benchmark falls through the session as fuel comes down, softer tyres go on and the track gains grip." />} />
           <CardBody>
             <div className="grid items-start gap-2.5 sm:grid-cols-3">
@@ -760,7 +759,6 @@ function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSessio
       {!simple && (
         <Card>
           <CardHeader title="Pole lap breakdown"
-            subtitle="The pole sitter's sectors against the best anyone managed"
             info={<InfoTip text="The pole sitter's best sectors against the session-best in each sector. Matching all three would make the pole lap the theoretical perfect lap." />} />
           <CardBody>
             {pb && pb.pole.some(Boolean) ? (
@@ -828,7 +826,6 @@ function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSessio
           instead of printing it at everyone all the time. */}
       <Card>
         <CardHeader title="Where the time was found"
-          subtitle="Each driver's gain from their first run to their final best lap"
           info={<InfoTip text={simple
             ? "How much time each driver found between their early runs and their final best lap."
             : "Session-long gain from first-run best to final best. Percentage is relative to their Q1 time; segment splits show where the time actually arrived; teammate delta contextualizes the machinery."} />} />
