@@ -2244,3 +2244,113 @@ The home page is now identical whether a tour is armed or not. The tour is a
 consequence of pressing the control, not an advertisement wrapped around it.
 
 > If a feature needs the page to announce it, the feature is in the wrong place.
+
+---
+
+## Atmosphere may be invented. Assertions may not.
+
+The welcome screen is now a room with instruments in it — a telemetry feed, a
+race-control readout, a pace delta, a tyre window, a data stream, the field.
+Which raises the question this product has to answer more carefully than most:
+where does a decorative number stop being decorative?
+
+The line is **whether it makes a claim**.
+
+* A trace sweeping a circuit, a lap counter, a sector time, a tyre window: these
+  are the *shape* of a session, in exactly the category the landing hero has
+  always occupied. None of them names a real Grand Prix, a real time or a real
+  driver's result. Nobody can be misled by them because there is nothing in them
+  to be misled about.
+* "CONNECTED", "SYNC 100%", "1,149 RACES": these are claims about **this system**.
+  A reader can act on them. So the SYSTEM panel is the one panel that goes and
+  checks: it calls the real archive endpoint on mount, prints the real figures,
+  and when the call fails it says OFFLINE rather than inventing a green light.
+
+That last part turned out to be the best thing on the screen. The handshake
+resolving from ACQUIRING to ARCHIVE READY · 1,149 · 1950–2026 is more convincing
+than any fabricated readout could have been, because it is the one part of the
+composition a reader could catch being honest — and it is.
+
+> Decoration that cannot be checked is fine. Decoration that could be checked
+> and would fail is a lie with a nice typeface.
+
+---
+
+## Two canvases, because they want different resolutions
+
+The room is lamps: three large soft sources, nothing in it with an edge. The
+feed is hairlines: telemetry traces, packets, a ghosted circuit, a radar sweep.
+
+Drawn together they force one compromise — either the lamps are wasting fill
+rate at 1.5x, or the hairlines shimmer at 0.4x. Drawn apart, each gets what it
+needs: the room at 0.4x upscaled (a 1440px window rendered at 576px, and there
+is no way to tell, because there is not a single hard edge in it), the feed at
+1.5x where a 1px stroke stays 1px.
+
+The feed is then **erased out of the middle** rather than clipped, which is both
+cheaper and softer than any clip — and not erased *completely*, because the
+glass panels need something behind them to refract. Take the background away
+entirely and glass stops reading as glass; the fog layer above is what keeps the
+type legible, so the erase only has to take the edge off.
+
+> Split a layer when its two halves disagree about resolution, not when they
+> disagree about subject.
+
+---
+
+## An entrance animation that never lets go
+
+The setup cards animate in with `hero-in … both`, and their hover lift silently
+did nothing. Not sometimes — never.
+
+`animation-fill-mode: both` holds the final keyframe forever, so the animation
+keeps ownership of `transform` for the life of the element, and an animation
+always beats a transition for the same property. The `:hover { transform:
+translateY(-2px) }` was being computed and discarded on every hover of every
+card that had been animated in.
+
+`backwards` is the correct mode for an entrance: it applies the from-state
+during the delay and then hands the element back to its own styles. The visual
+result is identical and the element is no longer owned.
+
+> An entrance is a thing that finishes. Say so, or it holds the door.
+
+---
+
+## Light is a blend mode, and the blend mode is a claim about the room
+
+Three fixes in this pass were the same fix:
+
+* the lamps composite with `lighter` on black and `multiply` on paper
+* the hairlines are drawn brighter on black and darker on paper
+* the third lamp is violet rather than amber, because amber added to the accent
+  gives brown
+
+All three come from the same place: a colour operation is a physical claim, and
+the claim is different in a dark room than on a white page. Running one set of
+values in both rooms is how a light theme ends up looking like a dark theme with
+the lights turned up — which is the thing "designed, not inverted" actually
+means in practice.
+
+> Ask which room the blend is happening in before choosing the operator.
+
+---
+
+## One primary control
+
+The welcome screen's button was better than the one every other page used: a
+vertical gradient with an inner top highlight reads as a machined surface
+catching the light, where a flat fill reads as a rectangle that has been coloured
+in.
+
+So it stopped being the welcome screen's button and became the product's. The
+change is one rule in `.cta-glow`, and it lifts every page that has a primary
+action on it.
+
+A detail worth recording because it is the kind of thing that breaks six months
+later: the element also carried a `bg-accent` utility, so two rules were setting
+`background` and which one won came down to stylesheet order. The utility came
+off. Whichever layer owns a property should own it alone.
+
+> The best component in a new screen is a proposal for the design system, not a
+> local exception.

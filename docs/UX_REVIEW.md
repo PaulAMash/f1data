@@ -3,10 +3,48 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V63**. Reviewed at 1440×1000, 1440×900 and 390×844, in both themes, in both
+Last pass: **V64**. Reviewed at 1440×1000, 1440×900 and 390×844, in both themes, in both
 language styles, and walked end to end as a first-time visitor down both branches of the
 welcome screen — tutorial taken and tutorial declined — plus the return path through
 Settings.
+
+---
+
+## Fixed in V64
+
+### 1. The welcome screen read as a marketing page — *was the brief*
+
+Rebuilt as seven layers: the room (drifting lamps), the feed (telemetry, packets, a ghosted
+circuit, a radar sweep), the fog, seven instrument panels, a cursor light, machined hardware
+cards, and the type. Everything at the periphery sits at about a third of contrast and none of
+it moves under the reader's eye.
+
+### 2. The setup cards were website cards — *was medium*
+
+Now glass with an edge-lit top, a specular sheen positioned at the pointer's own coordinates
+inside the card, an LED per answer, and a lift on hover.
+
+### 3. Light mode was an inversion — *was high*
+
+Designed on its own terms: the lamps multiply into an opaque base instead of adding to it,
+hairlines darken instead of brightening, the cards get real shadows and white glass, and every
+new class carries an explicit light-theme rule.
+
+### 4. The card hover did nothing at all — *found in review, was medium*
+
+`animation-fill-mode: both` on the entrance kept ownership of `transform` for the life of the
+element, so the hover lift was computed and discarded every time. `backwards` hands the element
+back.
+
+### 5. The circuit glyph was a bean — *found in review, was low*
+
+A fixed viewBox cannot frame seven layouts that each occupy a different part of their box. It
+is derived from the control points' bounding box now and re-fits itself for any new layout.
+
+### 6. Two rules were setting the CTA's background — *found in review, was low*
+
+`.cta-glow` and a `bg-accent` utility, with stylesheet order deciding. The utility came off, and
+the welcome screen's better button became the product's one primary control.
 
 ---
 
