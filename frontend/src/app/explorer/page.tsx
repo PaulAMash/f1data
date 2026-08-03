@@ -1,8 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Activity, BookOpen, Database, GitCompareArrows, MessageSquareText,
-  Gauge, Layers, LineChart, Timer, Wind, Braces, RefreshCw, AlertTriangle,
+  Activity, BookOpen, Database, GitCompareArrows, MessageSquareText, Trophy,
+  Gauge, Layers, LineChart, Timer, Wind, Braces, RefreshCw, AlertTriangle, CloudOff,
 } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
 import { useTourDrive } from "@/lib/tour";
@@ -27,6 +27,7 @@ import { useMode } from "@/lib/mode";
 import { api, ApiError } from "@/lib/api";
 import { cx } from "@/lib/format";
 import type { Meta, RaceBundle } from "@/lib/types";
+import { Standings } from "@/components/history/Standings";
 
 // Three purpose-built experiences: a race asks "why did it unfold this way?",
 // qualifying asks "who earned the grid?", practice asks "what did we learn?".
@@ -79,6 +80,8 @@ export default function ExplorerPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
   const [tab, setTab] = useState("story");
+  /** Which scope of the season this page is showing. */
+  const [view, setView] = useState<"session" | "season">("session");
   const [chartTab, setChartTab] = useState("position");
   /** A question that arrived in the URL, for the Ask panel to ask itself. */
   const [askSeed, setAskSeed] = useState<string | undefined>(undefined);
@@ -185,17 +188,39 @@ export default function ExplorerPage() {
       <NavBar active="explorer" />
       <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-6">
         {/* clean header — the race is the hero */}
-        <div className="mb-5">
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="bg-gradient-to-br from-white to-ink-muted bg-clip-text text-3xl font-bold tracking-tight text-transparent sm:text-4xl">
-              {session ? session.grand_prix : loading ? "Loading…" : "Race Explorer"}
-            </h1>
-            {bundle?.source === "mock" && <DemoChip />}
-            {bundle?.source !== "mock" && session?.partial && <PartialChip onClick={() => setTab("data")} />}
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="bg-gradient-to-br from-white to-ink-muted bg-clip-text text-3xl font-bold tracking-tight text-transparent sm:text-4xl">
+                {view === "season"
+                  ? `${sel.year} championship`
+                  : session ? session.grand_prix : loading ? "Loading…" : "Race Explorer"}
+              </h1>
+              {view === "session" && bundle?.source === "mock" && <DemoChip />}
+              {view === "session" && bundle?.source !== "mock" && session?.partial && (
+                <PartialChip onClick={() => setTab("data")} />
+              )}
+            </div>
+            {view === "season" ? (
+              <p className="mt-1 text-sm text-ink-muted">
+                Drivers&rsquo; and constructors&rsquo; standings as the season stands
+                {session ? ` — after the ${session.grand_prix}` : ""}.
+              </p>
+            ) : (session || loading) && (
+              <p className="mt-1 text-sm text-ink-muted">{subtitle}</p>
+            )}
           </div>
-          {(session || loading) && (
-            <p className="mt-1 text-sm text-ink-muted">{subtitle}</p>
-          )}
+
+          {/* TWO SCOPES OF ONE SEASON, AND THE SWITCH BETWEEN THEM IS THE PAGE'S.
+              The championship was a seventh tab beside Ask in V66, which said it
+              was a reading of one session; V67 moved it to Seasons, which is
+              right for 1974 and wrong for the title race somebody is actually
+              following. It is neither: it is the OTHER thing this page is about.
+              Explore already owns a season — the picker below sets it — so the
+              highest control on the page is the one that says whether you are
+              reading a session in that season or the season itself. It sits
+              opposite the heading because it governs the heading. */}
+          <ScopeSwitch value={view} onChange={setView} />
         </div>
 
         {/* compact controls, grouped so they read as one unit */}
@@ -206,8 +231,9 @@ export default function ExplorerPage() {
 
         {currentSeason && sel.year < currentSeason && (
           <p className="mb-4 rounded-lg border border-sky-400/15 bg-sky-400/[0.04] px-3 py-1.5 text-xs text-sky-300/90">
-            You&apos;re viewing a previous season ({sel.year}). Full past-season browsing lives in{" "}
-            <a href="/history" className="underline decoration-dotted">Historical</a>.
+            You&apos;re viewing a previous season ({sel.year}). Every finished season, with its
+            final championship, lives in{" "}
+            <a href="/history" className="underline decoration-dotted">Seasons</a>.
           </p>
         )}
 
@@ -237,7 +263,7 @@ export default function ExplorerPage() {
           </p>
         )}
 
-        {(bundle || loading) && (
+        {view === "session" && (bundle || loading) && (
           <div className="mb-5 flex items-center gap-2">
             <Tabs items={tabs} active={tab} onChange={setTab} className="min-w-0 flex-1" data-tour="tabs" />
             {/* Data provenance lives apart from the analysis tabs on purpose */}
@@ -252,15 +278,25 @@ export default function ExplorerPage() {
           </div>
         )}
 
+        {view === "season" ? (
+          <div className="animate-fade-in">
+            <Section title={`${sel.year} championship`}
+              info="Points and wins as the season stands. The bar is the gap to the leader, not the points total — a championship table is read as 'how far behind', which is why the leader's bar is always full.">
+              <Standings year={sel.year} roster={session?.drivers} portraits />
+            </Section>
+          </div>
+        ) : (<>
         {loading && <LoadingDashboard />}
         {error && !loading && (
-          <DataUnavailable error={error} onRetry={() => setRefreshKey((k) => k + 1)}
+          <DataUnavailable error={error} session={sel} onRetry={() => setRefreshKey((k) => k + 1)}
             onPick={(s) => setSel(s)} onOpenData={() => setTab("data")} />
         )}
 
         {bundle && session && !loading && !error && (
           <div className="animate-fade-in" data-tour="panel">
-            {isRaceLike && tab === "story" && <RaceStory bundle={bundle} onJump={setTab} />}
+            {isRaceLike && tab === "story" && (
+              <RaceStory bundle={bundle} onJump={setTab} onChampionship={() => setView("season")} />
+            )}
             {isRaceLike && tab === "charts" && (
               <div className="space-y-4">
                 <Tabs items={[
@@ -330,6 +366,7 @@ export default function ExplorerPage() {
         {!bundle && !loading && !error && (
           <Card><EmptyState title="Pick a session to begin" hint="Choose a season, Grand Prix and session above." /></Card>
         )}
+        </>)}
       </div>
 
       {/* Every view ends somewhere. The line about not being affiliated with
@@ -340,71 +377,141 @@ export default function ExplorerPage() {
   );
 }
 
-/** Honest, reason-specific failure — no fake data. Offers quick alternatives. */
+/* -------------------------------------------------------------------------- */
+/* WHEN A SESSION CANNOT BE SHOWN.                                            */
+/*                                                                            */
+/* This was a warning triangle over an apology, three pill buttons and a       */
+/* <details> called "What we tried" — which is the shape of an error page, and */
+/* an error page tells a reader that something is broken. Most of the time     */
+/* nothing is: a source is having an afternoon, or the season is older than    */
+/* the feed, and both of those are facts about the world rather than faults in */
+/* the product.                                                                */
+/*                                                                            */
+/* So it is a STATUS PANEL, and it answers the four questions a reader         */
+/* actually has, in that order: WHICH session, WHY not, WHOSE problem it is,   */
+/* and WHAT to do now. The provenance is the part that earns the trust — being */
+/* told plainly that Jolpica is not answering right now is a product that      */
+/* knows what it is made of, and it is the same thing the welcome screen       */
+/* promises. Sources are named, states are named, and nothing is hedged.       */
+/* -------------------------------------------------------------------------- */
+
 const ALTERNATIVES: { label: string; sel: Selection }[] = [
   { label: "2025 Australian GP · Race", sel: { year: 2025, gp: "Australian Grand Prix", session: "Race" } },
   { label: "2024 Monaco GP · Race", sel: { year: 2024, gp: "Monaco Grand Prix", session: "Race" } },
   { label: "2024 British GP · Race", sel: { year: 2024, gp: "British Grand Prix", session: "Race" } },
 ];
-const REASON_HINT: Record<string, string> = {
-  future_session: "This session may not have happened yet — try a completed race.",
-  no_source_coverage: "This session isn't covered by our sources (it may be too old for detailed timing). Try the Historical archive for official results.",
-  source_error: "The data sources were unreachable — usually a temporary network issue. Retry in a moment.",
-  timeout: "The sources took too long to respond. Retry.",
-  not_found: "We couldn't find this session — check the season, Grand Prix and session.",
-  live_disabled: "Live data is turned off on this server.",
+
+/** Whose problem it is, said plainly. This is the line that builds the trust. */
+const WHOSE: Record<string, { who: "provider" | "session" | "server"; line: string }> = {
+  source_error: { who: "provider", line: "One of the open data providers Pitwall IQ reads from is not answering at the moment. That is upstream of us — the session is fine and will load again once the source is back." },
+  timeout: { who: "provider", line: "A provider accepted the request and then took too long to answer. That is upstream of us, and it is usually brief." },
+  no_source_coverage: { who: "session", line: "None of our providers publish detailed timing for this session. Older seasons carry an official classification and nothing more — that is the complete record that exists, and it is in Seasons." },
+  future_session: { who: "session", line: "No provider has data for a session that has not been run yet. This page will fill itself in once it has." },
+  not_found: { who: "session", line: "No provider recognised this combination of season, Grand Prix and session. Check the three pickers above." },
+  live_disabled: { who: "server", line: "Live fetching is switched off on this deployment, so nothing was requested from any provider." },
 };
 
-function DataUnavailable({ error, onRetry, onPick, onOpenData }: {
-  error: ApiError; onRetry: () => void; onPick: (s: Selection) => void; onOpenData: () => void;
+const WHOSE_LABEL: Record<string, string> = {
+  provider: "External data provider",
+  session: "This session",
+  server: "This deployment",
+};
+
+const SOURCE_NAME: Record<string, string> = {
+  openf1: "OpenF1", jolpica: "Jolpica / Ergast", "f1-archive": "F1 live-timing archive",
+  cache: "Local cache",
+};
+const ATTEMPT_STATE: Record<string, string> = {
+  not_available: "no data for this session",
+  unreachable: "not answering",
+  timeout: "timed out",
+  disabled: "not queried",
+  error: "returned an error",
+};
+
+function DataUnavailable({ error, session, onRetry, onPick, onOpenData }: {
+  error: ApiError; session: Selection;
+  onRetry: () => void; onPick: (s: Selection) => void; onOpenData: () => void;
 }) {
-  const hint = REASON_HINT[error.reason] ?? "";
-  // The API's own message usually already carries the explanation. Printing the
-  // canned hint underneath it then says the same sentence twice in two type
-  // sizes, which reads as a bug rather than as help — so the hint only appears
-  // when it is adding something the message did not already say.
-  const stem = hint.split(/ — |\. /)[0].trim();
-  const showHint = stem.length > 0 && !error.message.toLowerCase().includes(stem.toLowerCase());
+  const verdict = WHOSE[error.reason] ?? {
+    who: "provider" as const,
+    line: "Something upstream did not answer as expected. The session itself is fine; this page will load once the source is back.",
+  };
+  const upstream = verdict.who === "provider";
+
   return (
     <Card>
-      <CardBody className="flex flex-col items-center gap-3 py-10 text-center">
-        <span className="grid h-11 w-11 place-items-center rounded-full bg-amber/10 ring-1 ring-amber/25">
-          <AlertTriangle size={20} className="text-amber" />
-        </span>
-        <div>
-          <h3 className="text-base font-semibold">We couldn&apos;t load this session</h3>
-          <p className="mx-auto mt-1 max-w-md text-sm text-ink-muted">{error.message}</p>
-          {showHint && <p className="mx-auto mt-1 max-w-md text-xs text-ink-faint">{hint}</p>}
+      <CardBody className="p-0">
+        {/* ---- 1. which session, and one word for the state ---------------- */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-white/[0.06] px-6 py-5">
+          <span className={cx("grid h-9 w-9 shrink-0 place-items-center rounded-xl",
+            upstream ? "bg-amber/10 text-amber ring-1 ring-amber/25"
+                     : "bg-white/[0.05] text-ink-muted ring-1 ring-white/10")}>
+            {upstream ? <CloudOff size={17} /> : <AlertTriangle size={17} />}
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[15px] font-semibold tracking-tight text-ink">
+              {session.gp} · {session.session}
+            </span>
+            <span className="block text-[12.5px] text-ink-faint">
+              {session.year} · not available right now
+            </span>
+          </span>
+          <span className={cx("ml-auto shrink-0 rounded-full px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-[0.12em]",
+            upstream ? "bg-amber/10 text-amber" : "bg-white/[0.05] text-ink-muted")}>
+            {WHOSE_LABEL[verdict.who]}
+          </span>
         </div>
 
-        <div className="mt-1 flex flex-wrap justify-center gap-2">
-          {error.retryable && (
-            <button onClick={onRetry} className="pill-btn"><RefreshCw size={14} /> Retry</button>
+        {/* ---- 2. why, and whose problem it is ---------------------------- */}
+        <div className="space-y-3 px-6 py-5">
+          <p className="max-w-2xl text-[13.5px] leading-relaxed text-ink">{verdict.line}</p>
+          {error.message && (
+            <p className="max-w-2xl text-[12.5px] leading-relaxed text-ink-muted">{error.message}</p>
           )}
-          <a href="/history" className="pill-btn"><BookOpen size={14} /> Open Historical results</a>
-          <button onClick={onOpenData} className="pill-btn"><Database size={14} /> Check data sources</button>
-        </div>
 
-        <div className="mt-2 w-full max-w-md">
-          <div className="label mb-1.5">Try a known session</div>
-          <div className="flex flex-wrap justify-center gap-1.5">
-            {ALTERNATIVES.map((a) => (
-              <button key={a.label} onClick={() => onPick(a.sel)}
-                className="chip hover:border-white/20 hover:text-ink">{a.label}</button>
-            ))}
+          {/* ---- 3. what each provider actually said ---------------------- */}
+          {error.attempts?.length > 0 && (
+            <div className="mt-1 overflow-hidden rounded-xl border border-white/[0.06] bg-base-900/40">
+              <p className="border-b border-white/[0.06] px-3.5 py-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                What each source said
+              </p>
+              <ul>
+                {error.attempts.slice(0, 4).map((a: any, i: number) => (
+                  <li key={i}
+                    className="flex items-center gap-3 border-b border-white/[0.04] px-3.5 py-2 text-[12.5px] last:border-b-0">
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber/70" />
+                    <span className="text-ink-muted">{SOURCE_NAME[a.source] ?? a.source}</span>
+                    <span className="ml-auto text-right text-ink-faint">
+                      {ATTEMPT_STATE[a.category] ?? a.category}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* ---- 4. what to do now ---------------------------------------- */}
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            {error.retryable && (
+              <button onClick={onRetry} className="pill-btn"><RefreshCw size={14} /> Try again</button>
+            )}
+            <a href="/history" className="pill-btn"><BookOpen size={14} /> Official results in Seasons</a>
+            <button onClick={onOpenData} className="pill-btn"><Database size={14} /> Data sources</button>
+          </div>
+
+          <div className="pt-1">
+            <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+              Or read one of these
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {ALTERNATIVES.map((a) => (
+                <button key={a.label} onClick={() => onPick(a.sel)}
+                  className="chip hover:border-white/20 hover:text-ink">{a.label}</button>
+              ))}
+            </div>
           </div>
         </div>
-
-        {error.attempts?.length > 0 && (
-          <details className="mt-1 text-xs text-ink-faint">
-            <summary className="cursor-pointer">What we tried</summary>
-            <ul className="mt-1 space-y-0.5 text-left">
-              {error.attempts.slice(0, 4).map((a: any, i: number) => (
-                <li key={i}>· {a.source}: {a.category}</li>
-              ))}
-            </ul>
-          </details>
-        )}
       </CardBody>
     </Card>
   );
@@ -437,6 +544,33 @@ function PartialChip({ onClick }: { onClick: () => void }) {
       title="Some data facets weren't available for this session — see Data.">
       Partial data
     </button>
+  );
+}
+
+/** The page's own scope control. Two words, one rail — the same segmented
+    vocabulary the rest of the product uses for a choice between two readings of
+    the same thing. */
+function ScopeSwitch({ value, onChange }: {
+  value: "session" | "season"; onChange: (v: "session" | "season") => void;
+}) {
+  const items = [
+    { id: "session" as const, label: "Session", icon: <Activity size={13} /> },
+    { id: "season" as const, label: "Championship", icon: <Trophy size={13} /> },
+  ];
+  return (
+    <div className="flex shrink-0 items-center rounded-xl border border-white/[0.07] bg-base-850/60 p-0.5"
+      role="tablist" aria-label="What this page is showing">
+      {items.map((it) => (
+        <button key={it.id} type="button" role="tab" aria-selected={value === it.id}
+          onClick={() => onChange(it.id)}
+          className={cx("inline-flex items-center gap-1.5 rounded-[10px] px-3 py-1.5 text-[12.5px] font-medium transition-all duration-[--dur-2] ease-[--ease-out]",
+            value === it.id
+              ? "bg-accent/12 text-accent-soft shadow-[inset_0_0_0_1px_rgb(var(--accent)/.28)]"
+              : "text-ink-muted hover:text-ink")}>
+          {it.icon} {it.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

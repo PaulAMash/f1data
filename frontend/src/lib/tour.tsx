@@ -249,13 +249,13 @@ export const TOUR: Beat[] = [
     body: "\u201cWhy did Leclerc lose places?\u201d is answered from this session's own lap data. If the data cannot support an answer, it says so instead of inventing one." },
   { path: "/explorer", target: "[data-tour='sources']",
     title: "Always checkable",
-    body: "Every figure states which F1 source it came from and what was unavailable. Nothing here is invented, and you can always see the seams." },
+    body: "Pitwall IQ combines three open motorsport archives, and this names which one every figure came from. If a provider is down, you are told which \u2014 never handed a gap dressed up as a number." },
   { path: "/explorer", target: "[data-tour='nav-history']",
     title: "Every season is up here",
     body: "Official results for any Grand Prix since 1950 \u2014 and the championship standings, this year's included. A race tells you what happened; this is where it left the title." },
   { path: "/explorer", target: "[data-tour='settings']",
-    title: "And everything else lives here",
-    body: "Dark or daylight, reading depth, units, spelling, density and how much the interface moves \u2014 every answer you gave on the way in, and rather more besides." },
+    title: "And there is far more in here",
+    body: "The welcome screen asked for the few answers that change the most. Text size, density, chart pace, accent colour, colour-vision palettes, which page opens first \u2014 they all live here, and every one of them applies instantly." },
 ];
 
 

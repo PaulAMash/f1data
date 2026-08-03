@@ -2826,3 +2826,138 @@ never had any. Historical seasons are typographic — heavier numeral, more air,
 the livery rail — and the current season keeps its faces. The rule is not "the
 current season" but "where the faces exist": all or none, checked against the
 data, because one row of initials among nineteen portraits is worse than either.
+
+---
+
+## A feed that had not been invented yet is not a gap in our data
+
+V67 stopped a qualifying hour being reported as missing its overtakes, because
+a qualifying hour never had any. The same category error was still being made
+along the other axis: a 1975 Grand Prix was reported as missing its lap times,
+its tyre stints, its weather trace and its race-control log — none of which were
+recorded, by anybody, in 1975. The reader was told a fifty-year-old race had a
+data problem. It had a 1975 problem, which is not the same thing and is not
+ours.
+
+Facets have an era as well as a category, and the boundaries are the sources'
+own rather than guesses:
+
+| from | what starts |
+|------|-------------|
+| 1950 | results and entry lists |
+| 1996 | lap-by-lap timing, and therefore positions, and therefore the overtakes inferred from them |
+| 2011 | pit stops |
+| 2018 | tyre stints, weather, race control |
+
+A facet before its era is not listed, not reported missing, and does not make a
+session partial. It is **explained**: the session carries one sentence saying
+which feeds had not started yet, so absence has a reason on screen instead of
+being a silence. And the rule is not a blanket excuse — a 2024 race missing its
+stints is still partial, and a test says so.
+
+> Before deciding something is broken, check what year it is.
+
+---
+
+## An unavailable session is a status, not an error
+
+The failure screen was a warning triangle over an apology, three pill buttons
+and a `<details>` called "What we tried" — the shape of an error page, and an
+error page tells a reader that something is broken. Most of the time nothing is:
+a provider is having an afternoon, or the season is older than the feed. Both
+are facts about the world rather than faults in the product.
+
+It is a status panel now, answering the four questions a reader actually has, in
+that order: **which** session, **why** not, **whose** problem it is, and **what**
+to do now. The third is the one that earns the trust — being told plainly that
+the archive timed out and Jolpica is not answering is a product that knows what
+it is made of, and it is the same promise the welcome screen makes. Sources are
+named, states are named, nothing is hedged.
+
+> "We couldn't load this" is an apology. "OpenF1 is not answering; the session
+> is fine and will load when it is back" is information.
+
+---
+
+## The setup asks for more and feels like less
+
+The welcome screen asked three questions on three equal cards. Ten questions
+laid out the same way is a form, and a form is the one thing a first run must
+never be — so the **shape** carries the difference rather than the copy:
+
+* Three hardware cards for the answers that change what the product IS —
+  experience, appearance, tour. One press each.
+* Everything else — language, units, clock, motion, text size, colour vision —
+  folded into a single disclosure that is one line of chrome until it is asked
+  for, and a plain sentence saying the defaults are already sensible.
+
+Both readers get what they came for: one press to enter, or thirty seconds to
+make it theirs. Nobody is walked through a wizard to reach a button they could
+have pressed on arrival. And the rows inside the disclosure deliberately are
+**not** more cards — giving units the same treatment as experience would flatten
+"these are the decisions that matter" back into ten equal things.
+
+> A setup screen's job is to be skippable. Everything it asks beyond that has to
+> earn its place by being easy to ignore.
+
+---
+
+## Two scopes of one season, and the switch between them belongs to the page
+
+The championship has now had three homes, and the third is the one that matches
+what a reader is doing.
+
+* **A tab beside Ask** said it was a reading of one session, which it is not.
+* **The Seasons page** is right for 1974 and wrong for the title race somebody
+  is following this week — they had to leave the races that were moving it to
+  see where it stood.
+* **A scope switch on Explore** is neither: the championship is the *other*
+  thing that page is about. Explore already owns a season — the picker sets it —
+  so the highest control on the page is the one that says whether you are
+  reading a session in that season or the season itself. It sits opposite the
+  heading because it governs the heading.
+
+Seasons then becomes exactly what its name says: every season that has
+**finished**. The season in progress is deliberately absent from its picker,
+because the same table in two places with two framings is how a reader ends up
+unsure which one is authoritative.
+
+> When something has no good home, check whether the page it keeps landing on
+> has two subjects rather than one.
+
+---
+
+## One trust card, not a banner and a footnote
+
+"We read several open motorsport sources and one of them is sometimes down" and
+"this is a beta and it is still growing" are the same sentence told from two
+sides: both are a product being honest with a reader before it has to be. Split
+across a banner and a footnote they read as two apologies. Together, in one
+card, they read as a product that knows what it is made of.
+
+It sits on the FIRST act of the welcome screen, before any question is asked,
+because a reader decides whether to trust software in the first fifteen seconds
+— which is well before they reach a setup screen. And it replaced a "v1" label,
+which claimed a maturity nothing had earned and told the reader nothing they
+could use.
+
+> Transparency is only reassuring when it arrives before the problem does.
+
+---
+
+## A disabled tab is only worth having if it reads as a plan
+
+Greying out a control usually communicates "broken". A roadmap tab has to
+communicate "not yet", which is a different message and needs different
+treatment: legible rather than faded to nothing, a `soon` mark that is a label
+rather than a warning, a hover card saying what the feature will actually be,
+and no focus stop or press target at all.
+
+The replay feature is called **Re-run** for the same reason the nav says
+"Seasons" rather than "Historical". "Race Replay" describes a video player; the
+feature is a reconstruction of a Grand Prix from its own timing data, played
+back at whatever speed the reader wants. "Re-run" describes running the session
+again, and it sits in the same register as Explore and Seasons — one word, an
+instruction, no noun borrowed from broadcast.
+
+> A placeholder that cannot say what it is for is just a dead button.

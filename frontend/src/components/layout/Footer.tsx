@@ -45,7 +45,7 @@ export function Footer() {
             {[
               ["Read a race", "/explorer"],
               ["Ask a question", "/explorer?tab=ask"],
-              ["Historical results", "/history"],
+              ["Seasons & championships", "/history"],
               ["Settings", "/settings"],
             ].map(([label, href]) => (
               <li key={href}>
