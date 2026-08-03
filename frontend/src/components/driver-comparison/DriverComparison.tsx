@@ -109,7 +109,7 @@ export function DriverComparison({
     <div className="space-y-4">
       {/* who's fighting whom — this page frames its own panels, so the section
           title lives here rather than in another card around the whole thing */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div data-tour="compare-pickers" className="flex flex-wrap items-center gap-3">
         <h2 className="mr-1 text-sm font-semibold text-ink">Driver comparison</h2>
         {/* a driver cannot be compared with themself, so each picker offers
             everyone except whoever is already on the other side */}

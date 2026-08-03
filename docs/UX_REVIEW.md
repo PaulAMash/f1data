@@ -3,10 +3,63 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V64**. Reviewed at 1440×1000, 1440×900 and 390×844, in both themes, in both
+Last pass: **V65**. Reviewed at 1440×1000, 1440×900 and 390×844, in both themes, in both
 language styles, and walked end to end as a first-time visitor down both branches of the
 welcome screen — tutorial taken and tutorial declined — plus the return path through
 Settings.
+
+---
+
+## Fixed in V65
+
+### 1. The tutorial flew the camera between steps — *was high*
+
+Three beats pointed at the whole content area. Every beat now points at the specific control
+its sentence is about. Measured across the full eight-beat tour, the viewport moves **23px in
+total**.
+
+### 2. The tutorial skipped Standings — *was medium*
+
+It jumped from Ask to Sources. There is a Standings beat now, pointing at the drivers /
+constructors switch.
+
+### 3. The tutorial abandoned the reader in Ask — *was medium*
+
+It now puts the room back: Explore, Race Story, the most recent completed race — the state the
+product opens in.
+
+### 4. The spotlight jittered and could not breathe — *was medium*
+
+The scrim and the outline were one box, so the ring's glow shared the scrim's 9999px shadow and
+any pulse re-ran the geometry transition. Split into two co-located elements on one curve, with
+`will-change` keeping them on their own layer.
+
+### 5. The tutorial card was a generic tooltip — *was low*
+
+A step number, tighter type, and its own faint drifting field behind an opaque pane — atmosphere
+that never touches the text.
+
+### 6. Home said nothing to a reader who had asked for the tour — *was medium*
+
+Reinstated as a genuine invitation rather than V62's version: the control breathes, a ring
+expands out of it, one small label sits beside it, and **nothing is dimmed or overlaid**.
+
+### 7. Standings portraits used a second, weaker lookup — *was medium*
+
+Unified with the Final Classification system: the session's own enriched drivers, matched by
+code.
+
+### 8. The settings gear read as short of the corner — *was low*
+
+Its box was exactly on the grid (measured: 104px, same as the wordmark and the panel edges) but
+a 15px glyph in a 32px box sits 8.5px inside that line. Optically aligned by half the
+difference.
+
+### 9. A dead V62 CSS block was overriding a live V65 animation — *found in review, was high*
+
+Duplicate `@keyframes cta-breathe`; the later definition wins and the survivor animated
+`transform: scale()`. The home CTA was being scaled forever — it failed Playwright's stability
+check, which is how it was caught. Dead block removed.
 
 ---
 

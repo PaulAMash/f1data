@@ -124,7 +124,17 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       // `stay` is the reader having walked out of the tour by navigating
       // somewhere themselves — they have chosen a page, and marching them to
       // a different one would be the tour getting the last word.
-      if (!opts?.stay && path !== "/explorer") router.push("/explorer");
+      if (!opts?.stay) {
+        /* THE TOUR PUTS THE ROOM BACK. Its last beats are about Standings, the
+           archive and Settings, so whoever finishes it is standing in whichever
+           tab the tour left open — reading a championship table nobody asked
+           for. The reader should end where they would have BEGUN: the Race
+           Explorer, on the Race Story of the most recent completed race, which
+           is the state the product opens in. A tour that leaves the furniture
+           where it moved it has not finished. */
+        driveTo("story");
+        if (path !== "/explorer") router.push("/explorer");
+      }
     }
     setLabel("");
   }, [label, set, path, router]);
@@ -230,28 +240,27 @@ export const TOUR: Beat[] = [
     body: "Season, Grand Prix, session. It opens on the most recent completed race, so there is always something to read." },
   { path: "/explorer", target: "[data-tour='tabs']", tab: "story",
     title: "One race, several readings",
-    body: "Story is the recap in plain English. Charts, Strategy and Pace are the same race with the working shown — and Standings is where the season stands." },
-  { path: "/explorer", target: "[data-tour='panel']", tab: "compare",
+    body: "Story is the recap in plain English. Charts, Strategy and Pace are the same race with the working shown." },
+  { path: "/explorer", target: "[data-tour='compare-pickers']", tab: "compare",
     title: "Two drivers, side by side",
-    body: "Head to head over the same laps: where one gained, where the other answered, and what the stops did to both." },
-  { path: "/explorer", target: "[data-tour='panel']", tab: "ask",
+    body: "Pick any two cars here and the page draws the duel between them — who led when, and what the stops did to both." },
+  { path: "/explorer", target: "[data-tour='ask-box']", tab: "ask",
     title: "Or just ask",
-    body: "“Why did Leclerc lose places?” is answered from this session's own lap data. If the data cannot support an answer, it says so instead of inventing one." },
+    body: "\u201cWhy did Leclerc lose places?\u201d is answered from this session's own lap data. If the data cannot support an answer, it says so instead of inventing one." },
+  { path: "/explorer", target: "[data-tour='standings-switch']", tab: "standings",
+    title: "Where the season stands",
+    body: "The drivers' and constructors' championships as they stand after this race \u2014 the season around the session you are reading." },
   { path: "/explorer", target: "[data-tour='sources']",
     title: "Always checkable",
     body: "Every figure states which F1 source it came from and what was unavailable. Nothing here is invented, and you can always see the seams." },
   { path: "/explorer", target: "[data-tour='nav-history']",
     title: "The whole archive is up here",
-    body: "Official results and championship standings for every season since 1950. It is one click away whenever you want it." },
-  /* The theme used to have a beat of its own, pointing at a toggle in the bar.
-     The toggle has moved into Settings — it is a preference, it was asked on
-     the way in, and a bar is for identity and navigation — so the two beats
-     became one rather than the tour pointing at a control that is no longer
-     there. */
+    body: "Official results and championship standings for every season since 1950. One click away whenever you want it." },
   { path: "/explorer", target: "[data-tour='settings']",
     title: "And everything else lives here",
-    body: "Dark or daylight, reading depth, units, spelling, density and how much the interface moves — every answer you gave on the way in, and rather more besides." },
+    body: "Dark or daylight, reading depth, units, spelling, density and how much the interface moves \u2014 every answer you gave on the way in, and rather more besides." },
 ];
+
 
 /**
  * The worked example — the same engine, pointed at one question.

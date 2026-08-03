@@ -251,14 +251,26 @@ export function GuidedTour() {
           one beat to the next as a single moving spotlight, and the target
           inside the hole stays live. */}
       {hole ? (
-        <div onClick={() => stop()}
-          className="absolute rounded-xl transition-all duration-[450ms] ease-[cubic-bezier(.22,1,.36,1)]"
-          style={{
-            top: hole.top, left: hole.left, width: hole.width, height: hole.height,
-            boxShadow: "0 0 0 9999px rgb(var(--base-950) / 0.84)",
-            outline: "1.5px solid rgb(var(--accent) / 0.75)",
-            pointerEvents: "none",
-          }} />
+        /* TWO ELEMENTS, NOT ONE, AND THAT IS THE WHOLE FIX.
+           The scrim and its outline used to be the same box, so the outline's
+           glow had to live in the same `box-shadow` as the 9999px scrim — which
+           meant it could not breathe without re-running the geometry
+           transition, and every pulse fought the move to the next target. The
+           scrim keeps the hole; a second, identically-placed element carries the
+           ring and its slow breath. Both move on the same curve, so they travel
+           as one object.
+
+           `will-change: top,left,width,height` keeps the pair on their own
+           compositor layer for the move, which is what took the jitter out of a
+           1.5px ring travelling across a live page. */
+        <>
+          <div
+            className="tour-scrim absolute rounded-xl"
+            style={{ top: hole.top, left: hole.left, width: hole.width, height: hole.height }} />
+          <div aria-hidden
+            className="tour-ring absolute rounded-xl"
+            style={{ top: hole.top, left: hole.left, width: hole.width, height: hole.height }} />
+        </>
       ) : (
         <div onClick={() => stop()} className="pointer-events-auto absolute inset-0 bg-base-950/84" />
       )}
@@ -267,14 +279,22 @@ export function GuidedTour() {
           where it will stay. Nothing about it animates position — a card that
           slides into place while being read is the "choppy" report. */}
       <div
-        className={cx("modal-scroll pointer-events-auto absolute w-[min(23rem,calc(100vw-2rem))] max-h-[min(24rem,calc(100vh-2rem))] rounded-xl border border-white/[0.12] bg-base-900 p-4 shadow-glow",
-          "transition-opacity duration-[--dur-3] ease-[--ease-out]",
+        className={cx("tour-card modal-scroll pointer-events-auto absolute w-[min(23rem,calc(100vw-2rem))] max-h-[min(24rem,calc(100vh-2rem))] p-4",
           settled ? "opacity-100" : "pointer-events-none opacity-0")}
         style={place}>
-        <div className="flex items-start gap-3">
+        {/* The card's own room: a slow drifting wash and a hairline lattice,
+            the same philosophy as the welcome screen and the landing hero — and
+            behind an opaque pane, so not one pixel of it reaches the text.
+            Readability is not a thing to trade for atmosphere; it is the thing
+            the atmosphere sits behind. */}
+        <span aria-hidden className="tour-card-field" />
+        <span aria-hidden className="tour-card-edge" />
+
+        <div className="relative flex items-start gap-3">
+          <span className="tour-step" aria-hidden>{index + 1}</span>
           <div className="min-w-0 flex-1">
-            <p className="text-[14.5px] font-bold tracking-tight text-ink">{beat.title}</p>
-            <p className="mt-1 text-[12.5px] leading-relaxed text-ink-muted">{beat.body}</p>
+            <p className="text-[14.5px] font-bold leading-snug tracking-[-0.012em] text-ink">{beat.title}</p>
+            <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-muted">{beat.body}</p>
           </div>
           <button onClick={() => stop()} aria-label="Leave the tour"
             className="-mr-1 -mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full text-ink-faint transition-colors hover:bg-white/[0.08] hover:text-ink">

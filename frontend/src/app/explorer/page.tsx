@@ -305,7 +305,7 @@ export default function ExplorerPage() {
             {tab === "standings" && (
               <Section title={`${sel.year} championship`}
                 info="Points and wins as they stand this season. The bar is the gap to the leader.">
-                <Standings year={sel.year} />
+                <Standings year={sel.year} roster={session.drivers} />
               </Section>
             )}
             {tab === "data" && (
