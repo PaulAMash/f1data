@@ -3,10 +3,97 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V65**. Reviewed at 1440×1000, 1440×900 and 390×844, in both themes, in both
-language styles, and walked end to end as a first-time visitor down both branches of the
+Last pass: **V66**. Reviewed at 1440×900, 820×900 and 420×860, in both themes, at both
+motion settings, and walked end to end as a first-time visitor down both branches of the
 welcome screen — tutorial taken and tutorial declined — plus the return path through
-Settings.
+Settings, the eight beats of the tour in both themes, and the landing page's example
+questions from press to answer.
+
+---
+
+## Fixed in V66
+
+### 1. The welcome screen's light mode was the dark one, painted over — *was the brief*
+
+Switching to Light on the welcome screen left the canvas painting the dark room and every
+CSS layer above it painting paper: a white scrim over a black field, which is exactly what
+"the dark mode inverted" describes. It came right on reload, which was the tell.
+
+The cause was a scoping mistake with a general lesson. `WelcomeField` captured the palette
+once per effect run and keyed the effect on `prefs.theme` — and **React runs a child's
+effects before its parent's**, so it read `<html>` before `PrefsProvider` had written the
+new theme onto it. The canvas now watches `document.documentElement` for `data-theme`,
+`data-accent` and `style`, which is where the theme actually lives; the accent, written as
+inline custom properties by the same provider, was never picked up before either.
+
+With that fixed, the light room was designed rather than derived. Lamps mix toward **white**
+before they are laid down (mixing toward the page colour made every wash slightly darker
+than the sheet and piled three of them into a mauve bruise under the headline — measured
+`rgb(219 212 220)` on a `rgb(240 242 246)` page; it is `rgb(240 235 239)` now). Compositing
+is plain rather than additive. Daylight falls from the top instead of pooling in the middle.
+Ink is stated at print weights in its own table rather than scaled off the dark values. And
+nothing blooms: the status lamps get tight rings, the primary control gets a contact shadow
+instead of a forty-pixel throw, and the halo behind the accent word becomes a highlighter.
+
+### 2. The pace delta refreshed instead of running — *was medium*
+
+It rebuilt its three traces from a 1.6-second `setInterval`, so the picture jumped to a new
+shape and then sat still, beside a canvas running at sixty frames a second. Each trace is
+now drawn once, twice as wide as the window, out of components whose periods divide that
+window exactly — then translated by exactly one window width for ever. Seamless, no timer,
+no re-render. The data-stream meter lost its timer for the same reason, and the tyre window
+kept its tick but got a transition exactly as long as the interval feeding it.
+
+### 3. The three doors lurched on hover and were static without it — *was medium*
+
+Every loop in the landing windows was handed a shorter `animation-duration` on hover, which
+does not accelerate an animation — it recomputes the position from elapsed time against the
+new duration and jumps. Six loops per window, three windows, all jerking on the same gesture.
+Nothing changes rate now; a faster pass that always runs at zero opacity fades in, the traces
+thicken and the moving parts grow, all as transitions.
+
+At rest the windows also had nothing to say: four squiggles bobbing 2.5px on a nine-second
+loop is wallpaper. Each now runs a real mechanism — four cars travelling their own position
+traces at four speeds, an answer leaving the node it resolved at, a read head sweeping the
+seasons before the podium lands behind it.
+
+### 4. The example questions did not ask anything — *was high*
+
+The landing page's three example questions were links carrying `?q=`, and nothing on the
+Explorer side read the parameter: pressing one opened the Ask tab with an empty box and left
+the reader to type the question they had just chosen. It now types itself into the real
+input and submits itself against the real session, and the answer is on screen with no
+further interaction. The parameter is consumed as it is taken, so Back into the page does
+not re-ask.
+
+### 5. The tutorial's outline cut through its neighbours — *was medium*
+
+The highlight was a fixed 8px on every side of every target plus a 22px outward glow — 24px
+of accent light on whatever happened to be next to it, against a 16px gap above the session
+picker and an 8px gap beside the tabs bar. The padding is now measured against the real
+clearance to every neighbour that shares a band with the target, identical on all four sides,
+8px where there is room and as little as 3px where there is not; most of the glow turned
+inward onto the control it is explaining; and the outline takes the target's own corner
+radius plus the padding, so it stays parallel to the edge it traces.
+
+### 6. Three dead welcome-screen rules were still in the stylesheet — *found in review, was low*
+
+`.wc-glass`, `.wc-pick` and `.wc-pick.is-quiet` had no callers left after V64 moved the
+setup cards to `.wc-card`. Dead CSS with the project's own naming conventions on it is a
+booby trap — V65 lost an afternoon to exactly this — so they went with the change that made
+them dead.
+
+### 7. The welcome screen drew tyre colours it had invented — *found in review, was low*
+
+The tyre window carried its own three hexes, one of which (`#e8ecf5` for Hard) is very
+nearly white and therefore invisible on paper. It uses `COMPOUND_COLOR` through `useLivery`
+now — the product's existing answer to broadcast colours that do not survive a white
+background — so there is one set of tyre colours rather than two.
+
+### 8. The reduced-motion data stream was a row of identical bars — *found in review, was low*
+
+Freezing the meter left fourteen bars at the same height, which is not a level meter at rest;
+it is a loading skeleton. It holds an uneven static reading now.
 
 ---
 

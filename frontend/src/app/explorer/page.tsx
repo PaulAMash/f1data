@@ -80,6 +80,8 @@ export default function ExplorerPage() {
   const [error, setError] = useState<ApiError | null>(null);
   const [tab, setTab] = useState("story");
   const [chartTab, setChartTab] = useState("position");
+  /** A question that arrived in the URL, for the Ask panel to ask itself. */
+  const [askSeed, setAskSeed] = useState<string | undefined>(undefined);
   const [selected, setSelected] = useState<string[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [currentSeason, setCurrentSeason] = useState<number | null>(null);
@@ -98,6 +100,21 @@ export default function ExplorerPage() {
     const qYear = q?.get("year"); const qGp = q?.get("gp"); const qSession = q?.get("session");
     const qTab = q?.get("tab");
     if (qTab) setTab(qTab);
+
+    /* A QUESTION ARRIVING FROM SOMEWHERE ELSE.
+       The landing page's example questions link here with `?q=`; the Ask panel
+       types it in and submits it (see QuestionBox). The parameter is stripped
+       from the address bar the moment it is taken, because it describes a thing
+       that HAPPENS rather than a thing the page IS — leaving it there would make
+       every later Back into the page ask the question again. The state keeps
+       it, so the panel still receives it once the session has loaded. */
+    const qAsk = q?.get("q")?.trim();
+    if (qAsk) {
+      setAskSeed(qAsk);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("q");
+      window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    }
     api.current().then((cur) => {
       setCurrentSeason(cur.year);
       if (qGp) setSel({ year: qYear ? Number(qYear) : cur.year, gp: qGp, session: qSession || "Race" });
@@ -299,7 +316,8 @@ export default function ExplorerPage() {
             {tab === "ask" && (
               <Section title="Ask about this session">
                 <QuestionBox year={sel.year} gp={session.grand_prix} session={sel.session}
-                  llmAvailable={meta?.llm_available ?? false} category={category} />
+                  llmAvailable={meta?.llm_available ?? false} category={category}
+                  seed={askSeed} />
               </Section>
             )}
             {tab === "standings" && (

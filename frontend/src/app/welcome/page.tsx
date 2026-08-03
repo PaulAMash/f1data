@@ -162,8 +162,7 @@ export default function Welcome() {
               <br className="hidden sm:block" />{" "}
               <span className="relative whitespace-nowrap text-accent">
                 explained
-                <span aria-hidden className="absolute -inset-x-3 -inset-y-2 -z-10 rounded-3xl"
-                  style={{ background: "radial-gradient(closest-side, rgb(var(--accent) / .2), transparent)" }} />
+                <span aria-hidden className="wc-mark" />
               </span>{" "}
               by the data.
             </h1>

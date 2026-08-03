@@ -2461,3 +2461,184 @@ Two more that follow from the same idea:
   full opacity, quieter ink.
 
 > Ask what is emitting the light before deciding what a shadow means.
+
+---
+
+## A canvas has to agree with the document, not with React
+
+The welcome screen's field captured its palette once per effect run and keyed
+that effect on `prefs.theme`. It was correct on load and wrong on every switch:
+**React runs a child's effects before its parent's**, so the canvas read
+`<html>` for a theme the provider had not written yet. The CSS layers above it
+all repainted; the canvas kept painting the dark room underneath. White scrim,
+black room — which is precisely the picture somebody means when they say a light
+theme "looks like the dark one inverted", and it came right on reload, which is
+the tell.
+
+The fix is not to reorder the effects. It is to notice that **React's copy of
+the theme is a copy** — the theme lives on `document.documentElement`, and
+anything reading a computed style should watch the element the style is on:
+
+```ts
+let s = readSurface();                       // reads getComputedStyle(<html>)
+const mo = new MutationObserver(() => { s = readSurface(); rebuild(); });
+mo.observe(document.documentElement, {
+  attributes: true, attributeFilter: ["data-theme", "data-accent", "style"],
+});
+```
+
+Watching `style` as well caught a second bug for free: the accent is written as
+inline custom properties by the same provider, and the canvas could never have
+seen it change at all.
+
+> If a value has a home in the DOM, read it from the DOM. A framework's copy of
+> it is one render out of date exactly when it matters.
+
+---
+
+## Light on paper brightens the paper
+
+The first light room mixed each lamp toward the **page colour** before laying it
+down. Every wash was then very slightly darker than the sheet it sat on, three
+of them piled up in the middle where the lamps drift, and the headline ended up
+printed on a mauve bruise. Measured at the centre: `rgb(219 212 220)` on a page
+of `rgb(240 242 246)`.
+
+Light does the opposite. Mix the lamp **toward white** instead — 85% of the way,
+then lay it down at normal compositing — and the same three lamps lift the paper
+toward white with their own hue in it. Same centre, measured: `rgb(240 235 239)`.
+
+The rest of the room follows from the same sentence:
+
+* **Additive on black, plain on paper.** `lighter` is right in a dark volume and
+  turns a pale page into a haze.
+* **Daylight comes from above, not from the middle.** The dark room's centre pool
+  and edge falloff are a vignette; on paper a top-down gradient reads as a lit
+  surface, and a dark ring around a bright middle reads as dirt.
+* **Ink sits two to three times heavier.** A dark hairline on white recedes where
+  a bright one on black advances, so every weight is stated per surface in one
+  table rather than derived from the dark values by a multiplier.
+* **Nothing blooms.** LED glows become tight rings; the accent's forty-pixel
+  throw under the primary button becomes a short contact shadow and a longer
+  faint one; the halo behind the accent word becomes a highlighter.
+
+> Ask which way the surface moves when light lands on it. That single question
+> settles the blend mode, the mix target, the gradient direction and the shadows.
+
+---
+
+## A strip chart runs; it does not refresh
+
+The welcome screen's pace delta rebuilt its three traces from a 1.6-second
+`setInterval`. Every one and a half seconds the whole picture jumped to a new
+shape and then sat perfectly still — a poll, drawn — beside a canvas running at
+sixty frames a second.
+
+The shape it wanted was not "recompute faster". It was **not recomputing at
+all**:
+
+```
+draw the wave TWICE the width of the window
+  out of components whose periods divide that window exactly
+then translate it by exactly one window width, for ever
+```
+
+The wave leaving the left edge is the wave arriving at the right, so the loop is
+seamless. Three of them at three speeds over three periods never visibly repeat.
+It costs one composited transform each, no timer, no React render, and it slows
+with the reader's tempo because the duration is stated in `--m` like everything
+else. `px` inside an SVG is a user unit, which is why `translateX(-100px)` is
+exactly one `viewBox` width whatever size the panel is drawn at.
+
+The same argument retired the data-stream meter's timer, and the tyre window
+kept its tick but got a transition exactly as long as the interval that feeds
+it — so the window is always drifting instead of arriving early and waiting.
+
+> A readout that changes on a timer is a poll. A readout that moves is an
+> instrument. The difference is visible from across the room.
+
+---
+
+## Hover raises the motion; it does not re-time it
+
+Every loop in the three landing doors was given a shorter `animation-duration`
+on hover. That does not accelerate an animation — the browser recomputes where
+it *ought* to be from the elapsed time against the **new** duration, so a
+nine-second drift told to take 1.9s jumps to wherever it would have been by now.
+Three windows, six loops each, all lurching on the one gesture that is supposed
+to say "this is alive, and it noticed you".
+
+Nothing changes rate now. A second, faster pass runs permanently at zero opacity
+and simply fades in; the traces thicken, the cars grow, the light comes up. All
+of it is a transition, so it is smooth in both directions and settles the moment
+the pointer leaves — and it is *more* movement on hover, not less.
+
+The same pass gave the windows something to be alive **at** rest, which was the
+deeper problem: a car travelling each position trace (one round dash on a path
+normalised with `pathLength="100"`, so one rule drives four curves of four
+different lengths), an answer leaving the node it resolved at, and a read head
+sweeping the seasons before the podium lands behind it.
+
+> A card that only moves when you touch it has to be found before it can invite.
+> A card that lurches when you touch it has just told you it is a picture.
+
+---
+
+## A spotlight's light belongs on the thing it is lighting
+
+The tour's highlight was eight pixels outward on every side of every target, for
+ever, plus a 22px glow with 2px of spread that nobody had budgeted for. That is
+24px of accent light landing on whatever happens to be next to the target — and
+the session picker sits 16px under its own subtitle, the tabs bar sits 8px from
+the Sources button. The outline cut the label above in half and the glow washed
+the control below.
+
+Three rules replaced the constant:
+
+* **The padding is measured, and identical on all four sides.** The tour walks
+  up to four levels from the target, considers every neighbour that actually
+  shares a band with it, and takes the tightest gap. Uneven padding looks like a
+  mistake even when every side is individually correct, so that one number sets
+  all four. It stays at the designed 8 whenever there is room and shrinks only
+  where the layout is close — 3px beside the Sources button, 8px in open space.
+* **The glow lives inside the same budget.** Most of it is now `inset`: it pools
+  on the inside edge of the hole, over the control being explained, which is
+  where a spotlight's light belongs. What escapes is sized from `--ring-out`,
+  set from the same measurement, so it physically cannot reach a neighbour.
+* **The outline is the target's own shape.** A pill gets a pill, a card gets a
+  card, and the radius grows by exactly the padding so the outline stays
+  parallel to the edge it is tracing instead of crossing it.
+
+> A highlight that does not know what is next to it is not pointing at
+> something; it is drawing on the page.
+
+---
+
+## A demo has to do the thing
+
+The landing page offered three example questions, each a link carrying `?q=`,
+and nothing on the other side read the parameter. Pressing one opened the Ask
+tab with an empty box, so the reader had to type the question they had just
+chosen. It looked like a demonstration and behaved like a navigation, which is
+the worst of both.
+
+It is the demonstration now: the question **types itself** into the real input
+and submits itself against the real session, and the answer is the real answer.
+Typed rather than pasted, because the point of the gesture is to show what
+happens and a value that simply appears in a field shows nothing — the same
+reason the analysis takes a beat before it answers.
+
+Two details that are easy to get wrong:
+
+* **Consume the parameter, keep the value.** `?q=` describes something that
+  *happens* rather than something the page *is*, so it is stripped from the
+  address bar the moment it is taken; leaving it there makes every later Back
+  into the page ask the question again. The state keeps it so the panel still
+  receives it once the session has loaded.
+* **Guard the ref, not the effect.** React re-runs an effect immediately after
+  tearing it down in development. A "have I used this seed" ref that is set and
+  never cleared swallows the second run and leaves nothing typed at all — so the
+  cleanup clears it unless the question actually went.
+
+> If a control promises a demonstration, the demonstration is the deliverable.
+> Getting the reader to the place where they could run it themselves is not it.

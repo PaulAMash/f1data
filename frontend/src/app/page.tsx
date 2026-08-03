@@ -392,6 +392,15 @@ function Door({ href, icon, title, line, art, tint }: {
           {art}
         </span>
         <span aria-hidden className="art-scan pointer-events-none absolute inset-y-0 w-20" />
+        {/* HOVER RAISES THE MOTION; IT DOES NOT RE-TIME IT.
+            Speeding an animation up by shortening its duration recomputes where
+            it should be from the elapsed time, so every loop in the window
+            lurched the instant the pointer crossed the card — three windows'
+            worth of jerk, on the one gesture that is meant to say "this thing
+            is alive". Nothing changes rate now. Instead a second, faster pass
+            is always running at zero opacity and simply fades in, which is more
+            movement, arriving smoothly, and stops the moment you leave. */}
+        <span aria-hidden className="art-wake pointer-events-none absolute inset-y-0 w-16" />
         <span aria-hidden className="door-vignette pointer-events-none absolute inset-0" />
       </span>
 
@@ -426,18 +435,29 @@ const ART = "h-full w-full";
  */
 function ArtRace() {
   const LINES = [
-    { d: "M0 46 C 40 44, 70 18, 110 22 S 180 40, 240 14", c: "rgb(var(--accent))", o: 0.95, w: 2.2 },
-    { d: "M0 30 C 44 32, 72 52, 116 50 S 182 24, 240 30", c: "rgb(var(--speed))", o: 0.8, w: 2 },
-    { d: "M0 62 C 46 58, 78 66, 120 62 S 186 70, 240 58", c: "rgb(var(--best))", o: 0.55, w: 1.8 },
-    { d: "M0 76 C 50 80, 84 74, 128 78 S 190 86, 240 74", c: "rgb(var(--amber))", o: 0.4, w: 1.6 },
+    { d: "M0 46 C 40 44, 70 18, 110 22 S 180 40, 240 14", c: "rgb(var(--accent))", o: 0.95, w: 2.2, s: 9.5 },
+    { d: "M0 30 C 44 32, 72 52, 116 50 S 182 24, 240 30", c: "rgb(var(--speed))", o: 0.8, w: 2, s: 11.2 },
+    { d: "M0 62 C 46 58, 78 66, 120 62 S 186 70, 240 58", c: "rgb(var(--best))", o: 0.55, w: 1.8, s: 13.4 },
+    { d: "M0 76 C 50 80, 84 74, 128 78 S 190 86, 240 74", c: "rgb(var(--amber))", o: 0.4, w: 1.6, s: 15.1 },
   ];
   return (
     <svg className={ART} viewBox="0 0 240 100" preserveAspectRatio="none" fill="none" aria-hidden>
       {LINES.map((l, i) => (
-        <path key={l.d} d={l.d} stroke={l.c} strokeWidth={l.w} strokeLinecap="round"
-          opacity={l.o} vectorEffect="non-scaling-stroke"
-          className="art-drift" style={{ ["--i" as string]: i }} />
+        /* trace and car in one group, so the drift moves both and the car
+           never floats off the line it is supposed to be on */
+        <g key={l.d} className="art-drift" style={{ ["--i" as string]: i }}>
+          <path d={l.d} stroke={l.c} strokeWidth={l.w} strokeLinecap="round"
+            opacity={l.o} vectorEffect="non-scaling-stroke" className="art-line" />
+          {/* THE CAR. A single round dash travelling its own trace: the path is
+              normalised to a length of 100 so one rule drives four curves of
+              four different lengths, and a position chart with nothing moving
+              on it is a drawing of a race rather than a race. */}
+          <path d={l.d} pathLength={100} stroke={l.c} strokeWidth={l.w * 2.5}
+            strokeLinecap="round" strokeDasharray="0.5 99.5" opacity={l.o}
+            className="art-car" style={{ ["--d" as string]: `${l.s}s`, ["--i" as string]: i }} />
+        </g>
       ))}
+      {/* the crossing — the only point in a position chart worth marking */}
       <circle cx="110" cy="22" r="7" fill="rgb(var(--accent))" opacity="0.18" className="art-halo" />
       <circle cx="110" cy="22" r="2.8" fill="rgb(var(--accent))" />
     </svg>
@@ -472,11 +492,22 @@ function ArtAsk() {
             className="art-blink" style={{ ["--i" as string]: i }} />
         </g>
       ))}
+      {/* THE ANSWER RESOLVING. Two rings leaving the node on a loop, so the
+          convergence has a consequence: evidence arrives, something happens,
+          and the conclusion leaves down the wire on the right. A node that only
+          sits there is a diagram of the idea rather than the idea working. */}
+      {[0, 1].map((i) => (
+        <circle key={i} cx="158" cy="50" r="11" className="art-echo"
+          style={{ ["--i" as string]: i }}
+          fill="none" stroke="rgb(var(--accent))" strokeWidth="1.4" />
+      ))}
       <circle cx="158" cy="50" r="19" fill="rgb(var(--accent))" opacity="0.12" className="art-halo" />
       <circle cx="158" cy="50" r="11" fill="rgb(var(--accent))" opacity="0.22" />
       <circle cx="158" cy="50" r="5" fill="rgb(var(--accent))" />
       <path d="M177 50 H 212" stroke="rgb(var(--accent))" strokeWidth="1.8" strokeLinecap="round"
-        opacity="0.7" />
+        opacity="0.16" />
+      <path d="M177 50 H 212" pathLength={100} stroke="rgb(var(--accent))" strokeWidth="1.8"
+        strokeLinecap="round" strokeDasharray="34 66" className="art-out" />
       <path d="M204 44.5 L 212 50 L 204 55.5" stroke="rgb(var(--accent))" strokeWidth="1.8"
         strokeLinecap="round" strokeLinejoin="round" opacity="0.7" />
     </svg>
@@ -492,10 +523,11 @@ function ArtAsk() {
  * is what an archive being read looks like.
  */
 function ArtArchive() {
+  //                                                       n = the order it lands
   const STEPS = [
-    { x: 96, w: 36, h: 30, c: "rgb(var(--speed))", o: 0.55 },   // 2nd
-    { x: 136, w: 36, h: 46, c: "rgb(var(--accent))", o: 0.95 }, // 1st
-    { x: 176, w: 36, h: 20, c: "rgb(var(--amber))", o: 0.6 },   // 3rd
+    { x: 96, w: 36, h: 30, c: "rgb(var(--speed))", o: 0.55, n: 1 },   // 2nd
+    { x: 136, w: 36, h: 46, c: "rgb(var(--accent))", o: 0.95, n: 2 }, // 1st
+    { x: 176, w: 36, h: 20, c: "rgb(var(--amber))", o: 0.6, n: 0 },   // 3rd
   ];
   return (
     <svg className={ART} viewBox="0 0 240 100" preserveAspectRatio="xMidYMid slice" fill="none" aria-hidden>
@@ -504,10 +536,17 @@ function ArtArchive() {
           fill="rgb(var(--tint))" opacity={0.07 + i * 0.013}
           className="art-tick" style={{ ["--i" as string]: i }} />
       ))}
+      {/* THE READ HEAD. An archive being searched has something moving through
+          it; twelve bars quietly changing opacity does not read as anything at
+          all. It sweeps the seasons, reaches the podium, and starts again. */}
+      <rect className="art-read" x="13" y="46" width="1.6" height="33" rx="0.8"
+        fill="rgb(var(--speed))" />
       {STEPS.map((s) => (
         <g key={s.x}>
           <rect x={s.x} y={78 - s.h} width={s.w} height={s.h} rx="4" fill={s.c} opacity={s.o * 0.16} />
-          <rect x={s.x} y={78 - s.h} width={s.w} height="2.5" rx="1.25" fill={s.c} opacity={s.o} />
+          {/* the result landing: third, then second, then the winner */}
+          <rect x={s.x} y={78 - s.h} width={s.w} height="2.5" rx="1.25" fill={s.c}
+            className="art-step" style={{ ["--i" as string]: s.n, ["--o" as string]: s.o }} />
         </g>
       ))}
       <circle cx="154" cy="24" r="4.5" fill="rgb(var(--accent))" />
