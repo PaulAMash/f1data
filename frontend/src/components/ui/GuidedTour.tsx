@@ -27,10 +27,118 @@ import { cx } from "@/lib/format";
 
 interface Box { top: number; left: number; width: number; height: number; }
 
+/* -------------------------------------------------------------------------- */
+/* HOW BIG THE HIGHLIGHT IS.                                                   */
+/*                                                                            */
+/* It used to be eight pixels outward on every side of every target, for ever, */
+/* plus a twenty-two pixel glow that nobody had budgeted for at all. That is   */
+/* fine when a control has room around it and wrong the moment one does not:   */
+/* the session picker sits sixteen pixels under its own subtitle, the tabs bar */
+/* sits eight from the Sources button, and a spotlight that reaches            */
+/* twenty-four pixels in every direction goes straight through both. The       */
+/* reader sees an outline cutting a label in half and clipping the control     */
+/* below — which reads as a bug in the tour rather than as a pointer.          */
+/*                                                                            */
+/* So the highlight measures the room it actually has. Three rules:            */
+/*                                                                            */
+/*   THE PADDING IS THE SAME ON ALL FOUR SIDES. Uneven padding looks like a    */
+/*   mistake even when every side is individually correct, so the tightest     */
+/*   side sets the number and the others match it. It stays at the designed    */
+/*   eight whenever there is room, and only shrinks where the layout is close. */
+/*                                                                            */
+/*   THE GLOW LIVES INSIDE THAT BUDGET. Light thrown outward is what was       */
+/*   actually landing on the neighbours, so the ring now casts most of its     */
+/*   light INWARD — onto the thing it is illuminating, which is where a        */
+/*   spotlight's light belongs — and what remains outside is sized from the    */
+/*   same measurement as the padding.                                          */
+/*                                                                            */
+/*   THE OUTLINE IS THE TARGET'S OWN SHAPE. A pill gets a pill, a card gets a  */
+/*   card, and the corner radius grows by exactly the padding so the outline   */
+/*   stays parallel to the edge it is tracing rather than crossing it.         */
+/* -------------------------------------------------------------------------- */
+
+interface Fit {
+  /** outward padding, identical on all four sides */
+  pad: number;
+  /** blur radius of the part of the glow that escapes the hole */
+  bloom: number;
+  /** the hole's own corner radius, already including the padding */
+  radius: number;
+}
+
+const FIT_DEFAULT: Fit = { pad: 8, bloom: 12, radius: 20 };
+
+/** The target's own corner radius, in px, resolving a percentage honestly. */
+function cornerOf(el: Element, r: DOMRect): number {
+  const cs = getComputedStyle(el);
+  const corners = [
+    cs.borderTopLeftRadius, cs.borderTopRightRadius,
+    cs.borderBottomLeftRadius, cs.borderBottomRightRadius,
+  ];
+  let max = 0;
+  for (const c of corners) {
+    const first = c.split(" ")[0];
+    const n = parseFloat(first);
+    if (!Number.isFinite(n)) continue;
+    max = Math.max(max, first.endsWith("%") ? (n / 100) * Math.min(r.width, r.height) : n);
+  }
+  // a pill asks for half its height; anything larger is the same pill
+  return Math.min(max, Math.min(r.width, r.height) / 2);
+}
+
+/**
+ * The clearance around a target: the distance to the nearest thing the
+ * highlight could run into.
+ *
+ * Only elements that actually share a band with the target can be hit — a card
+ * two columns over is not a constraint on how far up the outline may go — so
+ * each candidate is tested against the perpendicular axis first. The walk goes
+ * up a few levels because the thing a highlight collides with is usually not a
+ * sibling: the tabs bar's neighbour is the Sources button (a sibling), but the
+ * session picker's is a paragraph that belongs to its parent's parent.
+ */
+function clearance(el: Element, r: DOMRect): number {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  let gap = Math.min(r.top, r.left, vw - r.right, vh - r.bottom);
+
+  let node: Element | null = el;
+  for (let up = 0; node && up < 4; up++, node = node.parentElement) {
+    const parent: HTMLElement | null = node.parentElement;
+    if (!parent || parent === document.body) break;
+    const sibs: Element[] = Array.from(parent.children);
+    for (const sib of sibs) {
+      if (sib === node || sib.contains(el) || el.contains(sib)) continue;
+      const s = sib.getBoundingClientRect();
+      if (s.width < 1 || s.height < 1) continue;
+      if (s.right > r.left + 1 && s.left < r.right - 1) {
+        if (s.bottom <= r.top) gap = Math.min(gap, r.top - s.bottom);
+        if (s.top >= r.bottom) gap = Math.min(gap, s.top - r.bottom);
+      }
+      if (s.bottom > r.top + 1 && s.top < r.bottom - 1) {
+        if (s.right <= r.left) gap = Math.min(gap, r.left - s.right);
+        if (s.left >= r.right) gap = Math.min(gap, s.left - r.right);
+      }
+    }
+  }
+  return Math.max(0, gap);
+}
+
+/** Everything the highlight needs to wrap this particular element cleanly. */
+function fitTo(el: Element): Fit {
+  const r = el.getBoundingClientRect();
+  const gap = clearance(el, r);
+  // two pixels of daylight are kept between the highlight and whatever is next
+  // to it, so "does not touch" is visible rather than merely true
+  const pad = Math.max(3, Math.min(8, Math.floor((gap - 2) / 2)));
+  const bloom = Math.max(4, Math.min(14, gap - pad - 2));
+  return { pad, bloom, radius: cornerOf(el, r) + pad };
+}
+
 export function GuidedTour() {
   const { beats, index, running, ready, next, prev, stop } = useTour();
   const { prefs } = usePrefs();
   const [box, setBox] = useState<Box | null>(null);
+  const [fit, setFit] = useState<Fit>(FIT_DEFAULT);
   const [el, setEl] = useState<Element | null>(null);
   // has the page stopped moving? the card is not shown until it has
   const [settled, setSettled] = useState(false);
@@ -139,6 +247,18 @@ export function GuidedTour() {
     };
   }, [el, prefs.motion]);
 
+  /* How much room this target has is a fact about the LAYOUT, not about the
+     scroll position, so it is measured when the target changes and when the
+     window is resized — and not on every frame of the settle, which would put
+     a walk of the element's neighbours inside the scroll loop. */
+  useLayoutEffect(() => {
+    if (!el) { setFit(FIT_DEFAULT); return; }
+    const compute = () => setFit(fitTo(el));
+    compute();
+    window.addEventListener("resize", compute);
+    return () => window.removeEventListener("resize", compute);
+  }, [el]);
+
   // auto-advance, for the demonstration script
   useEffect(() => {
     if (!beat?.hold || !ready) return;
@@ -202,10 +322,9 @@ export function GuidedTour() {
   }
   if (!beat) return null;
 
-  const PAD = 8;
   const hole = box && {
-    top: box.top - PAD, left: box.left - PAD,
-    width: box.width + PAD * 2, height: box.height + PAD * 2,
+    top: box.top - fit.pad, left: box.left - fit.pad,
+    width: box.width + fit.pad * 2, height: box.height + fit.pad * 2,
   };
   const last = index === beats.length - 1;
 
@@ -265,11 +384,20 @@ export function GuidedTour() {
            1.5px ring travelling across a live page. */
         <>
           <div
-            className="tour-scrim absolute rounded-xl"
-            style={{ top: hole.top, left: hole.left, width: hole.width, height: hole.height }} />
+            className="tour-scrim absolute"
+            style={{
+              top: hole.top, left: hole.left, width: hole.width, height: hole.height,
+              borderRadius: fit.radius,
+            }} />
           <div aria-hidden
-            className="tour-ring absolute rounded-xl"
-            style={{ top: hole.top, left: hole.left, width: hole.width, height: hole.height }} />
+            className="tour-ring absolute"
+            style={{
+              top: hole.top, left: hole.left, width: hole.width, height: hole.height,
+              borderRadius: fit.radius,
+              // the glow's escape distance, measured from the same clearance
+              // that set the padding — so it can never reach a neighbour
+              ["--ring-out" as string]: `${fit.bloom}px`,
+            }} />
         </>
       ) : (
         <div onClick={() => stop()} className="pointer-events-auto absolute inset-0 bg-base-950/84" />

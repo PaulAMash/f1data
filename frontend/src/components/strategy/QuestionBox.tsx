@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, CornerDownLeft, MessageSquareText, Wand2 } from "lucide-react";
 import { Sparkles } from "@/components/ui/MotionIcon";
 import { api } from "@/lib/api";
@@ -16,12 +16,15 @@ const MIN_THINK_MS = 1500; // makes the analysis feel considered, not instant
 const askHistoryStore = new Map<string, QuestionAnswer[]>();
 
 export function QuestionBox({
-  year, gp, session, llmAvailable, category,
+  year, gp, session, llmAvailable, category, seed,
 }: {
   year: number; gp: string; session: string; llmAvailable: boolean; category: SessionCategory;
+  /** A question the reader has already chosen elsewhere — see the note below. */
+  seed?: string;
 }) {
   const storeKey = `${year}|${gp}|${session}`;
   const [q, setQ] = useState("");
+  const boxEl = useRef<HTMLDivElement | null>(null);
   const [thinking, setThinking] = useState(false);
   const [history, setHistoryState] = useState<QuestionAnswer[]>(
     () => askHistoryStore.get(storeKey) ?? []);
@@ -57,9 +60,62 @@ export function QuestionBox({
     }
   }
 
+  /* -------------------------------------------------------------------- */
+  /* A QUESTION THE READER ALREADY ASKED.                                  */
+  /*                                                                       */
+  /* The landing page offers three example questions, each of which was a  */
+  /* link carrying `?q=` — and nothing on this side read it. Pressing one  */
+  /* opened the Ask tab with an empty box, so the reader had to type the   */
+  /* question they had just chosen. It looked like a demo and behaved like */
+  /* a navigation, which is the worst of both.                             */
+  /*                                                                       */
+  /* Now it IS the demo: the question types itself into the real input and */
+  /* submits itself against the real session, and the answer is the real   */
+  /* answer. Typed rather than pasted because the point of the gesture is  */
+  /* to show what happens, and a value that simply appears in a field      */
+  /* shows nothing — it is the same reason the analysis takes a beat       */
+  /* before it answers.                                                    */
+  /*                                                                       */
+  /* `done` guards the ref rather than the effect: React re-runs an effect */
+  /* immediately after tearing it down in development, and a ref that was  */
+  /* already marked used would swallow the second run and leave nothing    */
+  /* typed at all.                                                         */
+  /* -------------------------------------------------------------------- */
+  const usedSeed = useRef<string | null>(null);
+  useEffect(() => {
+    const text = seed?.trim();
+    if (!text || usedSeed.current === text) return;
+    usedSeed.current = text;
+    boxEl.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+
+    let done = false;
+    const fire = () => { done = true; ask(text); };
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (still) {
+      setQ(text);
+      const t = setTimeout(fire, 260);
+      return () => { clearTimeout(t); if (!done) usedSeed.current = null; };
+    }
+
+    let i = 0, t = 0;
+    // the whole question lands in about three quarters of a second whatever
+    // its length, so a long one does not turn into a performance
+    const step = Math.max(12, Math.min(34, 720 / text.length));
+    const id = setInterval(() => {
+      setQ(text.slice(0, ++i));
+      if (i >= text.length) { clearInterval(id); t = window.setTimeout(fire, 400); }
+    }, step);
+    return () => {
+      clearInterval(id); clearTimeout(t);
+      if (!done) usedSeed.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed]);
+
   return (
     <div>
-      <div data-tour="ask-box" className="flex items-center gap-2 rounded-xl border border-white/10 bg-base-850/80 p-2 focus-within:border-accent/40">
+      <div ref={boxEl} data-tour="ask-box" className="flex items-center gap-2 rounded-xl border border-white/10 bg-base-850/80 p-2 focus-within:border-accent/40">
         <MessageSquareText size={16} className="ml-1.5 shrink-0 text-ink-faint" />
         <input
           value={q} onChange={(e) => setQ(e.target.value)}

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, MessageSquareText } from "lucide-react";
+import { ArrowRight, CornerDownLeft, MessageSquareText } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Featured } from "@/lib/types";
 import { useLivery } from "@/lib/liveryColor";
@@ -139,18 +139,25 @@ export function FeaturedRace() {
           Every answer is worked out from this session&rsquo;s own lap data. If the data
           cannot support one, it says so rather than inventing it.
         </p>
+        {/* These are not links to a page with a text box on it. Pressing one
+            opens the Ask panel on this session and the question types itself in
+            and submits — see QuestionBox. The glyph on the right is therefore
+            the RETURN key rather than an arrow: an arrow promises "you will go
+            somewhere", and what actually happens is that the question gets
+            asked. */}
         <div className="mt-4 flex flex-1 flex-col justify-end gap-2">
           {ASKS.map((q, i) => (
             <Link key={q}
               href={`${href}${href.includes("?") ? "&" : "?"}tab=ask&q=${encodeURIComponent(q)}`}
+              title="Ask this now"
               className="group/ask flex items-center gap-2.5 rounded-xl border border-white/[0.07] bg-base-900/50 px-3.5 py-2.5 text-[13px] text-ink-muted transition-all duration-[--dur-2] ease-[--ease-out] hover:-translate-y-0.5 hover:border-white/[0.16] hover:text-ink"
               style={{ transitionDelay: `${i * 20}ms` }}>
               <span aria-hidden className="text-ink-faint transition-colors group-hover/ask:text-accent-soft">
                 &ldquo;
               </span>
               {q}
-              <ArrowRight size={13}
-                className="ml-auto shrink-0 text-ink-faint opacity-0 transition-all duration-[--dur-2] group-hover/ask:translate-x-0.5 group-hover/ask:opacity-100" />
+              <CornerDownLeft size={13}
+                className="ml-auto shrink-0 text-ink-faint opacity-0 transition-all duration-[--dur-2] group-hover/ask:text-accent-soft group-hover/ask:opacity-100" />
             </Link>
           ))}
         </div>

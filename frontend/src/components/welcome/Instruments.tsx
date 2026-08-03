@@ -1,6 +1,8 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import { COMPOUND_COLOR } from "@/lib/compounds";
+import { useLivery } from "@/lib/liveryColor";
 import { LAYOUTS } from "@/lib/miniTrack";
 import { POOL } from "@/lib/raceEngine";
 import { cx } from "@/lib/format";
@@ -179,25 +181,54 @@ function RaceControl() {
 
 /* ---------------------------------------------------------------- pace delta */
 
+/* A STRIP CHART RUNS. IT DOES NOT REFRESH.
+   This used to rebuild its three traces from a 1.6-second `setInterval`, so
+   every one and a half seconds the whole picture jumped to a new shape and then
+   sat perfectly still — a poll, drawn. Beside a canvas running at sixty frames
+   a second it was the one thing on the screen that looked like a placeholder.
+
+   So the trace is not recomputed at all. Each one is drawn once, twice as wide
+   as the window it is seen through, out of sine components whose periods divide
+   that window exactly — and then translated by exactly one window width, for
+   ever. The wave leaving the left edge is the same wave arriving at the right,
+   so the loop is seamless, and because the three run at different speeds over
+   different periods the combination does not visibly repeat.
+
+   It also costs nothing: three paths on the compositor, no timer, no React
+   render, and it slows with the reader's tempo because the duration is stated
+   in `--m` like every other loop in the product. */
+const TRACES = [
+  // colour,        cycles across the window,  amplitudes,   seconds per window
+  { c: "rgb(var(--speed))", k: [2, 5], a: [8.0, 2.6], d: 7.2 },
+  { c: "rgb(var(--accent))", k: [3, 7], a: [6.4, 2.1], d: 5.4 },
+  { c: "rgb(var(--best))", k: [1, 4], a: [9.2, 3.0], d: 9.6 },
+];
+
+/** Two windows wide, sampled fine enough that the curve reads as a curve. */
+function wave(k: number[], a: number[]): string {
+  const N = 200;
+  let d = "";
+  for (let i = 0; i <= N; i++) {
+    const x = (i / N) * 200;
+    const y = 26
+      - a[0] * Math.sin((x / 100) * k[0] * Math.PI * 2)
+      - a[1] * Math.sin((x / 100) * k[1] * Math.PI * 2 + 1.3);
+    d += `${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)} `;
+  }
+  return d.trim();
+}
+
 function PaceDelta() {
-  const t = useTick(1600);
-  // three traces that wander; recomputed from the tick so they never repeat
-  const series = useMemo(() => (
-    [0, 1, 2].map((s) =>
-      Array.from({ length: 22 }, (_, i) =>
-        Math.sin((i + t * 1.7) * (0.32 + s * 0.11) + s * 2.1) * (0.55 + s * 0.16)))
-  ), [t]);
-  const colours = ["rgb(var(--speed))", "rgb(var(--accent))", "rgb(var(--best))"];
-  const path = (v: number[]) =>
-    v.map((y, i) => `${i === 0 ? "M" : "L"} ${(i / (v.length - 1)) * 100} ${26 - y * 17}`).join(" ");
+  const paths = useMemo(() => TRACES.map((t) => wave(t.k, t.a)), []);
   return (
     <div className="w-[200px]">
       <Label>Pace delta · s</Label>
       <svg viewBox="0 0 100 52" className="mt-2 h-[52px] w-full" fill="none" aria-hidden
         preserveAspectRatio="none">
         <line x1="0" y1="26" x2="100" y2="26" stroke="rgb(var(--tint) / .12)" strokeWidth="0.6" />
-        {series.map((v, i) => (
-          <path key={i} d={path(v)} stroke={colours[i]} strokeWidth="1.1" opacity={0.62}
+        {paths.map((d, i) => (
+          <path key={i} d={d} stroke={TRACES[i].c} strokeWidth="1.1" opacity={0.62}
+            className="wc-run" style={{ ["--d" as string]: `${TRACES[i].d}s` }}
             vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
         ))}
       </svg>
@@ -254,14 +285,19 @@ function SystemStatus() {
 
 /* ---------------------------------------------------------------- tyre window */
 
+/* The broadcast tyre colours, from the one place that holds them. Hard is very
+   nearly white, which is correct on a dark timing screen and invisible on
+   paper — `useLivery` is the product's existing answer to exactly that, so the
+   welcome screen uses it rather than inventing a second set of hexes. */
 const COMPOUND = [
-  { n: "SOFT", c: "#ff3b3b", lo: 0.10, hi: 0.42 },
-  { n: "MEDIUM", c: "#ffd21e", lo: 0.32, hi: 0.72 },
-  { n: "HARD", c: "#e8ecf5", lo: 0.55, hi: 0.96 },
+  { n: "SOFT" as const, lo: 0.10, hi: 0.42 },
+  { n: "MEDIUM" as const, lo: 0.32, hi: 0.72 },
+  { n: "HARD" as const, lo: 0.55, hi: 0.96 },
 ];
 
 function TyreWindow() {
   const t = useTick(2400);
+  const paint = useLivery();
   return (
     <div className="w-[196px] text-right">
       <Label>Tyre window</Label>
@@ -273,9 +309,15 @@ function TyreWindow() {
             <div key={c.n} className="flex items-center justify-end gap-2">
               <span className="wc-inst-k">{c.n}</span>
               <span className="relative block h-[5px] w-[96px] overflow-hidden rounded-full"
-                style={{ background: "rgb(var(--tint) / .08)" }}>
-                <span className="absolute inset-y-0 rounded-full transition-all duration-700 ease-[cubic-bezier(.22,1,.36,1)]"
-                  style={{ left: `${lo * 100}%`, right: `${(1 - hi) * 100}%`, background: c.c, opacity: 0.72 }} />
+                style={{ background: "rgb(var(--tint) / .09)" }}>
+                {/* the transition lasts exactly as long as the tick that feeds
+                    it, and is linear, so the window is always drifting and
+                    never arrives early and waits */}
+                <span className="absolute inset-y-0 rounded-full transition-all duration-[2400ms] ease-linear"
+                  style={{
+                    left: `${lo * 100}%`, right: `${(1 - hi) * 100}%`,
+                    background: paint(COMPOUND_COLOR[c.n]), opacity: 0.8,
+                  }} />
               </span>
             </div>
           );
@@ -287,19 +329,20 @@ function TyreWindow() {
 
 /* ----------------------------------------------------------------- data cache */
 
+/* Same argument as the pace delta: a stream that redraws on a timer is a poll.
+   Each bar carries its own loop, offset by `--i` so the fourteen of them read
+   as a level meter rather than as a row of identical things breathing together
+   — and the counter beneath keeps its tick, because a packet count is a figure
+   that genuinely arrives in whole numbers. */
 function DataCache() {
   const t = useTick(900);
-  const bars = useMemo(
-    () => Array.from({ length: 14 }, (_, i) => 0.25 + 0.75 * Math.abs(Math.sin(i * 0.9 + t * 0.6))),
-    [t],
-  );
   return (
     <div className="w-[196px] text-right">
       <Label>Data stream</Label>
       <div className="mt-2 flex h-[26px] items-end justify-end gap-[3px]">
-        {bars.map((b, i) => (
-          <span key={i} className="w-[4px] rounded-sm transition-[height] duration-500 ease-out"
-            style={{ height: `${b * 100}%`, background: "rgb(var(--speed))", opacity: 0.3 + b * 0.4 }} />
+        {Array.from({ length: 14 }, (_, i) => (
+          <span key={i} className="wc-bar block h-full w-[4px] rounded-sm"
+            style={{ ["--i" as string]: i, background: "rgb(var(--speed))" }} />
         ))}
       </div>
       <div className="mt-2">

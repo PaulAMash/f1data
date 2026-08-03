@@ -1097,25 +1097,6 @@ html.theme-sweep::view-transition-new(root) {
 .wc-4 { animation-delay: .52s; }
 .wc-5 { animation-delay: .62s; }
 .wc-6 { animation-delay: .80s; }
-.wc-pick { box-shadow: var(--el-2); }
-/* `--pick` is only set on the depth cards; the other two questions fall back to
-   the accent, so one rule lights the chosen answer on all three rows.
-
-   The quiet variant exists because three lit cards down one screen is three
-   things shouting. The first question is the one that changes what the product
-   IS, so it keeps the full halo; the other two get the ring and the tick and
-   nothing else. Selection still reads instantly — it just stops competing. */
-.wc-pick[aria-pressed="true"] {
-  box-shadow:
-    0 0 0 1.5px rgb(var(--pick, var(--accent)) / .6),
-    0 24px 60px -28px rgb(var(--pick, var(--accent)) / calc(.9 * var(--glow-k)));
-}
-.wc-pick.is-quiet[aria-pressed="true"] {
-  box-shadow:
-    0 0 0 1.5px rgb(var(--accent) / .5),
-    var(--el-2);
-}
-
 /* The three pillars of the introduction, and the three questions of the setup:
    both arrive in sequence rather than as a block, because a row of three
    identical cards appearing at once reads as a table and a row that assembles
@@ -1170,22 +1151,44 @@ html.theme-sweep::view-transition-new(root) {
       transparent 92%),
     radial-gradient(128% 92% at 50% 44%, transparent 52%, rgb(var(--base-950) / .55) 86%, rgb(var(--base-950) / .8));
 }
-/* LIGHT IS NOT DARK WITH THE LIGHTS ON.
-   The dark room is lit from inside — a black surface with sources in it, so the
-   scrim under the type is more black and the falloff is more black. Do that on
-   paper and you get grey mist over white, which is what "inverted" looks like.
-   A lit room on paper is the opposite arrangement: the page is the light source,
-   the type sits on the BRIGHTEST part of it, and the falloff is a warm shadow
-   gathering at the edges. Same three stops, opposite direction. */
+/* ---------------------------------------------------------------------------
+   THE LIGHT ROOM.
+
+   Not this room with the lights on — a different room, built from the same
+   parts the rest of the product's light theme is built from. That theme has one
+   idea and it is a good one: a warm grey page, WHITE OBJECTS SITTING ON IT, and
+   depth that comes from a real shadow underneath rather than from a glow
+   around. Everything below is that idea applied to a screen that happens to
+   have a canvas behind it.
+
+   Three consequences, and they are what the first attempt got wrong:
+
+     THE PAGE IS THE LIGHT, so the type sits on the brightest part of it and the
+     surface settles as it goes down and out. There is no vignette; a dark ring
+     around a bright middle is a dark-room device and on paper it reads as dirt.
+
+     LIGHT DOES NOT BLOOM ON PAPER. Every glow in the dark room — the lamps on
+     the status LEDs, the halo behind the headline, the accent throw under the
+     primary button — becomes a tighter, darker shadow or a flat tint here. A
+     blurred bright edge on white is a smudge, and it is most of what makes an
+     inverted dark theme look cheap.
+
+     INK RECEDES BY BEING LIGHTER, NOT BY BEING DIMMER. Dropping the opacity of
+     dark text on a pale page makes it illegible long before it makes it quiet,
+     so the instruments keep their contrast and lose their weight instead.
+   --------------------------------------------------------------------------- */
 :root[data-theme="light"] .wc-room::after {
   background:
-    radial-gradient(62% 50% at 50% 46%,
-      rgb(255 255 255 / .96) 0%,
-      rgb(255 255 255 / .8) 44%,
-      rgb(255 255 255 / .34) 74%,
-      transparent 92%),
-    radial-gradient(132% 96% at 50% 42%, transparent 46%,
-      rgb(214 206 200 / .28) 82%, rgb(190 182 178 / .42));
+    /* the clean sheet the headline is printed on */
+    radial-gradient(58% 48% at 50% 45%,
+      rgb(255 255 255 / .94) 0%,
+      rgb(255 255 255 / .72) 46%,
+      rgb(255 255 255 / .26) 76%,
+      transparent 93%),
+    /* and the faintest settling toward the edges. Cool, not warm: the page is
+       240 242 246 and anything browner than that reads as a stain on it. */
+    radial-gradient(136% 100% at 50% 38%, transparent 54%,
+      rgb(203 209 222 / .22) 86%, rgb(188 196 212 / .34));
 }
 
 /* ---- 5. the cursor -------------------------------------------------------
@@ -1202,9 +1205,12 @@ html.theme-sweep::view-transition-new(root) {
   background: radial-gradient(340px circle at var(--mx, 50%) var(--my, 50%),
     rgb(var(--accent) / .085), rgb(var(--speed) / .04) 42%, transparent 70%);
 }
+/* On paper, light is the page getting whiter — a coloured pool following the
+   pointer across a pale surface is a smear. So the light room's cursor is a
+   soft clearing with only a whisper of the accent in its core. */
 :root[data-theme="light"] .wc-cursor {
-  background: radial-gradient(340px circle at var(--mx, 50%) var(--my, 50%),
-    rgb(var(--accent) / .05), rgb(var(--speed) / .035) 42%, transparent 70%);
+  background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%),
+    rgb(255 255 255 / .55), rgb(var(--accent) / .035) 34%, transparent 68%);
 }
 
 /* ---- 4. the instruments --------------------------------------------------
@@ -1216,13 +1222,15 @@ html.theme-sweep::view-transition-new(root) {
   transition: opacity .8s var(--ease-out), transform .8s var(--ease-out);
 }
 .wc-inst.is-up { opacity: .62; transform: none; }
-:root[data-theme="light"] .wc-inst.is-up { opacity: .9; }
 /* On black an instrument recedes by being dim. On paper dim is illegible, so it
-   recedes by being LIGHT-WEIGHT and small instead — full opacity, quieter ink. */
-:root[data-theme="light"] .wc-inst-label { color: rgb(var(--ink-faint)); border-bottom-color: rgb(15 23 42 / .12); }
+   recedes by being LIGHT-WEIGHT and small instead — near-full opacity, quieter
+   ink, and a rule under the label that is a real hairline rather than a ghost. */
+:root[data-theme="light"] .wc-inst.is-up { opacity: .92; }
+:root[data-theme="light"] .wc-inst-label { color: rgb(var(--ink-faint)); border-bottom-color: rgb(var(--tint) / .16); }
 :root[data-theme="light"] .wc-inst-k { color: rgb(var(--ink-faint)); }
 :root[data-theme="light"] .wc-inst-v { color: rgb(var(--ink)); }
 :root[data-theme="light"] .wc-inst-code { color: rgb(var(--ink-faint)); }
+:root[data-theme="light"] .wc-inst-v.is-accent { color: rgb(var(--accent)); }
 
 /* label, then a rule that runs the width of the readout under it. Two lines of
    CSS, and it is most of the difference between "a caption" and "a panel on an
@@ -1278,6 +1286,12 @@ html.theme-sweep::view-transition-new(root) {
 .wc-led.is-good { background: rgb(var(--good)); box-shadow: 0 0 9px rgb(var(--good) / .9); }
 .wc-led.is-warn { background: rgb(var(--amber)); box-shadow: 0 0 9px rgb(var(--amber) / .9); }
 .wc-led.is-wait { animation: wc-blink calc(1.1s * var(--m)) steps(2, jump-none) infinite; }
+/* A lamp glows because there is dark around it to glow into. On paper the same
+   blur is a coloured bruise, so the light room gives the lamp a crisp ring
+   instead — which is how an indicator on a real instrument face is drawn. */
+:root[data-theme="light"] .wc-led { box-shadow: 0 0 0 1px rgb(var(--tint) / .12); }
+:root[data-theme="light"] .wc-led.is-good { box-shadow: 0 0 0 1px rgb(var(--good) / .35), 0 1px 2px rgb(var(--tint) / .18); }
+:root[data-theme="light"] .wc-led.is-warn { box-shadow: 0 0 0 1px rgb(var(--amber) / .35), 0 1px 2px rgb(var(--tint) / .18); }
 @keyframes wc-blink { 0%, 100% { opacity: 1; } 50% { opacity: .2; } }
 
 /* the lap being timed, on the instrument's own circuit */
@@ -1291,32 +1305,29 @@ html.theme-sweep::view-transition-new(root) {
 }
 @keyframes wc-lap { to { stroke-dashoffset: -290; } }
 
-/* ---- glass ---------------------------------------------------------------
-   One recipe, used by the pillars and the hardware alike: a translucent pane,
-   a hairline that is brighter along the top edge than the bottom (which is
-   what "lit from above" means), and a shadow with a long soft tail. */
-.wc-glass {
-  position: relative;
-  border-radius: 16px;
-  background:
-    linear-gradient(180deg, rgb(var(--tint) / .055), rgb(var(--tint) / .015) 38%, transparent),
-    rgb(var(--base-900) / .55);
-  backdrop-filter: blur(14px) saturate(1.15);
-  -webkit-backdrop-filter: blur(14px) saturate(1.15);
-  box-shadow:
-    inset 0 1px 0 0 rgb(var(--tint) / .2),
-    inset 0 0 0 1px rgb(var(--tint) / .085),
-    inset 0 -18px 30px -26px rgb(var(--tint) / .12),
-    0 22px 48px -30px rgb(0 0 0 / .85);
+/* THE STRIP CHART, RUNNING.
+   The path is drawn two windows wide out of components whose periods divide the
+   window exactly, so translating it by exactly one window is a seamless loop —
+   the wave leaving the left edge is the wave arriving at the right, for ever,
+   with no timer and no redraw. `px` inside an SVG is a user unit, which is why
+   -100px is precisely one viewBox width whatever size the panel is. */
+.wc-run {
+  animation: wc-run calc(var(--d, 7s) * var(--m)) linear infinite;
 }
-:root[data-theme="light"] .wc-glass {
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / .85), rgb(255 255 255 / .62) 46%, rgb(255 255 255 / .5)),
-    rgb(var(--base-900) / .5);
-  box-shadow:
-    inset 0 1px 0 0 rgb(255 255 255 / .9),
-    inset 0 0 0 1px rgb(var(--tint) / .09),
-    0 18px 40px -28px rgb(15 23 42 / .35);
+@keyframes wc-run { to { transform: translateX(-100px); } }
+
+/* the level meter. Fourteen bars, one loop, offset so no two are in phase —
+   scaled from the bottom rather than resized, so it stays on the compositor */
+.wc-bar {
+  transform-origin: bottom;
+  animation: wc-bar calc(2.9s * var(--m)) var(--ease-in-out) infinite;
+  animation-delay: calc(var(--i) * -.21s);
+}
+@keyframes wc-bar {
+  0%, 100% { transform: scaleY(.26); opacity: .34; }
+  27%      { transform: scaleY(1);   opacity: .72; }
+  53%      { transform: scaleY(.45); opacity: .42; }
+  78%      { transform: scaleY(.82); opacity: .62; }
 }
 
 /* ---- 6. the hardware ----------------------------------------------------- */
@@ -1392,6 +1403,13 @@ html.theme-sweep::view-transition-new(root) {
   color: rgb(var(--accent-soft));
   background: rgb(var(--accent) / .12);
   box-shadow: inset 0 0 0 1px rgb(var(--accent) / .24);
+}
+/* the print red at 12% on white is nearly pink; it wants less fill and a
+   firmer edge to stay a mark rather than a stain */
+:root[data-theme="light"] .wc-card-icon {
+  color: rgb(var(--accent));
+  background: rgb(var(--accent) / .07);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent) / .2);
 }
 .wc-card-n {
   margin-left: auto;
@@ -1500,6 +1518,38 @@ html.theme-sweep::view-transition-new(root) {
 }
 .wc-cta:active { transform: translateY(0); }
 .wc-cta:disabled { opacity: .6; }
+/* The accent throwing forty pixels of its own light is what a lit button looks
+   like in a dark room. On paper the same shadow is a red haze under a red
+   button; a solid object on a desk gets a short contact shadow and a longer,
+   much fainter one, tinted by the object rather than made of it. */
+:root[data-theme="light"] .wc-cta {
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / .28),
+    0 1px 2px rgb(var(--accent) / .28),
+    0 8px 18px -8px rgb(var(--accent) / .42),
+    0 18px 34px -18px rgb(15 23 42 / .3);
+}
+:root[data-theme="light"] .wc-cta:hover {
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / .34),
+    0 2px 4px rgb(var(--accent) / .3),
+    0 12px 24px -8px rgb(var(--accent) / .48),
+    0 26px 44px -20px rgb(15 23 42 / .34);
+}
+
+/* the wash behind the one word the headline sets in the accent. On black it is
+   light behind the letters; on paper it is a highlighter under them, which is
+   why it is both weaker and warmer-edged here. */
+.wc-mark {
+  position: absolute;
+  inset: -0.5rem -0.75rem;
+  z-index: -10;
+  border-radius: 1.5rem;
+  background: radial-gradient(closest-side, rgb(var(--accent) / .2), transparent);
+}
+:root[data-theme="light"] .wc-mark {
+  background: radial-gradient(closest-side, rgb(var(--accent) / .12), transparent 76%);
+}
 
 /* ---- the acts ------------------------------------------------------------
    Not a fade. The outgoing act loses its weight and drops back a little; the
@@ -1526,7 +1576,14 @@ html.theme-sweep::view-transition-new(root) {
 
 @media (prefers-reduced-motion: reduce) {
   .wc-inst { transition: none; }
-  .wc-led.is-wait, .wc-lap { animation: none; }
+  .wc-led.is-wait, .wc-lap, .wc-run { animation: none; }
+  /* The meter holds a reading rather than collapsing to nothing — and it holds
+     an UNEVEN one, because fourteen bars of identical height is not a level
+     meter at rest, it is a loading skeleton. */
+  .wc-bar { animation: none; transform: scaleY(.42); opacity: .42; }
+  .wc-bar:nth-child(3n + 1) { transform: scaleY(.86); opacity: .62; }
+  .wc-bar:nth-child(4n + 2) { transform: scaleY(.28); opacity: .36; }
+  .wc-bar:nth-child(5n)     { transform: scaleY(1);   opacity: .7; }
   .wc-act { transition: opacity .2s linear; filter: none; }
   .wc-act.is-past, .wc-act.is-next { transform: none; filter: none; }
   .wc-card:hover { transform: none; }
@@ -2221,8 +2278,76 @@ html.theme-sweep::view-transition-new(root) {
 }
 @keyframes art-drift {
   0%, 100% { transform: translateY(0) scaleY(1); }
-  50%      { transform: translateY(calc(-2.5px * var(--amp))) scaleY(1.035); }
+  50%      { transform: translateY(calc(-3.5px * var(--amp))) scaleY(1.05); }
 }
+
+/* THE CAR ON ITS OWN TRACE.
+   One round dash travelling a path whose length has been normalised to 100, so
+   a single rule drives four curves of four different lengths and every car
+   arrives at the far side of the window at its own pace. Four of them at four
+   speeds is what makes the picture a race rather than a wallpaper — and the
+   dashes cross where the traces cross, which is the whole subject. */
+.art-car {
+  animation: art-car calc(var(--d, 10s) * var(--m)) linear infinite;
+  animation-delay: calc(var(--i) * -2.4s);
+  transition: stroke-width var(--dur-3) var(--ease-out);
+}
+@keyframes art-car { to { stroke-dashoffset: -100; } }
+
+/* the answer leaving down the wire, once the evidence has resolved */
+.art-out {
+  opacity: .75;
+  animation: art-out calc(3.4s * var(--m)) var(--ease-in-out) infinite;
+}
+@keyframes art-out { from { stroke-dashoffset: 34; } to { stroke-dashoffset: -100; } }
+
+/* and the moment it resolves, leaving the node as a ring */
+.art-echo {
+  transform-box: fill-box;
+  transform-origin: center;
+  stroke-width: 1.1;
+  animation: art-echo calc(3.4s * var(--m)) var(--ease-out) infinite;
+  animation-delay: calc(var(--i) * -1.7s);
+}
+/* Kept small on purpose. The bloom layer under the artwork blurs and brightens
+   whatever is drawn on it, so a ring that expands far enough turns into a solid
+   disc down there and swallows the node it came from. */
+@keyframes art-echo {
+  0%        { transform: scale(.6); opacity: .5; }
+  62%, 100% { transform: scale(1.7); opacity: 0; }
+}
+
+/* THE ARCHIVE BEING READ, AND THEN THE RESULT.
+   The head sweeps the seasons and stops where they end — it is reading the
+   years, not wiping the picture, so it never crosses the podium — and the three
+   places land in order a beat after it arrives. Read, then answer: the same
+   sentence the door underneath it is making. */
+.art-read {
+  opacity: 0;
+  animation: art-read calc(6.4s * var(--m)) var(--ease-in-out) infinite;
+}
+@keyframes art-read {
+  0%        { transform: translateX(0); opacity: 0; }
+  10%       { opacity: var(--read-a, .42); }
+  58%       { transform: translateX(78px); opacity: var(--read-a, .42); }
+  70%, 100% { transform: translateX(78px); opacity: 0; }
+}
+
+/* third, then second, then the winner — a result landing rather than a bar */
+.art-step {
+  opacity: calc(var(--o, 1) * var(--step-lo, .45));
+  animation: art-step calc(6.4s * var(--m)) var(--ease-out) infinite;
+  animation-delay: calc(var(--i) * .36s);
+}
+@keyframes art-step {
+  0%, 66%  { opacity: calc(var(--o, 1) * var(--step-lo, .45)); }
+  76%      { opacity: var(--o, 1); }
+  100%     { opacity: calc(var(--o, 1) * var(--step-lo, .45)); }
+}
+/* the same fraction of the same colour is a fainter mark on paper — a dark room
+   lets a dim thing still be a thing, and a bright one does not */
+:root[data-theme="light"] .art-step { --step-lo: .65; }
+:root[data-theme="light"] .art-read { --read-a: .55; }
 
 .art-halo { animation: art-halo calc(3.4s * var(--m)) var(--ease-in-out) infinite; }
 @keyframes art-halo {
@@ -2313,17 +2438,60 @@ html.theme-sweep::view-transition-new(root) {
 /* far enough to clear any column at this grid's widest, so the pass always
    leaves the frame — a scan that stops halfway is a bar sitting in the picture */
 @keyframes art-scan { to { transform: translateX(42rem); } }
-.art-host:hover .art-drift,
+
+/* ---------------------------------------------------------------------------
+   WAKING UP, NOT SPEEDING UP.
+
+   Every one of these loops used to be given a shorter `animation-duration` on
+   hover. That does not accelerate an animation: the browser recomputes where it
+   ought to be from the elapsed time against the NEW duration, so a nine-second
+   drift told to take one-point-nine jumps to wherever it would have been by
+   now. Three windows, six loops each, all lurching on the same gesture — the
+   exact opposite of the intended "this is alive, and it noticed you".
+
+   So nothing changes rate. A second, faster pass is always running underneath
+   at zero opacity and fades in; the traces thicken; the cars grow; the light
+   comes up. All of it is a transition, so it is smooth in both directions and
+   it settles the moment the pointer leaves.
+   --------------------------------------------------------------------------- */
+.art-wake {
+  left: -4rem;
+  opacity: 0;
+  background: linear-gradient(90deg, transparent, rgb(var(--tint) / .13), transparent);
+  animation: art-scan calc(2.4s * var(--m)) linear infinite;
+  transition: opacity var(--dur-3) var(--ease-out);
+}
+.art-host:hover .art-wake { opacity: 1; }
+:root[data-theme="light"] .art-wake {
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / .5), transparent);
+}
+
+.art-line, .art-car, .art-feed, .art-out {
+  transition: stroke-width var(--dur-3) var(--ease-out), opacity var(--dur-3) var(--ease-out);
+}
+.art-host:hover .art-line { stroke-width: 2.8; }
+.art-host:hover .art-car { stroke-width: 7; }
+.art-host:hover .art-feed { stroke-width: 2.6; opacity: .95; }
+.art-host:hover .art-out { stroke-width: 2.6; opacity: 1; }
+.art-host:hover .art-read { opacity: 1; }
+.art-blink, .art-tick, .art-step, .art-read, .art-echo {
+  transition: filter var(--dur-3) var(--ease-out);
+}
 .art-host:hover .art-blink,
 .art-host:hover .art-tick,
-.art-host:hover .art-halo { animation-duration: calc(1.9s * var(--m)); }
-.art-host:hover .art-feed { animation-duration: calc(1.6s * var(--m)); }
-.art-host:hover .art-scan { animation-duration: calc(2.4s * var(--m)); }
+.art-host:hover .art-step,
+.art-host:hover .art-echo { filter: brightness(1.35); }
 
 @media (prefers-reduced-motion: reduce) {
-  .art-drift, .art-halo, .art-blink, .art-feed, .art-tick, .art-scan { animation: none; }
+  .art-drift, .art-halo, .art-blink, .art-feed, .art-tick, .art-scan,
+  .art-car, .art-out, .art-echo, .art-read, .art-step, .art-wake { animation: none; }
   .art-feed { stroke-dasharray: none; }
-  .art-scan { opacity: 0; }
+  .art-scan, .art-wake, .art-echo { opacity: 0; }
+  /* a still window still has to be a picture: the cars park along their traces
+     and the podium shows its result rather than collapsing to a fifth of it */
+  .art-car { stroke-dashoffset: calc(var(--i) * -22); }
+  .art-step { opacity: var(--o, 1); }
+  .art-read { opacity: .3; }
 }
 
 /* The accent's own light on the primary control, scaled by the reader's
@@ -2434,21 +2602,32 @@ html.theme-sweep::view-transition-new(root) {
   transition: top .52s var(--ease-spring, cubic-bezier(.22, 1, .36, 1)),
               left .52s var(--ease-spring, cubic-bezier(.22, 1, .36, 1)),
               width .52s var(--ease-spring, cubic-bezier(.22, 1, .36, 1)),
-              height .52s var(--ease-spring, cubic-bezier(.22, 1, .36, 1));
+              height .52s var(--ease-spring, cubic-bezier(.22, 1, .36, 1)),
+              border-radius .52s var(--ease-spring, cubic-bezier(.22, 1, .36, 1));
   will-change: top, left, width, height;
 }
 :root[data-theme="light"] .tour-scrim { box-shadow: 0 0 0 9999px rgb(var(--base-950) / .58); }
 
+/* THE SPOTLIGHT SHINES ON THE THING, NOT AROUND IT.
+   The outward glow used to be a fixed 22px with 2px of spread, which is 24px of
+   accent light landing on whatever happened to be next to the target — the
+   label above the session picker, the Sources button beside the tabs. A
+   spotlight's light belongs on the thing it is lighting, so most of it is now
+   `inset`: it pools on the inside edge of the hole, over the control being
+   explained. What still escapes is sized by `--ring-out`, which the tour sets
+   from the measured clearance, so it physically cannot reach a neighbour. */
 .tour-ring {
   pointer-events: none;
   box-shadow:
     inset 0 0 0 1.5px rgb(var(--accent) / .85),
+    inset 0 0 calc(var(--ring-out, 12px) * 2.4) calc(var(--ring-out, 12px) * -.7) rgb(var(--accent) / .3),
     0 0 0 1px rgb(var(--accent) / .3),
-    0 0 22px 2px rgb(var(--accent) / .28);
+    0 0 var(--ring-out, 12px) 0 rgb(var(--accent) / .34);
   transition: top .52s cubic-bezier(.22, 1, .36, 1),
               left .52s cubic-bezier(.22, 1, .36, 1),
               width .52s cubic-bezier(.22, 1, .36, 1),
-              height .52s cubic-bezier(.22, 1, .36, 1);
+              height .52s cubic-bezier(.22, 1, .36, 1),
+              border-radius .52s cubic-bezier(.22, 1, .36, 1);
   will-change: top, left, width, height;
   animation: tour-breathe calc(3.2s * var(--m)) var(--ease-in-out) infinite;
 }
@@ -2456,14 +2635,16 @@ html.theme-sweep::view-transition-new(root) {
   0%, 100% {
     box-shadow:
       inset 0 0 0 1.5px rgb(var(--accent) / .7),
+      inset 0 0 calc(var(--ring-out, 12px) * 2) calc(var(--ring-out, 12px) * -.7) rgb(var(--accent) / .2),
       0 0 0 1px rgb(var(--accent) / .22),
-      0 0 16px 1px rgb(var(--accent) / .18);
+      0 0 calc(var(--ring-out, 12px) * .7) 0 rgb(var(--accent) / .22);
   }
   50% {
     box-shadow:
       inset 0 0 0 1.5px rgb(var(--accent) / .95),
-      0 0 0 1px rgb(var(--accent) / .4),
-      0 0 30px 4px rgb(var(--accent) / .4);
+      inset 0 0 calc(var(--ring-out, 12px) * 2.8) calc(var(--ring-out, 12px) * -.6) rgb(var(--accent) / .4),
+      0 0 0 1px rgb(var(--accent) / .42),
+      0 0 var(--ring-out, 12px) 0 rgb(var(--accent) / .45);
   }
 }
 
