@@ -55,28 +55,17 @@ function roundRect(c: CanvasRenderingContext2D, x: number, y: number, w: number,
 }
 
 /**
- * Two configurations of one renderer.
+ * The landing page's field, and only the landing page's.
  *
- *   "hero"     the landing page. Everything: the tracker, the live timing
- *              panel, the event cards, and a focal falloff that clears the
- *              left-hand third for the headline.
- *   "ambient"  the welcome screen. The field and its light, and nothing else —
- *              a first screen has one job, and it is not to be read. The
- *              instruments are the *product*, and showing them before somebody
- *              has said what kind of reader they are is the overwhelm the whole
- *              screen exists to avoid. The falloff becomes radial instead,
- *              because the type sits in the middle rather than down one side.
- *
- * One renderer rather than two: a second canvas would be a second place for the
- * lighting, the bloom chain and the simulation to drift out of agreement, and
- * the welcome screen's whole promise is that it is the same product.
+ * It briefly had a second, cut-down "ambient" configuration that the welcome
+ * screen borrowed. That was economy in the wrong place: the racing line IS the
+ * home page — the first thing a reader is meant to meet when they arrive there
+ * — and spending it one screen earlier meant the home page opened with
+ * something already familiar. The welcome screen draws its own room now (see
+ * components/welcome/WelcomeField), and the variant came out rather than
+ * sitting here waiting to be reused by mistake.
  */
-export type FieldVariant = "hero" | "ambient";
-
-export function HeroField({ className, variant = "hero" }: {
-  className?: string; variant?: FieldVariant;
-}) {
-  const ambient = variant === "ambient";
+export function HeroField({ className }: { className?: string }) {
   const wrap = useRef<HTMLDivElement | null>(null);
   const main = useRef<HTMLCanvasElement | null>(null);
   const [cards, setCards] = useState<Annotation[]>([]);
@@ -126,7 +115,7 @@ export function HeroField({ className, variant = "hero" }: {
        full tempo reads as busy the moment there is nothing else on the page to
        take the attention. */
     const tempo = () =>
-      (still() ? 0 : root.dataset.motion === "calm" ? 0.37 : 1) * (ambient ? 0.6 : 1);
+      still() ? 0 : root.dataset.motion === "calm" ? 0.37 : 1;
     // how much light the room is allowed to throw — the page's own setting,
     // read here so the lamps in the picture agree with the wash behind it
     let glowK = 1;
@@ -294,7 +283,7 @@ export function HeroField({ className, variant = "hero" }: {
          and a radial scrim carries the legibility instead. Same reasoning as
          the phone: a depth of field needs a foreground and a background to
          separate, and centred type has neither. */
-      const narrow = w < 720 || ambient;
+      const narrow = w < 720;
       const focused = (colour: string, from: number, to: number) => {
         if (narrow) { from = 0; to = 0.1; }
         const g = c.createLinearGradient(0, 0, w, 0);
@@ -443,7 +432,7 @@ export function HeroField({ className, variant = "hero" }: {
          Not on a phone. At 390px it is sixty pixels wide, which is a smudge
          rather than a circuit, and the brief's last instruction is the one
          worth obeying: sophistication, not complexity. */
-      if (w < 720 || ambient) return;
+      if (w < 720) return;
       const cw = Math.min(w * 0.185, 236), ch = cw * 0.62;
       const ox = w - cw - 30, oy = h * 0.055;
       const tp = mini.track;
@@ -751,7 +740,7 @@ export function HeroField({ className, variant = "hero" }: {
       surface.removeEventListener("pointermove", track);
       surface.removeEventListener("pointerleave", leave);
     };
-  }, [ambient]);
+  }, []);
 
   return (
     <div ref={wrap} className={cx("hero-field pointer-events-none absolute inset-0 overflow-hidden", className)}
@@ -765,13 +754,12 @@ export function HeroField({ className, variant = "hero" }: {
       <span className="hero-vignette absolute inset-0" />
 
       {/* THE DEPTH OF FIELD — one blurred pane between the field and the copy,
-          masked so it is solid behind the headline and gone by the right edge.
-          The welcome screen's type is centred, so its scrim is radial. */}
-      <span className={cx(ambient ? "hero-pool" : "hero-dof", "absolute inset-0")} />
+          masked so it is solid behind the headline and gone by the right edge. */}
+      <span className="hero-dof absolute inset-0" />
 
       {/* Layer 3: cards pinned to moments, not to screen positions. They ride
           the history leftward and retire long before they reach the headline. */}
-      <div className={cx("absolute inset-0 hidden", !ambient && "md:block")}>
+      <div className="absolute inset-0 hidden md:block">
         {cards.map((a) => (
           <HeroCard key={a.id} a={a}
             ref={(el) => {
@@ -781,7 +769,7 @@ export function HeroField({ className, variant = "hero" }: {
         ))}
       </div>
 
-      {snap && !ambient && <HeroTiming snap={snap} />}
+      {snap && <HeroTiming snap={snap} />}
     </div>
   );
 }

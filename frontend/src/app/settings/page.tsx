@@ -170,6 +170,13 @@ export default function SettingsPage() {
               <Action label="Replay the guided tour"
                 icon={<RotateCcw size={14} />}
                 onClick={() => { set("onboarded", false); say("The tour will run the next time you press Start exploring."); }} />
+              {/* The welcome screen is gated before first paint, in the script
+                  that runs in <head> — so putting the flag back is genuinely all
+                  this has to do. The next load of the front door goes there
+                  instead, exactly as it does for somebody who has never been. */}
+              <Action label="Replay the welcome screen"
+                icon={<RotateCcw size={14} />}
+                onClick={() => { set("pickedMode", false); say("The welcome screen will open the next time you load Pitwall IQ."); }} />
               <Action label="Reset every preference"
                 icon={<RotateCcw size={14} />}
                 onClick={() => { resetAll(); say("All preferences reset to defaults."); }} />

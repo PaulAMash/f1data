@@ -3,10 +3,46 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V62**. Reviewed at 1440×1000, 1440×900 and 390×844, in both themes, in both
+Last pass: **V63**. Reviewed at 1440×1000, 1440×900 and 390×844, in both themes, in both
 language styles, and walked end to end as a first-time visitor down both branches of the
 welcome screen — tutorial taken and tutorial declined — plus the return path through
 Settings.
+
+---
+
+## Fixed in V63
+
+### 1. A brand-new visitor saw the home page first — *was high*
+
+Reported, reproduced, and the reporter was right. The gate was a React effect, so `/` rendered
+Home and only bounced after hydration. It is now in the parser-blocking head script, which runs
+before the body is parsed: `location.replace` there aborts the document load. Verified from a
+genuinely fresh browser profile — at 150ms the path is already `/welcome` and the home
+page's `<h1>` and CTA were never in the document at all. A returning visitor is not gated, and
+a first-time deep link to `/explorer` is not hijacked.
+
+### 2. The welcome screen was a preview of the home page — *was medium*
+
+It borrowed the hero renderer, so the racing line — the thing the home page exists to reveal —
+was spent one screen early. The welcome screen draws its own room now: lighting and a hairline
+lattice, no race data of any kind. The `ambient` variant came out of `HeroField` rather than
+being left to be reused by mistake, and the welcome route stopped shipping the race simulator
+with it (111 kB → 96.3 kB first load).
+
+### 3. Home announced a decision made on another screen — *was medium*
+
+V62's pill and breathing ring around *Start exploring* were removed. The home page is now
+identical whether a tour is armed or not; the tour is a consequence of pressing the control.
+
+### 4. The welcome screen could not be replayed — *was low*
+
+Settings gained "Replay the welcome screen" beside "Replay the guided tour". It puts the flag
+back; the head script does the rest on the next load of the front door.
+
+### 5. The light theme's lamps washed the screen out — *found in review, was medium*
+
+Additive compositing on white pushes every source toward white. The light theme paints an
+opaque base and multiplies into it instead.
 
 ---
 

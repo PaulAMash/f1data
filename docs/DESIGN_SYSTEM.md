@@ -2148,3 +2148,99 @@ having been asked for and not yet taken, so declining removes it forever and
 
 > An invitation that can be ignored indefinitely is worth more than a modal that
 > cannot.
+
+---
+
+## A redirect in an effect is a redirect the reader watches happen
+
+The first-run gate was a React effect on the landing page: render, hydrate,
+notice that nobody has been welcomed, redirect. Every one of those steps happens
+*after* the browser has painted — so a brand-new visitor got the home page,
+headline and hero canvas and all, and was then yanked off it. The welcome screen
+was not the first thing anybody saw. It was the second.
+
+The product already had the right mechanism and was using it for exactly one
+thing: `NO_FLASH_SCRIPT`, a parser-blocking script in `<head>` that applies the
+stored theme before the body is parsed. That is precisely the window a gate
+needs. `location.replace` from there aborts the document load, so nothing of the
+home page is ever built and there is nothing to flash.
+
+Two details that are not incidental:
+
+* **Only the root is gated.** A first-time visitor who followed somebody's link
+  to a specific race should land on that race — dragging them to a welcome
+  screen throws away the thing they clicked, and they will meet it the first
+  time they press Home. "Opening Pitwall IQ" means the front door.
+* **The React effect stays.** The head script cannot run on a client-side
+  navigation, which is exactly what happens after Settings puts the flag back.
+  Two layers, each covering the case the other cannot.
+
+> If the correction happens after paint, it is not a gate. It is a flicker with
+> an opinion.
+
+---
+
+## The first screen cannot be a preview of the second
+
+The welcome screen borrowed the landing page's hero renderer in a cut-down
+"ambient" configuration. One renderer, no duplication, theme-aware for free —
+every argument for it was an engineering argument, and all of them missed the
+point.
+
+The racing line **is** the home page. It is the thing a reader is supposed to
+meet when they arrive there, and spending it one screen earlier means the home
+page opens with something already familiar. The reveal was being sold off to
+save a file.
+
+So the welcome screen draws its own room, and it draws no race: no lap trace, no
+running order, no timing, no data of any kind. Nothing on it can be read, because
+there is nothing on it to read. What it has instead is lighting — three large
+soft sources drifting on slow incommensurate paths, and one hairline lattice
+erased toward the edges, which is the operations-terminal note spent exactly
+once.
+
+The variant came out of `HeroField` rather than being left to be reused by
+mistake, and the welcome route stopped shipping the race simulator with it:
+**111 kB → 96.3 kB** first load.
+
+> Shared code between two screens is a good idea right up until the thing being
+> shared is the surprise.
+
+---
+
+## Light is additive in a dark room and subtractive on paper
+
+The lamps composite with `lighter`, which is correct on black: two overlapping
+sources make the air between them brighter than either, and that additive
+overlap is the entire difference between "lighting" and "a gradient".
+
+Run the same code on white and every lamp pushes toward white. The light theme
+went pink and hazy, and the cards sitting on it stopped having edges.
+
+The light theme paints its own opaque base and **multiplies** into it, which is
+what coloured light actually does to a white surface. Same lamps, same paths,
+same palette, the opposite operator.
+
+A related fix in the same pass: the third lamp was amber, and amber added to the
+accent gives brown — the one colour a room like this cannot have. It is violet
+now, which stays a colour wherever the red reaches it.
+
+> A blend mode is a physical claim. Check which room you are claiming it in.
+
+---
+
+## The page does not change because of an answer given elsewhere
+
+An earlier version put a pill above the *Start exploring* control and a
+breathing ring around it, to announce that a guided tour was waiting. It was
+well meant, it was thoroughly verified, and it was wrong.
+
+The home page has one job: be looked at. A page that is decorated differently
+depending on something the reader said on a previous screen is a page
+apologising for itself — and the decoration was the only thing on it that
+existed to serve a *different* page's feature.
+
+The home page is now identical whether a tour is armed or not. The tour is a
+consequence of pressing the control, not an advertisement wrapped around it.
+
+> If a feature needs the page to announce it, the feature is in the wrong place.

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import {
   ArrowRight, Compass, Radar, ShieldCheck, Sparkles, Timer,
 } from "lucide-react";
-import { HeroField } from "@/components/landing/HeroField";
+import { WelcomeField } from "@/components/welcome/WelcomeField";
 import { usePrefs, type Mode, type Theme } from "@/lib/prefs";
 import { cx } from "@/lib/format";
 
@@ -124,7 +124,7 @@ export default function Welcome() {
     <main className={cx("wc-room relative isolate grid min-h-[100svh] place-items-center overflow-hidden px-5 py-8 sm:py-10",
       "transition-opacity duration-[--dur-4] ease-[--ease-out]",
       leaving && "opacity-0")}>
-      <HeroField variant="ambient" />
+      <WelcomeField />
 
       <div className="relative w-full max-w-3xl text-center">
         <p className="wc-1 inline-flex items-center gap-2.5 text-[11px] font-semibold uppercase tracking-[0.3em] text-accent-soft">
@@ -174,7 +174,7 @@ export default function Welcome() {
             <div className="wc-5 mt-10 flex flex-col items-center gap-3">
               <button type="button" onClick={() => setAct(1)}
                 className="cta-glow pressable-glow group/go inline-flex items-center gap-2 rounded-xl bg-accent px-7 py-4 text-[15px] font-semibold text-pure">
-                Set it up
+                Get started
                 <ArrowRight size={16}
                   className="transition-transform duration-[--dur-2] group-hover/go:translate-x-0.5" />
               </button>
@@ -238,7 +238,7 @@ export default function Welcome() {
               <button type="button" onClick={enter} disabled={leaving}
                 className="cta-glow pressable-glow group/enter inline-flex items-center gap-2 rounded-xl bg-accent px-7 py-4 text-[15px] font-semibold text-pure">
                 {tour ? <Sparkles size={15} /> : null}
-                Enter Pitwall IQ
+                Continue
                 <ArrowRight size={16}
                   className="transition-transform duration-[--dur-2] group-hover/enter:translate-x-0.5" />
               </button>

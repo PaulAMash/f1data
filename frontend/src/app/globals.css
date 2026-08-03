@@ -2081,28 +2081,6 @@ html.theme-sweep::view-transition-new(root) {
   mask-image: linear-gradient(100deg, #000 0%, #000 40%, rgba(0,0,0,.55) 62%, transparent 84%);
 }
 
-/* THE WELCOME SCREEN'S SCRIM.
-   Centred type has no side to fall off toward, so the falloff is radial: a pool
-   of page colour under the words, opening out to the full field at the edges of
-   the frame. Two stops rather than five, because there is far less to protect —
-   one paragraph and two cards, not a headline, a sentence and a button row. */
-.hero-pool {
-  background:
-    radial-gradient(120% 78% at 50% 46%,
-      rgb(var(--base-950) / .90) 0%,
-      rgb(var(--base-950) / .74) 34%,
-      rgb(var(--base-950) / .30) 62%,
-      transparent 88%);
-}
-:root[data-theme="light"] .hero-pool {
-  background:
-    radial-gradient(120% 78% at 50% 46%,
-      rgb(var(--base-900) / .92) 0%,
-      rgb(var(--base-900) / .78) 34%,
-      rgb(var(--base-900) / .34) 62%,
-      transparent 88%);
-}
-
 /* In light mode the page colour is a warm grey, and 94% of a warm grey laid
    over white lines is exactly the haze the reader complained about. Paper
    diffuses toward WHITE, so the falloff is built from the panel colour. */

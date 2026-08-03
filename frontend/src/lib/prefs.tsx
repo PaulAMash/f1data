@@ -123,12 +123,33 @@ export type PrefGroup = keyof typeof PREF_GROUPS;
  * single most common way a themed app gives itself away. This is injected into
  * <head> and applies the stored answer synchronously, before anything renders.
  *
+ * IT ALSO OWNS THE FIRST-RUN GATE, and it has to.
+ *
+ * The gate used to be a React effect on the landing page: render, hydrate,
+ * notice nobody has been welcomed, redirect. Every one of those steps happens
+ * AFTER the browser has painted, so a brand-new visitor saw the home page —
+ * headline, hero canvas and all — and was then yanked off it. The welcome
+ * screen was not the first thing anybody saw; it was the second.
+ *
+ * A parser-blocking script in <head> runs before the body is parsed, let alone
+ * painted, and `location.replace` from there aborts the document load. Nothing
+ * of the home page is ever built, so there is nothing to flash.
+ *
+ * Only the root is gated. A first-time visitor who followed somebody's link to
+ * a specific race should land on that race — dragging them to a welcome screen
+ * would throw away the thing they actually clicked, and they will meet it the
+ * first time they press Home. "Opening Pitwall IQ" means the front door.
+ *
  * Kept as a string on purpose: it must run in the document, not in React.
  */
 export const NO_FLASH_SCRIPT = `
 (function () {
   try {
     var p = JSON.parse(localStorage.getItem(${JSON.stringify(PREFS_KEY)}) || "{}");
+    if (!p.pickedMode && (location.pathname === "/" || location.pathname === "")) {
+      location.replace("/welcome");
+      return;
+    }
     var root = document.documentElement;
     root.dataset.theme = p.theme || "dark";
     var sysCalm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
