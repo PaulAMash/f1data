@@ -61,7 +61,7 @@ const config: Config = {
         "ping-soft": { "0%": { transform: "scale(.85)", opacity: ".55" }, "70%,100%": { transform: "scale(2.1)", opacity: "0" } },
       },
       animation: {
-        "fade-in": "fade-in 0.4s ease-out both",
+        "fade-in": "fade-in 0.4s ease-out backwards",
         shimmer: "shimmer 1.6s infinite",
         "grow-x": "grow-x 0.8s cubic-bezier(0.22,1,0.36,1) both",
         "tip-in": "tip-in 0.16s cubic-bezier(0.22,1,0.36,1) both",

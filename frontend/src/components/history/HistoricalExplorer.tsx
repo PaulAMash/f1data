@@ -12,6 +12,7 @@ import { usePrefs } from "@/lib/prefs";
 import { Select } from "@/components/ui/Select";
 import { useLivery } from "@/lib/liveryColor";
 import { teamColour } from "@/lib/constructors";
+import { didNotFinish, inFinishingOrder, NOT_CLASSIFIED_HINT, positionLabel } from "@/lib/classification";
 
 const CURRENT = new Date().getFullYear();
 const FALLBACK_YEARS = Array.from({ length: CURRENT - 1949 }, (_, i) => CURRENT - i);
@@ -112,7 +113,6 @@ export function HistoricalExplorer() {
   return (
     <Card>
       <CardHeader title="Historical Data Explorer"
-        subtitle="Pick a season, Grand Prix and session for real results, 1950–present."
         info={<InfoTip text="Official archive results. Practice sessions and some older data aren't available in the archive and are shown as such — never fabricated." />} />
       <CardBody className="space-y-4">
         {/* selectors */}
@@ -182,12 +182,25 @@ function ResultsTable({ rows, session, simple }: {
   const isQuali = /qual/i.test(session);
   const paint = useLivery();
   const tintOf = (r: any) => paint(teamColour(r.constructorName));
-  const out = (r: any) => !!r.status && !/finish|^\+\d+ lap/i.test(String(r.status));
+  /* One definition of "did not finish", one order, one position label — shared
+     with the Race Explorer's Final classification. See lib/classification.ts:
+     the same car used to read P18 in one table and nothing in the other. */
+  const out = (r: any) => didNotFinish(r.status);
+  const ordered = inFinishingOrder(
+    (rows ?? []).map((r: any) => ({ ...r, position: r.position == null ? null : Number(r.position) })));
 
   return (
     <div>
-      {/* desktop table */}
-      <div className="modal-scroll hidden sm:block">
+      {/* Desktop table. `overflow-x`, and ONLY `overflow-x`.
+          This carried `.modal-scroll`, which is a rule for a box inside an
+          overlay: `overflow-y: auto` plus `overscroll-behavior: contain`. With
+          no height limit the box could never scroll vertically — but `contain`
+          stops the wheel chaining out of a box whether or not that box can use
+          it, so the pointer resting anywhere over the classification killed
+          scrolling for the whole page until it was moved off. A rule that says
+          "the scroll stops here" belongs only where something is going to
+          catch it. */}
+      <div className="hidden overflow-x-auto sm:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/[0.07] text-left text-[10.5px] uppercase tracking-[0.12em] text-ink-faint">
@@ -202,7 +215,7 @@ function ResultsTable({ rows, session, simple }: {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => {
+            {ordered.map((r: any, i: number) => {
               const pos = Number(r.position) || 99;
               const podium = pos <= 3;
               const tint = tintOf(r);
@@ -215,8 +228,10 @@ function ResultsTable({ rows, session, simple }: {
                       className="absolute inset-y-1.5 left-0 w-[2.5px] rounded-full transition-all duration-[--dur-2] group-hover/res:inset-y-0"
                       style={{ background: tint, opacity: podium ? 1 : 0.5 }} />
                     <span className={cx("ml-2.5 inline-block tabular-nums",
-                      podium ? "text-[15px] font-bold text-ink" : "font-semibold text-ink-muted")}>
-                      {r.position ?? "—"}
+                      podium ? "text-[15px] font-bold text-ink" : "font-semibold text-ink-muted",
+                      r.position == null && "text-ink-faint")}
+                      title={r.position == null ? NOT_CLASSIFIED_HINT : undefined}>
+                      {positionLabel(r.position)}
                     </span>
                   </td>
                   <td className={cx("py-2.5", podium ? "font-semibold text-ink" : "font-medium text-ink")}>
@@ -253,7 +268,7 @@ function ResultsTable({ rows, session, simple }: {
 
       {/* mobile cards */}
       <div className="space-y-1.5 sm:hidden">
-        {rows.map((r, i) => {
+        {ordered.map((r: any, i: number) => {
           const pos = Number(r.position) || 99;
           const tint = tintOf(r);
           return (
@@ -262,9 +277,10 @@ function ResultsTable({ rows, session, simple }: {
                 out(r) && "opacity-55")}>
               <span aria-hidden className="absolute inset-y-1.5 left-0 w-[2.5px] rounded-full"
                 style={{ background: tint, opacity: pos <= 3 ? 1 : 0.5 }} />
-              <span className={cx("w-5 shrink-0 text-right tabular-nums",
-                pos <= 3 ? "text-[15px] font-bold text-ink" : "text-[13px] text-ink-muted")}>
-                {r.position ?? "—"}
+              <span className={cx("w-6 shrink-0 text-right tabular-nums",
+                pos <= 3 ? "text-[15px] font-bold text-ink" : "text-[13px] text-ink-muted",
+                r.position == null && "text-ink-faint")}>
+                {positionLabel(r.position)}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13.5px] font-medium text-ink">

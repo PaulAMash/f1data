@@ -5,7 +5,7 @@ import type { Driver } from "@/lib/types";
 import { cx } from "@/lib/format";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
 import { ConstructorMark } from "@/components/ui/ConstructorMark";
-import { useScrollLock } from "@/lib/useScrollLock";
+import { Modal } from "@/components/ui/Modal";
 
 /* -------------------------------------------------------------------------- */
 /* The driver gallery.                                                        */
@@ -41,13 +41,8 @@ export function DriverPalette({
   const [q, setQ] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { if (open) { setQ(""); setTimeout(() => inputRef.current?.focus(), 20); } }, [open]);
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  // Escape, the scroll lock, the backdrop and the portal all live in Modal now
+  useEffect(() => { if (open) setQ(""); }, [open]);
 
   const groups = useMemo(() => {
     const rank: Record<string, number> = {};
@@ -74,16 +69,9 @@ export function DriverPalette({
 
   function pick(code: string) { onFocus(code); onClose(); }
 
-  // the page behind a dialog does not move — see lib/useScrollLock
-  useScrollLock(open);
-
-  if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-[5vh]"
-      role="dialog" aria-modal="true" aria-label="Choose a driver">
-      <div className="absolute inset-0 bg-base-950/80 backdrop-blur-sm animate-fade-in" onClick={onClose} />
-      <div className="relative flex max-h-[90vh] w-full max-w-5xl animate-fade-in flex-col overflow-hidden rounded-2xl border border-white/10 bg-base-850 shadow-glow">
-
+    <Modal open={open} onClose={onClose} label="Choose a driver" initialFocus={inputRef}>
+      <>
         {/* ---- header. Title and search are two different jobs, so they get
                 two rows, their own surface and a rule between them: the eye
                 lands on the title, then the field, then the gallery. ---- */}
@@ -125,8 +113,8 @@ export function DriverPalette({
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 

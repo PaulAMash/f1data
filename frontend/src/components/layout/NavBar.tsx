@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { ArrowLeft, Radar, Settings } from "lucide-react";
+import { ArrowLeft, ArrowRight, Radar, Settings } from "lucide-react";
 import { useNavHistory } from "@/lib/nav";
 import { cx } from "@/lib/format";
 
@@ -25,8 +25,29 @@ import { cx } from "@/lib/format";
 /* the chrome is a preference pretending to be a tool.                         */
 /* -------------------------------------------------------------------------- */
 
+/** One half of the step control. Disabled is a state it wears, not a state it
+    hides in — a greyed arrow tells you the direction exists and is exhausted,
+    which is information a missing button cannot give. */
+function NavStep({ dir, onClick, enabled, shown }: {
+  dir: "back" | "forward"; onClick: () => void; enabled: boolean; shown: boolean;
+}) {
+  const label = dir === "back" ? "Back" : "Forward";
+  return (
+    <button type="button" onClick={onClick} disabled={!enabled}
+      tabIndex={shown && enabled ? 0 : -1}
+      aria-label={label} title={label}
+      className={cx("grid h-8 w-[30px] shrink-0 place-items-center transition-colors duration-[--dur-2]",
+        dir === "back" ? "rounded-l-lg" : "rounded-r-lg",
+        enabled
+          ? "text-ink-muted hover:bg-white/[0.07] hover:text-ink"
+          : "cursor-default text-ink-faint/35")}>
+      {dir === "back" ? <ArrowLeft size={15} /> : <ArrowRight size={15} />}
+    </button>
+  );
+}
+
 export function NavBar({ active }: { active?: "home" | "explorer" | "history" | "settings" }) {
-  const { canBack, back } = useNavHistory();
+  const { canBack, canForward, back, forward } = useNavHistory();
 
   return (
     // 90%, not 80%: on a phone the column is narrow and the copy passes
@@ -42,22 +63,31 @@ export function NavBar({ active }: { active?: "home" | "explorer" | "history" | 
           </span>
         </Link>
 
-        {/* Absent on Home, because Home is the root and there is nothing behind
-            it. Width animates rather than the element appearing, so the row
-            beside it does not jump when it comes and goes. */}
+        {/* ONE CONTROL WITH TWO HALVES, not two controls that happen to be
+            adjacent. They share a shell and a divider, which is what says the
+            pair is a single idea — and it is why each half can be disabled
+            without leaving a lonely dead button in the chrome.
+
+            The shell itself still comes and goes: on a page reached directly
+            there is no in-app history in either direction, and a navigation
+            control with nothing to navigate is furniture. Width animates rather
+            than the element appearing, so the row beside it does not jump. */}
         <div className={cx("flex items-center overflow-hidden transition-all duration-[--dur-3] ease-[--ease-out]",
-          canBack ? "ml-1 w-8 opacity-100" : "w-0 opacity-0")}>
-          <button type="button" onClick={back} tabIndex={canBack ? 0 : -1}
-            aria-label="Back" title="Back"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-muted transition-colors hover:bg-white/[0.06] hover:text-ink">
-            <ArrowLeft size={15} />
-          </button>
+          canBack || canForward ? "ml-1 w-[62px] opacity-100" : "w-0 opacity-0")}>
+          <div className="flex shrink-0 items-center rounded-lg border border-white/[0.07] bg-base-850/70">
+            <NavStep dir="back" onClick={back} enabled={canBack} shown={canBack || canForward} />
+            <span aria-hidden className="h-4 w-px bg-white/[0.08]" />
+            <NavStep dir="forward" onClick={forward} enabled={canForward} shown={canBack || canForward} />
+          </div>
         </div>
 
         <nav className="flex items-center gap-0.5 text-sm sm:gap-1">
           <Link href="/" className={link(active === "home")}>Home</Link>
           <Link href="/explorer" className={link(active === "explorer")}>Explore</Link>
-          <Link href="/history" data-tour="nav-history" className={link(active === "history")}>Historical</Link>
+          {/* "Seasons", not "Historical". The championship standings live here — the
+              current one included — and a reader who reads the label as "old stuff"
+              will never look for this year's title race behind it. */}
+          <Link href="/history" data-tour="nav-history" className={link(active === "history")}>Seasons</Link>
         </nav>
 
         {/* One control, because there is one thing here that is not navigation.

@@ -134,6 +134,48 @@
   color-scheme: light;
 }
 
+/* ---------------------------------------------------------------------------
+   COLOUR VISION.
+
+   Roughly one man in twelve cannot separate the two hues that carry most of
+   this product's meaning. The livery, the compound and the flag are adapted in
+   JavaScript, because each is a value rather than a token (see lib/palette) —
+   these are the tokens, and they have to move with them or a chart would end up
+   drawn in a safe palette on a page still lit by an unsafe one.
+
+   The rings are the same ones lib/palette walks: Okabe-Ito for the red-green
+   deficiencies, a red-cyan axis for tritanopia. Written per theme, because a
+   dichromat-safe colour on black and a dichromat-safe colour on paper are
+   still two different lightnesses of it.
+
+   `--accent` is deliberately absent: the reader chooses it, so it is written as
+   an inline custom property by PrefsProvider and adapted there. --------------- */
+:root[data-cvd="protanopia"], :root[data-cvd="deuteranopia"] {
+  --speed: 86 180 233;      /* sky blue, in place of the turquoise */
+  --good: 0 158 115;        /* bluish green — separable from vermillion */
+  --amber: 230 159 0;
+  --best: 204 121 167;      /* reddish purple */
+}
+:root[data-theme="light"][data-cvd="protanopia"],
+:root[data-theme="light"][data-cvd="deuteranopia"] {
+  --speed: 12 116 174;
+  --good: 0 122 89;
+  --amber: 166 114 0;
+  --best: 150 74 118;
+}
+:root[data-cvd="tritanopia"] {
+  --speed: 0 182 201;       /* cyan carries the contrast instead of blue */
+  --good: 0 160 160;
+  --amber: 232 163 60;
+  --best: 176 78 201;
+}
+:root[data-theme="light"][data-cvd="tritanopia"] {
+  --speed: 0 128 141;
+  --good: 0 112 112;
+  --amber: 168 106 12;
+  --best: 129 55 148;
+}
+
 html,
 body {
   background-color: rgb(var(--base-950));
@@ -250,6 +292,64 @@ body {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
+
+/* The dialog itself. One surface, so a second dialog cannot arrive looking like
+   a different product — and `animate-fade-in` on the shell rather than on the
+   page, where an entrance is what it is for. */
+.modal-shell {
+  background: rgb(var(--base-850));
+  box-shadow:
+    inset 0 0 0 1px rgb(var(--tint) / .1),
+    0 32px 80px -32px rgb(0 0 0 / .9);
+  animation: sel-in var(--dur-3) var(--ease-out) backwards;
+}
+:root[data-theme="light"] .modal-shell {
+  background: rgb(var(--base-900));
+  box-shadow:
+    inset 0 0 0 1px rgb(var(--tint) / .12),
+    0 28px 70px -30px rgb(15 23 42 / .38);
+}
+@media (prefers-reduced-motion: reduce) { .modal-shell { animation: none; } }
+
+/* ---------------------------------------------------------------------------
+   LIGHT MODE, READ RATHER THAN INVERTED.
+
+   The palette flips cleanly — `--tint` inverts, so 137 hairlines written
+   `white/[0.06]` become navy at 6% and keep the weight they were tuned to. What
+   does NOT survive the flip is a COLOURED hairline at the same alpha. A
+   broadcast red at 30% on black is a bright edge because it is brighter than
+   its surroundings; the print red at 30% on white is pale pink, because it is
+   barely darker than its surroundings, and a 1px pale pink line is a line
+   nobody can see. Turquoise is worse: light mode's own `--speed` is a deep
+   teal, and at 25% it is a whisper.
+
+   So the coloured hairlines are raised in light mode and only in light mode.
+   The hues are untouched — this is the same edge, at the weight it was always
+   supposed to read at.
+   --------------------------------------------------------------------------- */
+/* structural hairlines first, then the coloured ones — the second group is
+   roughly doubled, because a dark line on a bright page starts from almost no
+   contrast rather than from almost all of it. */
+:root[data-theme="light"] .border-white\/\[0\.04\] { border-color: rgb(var(--tint) / .085); }
+:root[data-theme="light"] .border-white\/\[0\.05\] { border-color: rgb(var(--tint) / .095); }
+:root[data-theme="light"] .border-white\/\[0\.055\] { border-color: rgb(var(--tint) / .1); }
+:root[data-theme="light"] .border-white\/\[0\.06\] { border-color: rgb(var(--tint) / .105); }
+:root[data-theme="light"] .border-white\/\[0\.07\] { border-color: rgb(var(--tint) / .115); }
+:root[data-theme="light"] .border-white\/\[0\.08\] { border-color: rgb(var(--tint) / .125); }
+:root[data-theme="light"] .border-white\/\[0\.09\] { border-color: rgb(var(--tint) / .135); }
+:root[data-theme="light"] .border-white\/10 { border-color: rgb(var(--tint) / .15); }
+:root[data-theme="light"] .border-accent\/25 { border-color: rgb(var(--accent) / .45); }
+:root[data-theme="light"] .border-accent\/30 { border-color: rgb(var(--accent) / .5); }
+:root[data-theme="light"] .border-accent\/40 { border-color: rgb(var(--accent) / .6); }
+:root[data-theme="light"] .border-accent\/50 { border-color: rgb(var(--accent) / .68); }
+:root[data-theme="light"] .border-speed\/30 { border-color: rgb(var(--speed) / .5); }
+:root[data-theme="light"] .ring-accent\/25 { --tw-ring-color: rgb(var(--accent) / .45); }
+:root[data-theme="light"] .ring-accent\/30 { --tw-ring-color: rgb(var(--accent) / .5); }
+:root[data-theme="light"] .ring-accent\/40 { --tw-ring-color: rgb(var(--accent) / .6); }
+:root[data-theme="light"] .panel { border-color: rgb(var(--tint) / .105); }
+:root[data-theme="light"] .panel-raised { border-color: rgb(var(--tint) / .13); }
+:root[data-theme="light"] .panel-hero { border-color: rgb(var(--tint) / .14); }
+:root[data-theme="light"] .chip { border-color: rgb(var(--tint) / .16); }
 
 /* thin custom scrollbars */
 * {
@@ -1073,7 +1173,7 @@ html.theme-sweep::view-transition-new(root) {
    attention with the text sitting on top of it, which is the whole reason
    ambient motion usually ruins a hero. ---------------------------------------- */
 @keyframes hero-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-.stagger-1, .stagger-2, .stagger-3, .stagger-4 { animation: hero-in .7s cubic-bezier(.22,1,.36,1) both; }
+.stagger-1, .stagger-2, .stagger-3, .stagger-4 { animation: hero-in .7s cubic-bezier(.22,1,.36,1) backwards; }
 .stagger-1 { animation-delay: .05s; }
 .stagger-2 { animation-delay: .13s; }
 .stagger-3 { animation-delay: .23s; }
@@ -1089,7 +1189,7 @@ html.theme-sweep::view-transition-new(root) {
    air between beats is most of what separates "premium" from "quick".
    --------------------------------------------------------------------------- */
 .wc-1, .wc-2, .wc-3, .wc-4, .wc-5, .wc-6 {
-  animation: hero-in .85s cubic-bezier(.22, 1, .36, 1) both;
+  animation: hero-in .85s cubic-bezier(.22, 1, .36, 1) backwards;
 }
 .wc-1 { animation-delay: .10s; }
 .wc-2 { animation-delay: .20s; }
@@ -1614,11 +1714,23 @@ html.theme-sweep::view-transition-new(root) {
    `.rise-in` covers anything that arrives inside one, and both use the house
    curve so a section landing feels like the page landing, only smaller.
    --------------------------------------------------------------------------- */
+/* `backwards`, not `both`, and it is the same lesson V64 learned on the welcome
+   cards for a second, larger reason. An animation in `both` holds its final
+   keyframe FOR EVER — and a held `transform: none` is not `none`, it is the
+   computed matrix `matrix(1, 0, 0, 1, 0, 0)`, which makes the element a
+   CONTAINING BLOCK for every descendant with `position: fixed`.
+
+   Practically every panel in the product carries one of these, so practically
+   every panel was quietly redefining what "fixed to the viewport" meant inside
+   it: the Driver focus dialog, declared `fixed inset-0`, was opening 453px down
+   the page against a viewport that starts at 0. `backwards` applies the
+   from-state during the delay and then hands the element back to its own
+   styles, which is what an entrance should do and leaves nothing behind. */
 @keyframes route-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-.route-in { animation: route-in var(--dur-3) var(--ease-out) both; }
+.route-in { animation: route-in var(--dur-3) var(--ease-out) backwards; }
 
 @keyframes rise-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-.rise-in { animation: rise-in var(--dur-3) var(--ease-out) both; }
+.rise-in { animation: rise-in var(--dur-3) var(--ease-out) backwards; }
 
 /* Scroll-revealed sections. The landing page is a progression, not a wall:
    each band arrives as it comes into view, which is what turns scrolling into
@@ -1649,7 +1761,7 @@ html.theme-sweep::view-transition-new(root) {
    top to bottom instead of appearing all at once. The delay is capped: past
    about eight children the reader is waiting rather than watching.
    --------------------------------------------------------------------------- */
-.build > * { animation: rise-in var(--dur-4) var(--ease-out) both; }
+.build > * { animation: rise-in var(--dur-4) var(--ease-out) backwards; }
 .build > *:nth-child(1) { animation-delay: .04s; }
 .build > *:nth-child(2) { animation-delay: .10s; }
 .build > *:nth-child(3) { animation-delay: .16s; }
@@ -2210,7 +2322,7 @@ html.theme-sweep::view-transition-new(root) {
     var(--el-3),
     0 0 0 1px rgb(var(--base-950) / .8),
     0 24px 60px -20px rgb(0 0 0 / .55);
-  animation: sel-in calc(var(--dur-2)) var(--ease-out) both;
+  animation: sel-in calc(var(--dur-2)) var(--ease-out) backwards;
   transform-origin: top left;
 }
 .sel-menu.is-up { transform-origin: bottom left; animation-name: sel-in-up; }
@@ -2599,11 +2711,11 @@ html.theme-sweep::view-transition-new(root) {
 .tour-scrim {
   pointer-events: none;
   box-shadow: 0 0 0 9999px rgb(var(--base-950) / .84);
-  transition: top .52s var(--ease-spring, cubic-bezier(.22, 1, .36, 1)),
-              left .52s var(--ease-spring, cubic-bezier(.22, 1, .36, 1)),
-              width .52s var(--ease-spring, cubic-bezier(.22, 1, .36, 1)),
-              height .52s var(--ease-spring, cubic-bezier(.22, 1, .36, 1)),
-              border-radius .52s var(--ease-spring, cubic-bezier(.22, 1, .36, 1));
+  transition: top var(--tour-move, .52s) var(--ease-spring, cubic-bezier(.22, 1, .36, 1)),
+              left var(--tour-move, .52s) var(--ease-spring, cubic-bezier(.22, 1, .36, 1)),
+              width var(--tour-move, .52s) var(--ease-spring, cubic-bezier(.22, 1, .36, 1)),
+              height var(--tour-move, .52s) var(--ease-spring, cubic-bezier(.22, 1, .36, 1)),
+              border-radius var(--tour-move, .52s) var(--ease-spring, cubic-bezier(.22, 1, .36, 1));
   will-change: top, left, width, height;
 }
 :root[data-theme="light"] .tour-scrim { box-shadow: 0 0 0 9999px rgb(var(--base-950) / .58); }
@@ -2623,11 +2735,11 @@ html.theme-sweep::view-transition-new(root) {
     inset 0 0 calc(var(--ring-out, 12px) * 2.4) calc(var(--ring-out, 12px) * -.7) rgb(var(--accent) / .3),
     0 0 0 1px rgb(var(--accent) / .3),
     0 0 var(--ring-out, 12px) 0 rgb(var(--accent) / .34);
-  transition: top .52s cubic-bezier(.22, 1, .36, 1),
-              left .52s cubic-bezier(.22, 1, .36, 1),
-              width .52s cubic-bezier(.22, 1, .36, 1),
-              height .52s cubic-bezier(.22, 1, .36, 1),
-              border-radius .52s cubic-bezier(.22, 1, .36, 1);
+  transition: top var(--tour-move, .52s) cubic-bezier(.22, 1, .36, 1),
+              left var(--tour-move, .52s) cubic-bezier(.22, 1, .36, 1),
+              width var(--tour-move, .52s) cubic-bezier(.22, 1, .36, 1),
+              height var(--tour-move, .52s) cubic-bezier(.22, 1, .36, 1),
+              border-radius var(--tour-move, .52s) cubic-bezier(.22, 1, .36, 1);
   will-change: top, left, width, height;
   animation: tour-breathe calc(3.2s * var(--m)) var(--ease-in-out) infinite;
 }
@@ -2659,7 +2771,19 @@ html.theme-sweep::view-transition-new(root) {
     inset 0 1px 0 0 rgb(var(--tint) / .16),
     inset 0 0 0 1px rgb(var(--tint) / .1),
     0 26px 60px -26px rgb(0 0 0 / .9);
-  transition: opacity var(--dur-3) var(--ease-out);
+  /* Position travels on the ring's curve so the card, the scrim and the outline
+     move as one object when the target moves under them — content landing above
+     a target shifts it, and a card that stayed put would be pointing at nothing.
+     The ENTRANCE is still opacity only: the card is transparent while it takes
+     up its new place, so it never slides across the reader's eye. */
+  transition:
+    opacity var(--dur-3) var(--ease-out),
+    top var(--tour-move, .52s) cubic-bezier(.22, 1, .36, 1),
+    left var(--tour-move, .52s) cubic-bezier(.22, 1, .36, 1),
+    bottom var(--tour-move, .52s) cubic-bezier(.22, 1, .36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-card { transition: opacity .2s linear; }
 }
 :root[data-theme="light"] .tour-card {
   background: rgb(var(--base-900));

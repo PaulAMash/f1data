@@ -140,6 +140,13 @@ export function GuidedTour() {
   const [box, setBox] = useState<Box | null>(null);
   const [fit, setFit] = useState<Fit>(FIT_DEFAULT);
   const [el, setEl] = useState<Element | null>(null);
+  /* Travelling to a new target, or tracking one that has moved underneath us.
+     Two different events that both change the same four numbers, and they want
+     two different speeds: the journey between beats is a movement the reader
+     watches, a correction for a layout shift is a thing that should already
+     have happened. One curve for both means either a lurching journey or a
+     twenty-four-pixel glide half a second after the page settled. */
+  const [travelling, setTravelling] = useState(true);
   // has the page stopped moving? the card is not shown until it has
   const [settled, setSettled] = useState(false);
   const beat = running ? beats[index] : undefined;
@@ -202,47 +209,90 @@ export function GuidedTour() {
     };
   }, [running]);
 
-  /* MOVE FIRST, THEN SPEAK.
-     The first cut rendered the card as soon as the target had a box — while the
-     page was still smooth-scrolling toward it. So the card appeared, slid,
-     resized and settled, all inside the half second the reader was trying to
-     read it: the "choppy" feeling was three correct behaviours arriving at
-     once. The spotlight follows the scroll, because it is attached to the
-     thing being scrolled to; the card waits until the page has actually stopped
-     and then fades in at its final position, and never moves again. */
+  /* -------------------------------------------------------------------- */
+  /* THE HIGHLIGHT FOLLOWS ITS TARGET FOR AS LONG AS THE BEAT IS UP.       */
+  /*                                                                      */
+  /* It used to measure during the scroll and then stop — two frames at    */
+  /* the same offset and the watcher returned, leaving only `scroll` and   */
+  /* `resize` listeners behind. Neither of those fires when the LAYOUT     */
+  /* changes underneath a stationary page, and on the Race Explorer the    */
+  /* layout changes a beat after the tour opens: the session lands, the    */
+  /* heading stops saying "Loading", a Demo-data chip appears beside it, a */
+  /* partial-data note may appear under it. Everything below is pushed     */
+  /* down by twenty or thirty pixels and the outline stays where it was —  */
+  /* which is the "it aligns, then shifts" report exactly.                 */
+  /*                                                                      */
+  /* So the rect is read every frame for the life of the beat and written  */
+  /* only when it has actually moved. One `getBoundingClientRect` per      */
+  /* frame is nothing next to what the page behind it is already doing,    */
+  /* and the equality check means a stationary target costs zero renders.  */
+  /* -------------------------------------------------------------------- */
+
+  /* AND THE PAGE ONLY MOVES WHEN IT GENUINELY HAS TO.
+     `scrollIntoView({block: "center"})` on every beat is a camera flight even
+     when the target is already in front of the reader — V65 cut the distance by
+     choosing smaller targets, but the right number of pixels to scroll toward
+     something you can already see is zero. The tour now scrolls only when the
+     target is outside a comfortable band, and then by the least it can: enough
+     to clear the band, not enough to centre. Most beats no longer move the page
+     at all, which is the only way a spotlight can feel fixed to the thing it is
+     pointing at. */
   useLayoutEffect(() => {
     if (!el) { setBox(null); setSettled(false); return; }
     setSettled(false);
+    setTravelling(true);
+    const arrived = setTimeout(() => setTravelling(false), 560);
 
-    el.scrollIntoView({
-      block: "center", behavior: prefs.motion === "calm" ? "auto" : "smooth",
-    });
+    // the band the target has to be inside: clear of the sticky nav at the top,
+    // clear of the tour card's own height at the bottom
+    const BAND_TOP = 96, BAND_BOTTOM = 232;
+    const r0 = el.getBoundingClientRect();
+    const vh = window.innerHeight;
+    let delta = 0;
+    if (r0.height <= vh - BAND_TOP - BAND_BOTTOM) {
+      if (r0.top < BAND_TOP) delta = r0.top - BAND_TOP;
+      else if (r0.bottom > vh - BAND_BOTTOM) delta = r0.bottom - (vh - BAND_BOTTOM);
+    } else if (r0.top < BAND_TOP) {
+      // taller than the band: put its top edge at the top of it and no more
+      delta = r0.top - BAND_TOP;
+    }
+    if (Math.abs(delta) > 2) {
+      window.scrollBy({ top: delta, behavior: prefs.motion === "calm" ? "auto" : "smooth" });
+    }
 
+    let box0: Box | null = null;
     const measure = () => {
       const r = el.getBoundingClientRect();
-      setBox({ top: r.top, left: r.left, width: r.width, height: r.height });
+      const next = { top: r.top, left: r.left, width: r.width, height: r.height };
+      if (box0 && Math.abs(box0.top - next.top) < 0.5 && Math.abs(box0.left - next.left) < 0.5
+        && Math.abs(box0.width - next.width) < 0.5 && Math.abs(box0.height - next.height) < 0.5) return;
+      box0 = next;
+      setBox(next);
     };
     measure();
 
-    // "stopped" is two consecutive frames at the same offset, with a ceiling so
-    // a scroll that never settles cannot hold the card back forever
-    let last = -1, same = 0, raf = 0;
+    /* The card waits for the page to stop before it appears, so it fades in
+       where it will stay rather than sliding into place while being read. When
+       nothing scrolled there is nothing to wait for. */
+    let last = -1, same = 0, raf = 0, settling = Math.abs(delta) > 2;
     const t0 = performance.now();
     const watch = () => {
       measure();
-      const y = window.scrollY;
-      same = y === last ? same + 1 : 0;
-      last = y;
-      if (same >= 2 || performance.now() - t0 > 900) { setSettled(true); return; }
+      if (settling) {
+        const y = window.scrollY;
+        same = y === last ? same + 1 : 0;
+        last = y;
+        if (same >= 2 || performance.now() - t0 > 900) { settling = false; setSettled(true); }
+      }
       raf = requestAnimationFrame(watch);
     };
+    if (!settling) setSettled(true);
     raf = requestAnimationFrame(watch);
 
-    window.addEventListener("scroll", measure, { passive: true });
     window.addEventListener("resize", measure);
     return () => {
       cancelAnimationFrame(raf);
-      window.removeEventListener("scroll", measure);
+      clearTimeout(arrived);
       window.removeEventListener("resize", measure);
     };
   }, [el, prefs.motion]);
@@ -255,8 +305,16 @@ export function GuidedTour() {
     if (!el) { setFit(FIT_DEFAULT); return; }
     const compute = () => setFit(fitTo(el));
     compute();
+    /* A walk of the target's neighbours is far too expensive to run every frame
+       alongside the rect, and it does not need to be: content arriving above the
+       target moves it and its neighbours together, leaving the clearance
+       unchanged. What DOES change the clearance is the target or its
+       surroundings changing size, which is exactly what a ResizeObserver is. */
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    if (el.parentElement) ro.observe(el.parentElement);
     window.addEventListener("resize", compute);
-    return () => window.removeEventListener("resize", compute);
+    return () => { ro.disconnect(); window.removeEventListener("resize", compute); };
   }, [el]);
 
   // auto-advance, for the demonstration script
@@ -364,7 +422,8 @@ export function GuidedTour() {
     // the whole viewport, and without this it would swallow every click meant
     // for the control the tour is currently pointing at.
     <div className="pointer-events-none fixed inset-0 z-[100]" role="dialog" aria-modal="false"
-      aria-label={`Guided tour, step ${index + 1} of ${beats.length}`}>
+      aria-label={`Guided tour, step ${index + 1} of ${beats.length}`}
+      style={{ ["--tour-move" as string]: travelling ? ".52s" : ".16s" }}>
       {/* The scrim is one element with a hole punched through it by box-shadow,
           rather than four rectangles around the target — so it can animate from
           one beat to the next as a single moving spotlight, and the target

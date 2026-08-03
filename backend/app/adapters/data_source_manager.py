@@ -393,15 +393,11 @@ def _heal_cached(session: RaceSession) -> bool:
         return False
     before = list(report.missing)
     _prune_inapplicable_facets(session)
+    _audit_report(session)
     if any(f in report.missing for f in _ARCHIVE_FACETS):
         _merge_from_archive(session, primary="cache")
-    if report.missing == before:
-        return False
-    report.partial = bool(report.missing)
-    if not report.missing:
-        report.missing_reason = None
-    session.partial = report.partial
-    return True
+        _audit_report(session)
+    return report.missing != before
 
 
 def _enrich_retirements(session: RaceSession, primary: str) -> None:
@@ -538,6 +534,86 @@ def _prune_inapplicable_facets(session: RaceSession) -> None:
                      if not (f.facet in drop and f.source == "none")]
 
 
+# --------------------------------------------------------------------------- #
+# "Is this session complete?" — asked once, of the session itself
+# --------------------------------------------------------------------------- #
+#
+# EVERY ADAPTER USED TO ANSWER THIS QUESTION FOR ITSELF, and each answered a
+# different question. The FastF1 report declares five facets; OpenF1 declares a
+# different five; Jolpica declares its own and hard-codes `partial=True`. A
+# facet an adapter never declared could never be reported missing — so a race
+# fetched through FastF1 with no position trace at all reported COMPLETE, and
+# the reader got a Race Story with no timeline in it and no explanation for the
+# hole. That is the "Monaco is missing data but doesn't say so" report, and it
+# was never about Monaco: it was about which source happened to answer first.
+#
+# So the report is now settled in one place, at the end of the pipeline, by
+# looking at the session that was actually built. The adapters still say WHERE
+# each facet came from — that is their job and they are the only ones who know
+# — but WHETHER a facet is there is decided by whether it is there.
+#
+#: facet -> (attribute holding it, human name for the reader)
+_CANONICAL_FACETS: dict[str, tuple[str, str]] = {
+    "results": ("classification", "results & classification"),
+    "drivers": ("drivers", "the entry list"),
+    "laps": ("laps", "lap times"),
+    "positions": ("positions", "the lap-by-lap position trace"),
+    "stints": ("stints", "tyre stints"),
+    "pit_stops": ("pit_stops", "pit stops"),
+    "overtakes": ("overtakes", "overtakes"),
+    "race_control": ("race_control", "the race-control log"),
+    "weather": ("weather", "weather"),
+}
+
+
+def _audit_report(session: RaceSession) -> None:
+    """Settle `facets`, `missing` and `partial` from the session as built.
+
+    Idempotent and total: every canonical facet that applies to this category
+    gets exactly one row, present or absent, whichever adapter fetched it and
+    whichever ones enriched it afterwards. Running it twice changes nothing,
+    which is what lets the cache-healing path call it as well.
+    """
+    report = session.source_report
+    if not report:
+        return
+    cat = session.category or session_category(session.session_type)
+    known = {f.facet: f for f in report.facets}
+    facets: list[FacetSource] = []
+    missing: list[str] = []
+
+    for name, (attr, human) in _CANONICAL_FACETS.items():
+        if cat not in _FACET_APPLIES.get(name, {"race", "sprint", "qualifying",
+                                                "sprint_qualifying", "practice"}):
+            continue
+        present = bool(getattr(session, attr, None))
+        prior = known.get(name)
+        if present:
+            # keep the adapter's provenance; only invent one if nobody claimed it
+            facets.append(prior if prior and prior.source != "none" else FacetSource(
+                facet=name, source="derived", confidence="medium",
+                detail=f"Present in the session, source unrecorded."))
+        else:
+            facets.append(FacetSource(
+                facet=name, source="none", confidence="low",
+                detail=prior.detail if prior and prior.detail else
+                f"No {human} were returned for this session."))
+            missing.append(name)
+
+    # anything an adapter reported that is not in the canonical set is still a
+    # fact about the session and is kept rather than quietly dropped
+    for f in report.facets:
+        if f.facet not in _CANONICAL_FACETS and f.source != "none":
+            facets.append(f)
+
+    report.facets = facets
+    report.missing = missing
+    report.partial = bool(missing)
+    if not missing:
+        report.missing_reason = None
+    session.partial = report.partial
+
+
 def _post_process(session: RaceSession, primary: str) -> None:
     """Enrich a freshly-fetched real session and finalize its source report."""
     session.category = session.category or session_category(session.session_type)
@@ -576,14 +652,13 @@ def _post_process(session: RaceSession, primary: str) -> None:
     # a facet a session type cannot have is not a gap in our data
     _prune_inapplicable_facets(session)
 
+    # and then the one audit that decides whether this session is complete —
+    # from the session, not from whichever adapter happened to answer first
+    _audit_report(session)
+
     if session.source_report:
-        session.source_report.partial = bool(session.source_report.missing)
-        if not session.source_report.missing:
-            # a later step filled everything in — the explanation is now stale
-            session.source_report.missing_reason = None
         session.source_report.cache_key = cache.cache_key(
             session.year, session.grand_prix, session.session_type)
-    session.partial = bool(session.source_report and session.source_report.missing)
 
 
 # --------------------------------------------------------------------------- #

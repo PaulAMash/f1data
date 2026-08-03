@@ -101,8 +101,11 @@ export function PaceBoard({
 
   return (
     <Card>
-      <CardHeader title={title} subtitle={view.measures} right={viewSwitch}
-        info={<InfoTip label={view.label} text={view.info} />} />
+      {/* `measures` describes what the column IS; `info` explains how to read
+          it. Two sentences about the same number, one of them permanent. The
+          description joins the tooltip it belongs in. */}
+      <CardHeader title={title} right={viewSwitch}
+        info={<InfoTip label={view.label} text={`${view.measures} ${view.info}`} />} />
       <CardBody className="space-y-2.5">
         {!entries.length ? (
           <EmptyState title={view.emptyTitle ?? "No pace data"} hint={view.emptyHint} />

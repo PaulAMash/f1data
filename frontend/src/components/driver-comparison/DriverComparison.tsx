@@ -22,7 +22,7 @@ import {
   SURFACE_COLOR,
 } from "@/lib/chartTheme";
 import { cx, fmtLap, fmtSec } from "@/lib/format";
-import { useLivery } from "@/lib/liveryColor";
+import { useLivery, useCompoundColour } from "@/lib/liveryColor";
 import { Select } from "@/components/ui/Select";
 
 /* -------------------------------------------------------------------------- */
@@ -511,6 +511,7 @@ function ChartLegend({ items }: {
 }
 
 function CompoundSeq({ seq }: { seq: string[] }) {
+  const compoundHue = useCompoundColour();
   if (!seq?.length) return <span className="text-xs text-ink-faint">—</span>;
   return (
     <span className="inline-flex items-center gap-0.5">
@@ -523,7 +524,7 @@ function CompoundSeq({ seq }: { seq: string[] }) {
             <span className="rounded px-1.5 py-0.5 text-[11px] font-bold"
               title={named ? COMPOUND_LABEL[key] : COMPOUND_MISSING_HINT}
               style={named
-                ? { background: COMPOUND_COLOR[key], color: "#0b0e16" }
+                ? { background: compoundHue(key), color: "#0b0e16" }
                 : { boxShadow: "inset 0 0 0 1px rgb(var(--tint) / .22)", color: "rgb(var(--ink-muted))" }}>
               {named ? COMPOUND_SHORT[key] : "?"}
             </span>

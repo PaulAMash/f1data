@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { FacetGap } from "@/components/ui/misc";
 import { MousePointerClick } from "lucide-react";
 import type { RaceBundle } from "@/lib/types";
 import { AXIS_TICK_COLOR } from "@/lib/chartTheme";
@@ -108,7 +109,11 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
   if (bundle.category !== "race" && bundle.category !== "sprint") return null;
   // render whenever there's anything at all to mark — a clean sprint with no
   // stops or safety cars still gets its fastest lap and lead changes
-  if (!session.positions.length && !session.pit_stops.length && !session.laps.length) return null;
+  /* A timeline with nothing on it used to be no timeline at all, which reads
+     as a missing feature rather than as a missing feed — see ui/misc FacetGap. */
+  if (!session.positions.length && !session.pit_stops.length && !session.laps.length) {
+    return <FacetGap what="The lap-by-lap trace" />;
+  }
   // If any podium car shows an implausible stop count the pit feed is suspect.
   const pitsReliable = session.pit_data_reliable !== false &&
     podium.every((c) => pits.filter((p) => p.driver === c.driver).length <= 5);

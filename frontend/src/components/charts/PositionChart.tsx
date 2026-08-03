@@ -17,7 +17,7 @@ import { cx, fmtSec, fmtLap, ordinal } from "@/lib/format";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
 import { DriverPalette } from "./DriverPalette";
 import { FocusCardShell, CloseButton, type FocusTile } from "./FocusCardShell";
-import { useLivery } from "@/lib/liveryColor";
+import { useLivery, useCompoundColour } from "@/lib/liveryColor";
 
 const M = { top: 10, right: 58, bottom: 26, left: 8 };
 const Y_AXIS_W = 44;
@@ -77,6 +77,13 @@ function spanImpact(range?: number[] | null): string | undefined {
 /* A moment's colour is what it DID to the race, never a neutral grey: a beat
    that decided a Grand Prix should not look like chrome. Neutralisations keep
    their learned broadcast colours; everything else is classified. */
+/* THE BROADCAST COLOUR IS THE SOURCE, NOT THE OUTPUT.
+   A key moment used to be painted with the literal hex from the events table —
+   `#00e0c6` for a gain, `#ffd21e` for a VSC — which is correct on a black
+   timing screen and close to invisible on paper, and identical to its
+   neighbour for a reader with a red-green deficiency. Every read of these goes
+   through the same adapter the liveries do: lightness ceiling for the surface,
+   safe hue ring for the eye. */
 const momentColor = (m: Pick<Moment, "kind" | "cls">) =>
   (m.kind in EVENT ? EVENT[m.kind as EventKind].color : MOMENT[m.cls ?? "read"].color);
 const momentIcon = (m: Pick<Moment, "kind" | "cls">) =>
@@ -449,7 +456,7 @@ export function PositionChart({
         {(() => {
           const om = openMoment != null ? moments.find((m) => m.id === openMoment) : null;
           if (!om || width === 0) return null;
-          const c = momentColor(om);
+          const c = paint(momentColor(om));
           const x1 = lapToX(om.lap);
           const spans = om.endLap != null && om.endLap > om.lap;
           const x2 = spans ? lapToX(om.endLap!) : x1;
@@ -496,7 +503,7 @@ export function PositionChart({
               {(() => {
                 const om = openMoment != null ? moments.find((m) => m.id === openMoment) : null;
                 return om ? (
-                  <ReferenceLine x={om.lap} stroke={momentColor(om)} strokeOpacity={0.9} strokeWidth={1.8}
+                  <ReferenceLine x={om.lap} stroke={paint(momentColor(om))} strokeOpacity={0.9} strokeWidth={1.8}
                     className="moment-line" ifOverflow="extendDomain" />
                 ) : null;
               })()}
@@ -570,10 +577,11 @@ function KeyMoments({ moments, narratives, open, simple, onToggle, onClose, driv
   moments: Moment[]; narratives: Map<string, { simple: string[]; advanced: string[]; up: Mover[]; down: Mover[] }>;
   open: string | null; simple: boolean; onToggle: (id: string) => void; onClose: () => void; driverByCode: Record<string, Driver>;
 }) {
-  if (!moments.length) return null;
+  const paint = useLivery();
   const openM = open != null ? moments.find((m) => m.id === open) : null;
   const text = open != null ? narratives.get(open) : null;
   const lines = text ? (simple ? text.simple : text.advanced) : [];
+  if (!moments.length) return null;
 
   return (
     <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-base-900/40">
@@ -587,7 +595,7 @@ function KeyMoments({ moments, narratives, open, simple, onToggle, onClose, driv
           clipped along the top edge; padding gives the elevation room */}
       <div className="flex flex-wrap gap-2 px-3 pb-3 pt-1">
         {moments.map((m) => {
-          const on = open === m.id; const c = momentColor(m); const Icon = momentIcon(m);
+          const on = open === m.id; const c = paint(momentColor(m)); const Icon = momentIcon(m);
           return (
             // The selected state always wins. Hover may only *reinforce* it —
             // never dim it, never move it — so exploring the chart can't make
@@ -647,12 +655,12 @@ function KeyMoments({ moments, narratives, open, simple, onToggle, onClose, driv
       {openM && (
         <div className="animate-fade-in border-t p-4" style={{ borderTopColor: "rgb(var(--tint) / 0.06)" }}>
           <div className="mb-2.5 flex items-start gap-3">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl" style={{ background: `${momentColor(openM)}1f`, boxShadow: `inset 0 0 0 1.5px ${momentColor(openM)}66` }}>
-              {(() => { const Ic = momentIcon(openM); return <Ic size={18} style={{ color: momentColor(openM) }} />; })()}
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl" style={{ background: `${paint(momentColor(openM))}1f`, boxShadow: `inset 0 0 0 1.5px ${paint(momentColor(openM))}66` }}>
+              {(() => { const Ic = momentIcon(openM); return <Ic size={18} style={{ color: paint(momentColor(openM)) }} />; })()}
             </span>
             <div className="min-w-0 flex-1">
               <span className="rounded px-1.5 py-0.5 text-[11px] font-bold tabular-nums"
-                style={{ background: `${momentColor(openM)}22`, color: momentColor(openM) }}>
+                style={{ background: `${paint(momentColor(openM))}22`, color: paint(momentColor(openM)) }}>
                 {openM.endLap != null && openM.endLap > openM.lap
                   ? `LAPS ${openM.lap}–${openM.endLap}` : `LAP ${openM.lap}`}
               </span>
@@ -710,6 +718,7 @@ function PositionFocusCard({ driver, stat, pace, stints, posAt, simple, takeaway
   posAt: (c: string, l: number) => number | null; simple: boolean; takeaway: string;
   onClear: () => void; onDeepDive?: (code: string) => void;
 }) {
+  const compoundHue = useCompoundColour();
   if (!stat) return null;
   const net = stat.net;
   const tiles: FocusTile[] = [
@@ -733,7 +742,7 @@ function PositionFocusCard({ driver, stat, pace, stints, posAt, simple, takeaway
           <div className="mt-3 flex items-center gap-1.5">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Tyres</span>
             {stat.compounds.map((c, i) => (
-              <span key={i} className="rounded px-1.5 py-0.5 text-[11px] font-bold" style={{ background: COMPOUND_COLOR[c], color: "#0b0e16" }}>{COMPOUND_LABEL[c]}</span>
+              <span key={i} className="rounded px-1.5 py-0.5 text-[11px] font-bold" style={{ background: compoundHue(c), color: "#0b0e16" }}>{COMPOUND_LABEL[c]}</span>
             ))}
           </div>
         )
@@ -755,6 +764,7 @@ function PositionFocusCard({ driver, stat, pace, stints, posAt, simple, takeaway
 }
 
 function StintTimeline({ stints, code, posAt }: { stints: RaceSession["stints"]; code: string; posAt: (c: string, l: number) => number | null }) {
+  const compoundHue = useCompoundColour();
   const ordered = [...stints].sort((a, b) => a.start_lap - b.start_lap);
   return (
     <div className="border-t border-white/[0.06] pt-3">
@@ -764,9 +774,9 @@ function StintTimeline({ stints, code, posAt }: { stints: RaceSession["stints"];
           const laps = s.end_lap - s.start_lap + 1;
           const pStart = posAt(code, s.start_lap), pEnd = posAt(code, s.end_lap);
           return (
-            <div key={i} className="min-w-0 rounded-md px-2 py-1.5 text-center" style={{ flexGrow: laps, background: `${COMPOUND_COLOR[s.compound]}22`, boxShadow: `inset 0 -2px 0 0 ${COMPOUND_COLOR[s.compound]}` }}
+            <div key={i} className="min-w-0 rounded-md px-2 py-1.5 text-center" style={{ flexGrow: laps, background: `${compoundHue(s.compound)}22`, boxShadow: `inset 0 -2px 0 0 ${compoundHue(s.compound)}` }}
               title={`${COMPOUND_LABEL[s.compound]} · laps ${s.start_lap}-${s.end_lap}`}>
-              <div className="text-[11px] font-bold" style={{ color: COMPOUND_COLOR[s.compound] }}>{COMPOUND_SHORT[s.compound]} · {laps}L</div>
+              <div className="text-[11px] font-bold" style={{ color: compoundHue(s.compound) }}>{COMPOUND_SHORT[s.compound]} · {laps}L</div>
               {pStart != null && pEnd != null && <div className="text-[11px] tabular-nums text-ink-muted">P{pStart}→P{pEnd}</div>}
             </div>
           );
@@ -869,6 +879,7 @@ function OrderTooltip({ active, label, info, drivers, visible, focus, simple, la
   podiumSet: Set<string>; driverByCode: Record<string, Driver>;
 }) {
   const paint = useLivery();
+  const compoundHue = useCompoundColour();
   if (!active || label == null) return null;
   const lap = Number(label);
   const rows = visible.map((d) => ({ d, i: info.get(`${d.code}:${lap}`) }))
@@ -933,7 +944,7 @@ function OrderTooltip({ active, label, info, drivers, visible, focus, simple, la
                 </>
               )}
               <span className="flex items-center gap-1">
-                <span className="rounded px-1 text-[11px] font-bold" style={{ background: COMPOUND_COLOR[i!.compound], color: "#0b0e16" }}>{COMPOUND_SHORT[i!.compound]}</span>
+                <span className="rounded px-1 text-[11px] font-bold" style={{ background: compoundHue(i!.compound), color: "#0b0e16" }}>{COMPOUND_SHORT[i!.compound]}</span>
                 {i!.tyre_age != null && <span className="text-[11px] tabular-nums text-ink-faint">{i!.tyre_age}</span>}
               </span>
               {!simple && (

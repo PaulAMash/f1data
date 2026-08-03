@@ -214,12 +214,14 @@ export function PaceAnalysis({
   // ---- ADVANCED ----
   return (
     <Card>
-      <CardHeader title="Pace analysis"
-        subtitle={view === "teams"
-          ? "Constructor lap-time trends and the numbers behind them."
-          : "Fuel- and tyre-corrected true pace, driver by driver."}
-        right={viewSwitch}
-        info={<InfoTip label="Reading pace" text="Clean-air pace separates real speed from track position: it corrects for fuel burn and tyre age, and ignores laps spent in traffic, behind a safety car or in the pit lane." />} />
+      {/* The subtitle said "Fuel- and tyre-corrected true pace, driver by
+          driver" directly above an info button whose tooltip explained the same
+          thing at greater length. One of the two was pure clutter, and it was
+          the one that could not be dismissed. */}
+      <CardHeader title="Pace analysis" right={viewSwitch}
+        info={<InfoTip label="Reading pace" text={view === "teams"
+          ? "Constructor lap-time trends, corrected for fuel burn and tyre age. Laps in traffic, behind a safety car or in the pit lane are excluded, so this is speed rather than track position."
+          : "Clean-air pace separates real speed from track position: it corrects for fuel burn and tyre age, and ignores laps spent in traffic, behind a safety car or in the pit lane."} />} />
       <CardBody className="space-y-5">
 
       {view === "teams" ? (

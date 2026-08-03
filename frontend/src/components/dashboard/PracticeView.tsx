@@ -14,6 +14,7 @@ import { Meter, Tally } from "@/components/ui/Visuals";
 import { TrackConditionsPanel, readConditions } from "@/components/charts/TrackConditions";
 import { PaceBoard } from "@/components/charts/PaceBoard";
 import { COMPOUND_COLOR, COMPOUND_SHORT } from "@/lib/compounds";
+import { useCompoundColour } from "@/lib/liveryColor";
 import { fmtLap } from "@/lib/format";
 
 export function PracticeView({
@@ -378,12 +379,13 @@ function Runs({ practice, session }: { practice: PracticeSummary; session: RaceS
 }
 
 function Compounds({ list }: { list: string[] }) {
+  const compoundHue = useCompoundColour();
   if (!list.length) return <span className="text-xs text-ink-faint">—</span>;
   return (
     <span className="inline-flex gap-0.5">
       {list.map((c) => (
         <span key={c} className="rounded px-1 text-[11px] font-bold"
-          style={{ background: COMPOUND_COLOR[c as keyof typeof COMPOUND_COLOR], color: "#0b0e16" }}>
+          style={{ background: compoundHue(c), color: "#0b0e16" }}>
           {COMPOUND_SHORT[c as keyof typeof COMPOUND_SHORT]}
         </span>
       ))}
