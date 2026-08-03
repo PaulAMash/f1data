@@ -2,6 +2,8 @@
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Radar, Settings } from "lucide-react";
 import { useNavHistory } from "@/lib/nav";
+import { HoverCard } from "@/components/ui/HoverCard";
+import { useHoverTip } from "@/lib/useHoverTip";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
@@ -54,11 +56,25 @@ export function NavBar({ active }: { active?: "home" | "explorer" | "history" | 
     // directly under the bar, where 80% let it stay legible through the glass.
     <header className="sticky top-0 z-40 border-b border-white/[0.06] bg-base-950/90 backdrop-blur-lg">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-1.5 px-3 sm:gap-3 sm:px-6">
-        <Link href="/" className="group/brand flex shrink-0 items-center gap-2">
+        {/* THE WORDMARK IS HOME, and it is the only Home.
+            A logo that returns to the front door is the oldest convention on the
+            web and the one every reader already knows; a "Home" tab beside it
+            was a second control for the same destination, which makes a reader
+            wonder what the difference is. The tab went rather than the logo's
+            behaviour, because removing the behaviour would have left a logo that
+            LOOKS pressable and is not — and because the nav row is about to
+            carry five destinations, which is exactly when its first slot should
+            not be spent on the one place the corner already goes.
+
+            It says so out loud: a title, an accessible name, and a hover state
+            on the whole lockup rather than on the glyph alone. */}
+        <Link href="/" aria-label="Pitwall IQ — home" title="Home"
+          aria-current={active === "home" ? "page" : undefined}
+          className="group/brand flex shrink-0 items-center gap-2 rounded-lg px-1 py-1 transition-colors duration-[--dur-2] hover:bg-white/[0.04]">
           <span className="grid h-7 w-7 place-items-center rounded-lg bg-accent/15 ring-1 ring-accent/30 transition-transform duration-[--dur-2] ease-[--ease-out] group-hover/brand:scale-105">
             <Radar size={16} className="text-accent-soft" />
           </span>
-          <span className="hidden text-sm font-semibold tracking-tight sm:inline">
+          <span className="hidden text-sm font-semibold tracking-tight text-ink sm:inline">
             Pitwall<span className="text-accent-soft"> IQ</span>
           </span>
         </Link>
@@ -81,13 +97,19 @@ export function NavBar({ active }: { active?: "home" | "explorer" | "history" | 
           </div>
         </div>
 
-        <nav className="flex items-center gap-0.5 text-sm sm:gap-1">
-          <Link href="/" className={link(active === "home")}>Home</Link>
+        <nav className="flex min-w-0 items-center gap-0.5 text-sm sm:gap-1">
           <Link href="/explorer" className={link(active === "explorer")}>Explore</Link>
-          {/* "Seasons", not "Historical". The championship standings live here — the
-              current one included — and a reader who reads the label as "old stuff"
-              will never look for this year's title race behind it. */}
+          {/* "Seasons", not "Historical". A reader who reads the label as "old
+              stuff" will never look for a championship behind it — and this is
+              where the sport's whole history lives. */}
           <Link href="/history" data-tour="nav-history" className={link(active === "history")}>Seasons</Link>
+          {/* WHAT IS COMING, STATED RATHER THAN HINTED.
+              A disabled tab is only worth having if it reads as a PLAN. These
+              are not greyed-out buttons that look broken: they are legible, they
+              carry a "soon" mark, they say what they will be when you hover
+              them, and they cannot be pressed or tabbed into. A reader who
+              wonders whether this product is finished gets an answer. */}
+          {SOON.map((t) => <Soon key={t.label} {...t} />)}
         </nav>
 
         {/* One control, because there is one thing here that is not navigation.
@@ -115,6 +137,48 @@ export function NavBar({ active }: { active?: "home" | "explorer" | "history" | 
         </div>
       </div>
     </header>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* The roadmap.                                                               */
+/*                                                                            */
+/* REPLAY IS CALLED "RACE REPLAY" NOWHERE IN THIS PRODUCT. The feature is a    */
+/* reconstruction of a Grand Prix from its own timing data — the same data     */
+/* every other screen here is built from — played back at whatever speed the   */
+/* reader wants. "Race Replay" describes a video player; RE-RUN describes      */
+/* running the session again, which is what it actually is, and it sits in the */
+/* same register as Explore and Seasons: one word, an instruction, no noun     */
+/* borrowed from broadcast.                                                   */
+/* -------------------------------------------------------------------------- */
+const SOON: { label: string; note: string }[] = [
+  { label: "Drivers", note: "Every driver's career, season by season — form, teammates, and how they got here." },
+  { label: "Teams", note: "Constructor histories: line-ups, championships, and how a team's pace moved across a season." },
+  { label: "Re-run", note: "A Grand Prix reconstructed from its own timing data and played back lap by lap, at any speed." },
+];
+
+function Soon({ label, note }: { label: string; note: string }) {
+  const { at, open, close } = useHoverTip<{ x: number; y: number }>();
+  const where = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top - 2 };
+  };
+  return (
+    <span className="relative hidden items-center md:inline-flex"
+      onMouseEnter={(e) => open(where(e.currentTarget))} onMouseLeave={close}>
+      <span aria-disabled="true"
+        className="flex cursor-default items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-ink-faint/60 sm:px-3">
+        {label}
+        <span className="rounded-[5px] bg-white/[0.06] px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.1em] text-ink-faint/80">
+          soon
+        </span>
+      </span>
+      {at && (
+        <HoverCard x={at.x} y={at.y} width={252} title={`${label} · coming soon`}>
+          <p className="whitespace-normal text-left text-[12px] leading-relaxed text-ink-muted">{note}</p>
+        </HoverCard>
+      )}
+    </span>
   );
 }
 

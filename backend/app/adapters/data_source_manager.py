@@ -552,6 +552,60 @@ def _prune_inapplicable_facets(session: RaceSession) -> None:
 # each facet came from — that is their job and they are the only ones who know
 # — but WHETHER a facet is there is decided by whether it is there.
 #
+#: The first season each facet exists AT ALL, anywhere, from any source.
+#:
+#: THIS IS THE OTHER HALF OF THE CATEGORY ERROR V67 FIXED.
+#:
+#: That release stopped a qualifying hour being reported as missing its
+#: overtakes, because a qualifying hour never had any. The same mistake was
+#: still being made along the other axis: a 1975 Grand Prix was reported as
+#: missing its lap times, its tyre stints, its weather trace and its
+#: race-control log — none of which were ever recorded, by anybody, in 1975.
+#: The reader was told a fifty-year-old race had a data problem, and it did not:
+#: it had a 1975 problem, which is not the same thing and is not ours.
+#:
+#: The boundaries are the sources' own, not guesses:
+#:   1950  results and entry lists — the championship's own start
+#:   1996  lap-by-lap timing (and therefore positions, and therefore the
+#:         overtakes inferred from them) — the first season Ergast/Jolpica
+#:         publishes laps for
+#:   2011  pit stops — the first season the pit-stop endpoint covers
+#:   2018  tyre stints, weather and race control — the first season the F1
+#:         live-timing archive FastF1 reads is complete for
+#:
+#: A facet before its era is not listed, not reported missing and does not make
+#: a session partial. It IS explained: see `_era_note`, so absence has a reason
+#: on screen rather than being a silence.
+_FACET_FROM: dict[str, int] = {
+    "laps": 1996,
+    "positions": 1996,
+    "overtakes": 1996,
+    "pit_stops": 2011,
+    "stints": 2018,
+    "weather": 2018,
+    "race_control": 2018,
+}
+
+#: What to tell the reader when a session predates a feed, keyed by the earliest
+#: era boundary that applies to it.
+_ERA_NOTE = {
+    2018: "Tyre stints, weather and the race-control log begin in 2018 — the first "
+          "season F1's live-timing archive covers. Everything else on this page is real.",
+    2011: "Pit-stop timing begins in 2011, and tyre, weather and race-control data in "
+          "2018. This session predates them; its results and lap times are real.",
+    1996: "Lap-by-lap timing begins in 1996. For seasons before it the official "
+          "classification is the complete record that exists.",
+}
+
+
+def _era_note(year: int) -> str | None:
+    """One sentence explaining which feeds had not started yet, or None."""
+    for boundary in (1996, 2011, 2018):
+        if year < boundary:
+            return _ERA_NOTE[boundary]
+    return None
+
+
 #: facet -> (attribute holding it, human name for the reader)
 _CANONICAL_FACETS: dict[str, tuple[str, str]] = {
     "results": ("classification", "results & classification"),
@@ -586,6 +640,9 @@ def _audit_report(session: RaceSession) -> None:
         if cat not in _FACET_APPLIES.get(name, {"race", "sprint", "qualifying",
                                                 "sprint_qualifying", "practice"}):
             continue
+        # a feed that had not been invented yet is not a gap in our data
+        if session.year < _FACET_FROM.get(name, 0):
+            continue
         present = bool(getattr(session, attr, None))
         prior = known.get(name)
         if present:
@@ -612,6 +669,11 @@ def _audit_report(session: RaceSession) -> None:
     if not missing:
         report.missing_reason = None
     session.partial = report.partial
+
+    # and say which feeds had not started yet, so the absence has a reason
+    note = _era_note(session.year)
+    if note and note not in session.notes:
+        session.notes.append(note)
 
 
 def _post_process(session: RaceSession, primary: str) -> None:

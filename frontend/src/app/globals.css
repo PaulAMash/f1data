@@ -1197,6 +1197,7 @@ html.theme-sweep::view-transition-new(root) {
 .wc-4 { animation-delay: .52s; }
 .wc-5 { animation-delay: .62s; }
 .wc-6 { animation-delay: .80s; }
+.wc-45 { animation: hero-in .85s cubic-bezier(.22, 1, .36, 1) backwards; animation-delay: .58s; }
 /* The three pillars of the introduction, and the three questions of the setup:
    both arrive in sequence rather than as a block, because a row of three
    identical cards appearing at once reads as a table and a row that assembles
@@ -1583,6 +1584,126 @@ html.theme-sweep::view-transition-new(root) {
   box-shadow: 0 0 0 1px rgb(var(--accent) / .5), 0 0 12px rgb(var(--accent) / calc(.8 * var(--glow-k)));
 }
 
+/* ---- the trust card ------------------------------------------------------
+   Quieter than a pillar and louder than a footnote, which is the register this
+   information wants: a reader who is deciding whether to believe the product
+   should find it without being sold it. Two rows, one rule between them, no
+   heading — a heading would make it an announcement. */
+.wc-trust {
+  border-radius: 14px;
+  padding: 4px 14px;
+  text-align: left;
+  background: rgb(var(--tint) / .022);
+  box-shadow: inset 0 0 0 1px rgb(var(--tint) / .05);
+}
+:root[data-theme="light"] .wc-trust {
+  background: rgb(255 255 255 / .62);
+  box-shadow: inset 0 0 0 1px rgb(15 23 42 / .07), 0 1px 2px rgb(15 23 42 / .04);
+}
+.wc-trust-row {
+  display: flex;
+  gap: 10px;
+  padding: 11px 0;
+  border-bottom: 1px solid rgb(var(--tint) / .05);
+}
+.wc-trust-row:last-child { border-bottom: 0; }
+.wc-trust-row p {
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgb(var(--ink-faint));
+}
+.wc-trust-row b { font-weight: 700; color: rgb(var(--ink-muted)); }
+.wc-trust-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px; height: 22px;
+  margin-top: 1px;
+  border-radius: 7px;
+  color: rgb(var(--speed));
+  background: rgb(var(--speed) / .1);
+  box-shadow: inset 0 0 0 1px rgb(var(--speed) / .22);
+}
+.wc-trust-icon.is-beta {
+  color: rgb(var(--accent-soft));
+  background: rgb(var(--accent) / .1);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent) / .24);
+}
+:root[data-theme="light"] .wc-trust-icon.is-beta { color: rgb(var(--accent)); }
+
+/* ---- the quieter half of the setup ---------------------------------------
+   A disclosure, not a second panel. Closed it is one line of chrome; open it is
+   six rows of segmented controls with no card of their own — because three
+   hardware cards above already said "these are the decisions that matter", and
+   giving units the same treatment would flatten that back into ten equal
+   things. The whole point of this screen is that it does not have to be a form.
+   --------------------------------------------------------------------------- */
+.wc-more-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  border-radius: 12px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: rgb(var(--ink-muted));
+  background: rgb(var(--tint) / .028);
+  box-shadow: inset 0 0 0 1px rgb(var(--tint) / .055);
+  transition: background .25s var(--ease-out), box-shadow .25s var(--ease-out), color .25s var(--ease-out);
+}
+.wc-more-toggle:hover {
+  color: rgb(var(--ink));
+  background: rgb(var(--tint) / .055);
+  box-shadow: inset 0 0 0 1px rgb(var(--tint) / .1);
+}
+:root[data-theme="light"] .wc-more-toggle {
+  background: #f4f6f9;
+  box-shadow: inset 0 0 0 1px rgb(15 23 42 / .07);
+}
+:root[data-theme="light"] .wc-more-toggle:hover {
+  background: #eef1f6;
+  box-shadow: inset 0 0 0 1px rgb(15 23 42 / .12);
+}
+.wc-more-body { animation: wc-more calc(var(--dur-3) * 1.2) var(--ease-out) backwards; }
+@keyframes wc-more { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .wc-more-body { animation: none; } }
+
+/* the segmented control these rows answer with — the same vocabulary Settings
+   uses, at the size a secondary answer deserves */
+.wc-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 10px;
+  padding: 2px;
+  background: rgb(var(--tint) / .045);
+  box-shadow: inset 0 0 0 1px rgb(var(--tint) / .06);
+}
+:root[data-theme="light"] .wc-seg {
+  background: #eef1f6;
+  box-shadow: inset 0 0 0 1px rgb(15 23 42 / .08);
+}
+.wc-seg-b {
+  border-radius: 8px;
+  padding: 4px 9px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: rgb(var(--ink-faint));
+  transition: color .2s var(--ease-out), background .2s var(--ease-out), box-shadow .2s var(--ease-out);
+}
+.wc-seg-b:hover { color: rgb(var(--ink-muted)); }
+.wc-seg-b.is-on {
+  color: rgb(var(--accent-soft));
+  background: rgb(var(--accent) / .12);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent) / .32);
+}
+:root[data-theme="light"] .wc-seg-b.is-on {
+  color: rgb(var(--accent));
+  background: rgb(var(--accent) / .08);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent) / .3);
+}
+
 /* ---- 7. the type --------------------------------------------------------- */
 .wc-boot {
   font-family: var(--font-mono), ui-monospace, monospace;
@@ -1923,11 +2044,18 @@ html.theme-sweep::view-transition-new(root) {
 }
 @keyframes tele-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
+/* The type scales with the panel. A wider box at the same 9.5px reads as a
+   stretched screenshot rather than as a larger instrument — `--tele-fs` is set
+   per breakpoint below and every row, label and figure is stated against it. */
+.tele { --tele-fs: 9.5px; }
+@media (min-width: 1280px) { .tele { --tele-fs: 10.5px; } }
+@media (min-width: 1536px) { .tele { --tele-fs: 11.5px; } }
+
 .tele-row, .tele-line, .tele-foot {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 9.5px;
+  font-size: var(--tele-fs);
   letter-spacing: .1em;
   color: rgb(var(--ink-faint));
 }
@@ -1951,7 +2079,7 @@ html.theme-sweep::view-transition-new(root) {
 @keyframes tele-pulse { 50% { box-shadow: 0 0 0 6px rgb(var(--amber) / .05); } }
 
 .tele-body { padding: 6px 11px 7px; display: flex; flex-direction: column; gap: 3px; }
-.tele-line { position: relative; height: 15px; will-change: transform; }
+.tele-line { position: relative; height: calc(var(--tele-fs) * 1.58); will-change: transform; }
 /* a sector flash washes the row it belongs to, then leaves */
 .tele-line.is-purple::before, .tele-line.is-green::before {
   content: ""; position: absolute; inset: -1px -6px; border-radius: 4px;
@@ -1964,7 +2092,7 @@ html.theme-sweep::view-transition-new(root) {
 .tele-pos { width: 7px; color: rgb(var(--ink-faint)); }
 .tele-tick { width: 2px; height: 9px; border-radius: 1px; flex: none; }
 .tele-code { font-weight: 700; color: rgb(var(--ink-muted)); letter-spacing: .06em; }
-.tele-gap { margin-left: auto; color: rgb(var(--ink-faint)); font-size: 9px; }
+.tele-gap { margin-left: auto; color: rgb(var(--ink-faint)); font-size: calc(var(--tele-fs) * .95); }
 .tele-key { width: 20px; font-weight: 700; }
 .tele-move {
   width: 6px; font-size: 6px; line-height: 1; color: transparent;
@@ -1997,7 +2125,7 @@ html.theme-sweep::view-transition-new(root) {
   letter-spacing: 0;
   transform: translateY(.5px);
 }
-.tele-age { width: 10px; font-size: 8px; opacity: .7; }
+.tele-age { width: 10px; font-size: calc(var(--tele-fs) * .84); opacity: .7; }
 
 /* ---- the feed itself -------------------------------------------------------
    Three bars filling and emptying. The only thing on this panel that runs on a

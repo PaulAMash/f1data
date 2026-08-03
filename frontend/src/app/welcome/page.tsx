@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowRight, BarChart3, Compass, Lock, Radar, ShieldCheck, Sparkles, Sun, Timer,
+  ArrowRight, BarChart3, ChevronDown, Compass, Layers, Lock, Radar, ShieldCheck,
+  Sliders, Sparkles, Sun, Timer,
 } from "lucide-react";
 import { WelcomeField } from "@/components/welcome/WelcomeField";
 import { Instruments } from "@/components/welcome/Instruments";
@@ -65,6 +66,9 @@ export default function Welcome() {
 
   const [mode, setMode] = useState<Mode>("simple");
   const [tour, setTour] = useState(true);
+  /** Whether the quieter half of the setup is open. Closed is the default,
+      because the whole argument of this screen is that it does not have to be. */
+  const [more, setMore] = useState(false);
 
   const room = useRef<HTMLElement | null>(null);
   const one = useRef<HTMLDivElement | null>(null);
@@ -148,7 +152,7 @@ export default function Welcome() {
             </span>
             Pitwall IQ
           </p>
-          <p className="wc-boot">Formula 1 race intelligence · v1</p>
+          <p className="wc-boot">Formula 1 race intelligence</p>
         </div>
 
         <div className="relative mt-6 transition-[height] duration-[--dur-4] ease-[--ease-out]"
@@ -185,25 +189,75 @@ export default function Welcome() {
               ))}
             </ul>
 
-            <div className="wc-5 mt-10 flex flex-col items-center gap-3">
+            {/* ---- how it is built, and where it is in its life ------------
+                ONE CARD, TWO FACTS, AND THEY BELONG TOGETHER.
+
+                "We read several open motorsport sources and one of them is
+                sometimes down" and "this is a beta and it is still growing" are
+                the same sentence told from two sides: both are about a product
+                being honest with a reader before it needs to be. Split across a
+                banner and a footnote they read as two apologies; together they
+                read as a product that knows what it is made of.
+
+                And it is on ACT ONE, before any question is asked. A reader
+                decides whether to trust software in the first fifteen seconds,
+                which is well before they reach a setup screen. */}
+            <div className="wc-45 mx-auto mt-8 max-w-2xl">
+              <div className="wc-trust">
+                <div className="wc-trust-row">
+                  <span className="wc-trust-icon"><Layers size={13} /></span>
+                  <p>
+                    <b>Built on the open record.</b> Pitwall IQ reads OpenF1, the Jolpica/Ergast
+                    archive and F1&rsquo;s own live-timing archive, and combines them into one
+                    picture — naming which source every figure came from. When one of them is
+                    having a bad day, this says so and names it rather than quietly filling the
+                    gap in.
+                  </p>
+                </div>
+                <div className="wc-trust-row">
+                  <span className="wc-trust-icon is-beta"><Sparkles size={13} /></span>
+                  <p>
+                    <b>Beta, and moving.</b> New analysis lands regularly and the existing
+                    screens keep getting sharper. If something reads wrong or a race looks
+                    thin, that is worth telling us about — it is usually a fixable thing on
+                    our side.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="wc-5 mt-9 flex flex-col items-center gap-3">
               <button type="button" onClick={() => setAct(1)} className="wc-cta group/go">
                 Get started
                 <ArrowRight size={16}
                   className="transition-transform duration-[--dur-2] group-hover/go:translate-x-0.5" />
               </button>
-              <span className="wc-note">Three questions. About twenty seconds.</span>
+              <span className="wc-note">Three quick answers, or none at all. About twenty seconds.</span>
             </div>
           </div>
 
-          {/* ================= ACT TWO — three quick choices ============== */}
+          {/* ================= ACT TWO — set it up ======================= */}
+          {/* IT ASKS FOR MORE AND FEELS LIKE LESS.
+              V62 asked three questions on three equal cards. Ten questions laid
+              out the same way is a form, and a form is the thing a first run
+              must never be — so the SHAPE carries the difference rather than the
+              copy. Three cards for the answers that change what the product IS,
+              answered in one press each; everything else folded into one quiet
+              row that opens if the reader wants it and is otherwise a sentence
+              saying the defaults are already sensible.
+
+              Which means both readers get what they came for: one press to
+              enter, or thirty seconds to make it theirs. Nobody is walked
+              through a wizard to reach a button they could have pressed on
+              arrival. */}
           <div ref={two} aria-hidden={act === 0}
             className={cx("wc-act absolute inset-x-0 top-0", act === 0 && "is-next")}>
             <h2 className="text-[1.9rem] font-bold leading-tight tracking-[-0.038em] text-ink sm:text-[2.4rem]">
               Set it up your way
             </h2>
-            <p className="mx-auto mt-2.5 max-w-md text-[13.5px] leading-relaxed text-ink-muted">
-              All three are answered sensibly already. Change any of them now — or
-              any of them later, in Settings.
+            <p className="mx-auto mt-2.5 max-w-lg text-[13.5px] leading-relaxed text-ink-muted">
+              Everything below is answered sensibly already — press Enter and you are in.
+              Change anything you like now, or any of it later in Settings.
             </p>
 
             <div className="mt-7 grid gap-3 text-left sm:grid-cols-3">
@@ -229,7 +283,60 @@ export default function Welcome() {
               </Card>
             </div>
 
-            <div className="mt-8 flex flex-col items-center gap-4">
+            {/* ---- the rest of it, on request ------------------------------ */}
+            <div className="wc-more mt-3">
+              <button type="button" onClick={() => setMore((m) => !m)} aria-expanded={more}
+                className="wc-more-toggle">
+                <Sliders size={13} />
+                {more ? "Hide the rest" : "Language, units, motion and accessibility"}
+                <ChevronDown size={14} className={cx("ml-auto transition-transform duration-[--dur-3]", more && "rotate-180")} />
+              </button>
+
+              {more && (
+                <div className="wc-more-body grid gap-x-6 gap-y-3.5 pt-4 text-left sm:grid-cols-2">
+                  <Row label="Language" hint="Not a translation — which English the interface is written in.">
+                    <Pick value={prefs.spelling} onPick={(v) => set("spelling", v)} options={[
+                      { v: "en-GB" as const, label: "British" }, { v: "en-US" as const, label: "American" },
+                    ]} />
+                  </Row>
+                  <Row label="Units" hint="Track and air temperatures, and speeds.">
+                    <Pick value={prefs.units} onPick={(v) => set("units", v)} options={[
+                      { v: "metric" as const, label: "°C · kph" }, { v: "imperial" as const, label: "°F · mph" },
+                    ]} />
+                  </Row>
+                  <Row label="Time" hint="Session times and clock readings.">
+                    <Pick value={prefs.clock} onPick={(v) => set("clock", v)} options={[
+                      { v: "24h" as const, label: "24-hour" }, { v: "12h" as const, label: "12-hour" },
+                    ]} />
+                  </Row>
+                  <Row label="Motion" hint="The pace of the interface — not whether it has one.">
+                    <Pick value={prefs.motion} onPick={(v) => set("motion", v)} options={[
+                      { v: "full" as const, label: "Full" }, { v: "calm" as const, label: "Calm" },
+                    ]} />
+                  </Row>
+                  <Row label="Text size" hint="Scales the whole interface, not just body copy.">
+                    <Pick value={prefs.textScale} onPick={(v) => set("textScale", v)} options={[
+                      { v: "normal" as const, label: "Default" }, { v: "large" as const, label: "Larger" },
+                    ]} />
+                  </Row>
+                  {/* Four options rather than two, so it takes the full width.
+                      Squeezed into half of it, the hint wrapped into a
+                      ninety-pixel ribbon beside the control — a row whose label
+                      is narrower than its own words is a broken row. */}
+                  <Row wide label="Colour vision"
+                    hint="Remaps every livery, tyre compound and flag onto a palette that stays separable — see Settings for what each one does.">
+                    <Pick value={prefs.colourVision} onPick={(v) => set("colourVision", v)} options={[
+                      { v: "none" as const, label: "Full colour" },
+                      { v: "deuteranopia" as const, label: "Deutan" },
+                      { v: "protanopia" as const, label: "Protan" },
+                      { v: "tritanopia" as const, label: "Tritan" },
+                    ]} />
+                  </Row>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-7 flex flex-col items-center gap-4">
               <button type="button" onClick={enter} disabled={leaving} className="wc-cta group/enter">
                 {tour ? <Sparkles size={15} /> : null}
                 Enter Pitwall IQ
@@ -237,9 +344,12 @@ export default function Welcome() {
                   className="transition-transform duration-[--dur-2] group-hover/enter:translate-x-0.5" />
               </button>
               <div className="flex flex-col items-center gap-1.5">
-                <p className="wc-note inline-flex items-center gap-1.5">
+                {/* Settings is named, not implied. A reader who thinks this
+                    screen was their only chance to personalise the product will
+                    never look for the twenty other answers that live there. */}
+                <p className="wc-note inline-flex flex-wrap items-center justify-center gap-1.5">
                   <Lock size={11} />
-                  You can change all of these later in Settings.
+                  All of this, plus density, chart pace, accent colour and more, lives in Settings.
                 </p>
                 <button type="button" onClick={() => setAct(0)}
                   className="text-[11.5px] text-ink-faint/80 transition-colors hover:text-ink-muted">
@@ -291,6 +401,39 @@ function Card({ n, icon: Icon, title, i, children }: {
       <p className="wc-card-title">{title}</p>
       <div className="mt-3 space-y-1.5">{children}</div>
     </div>
+  );
+}
+
+/** A quiet preference: a label, a reason, and a two-or-four-way choice.
+    Deliberately NOT another hardware card — three of those said "these are the
+    decisions that matter", and repeating the treatment for units and clock
+    format would flatten that back into a list of ten equal things. */
+function Row({ label, hint, children, wide }: {
+  label: string; hint: string; children: React.ReactNode; wide?: boolean;
+}) {
+  return (
+    <div className={cx("flex items-center gap-4", wide && "sm:col-span-2")}>
+      <span className="min-w-[8rem] flex-1">
+        <span className="block text-[12.5px] font-semibold text-ink">{label}</span>
+        <span className="mt-0.5 block text-[11px] leading-snug text-ink-faint">{hint}</span>
+      </span>
+      <span className="shrink-0">{children}</span>
+    </div>
+  );
+}
+
+function Pick<T extends string>({ value, onPick, options }: {
+  value: T; onPick: (v: T) => void; options: readonly { v: T; label: string }[];
+}) {
+  return (
+    <span className="wc-seg">
+      {options.map((o) => (
+        <button key={o.v} type="button" onClick={() => onPick(o.v)} aria-pressed={value === o.v}
+          className={cx("wc-seg-b", value === o.v && "is-on")}>
+          {o.label}
+        </button>
+      ))}
+    </span>
   );
 }
 

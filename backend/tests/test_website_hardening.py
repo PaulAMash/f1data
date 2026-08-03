@@ -1265,3 +1265,64 @@ def test_a_qualifying_hour_is_not_missing_things_it_cannot_have():
     dsm._audit_report(s)
     assert s.source_report.missing == []
     assert not any(f.facet in ("overtakes", "positions") for f in s.source_report.facets)
+
+
+# --------------------------------------------------------------------------- #
+# A feed that had not been invented yet is not a gap in our data.
+#
+# V67 stopped a qualifying hour being reported as missing its overtakes. The
+# same category error was still being made along the other axis: a 1975 Grand
+# Prix was reported as missing its lap times, tyre stints, weather and
+# race-control log — none of which were recorded, by anybody, in 1975. The
+# reader was told a fifty-year-old race had a data problem. It had a 1975
+# problem, which is not the same thing and is not ours.
+# --------------------------------------------------------------------------- #
+def test_a_1975_race_is_not_missing_things_that_did_not_exist():
+    from app.adapters import data_source_manager as dsm
+    from app.models import RaceSession, SourceReport
+    s = _filled(RaceSession(year=1975, grand_prix="Monaco", session_type="Race",
+                            category="race", source_report=SourceReport()),
+                without=("laps", "positions", "overtakes", "pit_stops",
+                         "stints", "weather", "race_control"))
+    dsm._audit_report(s)
+    assert s.source_report.missing == []
+    assert s.partial is False
+    # and the absence is explained rather than silent
+    assert any("1996" in n for n in s.notes)
+
+
+def test_a_2015_race_is_not_missing_tyre_and_weather_feeds():
+    from app.adapters import data_source_manager as dsm
+    from app.models import RaceSession, SourceReport
+    s = _filled(RaceSession(year=2015, grand_prix="Monaco", session_type="Race",
+                            category="race", source_report=SourceReport()),
+                without=("stints", "weather", "race_control"))
+    dsm._audit_report(s)
+    assert s.source_report.missing == []
+    assert s.partial is False
+    assert any("2018" in n for n in s.notes)
+
+
+def test_a_modern_race_missing_the_same_feeds_is_still_partial():
+    """The era rule must not become a blanket excuse: 2024 HAS all of these."""
+    from app.adapters import data_source_manager as dsm
+    from app.models import RaceSession, SourceReport
+    s = _filled(RaceSession(year=2024, grand_prix="Monaco", session_type="Race",
+                            category="race", source_report=SourceReport()),
+                without=("stints", "weather"))
+    dsm._audit_report(s)
+    assert set(s.source_report.missing) == {"stints", "weather"}
+    assert s.partial is True
+    assert not any("2018" in n for n in s.notes)
+
+
+def test_the_era_note_is_added_once_however_often_the_audit_runs():
+    from app.adapters import data_source_manager as dsm
+    from app.models import RaceSession, SourceReport
+    s = _filled(RaceSession(year=1975, grand_prix="Monaco", session_type="Race",
+                            category="race", source_report=SourceReport()),
+                without=("laps", "positions", "overtakes", "pit_stops",
+                         "stints", "weather", "race_control"))
+    dsm._audit_report(s)
+    dsm._audit_report(s)
+    assert len([n for n in s.notes if "1996" in n]) == 1

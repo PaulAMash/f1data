@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/Badge";
 import { DriverAvatar, DriverBadge } from "@/components/ui/DriverBadge";
 import { StatTile } from "@/components/ui/StatTile";
 import { InfoTip } from "@/components/ui/InfoTip";
+import { HoverCard } from "@/components/ui/HoverCard";
+import { useHoverTip } from "@/lib/useHoverTip";
 import { IconTile, Meter, PositionShift, type IconAnim, type VisualTone } from "@/components/ui/Visuals";
 import { InsightCard } from "@/components/ui/InsightCard";
 import { cx, fmtGap, fmtLap, fmtSec, netBadge } from "@/lib/format";
@@ -191,7 +193,14 @@ export function RaceOverview({
                           <DriverBadge driver={session.drivers.find((d) => d.code === c.driver)}
                             code={c.driver} name={c.name} team={c.team} teamColor={c.team_color}
                             size={26} className="w-56 min-w-0" />
-                          <span className="flex min-w-0 shrink items-center gap-1.5 overflow-hidden">
+                          {/* NO `overflow-hidden` HERE. It was added in V67 to stop two
+                              penalties on one driver wrapping onto a second line and
+                              making that row taller than every other — and it also
+                              clipped away both badges' hover cards, which is the whole
+                              of the "penalties lost their tooltip" report. The badges
+                              are portalled now, so they cannot be cropped by anything;
+                              the row keeps its height because the track does not wrap. */}
+                          <span className="flex min-w-0 shrink items-center gap-1.5">
                             {c.retired && <DnfBadge row={c} />}
                             <PenaltyBadges penalties={penaltyMap.get(c.driver)} />
                           </span>
@@ -260,22 +269,32 @@ function fmtRaceTime(sec: number): string {
  * every retirement instead of surfacing a reason for some and an awkward
  * "no reason available" for others.
  */
+/* Portalled, like every other tooltip in the product — an absolutely-positioned
+   card inside a results table is at the mercy of every ancestor's overflow, and
+   a results table has several. See ui/HoverCard. */
 function DnfBadge({ row }: { row: ClassificationRow }) {
-  const [open, setOpen] = useState(false);
+  const { at, open, close, toggle } = useHoverTip<{ x: number; y: number }>();
   const lap = row.laps_completed != null && row.laps_completed > 0 ? row.laps_completed : null;
-  const text = lap ? `Retired after lap ${lap}` : "Retired";
+  const where = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top - 2 };
+  };
   return (
     <span className="relative inline-flex"
-      onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
-        aria-label={text}
+      onMouseEnter={(e) => open(where(e.currentTarget))} onMouseLeave={close}>
+      <button type="button" onClick={(e) => { e.stopPropagation(); toggle(where(e.currentTarget)); }}
+        aria-expanded={at != null}
+        aria-label={lap ? `Retired after lap ${lap}` : "Retired"}
         className="inline-flex cursor-help items-center gap-1 whitespace-nowrap rounded-full border border-rose-400/30 bg-rose-400/10 px-2 py-0.5 text-[11px] font-semibold text-rose-300 underline decoration-rose-300/40 decoration-dotted underline-offset-2">
         DNF
       </button>
-      {open && (
-        <span className="absolute bottom-full left-1/2 z-50 mb-1.5 w-max max-w-[12rem] -translate-x-1/2 whitespace-nowrap rounded-lg border border-white/10 bg-base-900 px-2.5 py-1.5 text-left text-xs text-ink-muted shadow-glow">
-          {text}
-        </span>
+      {at && (
+        <HoverCard x={at.x} y={at.y} width={228} title="Did not finish"
+          accent="rgb(251 113 133)"
+          rows={[
+            { k: "Retired", v: lap ? `after lap ${lap}` : "lap not recorded" },
+            ...(row.retirement_reason ? [{ k: "Reason", v: row.retirement_reason }] : []),
+          ]} />
       )}
     </span>
   );

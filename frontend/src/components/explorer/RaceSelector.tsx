@@ -17,9 +17,15 @@ export function RaceSelector({
   value: Selection; onChange: (s: Selection) => void; onRefresh: () => void; loading: boolean;
 }) {
   const [races, setRaces] = useState<GrandPrix[]>([]);
+  const [thisYear, setThisYear] = useState<number | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.current().then((c) => { if (live) setThisYear(c.year); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
 
   // Race Explorer is scoped to whatever season is loaded (the current season by
-  // default) — there is no season dropdown here; past seasons live in Historical.
+  // default) — there is no season dropdown here; finished seasons live in Seasons.
   useEffect(() => {
     api.races(value.year).then((r) => setRaces(r.races)).catch(() => setRaces([]));
   }, [value.year]);
@@ -81,9 +87,14 @@ export function RaceSelector({
         <span className="label flex items-center gap-1"><Calendar size={13} /> Season</span>
         <span className="flex h-[38px] items-center text-lg font-semibold tabular-nums tracking-tight text-ink">
           {value.year}
-          <span className="ml-2 rounded-md bg-white/[0.05] px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-            current
-          </span>
+          {/* Only when it IS the current one. This chip was unconditional, so a
+              deep link to 2024 rendered "2024 CURRENT" — the season label
+              contradicting itself two words later. */}
+          {value.year === thisYear && (
+            <span className="ml-2 rounded-md bg-white/[0.05] px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+              current
+            </span>
+          )}
         </span>
       </div>
 
@@ -107,7 +118,7 @@ export function RaceSelector({
 
       <Link href="/history"
         className="pill-btn h-[38px] self-end text-ink-muted hover:text-ink sm:ml-auto"
-        title="Browse previous seasons in Historical">
+        title="Browse finished seasons in Seasons">
         <History size={14} /> Previous seasons <span className="text-ink-faint">→</span>
       </Link>
     </div>

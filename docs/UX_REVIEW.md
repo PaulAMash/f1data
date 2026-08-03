@@ -3,11 +3,93 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V67**. Reviewed at 1440×1000, 1440×900, 820×900 and 420×860, in both themes,
-at both motion settings, in all four colour-vision palettes, and walked end to end as a
-first-time visitor through the welcome screen, the seven beats of the tour, the landing
-page's example questions, and the navigation pair in both directions including the
-browser's own controls.
+Last pass: **V68**. Reviewed at 1440×1000, 1440×900 and 420×1000, in both themes, in all
+four colour-vision palettes, and walked end to end as a first-time visitor through the
+expanded welcome setup (defaults accepted in one press, and every preference changed by
+hand), the seven beats of the tour, the Explore scope switch in both directions, and a
+deliberately failed session load.
+
+---
+
+## Fixed in V68
+
+### 1. The Final Classification lost its hover cards — *was high, and ours*
+
+V67 wrapped the DNF and penalty badges in an `overflow-hidden` track to stop two penalties
+on one driver making that row taller than every other. It fixed the alignment and clipped
+both badges' tooltips away — the time-penalty explanation vanished entirely, and what
+survived was the bottom edge of a card whose body had been sliced off, which is the
+"strange purple halo". Both are portalled now, like every other tooltip in the product, so
+no ancestor can crop them; the track keeps the row's height without clipping anything, and
+the DNF card gained the retirement reason where the source publishes one.
+
+### 2. Old races were reported as having a data problem — *was high*
+
+A 1975 Grand Prix was reported as missing its lap times, tyre stints, weather and
+race-control log. None of those were recorded, by anybody, in 1975. The same category error
+V67 fixed for qualifying was still being made along the era axis, and it is the honest
+answer to "why do some races still return incomplete data": mostly they do not — we were
+calling an era-appropriate absence a gap. Facets now carry the season each feed actually
+begins in, a session predating one says so in a sentence, and a 2024 race missing the same
+feeds is still partial. Four tests hold the line.
+
+### 3. The failure screen read as a broken app — *was medium*
+
+Warning triangle, apology, three pills and a `<details>` called "What we tried". It is a
+status panel now: which session, why not, whose problem it is — named provider by named
+provider, with what each one said — and what to do next. Most failures are a provider
+having an afternoon, and saying so plainly is the same promise the welcome screen makes.
+
+### 4. The welcome screen asked three questions and implied that was all — *was the brief*
+
+It now covers experience, appearance, tour, language, units, clock, motion, text size and
+colour vision — and got shorter to read, because the shape carries the difference: three
+hardware cards for the answers that change what the product is, everything else behind one
+line that opens if you want it. The defaults are still accepted in a single press, and the
+footer names Settings rather than gesturing at it.
+
+### 5. Nothing explained how Pitwall IQ gets its data — *was medium*
+
+One card on the first act of the welcome screen, before any question is asked: what it
+reads, that it names the source of every figure, and what happens when a provider is down.
+The Beta message shares that card rather than being a second banner elsewhere — they are
+the same sentence from two sides. The "v1" label went with it; it claimed a maturity
+nothing had earned.
+
+### 6. The championship still had no natural home — *was medium*
+
+A tab beside Ask said it belonged to one session. Seasons was right for 1974 and wrong for
+the title race somebody is following this week. It is a scope switch on Explore now —
+Session or Championship — because that page already owns a season and the championship is
+the other thing it is about. Seasons became what its name says: every season that has
+finished, with the season in progress deliberately absent from its picker.
+
+### 7. The logo and the Home tab were the same control — *was low*
+
+The tab went rather than the logo's behaviour: removing the behaviour would have left a
+logo that looks pressable and is not, and the nav row now carries five destinations, which
+is exactly when its first slot should not be spent on the place the corner already goes.
+
+### 8. Nothing said what was coming — *was low*
+
+Drivers, Teams and Re-run sit in the nav as disabled tabs that read as a plan rather than
+as breakage: legible, marked `soon`, each with a hover card saying what it will be, none of
+them focusable or pressable.
+
+### 9. The championship picker stopped at 2018 — *found in review, was low*
+
+Nine seasons, on a page whose own heading says seventy-seven. Generated from 1950 to the
+last finished season now, so it never needs editing again.
+
+### 10. The season chip contradicted itself — *found in review, was low*
+
+A deep link to 2024 rendered "2024 CURRENT", because the chip was unconditional. It only
+appears on the season that is actually current.
+
+### 11. Three surfaces still said "Historical" — *found in review, was low*
+
+The nav was renamed in V67; the previous-season note, the selector's tooltip and the footer
+were not. All three say Seasons.
 
 ---
 

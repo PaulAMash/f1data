@@ -99,7 +99,14 @@ export function HeroTiming({ snap }: { snap: Snapshot }) {
 
   return (
     <div ref={host}
-      className={cx("tele absolute bottom-14 right-8 hidden w-[352px] lg:block")}
+      /* A FOCAL POINT, NOT A FOOTNOTE.
+         352px on a 1440px hero is about a quarter of the column and reads as a
+         decoration in the corner; the panel is the one part of this composition
+         that is actually the product, so it earns the space. It steps with the
+         viewport rather than taking a single larger number — on a 1280px laptop
+         the old width was already proportionally right, and it is the wide
+         screens where it was getting lost. */
+      className={cx("tele absolute bottom-14 right-8 hidden w-[380px] lg:block xl:w-[440px] 2xl:w-[496px]")}
       style={{ opacity: 0.35 + snap.alive * 0.65 }}>
       <div className="tele-row tele-head">
         <span className={cx("tele-flag", snap.status !== "GREEN" && "tele-flag-on")} />
