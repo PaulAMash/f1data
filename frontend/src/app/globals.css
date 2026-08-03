@@ -1170,14 +1170,22 @@ html.theme-sweep::view-transition-new(root) {
       transparent 92%),
     radial-gradient(128% 92% at 50% 44%, transparent 52%, rgb(var(--base-950) / .55) 86%, rgb(var(--base-950) / .8));
 }
+/* LIGHT IS NOT DARK WITH THE LIGHTS ON.
+   The dark room is lit from inside — a black surface with sources in it, so the
+   scrim under the type is more black and the falloff is more black. Do that on
+   paper and you get grey mist over white, which is what "inverted" looks like.
+   A lit room on paper is the opposite arrangement: the page is the light source,
+   the type sits on the BRIGHTEST part of it, and the falloff is a warm shadow
+   gathering at the edges. Same three stops, opposite direction. */
 :root[data-theme="light"] .wc-room::after {
   background:
-    radial-gradient(58% 46% at 50% 47%,
-      rgb(var(--base-900) / .92) 0%,
-      rgb(var(--base-900) / .74) 46%,
-      rgb(var(--base-900) / .24) 76%,
+    radial-gradient(62% 50% at 50% 46%,
+      rgb(255 255 255 / .96) 0%,
+      rgb(255 255 255 / .8) 44%,
+      rgb(255 255 255 / .34) 74%,
       transparent 92%),
-    radial-gradient(128% 92% at 50% 44%, transparent 52%, rgb(var(--base-950) / .42) 86%, rgb(var(--base-950) / .7));
+    radial-gradient(132% 96% at 50% 42%, transparent 46%,
+      rgb(214 206 200 / .28) 82%, rgb(190 182 178 / .42));
 }
 
 /* ---- 5. the cursor -------------------------------------------------------
@@ -1208,7 +1216,13 @@ html.theme-sweep::view-transition-new(root) {
   transition: opacity .8s var(--ease-out), transform .8s var(--ease-out);
 }
 .wc-inst.is-up { opacity: .62; transform: none; }
-:root[data-theme="light"] .wc-inst.is-up { opacity: .72; }
+:root[data-theme="light"] .wc-inst.is-up { opacity: .9; }
+/* On black an instrument recedes by being dim. On paper dim is illegible, so it
+   recedes by being LIGHT-WEIGHT and small instead — full opacity, quieter ink. */
+:root[data-theme="light"] .wc-inst-label { color: rgb(var(--ink-faint)); border-bottom-color: rgb(15 23 42 / .12); }
+:root[data-theme="light"] .wc-inst-k { color: rgb(var(--ink-faint)); }
+:root[data-theme="light"] .wc-inst-v { color: rgb(var(--ink)); }
+:root[data-theme="light"] .wc-inst-code { color: rgb(var(--ink-faint)); }
 
 /* label, then a rule that runs the width of the readout under it. Two lines of
    CSS, and it is most of the difference between "a caption" and "a panel on an
@@ -1343,13 +1357,18 @@ html.theme-sweep::view-transition-new(root) {
     0 30px 60px -30px rgb(0 0 0 / .95);
 }
 :root[data-theme="light"] .wc-card {
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / .9), rgb(255 255 255 / .68) 46%, rgb(255 255 255 / .56)),
-    rgb(var(--base-900) / .55);
+  /* opaque, not translucent. Frosted glass over a pale page is a slightly
+     dirtier pale page — the depth on paper comes from the shadow underneath and
+     the bright edge on top, which is how a real object on a real desk reads. */
+  background: linear-gradient(180deg, #fff, #fdfdfe 55%, #f8f9fb);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow:
-    inset 0 1px 0 0 rgb(255 255 255 / .95),
-    inset 0 0 0 1px rgb(var(--tint) / .1),
-    0 20px 44px -26px rgb(15 23 42 / .32);
+    inset 0 1px 0 0 #fff,
+    inset 0 0 0 1px rgb(15 23 42 / .09),
+    0 1px 2px rgb(15 23 42 / .05),
+    0 14px 30px -18px rgb(15 23 42 / .22),
+    0 32px 60px -34px rgb(15 23 42 / .18);
 }
 :root[data-theme="light"] .wc-card::before {
   background: radial-gradient(220px circle at var(--cx, 50%) var(--cy, 0%),
@@ -1357,9 +1376,11 @@ html.theme-sweep::view-transition-new(root) {
 }
 :root[data-theme="light"] .wc-card:hover {
   box-shadow:
-    inset 0 1px 0 0 rgb(255 255 255 / 1),
-    inset 0 0 0 1px rgb(var(--tint) / .14),
-    0 26px 52px -24px rgb(15 23 42 / .38);
+    inset 0 1px 0 0 #fff,
+    inset 0 0 0 1px rgb(var(--accent) / .16),
+    0 2px 4px rgb(15 23 42 / .06),
+    0 20px 40px -18px rgb(15 23 42 / .26),
+    0 40px 72px -34px rgb(15 23 42 / .2);
 }
 
 .wc-card-head { display: flex; align-items: center; gap: 8px; }
@@ -1406,11 +1427,22 @@ html.theme-sweep::view-transition-new(root) {
   background: rgb(var(--accent) / .11);
   box-shadow: inset 0 0 0 1px rgb(var(--accent) / .42), 0 8px 22px -14px rgb(var(--accent) / calc(.9 * var(--glow-k)));
 }
-:root[data-theme="light"] .wc-opt { background: rgb(var(--tint) / .035); box-shadow: inset 0 0 0 1px rgb(var(--tint) / .08); }
-:root[data-theme="light"] .wc-opt:hover { background: rgb(var(--tint) / .06); }
+:root[data-theme="light"] .wc-opt {
+  background: #f4f6f9;
+  box-shadow: inset 0 0 0 1px rgb(15 23 42 / .07);
+}
+:root[data-theme="light"] .wc-opt:hover {
+  background: #eef1f6;
+  box-shadow: inset 0 0 0 1px rgb(15 23 42 / .12);
+}
 :root[data-theme="light"] .wc-opt.is-on {
-  background: rgb(var(--accent) / .08);
-  box-shadow: inset 0 0 0 1px rgb(var(--accent) / .38), 0 8px 20px -14px rgb(var(--accent) / .5);
+  background: rgb(var(--accent) / .055);
+  box-shadow: inset 0 0 0 1.5px rgb(var(--accent) / .42), 0 6px 16px -10px rgb(var(--accent) / .35);
+}
+:root[data-theme="light"] .wc-opt-line { color: rgb(var(--ink-muted) / .85); }
+:root[data-theme="light"] .wc-opt-led {
+  background: #e6eaf0;
+  box-shadow: inset 0 0 0 1px rgb(15 23 42 / .08);
 }
 
 .wc-opt-title { display: block; font-size: 12.5px; font-weight: 600; color: rgb(var(--ink)); }
@@ -1441,6 +1473,7 @@ html.theme-sweep::view-transition-new(root) {
   text-transform: uppercase;
   color: rgb(var(--ink-faint) / .72);
 }
+:root[data-theme="light"] .wc-boot { color: rgb(var(--ink-faint)); }
 .wc-note { font-size: 12px; color: rgb(var(--ink-faint)); }
 
 .wc-cta {
@@ -2316,6 +2349,194 @@ html.theme-sweep::view-transition-new(root) {
 @keyframes tour-wait { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .tour-wait { animation: none; } }
 
+/* ---------------------------------------------------------------------------
+   THE INVITATION.
+
+   A reader who asked for the tour lands on the home page and has to be told
+   where it begins — without the page being dimmed, overlaid or interrupted,
+   because that page IS the argument for the product and a scrim over it takes
+   the argument away before it has been made.
+
+   So: the control breathes, a ring expands out of it about every three
+   seconds, and one small label sits beside it. Exactly one element on the page
+   moves, which is the only reason something this quiet is still impossible to
+   miss — and it is why the standing rule that nothing may happen to everything
+   at once is what buys this its authority.
+   --------------------------------------------------------------------------- */
+
+.cta-invite.is-armed { border-radius: 12px; }
+.cta-invite.is-armed::before,
+.cta-invite.is-armed::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  pointer-events: none;
+  border: 1.5px solid rgb(var(--accent) / .6);
+  animation: cta-ripple calc(3.1s * var(--m)) cubic-bezier(.22, 1, .36, 1) infinite;
+}
+.cta-invite.is-armed::after { animation-delay: calc(1.55s * var(--m)); }
+@keyframes cta-ripple {
+  0%   { opacity: .75; transform: scale(1); }
+  70%  { opacity: 0;   transform: scale(1.22); }
+  100% { opacity: 0;   transform: scale(1.22); }
+}
+/* and the control itself breathes, so the ring reads as coming OUT of a live
+   object rather than orbiting a dead one */
+.cta-invite.is-armed .cta-glow { animation: cta-breathe calc(3.1s * var(--m)) var(--ease-in-out) infinite; }
+@keyframes cta-breathe {
+  0%, 100% { box-shadow: inset 0 1px 0 0 rgb(255 255 255 / .22), 0 12px 40px -12px rgb(var(--accent) / calc(.85 * var(--glow-k))); }
+  50%      { box-shadow: inset 0 1px 0 0 rgb(255 255 255 / .3),  0 18px 54px -12px rgb(var(--accent) / calc(1.15 * var(--glow-k))); }
+}
+
+.cta-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 999px;
+  padding: 7px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: rgb(var(--accent-soft));
+  background: rgb(var(--accent) / .09);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent) / .28);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: cue-in .7s cubic-bezier(.22, 1, .36, 1) .55s both;
+}
+@keyframes cue-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* the ring holds still and stays drawn — it is information, not decoration */
+  .cta-invite.is-armed::before { animation: none; opacity: .7; }
+  .cta-invite.is-armed::after { display: none; }
+  .cta-invite.is-armed .cta-glow { animation: none; }
+  .cta-tag { animation: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   THE TUTORIAL, DRAWN.
+
+   The scrim and the ring are two elements in the same place. They have to be:
+   the scrim's hole is a 9999px box-shadow, so an outline sharing that shadow
+   could not breathe without re-running the geometry transition, and every pulse
+   fought the move to the next target. Split, the scrim keeps the hole and the
+   ring keeps the light — and both travel on one curve, so they move as a single
+   object.
+   --------------------------------------------------------------------------- */
+
+.tour-scrim {
+  pointer-events: none;
+  box-shadow: 0 0 0 9999px rgb(var(--base-950) / .84);
+  transition: top .52s var(--ease-spring, cubic-bezier(.22, 1, .36, 1)),
+              left .52s var(--ease-spring, cubic-bezier(.22, 1, .36, 1)),
+              width .52s var(--ease-spring, cubic-bezier(.22, 1, .36, 1)),
+              height .52s var(--ease-spring, cubic-bezier(.22, 1, .36, 1));
+  will-change: top, left, width, height;
+}
+:root[data-theme="light"] .tour-scrim { box-shadow: 0 0 0 9999px rgb(var(--base-950) / .58); }
+
+.tour-ring {
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 0 1.5px rgb(var(--accent) / .85),
+    0 0 0 1px rgb(var(--accent) / .3),
+    0 0 22px 2px rgb(var(--accent) / .28);
+  transition: top .52s cubic-bezier(.22, 1, .36, 1),
+              left .52s cubic-bezier(.22, 1, .36, 1),
+              width .52s cubic-bezier(.22, 1, .36, 1),
+              height .52s cubic-bezier(.22, 1, .36, 1);
+  will-change: top, left, width, height;
+  animation: tour-breathe calc(3.2s * var(--m)) var(--ease-in-out) infinite;
+}
+@keyframes tour-breathe {
+  0%, 100% {
+    box-shadow:
+      inset 0 0 0 1.5px rgb(var(--accent) / .7),
+      0 0 0 1px rgb(var(--accent) / .22),
+      0 0 16px 1px rgb(var(--accent) / .18);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 1.5px rgb(var(--accent) / .95),
+      0 0 0 1px rgb(var(--accent) / .4),
+      0 0 30px 4px rgb(var(--accent) / .4);
+  }
+}
+
+/* The card. Its own room behind an opaque pane — not one pixel of the field
+   reaches the text, because readability is what the atmosphere sits behind. */
+.tour-card {
+  position: absolute;
+  overflow: hidden;
+  border-radius: 14px;
+  background: rgb(var(--base-900));
+  box-shadow:
+    inset 0 1px 0 0 rgb(var(--tint) / .16),
+    inset 0 0 0 1px rgb(var(--tint) / .1),
+    0 26px 60px -26px rgb(0 0 0 / .9);
+  transition: opacity var(--dur-3) var(--ease-out);
+}
+:root[data-theme="light"] .tour-card {
+  background: rgb(var(--base-900));
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / .9),
+    inset 0 0 0 1px rgb(var(--tint) / .12),
+    0 24px 54px -24px rgb(15 23 42 / .35);
+}
+
+.tour-card-field {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .55;
+  background:
+    radial-gradient(120px circle at 12% 0%, rgb(var(--accent) / .16), transparent 70%),
+    radial-gradient(150px circle at 96% 108%, rgb(var(--speed) / .13), transparent 72%),
+    repeating-linear-gradient(90deg, rgb(var(--tint) / .035) 0 1px, transparent 1px 22px);
+  animation: tour-drift calc(15s * var(--m)) var(--ease-in-out) infinite alternate;
+}
+@keyframes tour-drift {
+  from { background-position: 0 0, 0 0, 0 0; }
+  to   { background-position: 14px -8px, -18px 10px, 22px 0; }
+}
+:root[data-theme="light"] .tour-card-field { opacity: .4; }
+
+/* one bright hairline across the top, so the card reads as lit from above */
+.tour-card-edge {
+  position: absolute;
+  inset-inline: 14px;
+  top: 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgb(var(--accent) / .55), transparent);
+}
+
+/* the step number, which is the fastest possible answer to "where am I?" */
+.tour-step {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px; height: 22px;
+  margin-top: 1px;
+  border-radius: 7px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: rgb(var(--accent-soft));
+  background: rgb(var(--accent) / .13);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent) / .3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-ring { animation: none; }
+  .tour-card-field { animation: none; }
+  .tour-scrim, .tour-ring { transition: none; }
+}
+
 /* the timer on an auto-advancing tour beat: it promises how long you have */
 @keyframes tour-hold { from { transform: translateX(-100%); } to { transform: none; } }
 
@@ -2331,45 +2552,6 @@ html.theme-sweep::view-transition-new(root) {
   box-shadow:
     inset 0 1px 0 0 rgb(255 255 255 / .3),
     0 20px 52px -14px rgb(var(--accent) / calc(1 * var(--glow-k)));
-}
-
-/* ---------------------------------------------------------------------------
-   The tour, waiting.
-
-   A reader who asked for a guided tour lands on the home page and nothing
-   happens to them — the page is the argument for the product and opening a
-   modal over it two seconds in takes that argument away before it is heard.
-   The tour attaches itself to the control the page already wanted pressed and
-   waits there indefinitely.
-
-   Which makes the ring the whole feature: it has to be impossible to miss and
-   possible to ignore. One element breathes, nothing moves, and it is the ONLY
-   thing on the page doing either — the rule that nothing may happen to
-   everything at once is exactly what buys this one thing its authority.
-   --------------------------------------------------------------------------- */
-.cta-armed { position: relative; }
-.cta-armed::after {
-  content: "";
-  position: absolute;
-  inset: -6px;
-  border-radius: 16px;
-  border: 1.5px solid rgb(var(--accent) / .55);
-  pointer-events: none;
-  animation: cta-breathe calc(2.8s * var(--m)) var(--ease-in-out) infinite;
-}
-@keyframes cta-breathe {
-  0%, 100% { opacity: .22; transform: scale(1); }
-  50%      { opacity: .85; transform: scale(1.035); }
-}
-.tour-cue { animation: cue-in .7s cubic-bezier(.22, 1, .36, 1) .55s both; }
-@keyframes cue-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: none; }
-}
-@media (prefers-reduced-motion: reduce) {
-  /* the ring stays — it is information, not decoration — it simply holds still */
-  .cta-armed::after { animation: none; opacity: .7; }
-  .tour-cue { animation: none; }
 }
 
 /* The oversized numeral behind a step. A tint at 7% is a whisper on black and

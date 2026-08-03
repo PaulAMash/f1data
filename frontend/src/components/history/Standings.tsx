@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Trophy, Users } from "lucide-react";
 import { Tabs } from "@/components/ui/Tabs";
 import { Skeleton, EmptyState } from "@/components/ui/misc";
@@ -9,7 +9,7 @@ import { api } from "@/lib/api";
 import { teamColour } from "@/lib/constructors";
 import { useLivery } from "@/lib/liveryColor";
 import { useLocale } from "@/lib/locale";
-import type { DataSource } from "@/lib/types";
+import type { DataSource, Driver } from "@/lib/types";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
@@ -50,7 +50,31 @@ interface Row {
   headshot_url?: string | null;
 }
 
-export function Standings({ year, compact }: { year: number; compact?: boolean }) {
+/* -------------------------------------------------------------------------- */
+/* ONE PORTRAIT SYSTEM, NOT TWO.                                              */
+/*                                                                            */
+/* The Final Classification cards resolve a face by looking the driver up in   */
+/* `session.drivers` — records the backend has already enriched from F1's own  */
+/* listing, with the fallbacks and the URL normalisation that live there. That */
+/* works, everywhere, and has for versions.                                    */
+/*                                                                            */
+/* This table had its own second system: a name-join done in the standings     */
+/* endpoint. Two implementations of "find this driver's face" is one too many, */
+/* and the second one was the one that failed — it is skipped entirely in demo */
+/* mode, and it matches on a full name where the first matches on a code.      */
+/*                                                                            */
+/* So when a session is on screen, its drivers come in as `roster` and the     */
+/* lookup is the SAME lookup the classification uses. The name-join stays as   */
+/* the fallback for the Historical page, which has a season but no session —   */
+/* one path, with a second only where the first cannot reach.                  */
+/* -------------------------------------------------------------------------- */
+
+export function Standings({ year, compact, roster }: {
+  year: number;
+  compact?: boolean;
+  /** The session's own enriched drivers, when a session is on screen. */
+  roster?: Driver[];
+}) {
   const [type, setType] = useState<"driver" | "constructor">("driver");
   const [rows, setRows] = useState<Row[]>([]);
   const [source, setSource] = useState<DataSource>("mock");
@@ -70,12 +94,18 @@ export function Standings({ year, compact }: { year: number; compact?: boolean }
     return () => { alive = false; };
   }, [year, type]);
 
+  // by code, exactly as the classification does it
+  const byCode = useMemo(
+    () => new Map((roster ?? []).map((d) => [d.code, d])),
+    [roster],
+  );
+
   const lead = Math.max(1, ...rows.map((r) => r.points ?? 0));
   const shown = compact ? rows.slice(0, 10) : rows;
 
   return (
     <div>
-      <Tabs items={[
+      <Tabs data-tour="standings-switch" items={[
         { id: "driver", label: "Drivers", icon: <Users size={14} /> },
         { id: "constructor", label: "Constructors", icon: <Trophy size={14} /> },
       ]} active={type} onChange={(t) => setType(t as "driver" | "constructor")} className="mb-4" />
@@ -88,7 +118,8 @@ export function Standings({ year, compact }: { year: number; compact?: boolean }
         <ol className="space-y-1">
           {shown.map((r) => (
             <StandingRow key={`${r.position}-${r.name}`} row={r} lead={lead}
-              constructor={type === "constructor"} />
+              constructor={type === "constructor"}
+              driver={r.code ? byCode.get(r.code) : undefined} />
           ))}
         </ol>
       ) : (
@@ -99,8 +130,10 @@ export function Standings({ year, compact }: { year: number; compact?: boolean }
   );
 }
 
-function StandingRow({ row, lead, constructor }: {
+function StandingRow({ row, lead, constructor, driver }: {
   row: Row; lead: number; constructor: boolean;
+  /** The session's own record for this driver, when there is one. */
+  driver?: Driver;
 }) {
   const paint = useLivery();
   const { num } = useLocale();
@@ -128,7 +161,7 @@ function StandingRow({ row, lead, constructor }: {
            had been reading like a spreadsheet of them. The avatar falls back to
            team-coloured initials on its own, so a season F1 has published no
            portraits for still gets a row that looks deliberate. */
-        <DriverAvatar size={top ? 32 : 27} driver={{
+        <DriverAvatar size={top ? 32 : 27} driver={driver ?? {
           number: "", code: row.code ?? "", name: row.name,
           team: row.team ?? "", team_color: teamColour(row.team ?? ""),
           headshot_url: row.headshot_url ?? null,

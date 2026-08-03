@@ -65,7 +65,15 @@ export function NavBar({ active }: { active?: "home" | "explorer" | "history" | 
             preference, it is now asked for on the way in, and it lives in
             Settings with every other answer. A bar with two competing gestures
             in the corner is a bar that has not decided what it is for. */}
-        <div className="ml-auto flex items-center">
+        {/* `-mr-1`, and it is optical rather than geometric. The button's BOX is
+            already exactly on the layout grid — measured at 104px from the edge
+            on a 1440px window, the same as the wordmark's left and the panel
+            edges below it. But a 15px glyph centred in a 32px box sits 8.5px
+            inside that line, so the thing the eye actually aligns to reads as
+            floating short of the corner while every box near it reaches it.
+            Half the difference puts the glyph where the grid appears to be
+            without the hover surface visibly overhanging. */}
+        <div className="ml-auto -mr-1 flex items-center">
           <Link href="/settings" aria-label="Settings" title="Settings — mode, theme, units, motion"
             data-tour="settings"
             className={cx("grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-all duration-[--dur-2] ease-[--ease-out]",

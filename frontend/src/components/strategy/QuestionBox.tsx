@@ -59,7 +59,7 @@ export function QuestionBox({
 
   return (
     <div>
-      <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-base-850/80 p-2 focus-within:border-accent/40">
+      <div data-tour="ask-box" className="flex items-center gap-2 rounded-xl border border-white/10 bg-base-850/80 p-2 focus-within:border-accent/40">
         <MessageSquareText size={16} className="ml-1.5 shrink-0 text-ink-faint" />
         <input
           value={q} onChange={(e) => setQ(e.target.value)}

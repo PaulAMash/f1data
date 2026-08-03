@@ -2354,3 +2354,110 @@ off. Whichever layer owns a property should own it alone.
 
 > The best component in a new screen is a proposal for the design system, not a
 > local exception.
+
+---
+
+## A tour that flies the camera is a tour you are being dragged through
+
+Three beats pointed at `[data-tour='panel']` — the whole content area of the
+Race Explorer. A target that tall cannot be spotlit: the page has to scroll to
+reach it, the card has to dock in a corner to escape it, and between one beat
+and the next the reader is flown up and down the document.
+
+Every beat now points at the **control the sentence is about**: the two driver
+pickers, not the Compare page; the question box, not the Ask panel; the
+standings switch, not the table. They are all a similar size and all near the
+top of the page, and the whole eight-beat tour now moves the viewport by
+**23 pixels in total** — measured, start to finish.
+
+The rule generalises past tours: a highlight is a claim about *what* you should
+look at, and "this entire screen" is not an answer to that question.
+
+> If the spotlight needs the camera to move, the spotlight is pointing at the
+> wrong thing.
+
+---
+
+## The scrim and the ring cannot be the same box
+
+The tour's hole is a 9999px `box-shadow` — one element, one shadow, a hole
+punched through the page. Putting the outline in that same shadow seemed
+economical and made the ring impossible to animate: any breath in the glow
+re-ran the geometry transition, so the pulse fought the move to the next target
+and the whole thing jittered.
+
+Two elements in the same place, then. The scrim keeps the hole; the ring keeps
+the light and breathes on its own clock. Both travel on one curve, so they still
+read as a single object, and `will-change: top,left,width,height` keeps the pair
+on their own compositor layer for the move — which is what took the last of the
+shimmer out of a 1.5px ring crossing a live page.
+
+> When one element has two jobs and they disagree about timing, it has two
+> elements' worth of work in it.
+
+---
+
+## Duplicate `@keyframes` do not merge. The last one wins.
+
+V62 put a breathing ring on the home page's call to action. V63 removed the
+markup and left the CSS. V65 added a *new* animation, reusing the obvious name —
+`cta-breathe` — and the button stopped being clickable in tests: "element is not
+stable".
+
+Two `@keyframes cta-breathe` blocks existed. CSS does not merge them; the later
+definition replaces the earlier one entirely. The survivor was V62's, which
+animated `transform: scale()`, so the new rule silently scaled the button
+forever instead of pulsing its shadow.
+
+Nothing about this was visible by reading either rule on its own. The lesson is
+the deletion, not the naming: **markup and its styles are one change.** A block
+of CSS whose selector no longer matches anything is not harmless — it is a name
+still occupying the global namespace, waiting.
+
+> Dead CSS is not weight. It is a booby trap with your own naming conventions
+> on it.
+
+---
+
+## Two ways to find the same driver is one way too many
+
+The Final Classification cards resolve a portrait by looking the driver up in
+`session.drivers` — records the backend has already enriched from F1's own
+listing, with the fallbacks and URL normalisation that live there.
+
+The standings table had grown a *second* system: a name-join performed in the
+standings endpoint. It matched on a full name where the first matched on a code,
+and it was skipped entirely in demo mode — so the same product had two answers
+to "what does this driver look like", and the newer one was the one that failed.
+
+Where a session is on screen its roster is passed in and the lookup is the same
+lookup. The name-join survives only as the fallback for the Historical page,
+which has a season but no session.
+
+> A second implementation of something that already works is a second thing that
+> can be wrong, and it will be the one that is.
+
+---
+
+## Light is not dark with the lights on
+
+The dark welcome screen is lit from inside: a black surface with sources in it,
+so the scrim under the type is *more black* and the falloff at the edges is
+*more black*. Invert those values for paper and you get grey mist over white,
+which is exactly what "it looks like the dark mode inverted" describes.
+
+A lit room on paper is the opposite arrangement. The page **is** the light
+source, so the type sits on the brightest part of it and the falloff is a warm
+shadow gathering at the edges. Same three stops, opposite direction.
+
+Two more that follow from the same idea:
+
+* **Glass on paper is opaque.** Frosted glass over a pale page is a slightly
+  dirtier pale page. Depth on paper comes from the cast shadow underneath and
+  the bright edge on top — how a real object on a real desk reads — so the light
+  cards drop `backdrop-filter` entirely and gain a two-stage shadow.
+* **An instrument recedes differently.** On black it recedes by being dim. On
+  paper dim is illegible, so it recedes by being small and light-weight instead:
+  full opacity, quieter ink.
+
+> Ask what is emitting the light before deciding what a shadow means.

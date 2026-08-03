@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, MessageSquareText, Timer, Trophy } from "lucide-react";
+import { ArrowRight, MessageSquareText, Sparkles, Timer, Trophy } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
 import { Footer } from "@/components/layout/Footer";
 import { HeroField } from "@/components/landing/HeroField";
@@ -96,6 +96,11 @@ export default function Landing() {
     start(TOUR, "tour");
   }
 
+  /* A tour that was asked for and not yet taken. The invitation belongs to the
+     ANSWER, not to the visit: declining removes it forever, and "Replay the
+     guided tour" in Settings brings it back. */
+  const armed = ready && prefs.pickedMode && !prefs.onboarded;
+
   return (
     <div className="min-h-screen">
       <NavBar active="home" />
@@ -141,24 +146,33 @@ export default function Landing() {
                 should ask for exactly that, once, and get out of the way. What
                 is below the fold is one scroll away and does not need a
                 button to announce it. */}
-            {/* NOTHING HAPPENS TO A READER WHO ARRIVES HERE.
-                Not a modal, not a popup, and — deliberately — not a highlight
-                on this control either. An earlier version put a pill above it
-                and a breathing ring around it to announce that a tour was
-                waiting; well meant, and still wrong. This page has one job,
-                which is to be looked at, and a page decorated differently
-                depending on an answer given on a previous screen is a page
-                apologising for itself.
+            {/* AN INVITATION, NOT A MODAL.
+                A reader who asked for the tour has to be told where it starts —
+                but the page they are standing on is the argument for the whole
+                product, and darkening it to say so would take that argument
+                away before it had been made. Nothing is dimmed, nothing is
+                overlaid, and nothing opens by itself.
 
-                So the home page is identical whether a tour is armed or not.
-                The tour is a consequence of pressing the control, not an
-                advertisement wrapped around it — see `begin` above. */}
-            <div className="stagger-4 mt-9 flex flex-wrap items-center gap-4">
-              <Link href="/explorer" data-tour="cta" onClick={begin}
-                className="cta-glow pressable-glow group/cta inline-flex items-center gap-2 rounded-xl px-7 py-4 text-[15px] font-semibold text-pure">
-                Start exploring
-                <ArrowRight size={17} className="transition-transform duration-200 group-hover/cta:translate-x-0.5" />
-              </Link>
+                What there is instead: the control breathes, wears a slow
+                expanding ring, and carries one small label. Exactly one element
+                on this page moves, which is the only reason it can be this
+                quiet and still be impossible to miss. */}
+            <div className="stagger-4 mt-9">
+              <div className="flex flex-wrap items-center gap-4">
+                <span className={cx("cta-invite relative inline-flex", armed && "is-armed")}>
+                  <Link href="/explorer" data-tour="cta" onClick={begin}
+                    className="cta-glow pressable-glow group/cta relative inline-flex items-center gap-2 rounded-xl px-7 py-4 text-[15px] font-semibold text-pure">
+                    Start exploring
+                    <ArrowRight size={17} className="transition-transform duration-200 group-hover/cta:translate-x-0.5" />
+                  </Link>
+                </span>
+                {armed && (
+                  <span className="cta-tag">
+                    <Sparkles size={12} />
+                    Your guided tour starts here
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
