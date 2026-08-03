@@ -155,7 +155,7 @@ export default function Landing() {
                 advertisement wrapped around it — see `begin` above. */}
             <div className="stagger-4 mt-9 flex flex-wrap items-center gap-4">
               <Link href="/explorer" data-tour="cta" onClick={begin}
-                className="cta-glow pressable-glow group/cta inline-flex items-center gap-2 rounded-xl bg-accent px-7 py-4 text-[15px] font-semibold text-pure">
+                className="cta-glow pressable-glow group/cta inline-flex items-center gap-2 rounded-xl px-7 py-4 text-[15px] font-semibold text-pure">
                 Start exploring
                 <ArrowRight size={17} className="transition-transform duration-200 group-hover/cta:translate-x-0.5" />
               </Link>
