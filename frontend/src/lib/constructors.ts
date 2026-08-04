@@ -121,8 +121,16 @@ export function logoSrc(team: string): string {
 export const LOGO_FIT = 0.74;
 /** Longest edge a thin mark may reach, once it is thin enough to be safe. */
 export const LOGO_FIT_THIN = 0.92;
-/** Aspect band treated as "already a badge" and allowed to fill the container. */
-export const LOGO_SQUARE_BAND: readonly [number, number] = [0.86, 1.16];
+/**
+ * Opaque fraction above which a mark is treated as a composed badge.
+ *
+ * A circle inscribed in its square covers π/4 ≈ 0.785 of it, and a real
+ * composed roundel — a disc with a mark on it — covers at least that. A bare
+ * silhouette on the same square canvas covers far less: the five marks shipped
+ * so far measure 0.17 to 0.41. The gap is wide enough that the threshold sits
+ * in open space rather than on top of either group.
+ */
+export const LOGO_COMPOSED_COVERAGE = 0.7;
 
 /**
  * How much of the badge this mark's longest edge should occupy.
@@ -139,6 +147,95 @@ export function logoFit(aspect: number): number {
   const longSide = Math.max(aspect, 1 / aspect);
   const t = Math.min(1, Math.max(0, (longSide - 1) / 2)); // 1:1 → 0, 3:1 → 1
   return LOGO_FIT + (LOGO_FIT_THIN - LOGO_FIT) * t;
+}
+
+/* -------------------------------------------------------------------------- */
+/* THE FIELD A MARK SITS ON.                                                  */
+/*                                                                            */
+/* "The logos are transparent, so use the team colour" is the right            */
+/* instruction and it is not sufficient on its own, because a team colour is   */
+/* whatever the team chose and a mark is whatever the mark is. Mercedes'       */
+/* petronas green is luminous; its star is white. Put one on the other at full */
+/* strength and you have white on near-white — the brand is correct and the    */
+/* badge is empty.                                                            */
+/*                                                                            */
+/* So the livery sets the HUE and the mark's own ink sets how far that hue is  */
+/* taken. White ink is dropped onto a deep field; dark ink is lifted onto a    */
+/* pale one. Every badge lands in a contrast band rather than at a fixed       */
+/* lightness, which is also why eleven teams whose colours range from Ferrari  */
+/* red to Haas gunmetal come out looking like one set.                        */
+/*                                                                            */
+/* IT DOES NOT FOLLOW THE THEME. The mark's ink does not change when the       */
+/* reader turns the lights on, so neither does the field under it. A badge     */
+/* that restyled itself per theme would be a brand that restyled itself per    */
+/* theme, and the one thing a constructor's mark has to be is the same mark.   */
+/* -------------------------------------------------------------------------- */
+
+function hexToRgb(hex: string): [number, number, number] | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const h = m[1];
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+/** WCAG relative luminance, 0–1. */
+function relLum([r, g, b]: [number, number, number]): number {
+  const f = (v: number) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+}
+
+/** Scale a colour toward black (t<1) or white (t>1), keeping its hue. */
+function toward(rgb: [number, number, number], target: number): [number, number, number] {
+  const cur = relLum(rgb);
+  if (cur <= 0.0005) return target > cur ? [40, 40, 40] : rgb;
+  /* Binary search on a simple multiply/screen rather than a full HSL round
+     trip: it keeps the hue exactly and converges in a dozen steps, and the
+     alternative drifts on saturated colours in precisely the reds and oranges
+     half this grid is painted in. */
+  let lo = 0, hi = 1, out = rgb;
+  const darken = target < cur;
+  for (let i = 0; i < 14; i++) {
+    const t = (lo + hi) / 2;
+    out = darken
+      ? [rgb[0] * (1 - t), rgb[1] * (1 - t), rgb[2] * (1 - t)]
+      : [rgb[0] + (255 - rgb[0]) * t, rgb[1] + (255 - rgb[1]) * t, rgb[2] + (255 - rgb[2]) * t];
+    const l = relLum(out as [number, number, number]);
+    if ((darken && l > target) || (!darken && l < target)) lo = t; else hi = t;
+  }
+  return [Math.round(out[0]), Math.round(out[1]), Math.round(out[2])];
+}
+
+/** Luminance a field must not exceed to carry white ink at ~4.5:1. */
+const FIELD_DARK = 0.16;
+/** Luminance a field must reach to carry black ink at ~4.5:1. */
+const FIELD_LIGHT = 0.5;
+/** Ink lighter than this is treated as white ink. */
+const INK_LIGHT = 0.55;
+
+/**
+ * The field colour for a transparent mark, in this constructor's livery.
+ *
+ * `ink` is the mark's measured mean luminance (0–1), or null when it could not
+ * be read — in which case the livery is taken to the dark end, because every
+ * mark shipped so far is light and a dark field is the safe guess.
+ */
+export function markField(livery: string, ink: number | null): string {
+  const rgb = hexToRgb(livery) ?? [136, 146, 166];
+  const lightInk = ink == null || ink >= INK_LIGHT;
+  const target = lightInk ? FIELD_DARK : FIELD_LIGHT;
+  const cur = relLum(rgb);
+  /* Already in the safe direction and comfortably clear? Leave the brand alone.
+     Ferrari red is dark enough for a white shield as it ships, and nudging it
+     for the sake of a formula would make it not-quite-Ferrari-red. */
+  if (lightInk ? cur <= target : cur >= target) {
+    const [r, g, b] = rgb;
+    return `rgb(${r} ${g} ${b})`;
+  }
+  const [r, g, b] = toward(rgb, target);
+  return `rgb(${r} ${g} ${b})`;
 }
 
 const OPTICAL: Record<string, number> = {
