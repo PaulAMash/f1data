@@ -81,6 +81,34 @@ const extra = existsSync(DIR)
   : [];
 if (extra.length) console.log(`\n  unrecognised slug(s), never rendered: ${extra.join(", ")}`);
 
+/* ---------------------------------------------------------------------------
+   TWO TEAMS CANNOT SHARE A COLOUR.
+
+   The badge takes its field from the constructor's stored livery, so two teams
+   holding the same hex render as the same disc — and the livery is not only the
+   badge: it is that team's standings rail, its bar, its line on every chart.
+   The product's whole argument is that colour is how you recognise a car, so a
+   duplicate is a bug in the data even when every file is present and correct.
+
+   It reads the source rather than taking a copy, because a second list of team
+   colours in the build tooling would be the thing that drifts.
+   --------------------------------------------------------------------------- */
+const src = readFileSync(join(ROOT, "src", "lib", "constructors.ts"), "utf8");
+const byColour = new Map();
+for (const m of src.matchAll(/id:\s*"([a-z0-9-]+)"[^}]*?colour:\s*"(#[0-9a-fA-F]{6})"/g)) {
+  const [, id, hex] = m;
+  const key = hex.toLowerCase();
+  if (!byColour.has(key)) byColour.set(key, new Set());
+  byColour.get(key).add(id);
+}
+const live = new Set(GRID.map(([, s]) => s));
+const clashes = [...byColour.entries()]
+  .map(([hex, ids]) => [hex, [...ids].filter((i) => live.has(i))])
+  .filter(([, ids]) => ids.length > 1);
+for (const [hex, ids] of clashes) {
+  console.log(`\n  !  ${ids.join(" and ")} both carry ${hex} — same disc, same rail, same bars`);
+}
+
 console.log(`\n  ${GRID.length - missing}/${GRID.length} marks present` +
   (soft ? `, ${soft} below ${MIN_EDGE}px` : "") +
   (missing ? `, ${missing} on the drawn shield` : "") +

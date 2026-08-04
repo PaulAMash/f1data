@@ -3323,3 +3323,58 @@ single implementation.
 
 > When documentation and implementation disagree, check which one is cheaper to
 > be wrong about before deciding which to change.
+
+---
+
+## Assert on the network, not only on the pixels
+
+Every sweep in this product had checked what was on screen: is the badge square,
+is the mark centred, is anything stretched, does the row still fit at 390px. All
+of that passed for three releases while the championship table was quietly asking
+the server for `/teams/max-verstappen.webp` nineteen times and getting a 404
+apiece.
+
+Pressing **Constructors** flips the table's type immediately and the fetch
+resolves a moment later, so for exactly one render the drivers' rows were being
+drawn as constructors. A driver's name went into the constructor badge, which
+resolved it to a slug and asked for a file that will never exist. On screen it
+was a shield reading "MAX" for less than a frame — invisible to a screenshot, and
+perfectly visible to a response listener.
+
+Two things follow:
+
+* **A visual assertion cannot see a wasted request, and a transient wrong state
+  usually shows up as one first.** Listening for every response ≥400 across a
+  full navigation is three lines and it found what six passes of pixel-checking
+  had walked past.
+* **`loading` is one render too late.** Setting it in an effect means the render
+  that changed the input has already happened with the old data. The durable fix
+  is to make the data carry what it is data *for* — rows tagged with their own
+  type — so a mismatch is self-evidently "still loading" rather than something
+  the component has to remember to flag.
+
+There is a second cost that is easy to miss: the badge caches probe results at
+module scope so a resolved constructor never flickers again. Nineteen driver
+names went into that cache and stayed there for the session. **A cache keyed on
+something derived will faithfully remember your bugs.**
+
+> If a component can be handed the wrong kind of thing for one frame, it will
+> eventually be handed it in front of someone.
+
+---
+
+## The last placeholder was in the data, not the design
+
+V73 was meant to be one file. The audit found the current-season experience still
+showing one drawn shield — not because a mark was missing, but because the
+simulated season fielded Kick Sauber, which for 2026 is Audi. Every asset was
+present and correct; the grid was a year out of date.
+
+That is the shape of the whole constructor-branding arc. V70 built the component,
+V71 rewrote how it classifies a file, V72 changed nothing at all, and V73's real
+work was two data corrections and a race condition. The rendering problem was
+solved early and cheaply; what kept surfacing underneath was whether the product
+knew who was actually racing and what colour they were.
+
+> When the design system stops being the thing that breaks, the data becomes
+> the product.

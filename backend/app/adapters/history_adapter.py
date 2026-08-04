@@ -102,7 +102,7 @@ _MOCK_CONSTRUCTORS = [
     ("McLaren", 581, 9), ("Red Bull Racing", 421, 6), ("Ferrari", 485, 4),
     ("Mercedes", 312, 2), ("Williams", 182, 0), ("Aston Martin", 96, 0),
     ("Racing Bulls", 58, 0), ("Alpine", 41, 0), ("Haas F1 Team", 35, 0),
-    ("Kick Sauber", 22, 0),
+    ("Audi", 22, 0),
 ]
 
 

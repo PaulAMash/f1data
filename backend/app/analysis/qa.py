@@ -30,7 +30,7 @@ TEAM_ALIASES = {
     "Williams": ["williams"],
     "Alpine": ["alpine"],
     "Haas F1 Team": ["haas"],
-    "Kick Sauber": ["sauber", "kick"],
+    "Audi": ["audi", "sauber", "kick"],
     "Racing Bulls": ["racing bulls", "vcarb", "visa", "rb"],
 }
 

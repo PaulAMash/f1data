@@ -97,7 +97,17 @@ export function Standings({ year, compact, roster, portraits = false }: {
   portraits?: boolean;
 }) {
   const [type, setType] = useState<"driver" | "constructor">("driver");
-  const [rows, setRows] = useState<Row[]>([]);
+  /* THE ROWS CARRY THE TYPE THEY ARE.
+     `type` flips the instant the tab is pressed and the fetch resolves a moment
+     later, so for one render the DRIVERS' rows were being drawn as
+     constructors: nineteen driver names went into the constructor badge, which
+     asked the server for /teams/max-verstappen.webp, got a 404 apiece, and
+     briefly showed a drawn shield reading "MAX" where a team's mark belongs.
+     It also poisoned the badge's module-level probe cache with driver names for
+     the rest of the session. Pairing the rows with their own type means a
+     mismatch renders the skeleton — which is what is actually true while the
+     other table is still loading. */
+  const [loaded, setLoaded] = useState<{ type: "driver" | "constructor"; rows: Row[] } | null>(null);
   const [source, setSource] = useState<DataSource>("mock");
   const [loading, setLoading] = useState(true);
 
@@ -107,13 +117,15 @@ export function Standings({ year, compact, roster, portraits = false }: {
     api.historyStandings(year, type)
       .then((r) => {
         if (!alive) return;
-        setRows(r.standings as Row[]);
+        setLoaded({ type, rows: r.standings as Row[] });
         setSource(r.source as DataSource);
       })
-      .catch(() => { if (alive) setRows([]); })
+      .catch(() => { if (alive) setLoaded({ type, rows: [] }); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [year, type]);
+
+  const rows = loaded?.type === type ? loaded.rows : [];
 
   // by code, exactly as the classification does it
   const byCode = useMemo(
@@ -141,7 +153,10 @@ export function Standings({ year, compact, roster, portraits = false }: {
         { id: "constructor", label: "Constructors", icon: <Trophy size={14} /> },
       ]} active={type} onChange={(t) => setType(t as "driver" | "constructor")} className="mb-4" />
 
-      {loading ? (
+      {/* `loading` alone is one render too late: pressing the tab re-renders
+          with the new type before the effect that sets it has run. The rows not
+          yet matching the type IS the loading state, so it is read as one. */}
+      {loading || loaded?.type !== type ? (
         <div className="space-y-1.5">
           {Array.from({ length: compact ? 6 : 10 }).map((_, i) => <Skeleton key={i} className="h-11" />)}
         </div>
