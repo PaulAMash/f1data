@@ -71,6 +71,14 @@ export default function Welcome() {
   const [more, setMore] = useState(false);
 
   const room = useRef<HTMLElement | null>(null);
+  const fitBox = useRef<HTMLDivElement | null>(null);
+  const [fit, setFit] = useState(1);
+  /** The column's own unscaled height, so its wrapper can reserve the scaled one. */
+  const [natural, setNatural] = useState(0);
+  /* True only when even the smallest allowed scale cannot fit the column.
+     Clipping content is strictly worse than scrolling to it, so at that point
+     the room gives the scroll back rather than hiding the end of the page. */
+  const [overflowing, setOverflowing] = useState(false);
   const one = useRef<HTMLDivElement | null>(null);
   const two = useRef<HTMLDivElement | null>(null);
   const [h, setH] = useState<number | undefined>(undefined);
@@ -91,6 +99,28 @@ export default function Welcome() {
   useEffect(() => {
     if (ready && prefs.pickedMode) router.replace("/");
   }, [ready, prefs.pickedMode, router]);
+
+  /* Keep the column inside the room. Re-measured whenever anything changes its
+     natural height — the act, the disclosure, the text scale, the window. */
+  useLayoutEffect(() => {
+    const el = fitBox.current;
+    if (!el) return;
+    const FLOOR = 0.68;   // below this the type stops being comfortable to read
+    const measure = () => {
+      const h0 = el.scrollHeight;
+      if (!h0) return;
+      const avail = window.innerHeight - 48;   // the room's own vertical padding
+      const want = avail / h0;
+      setNatural(h0);
+      setFit(Math.min(1, Math.max(FLOOR, want)));
+      setOverflowing(want < FLOOR);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener("resize", measure);
+    return () => { ro.disconnect(); window.removeEventListener("resize", measure); };
+  }, []);
 
   /* ONE SOFT LIGHT, FOLLOWING THE POINTER.
      Written to CSS variables on the room element rather than to React state:
@@ -136,13 +166,41 @@ export default function Welcome() {
 
   return (
     <main ref={room} onPointerMove={onMove} onPointerLeave={onLeave}
-      className={cx("wc-room relative isolate grid min-h-[100svh] place-items-center overflow-hidden px-5 py-8 sm:py-10",
+      className={cx("wc-room relative isolate grid place-items-center px-5 py-6",
+        /* A landing screen does not scroll — until the only alternative is
+           cutting the end off it. On anything desktop-shaped the column is
+           scaled to fit and the room is sealed; on a phone in landscape, where
+           no readable scale fits, it becomes an ordinary scrolling page. */
+        overflowing ? "min-h-[100svh]" : "h-[100svh] overflow-hidden",
         leaving && "is-leaving")}>
       <WelcomeField />
       <Instruments />
       <span aria-hidden className="wc-cursor" />
 
-      <div className="relative w-full max-w-3xl text-center">
+      {/* A LANDING SCREEN DOES NOT SCROLL.
+          `h-[100svh]` with `overflow-hidden` above makes that literally true —
+          and then something has to guarantee the content actually fits, or the
+          guarantee becomes a clip. Media queries cannot: the tallest state
+          depends on which act is up and whether the setup is expanded, and the
+          shortest viewport this runs on is not a number anybody can enumerate.
+
+          So it measures. The column reports its natural height (layout is
+          unaffected by a transform, so there is no feedback loop), and if that
+          exceeds the room it is scaled down to fit — floored, because past a
+          point shrinking the type is worse than the alternative. On a normal
+          desktop the factor is 1 and nothing happens at all. */}
+      {/* A SCALE IS A VISUAL CHANGE; THE LAYOUT DOES NOT NOTICE IT.
+          Scaling the column alone left an 861px-tall box inside a 592px room —
+          and a grid item taller than its cell stops being centred, so the
+          visually-correct 592px sat 135px too low and clipped off the bottom.
+          The wrapper reserves the SCALED height and the column scales from its
+          top edge, which puts layout and pixels back in agreement and lets the
+          room centre it the way it centres anything else. */}
+      <div className="w-full transition-[height] duration-[--dur-3] ease-[--ease-out]"
+        style={natural ? { height: Math.round(natural * fit) } : undefined}>
+      <div ref={fitBox}
+        className="relative mx-auto w-full max-w-3xl origin-top text-center transition-transform duration-[--dur-3] ease-[--ease-out]"
+        style={fit < 1 ? { transform: `scale(${fit})` } : undefined}>
         {/* the mark, and the one line of chrome that says what kind of thing
             this is before the headline says what it does */}
         <div className="wc-1 flex flex-col items-center gap-2">
@@ -201,26 +259,31 @@ export default function Welcome() {
 
                 And it is on ACT ONE, before any question is asked. A reader
                 decides whether to trust software in the first fifteen seconds,
-                which is well before they reach a setup screen. */}
-            <div className="wc-45 mx-auto mt-8 max-w-2xl">
+                which is well before they reach a setup screen.
+
+                SIDE BY SIDE, because they are two subjects rather than two
+                paragraphs of one — and because this screen has exactly one
+                viewport to say everything in. */}
+            <div className="wc-45 mx-auto mt-7 max-w-3xl">
               <div className="wc-trust">
-                <div className="wc-trust-row">
+                <div className="wc-trust-col">
                   <span className="wc-trust-icon"><Layers size={13} /></span>
+                  <p className="wc-trust-h">Built on transparent data</p>
                   <p>
-                    <b>Built on the open record.</b> Pitwall IQ reads OpenF1, the Jolpica/Ergast
-                    archive and F1&rsquo;s own live-timing archive, and combines them into one
-                    picture — naming which source every figure came from. When one of them is
-                    having a bad day, this says so and names it rather than quietly filling the
-                    gap in.
+                    Pitwall&nbsp;IQ brings together OpenF1, the Jolpica/Ergast archive and
+                    Formula&nbsp;1&rsquo;s official live timing into one experience. Every
+                    insight is backed by its source — and when external data isn&rsquo;t
+                    available, we tell you exactly why instead of hiding it.
                   </p>
                 </div>
-                <div className="wc-trust-row">
+                <span aria-hidden className="wc-trust-rule" />
+                <div className="wc-trust-col">
                   <span className="wc-trust-icon is-beta"><Sparkles size={13} /></span>
+                  <p className="wc-trust-h">Beta, by design</p>
                   <p>
-                    <b>Beta, and moving.</b> New analysis lands regularly and the existing
-                    screens keep getting sharper. If something reads wrong or a race looks
-                    thin, that is worth telling us about — it is usually a fixable thing on
-                    our side.
+                    Pitwall&nbsp;IQ is growing quickly: new analysis, smarter visualisations
+                    and continuous improvements land regularly. If something seems off, let
+                    us know — most of it is fixable, and your feedback shapes what comes next.
                   </p>
                 </div>
               </div>
@@ -359,6 +422,7 @@ export default function Welcome() {
             </div>
           </div>
         </div>
+      </div>
       </div>
     </main>
   );

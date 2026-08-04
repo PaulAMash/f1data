@@ -275,6 +275,10 @@ function fmtRaceTime(sec: number): string {
 function DnfBadge({ row }: { row: ClassificationRow }) {
   const { at, open, close, toggle } = useHoverTip<{ x: number; y: number }>();
   const lap = row.laps_completed != null && row.laps_completed > 0 ? row.laps_completed : null;
+  // "Retired" is not a reason, it is the status this badge already carries
+  const generic = /^(retired|dnf|did not finish|accident|\+\d+\s*lap)/i;
+  const named = (row.retirement_reason ?? "").trim();
+  const reason = named && !generic.test(named) ? named : null;
   const where = (el: HTMLElement) => {
     const r = el.getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top - 2 };
@@ -289,12 +293,16 @@ function DnfBadge({ row }: { row: ClassificationRow }) {
         DNF
       </button>
       {at && (
-        <HoverCard x={at.x} y={at.y} width={228} title="Did not finish"
+        /* ONE ROW, BECAUSE THERE IS ONE FACT.
+           A "Reason" row was added alongside, and for almost every car the
+           source's reason IS the word "Retired" — so the card said "Retired /
+           after lap 41 / Reason: Retired", which is a tooltip repeating its own
+           heading back at the reader. The reason only appears when the source
+           actually named one ("Hydraulics", "Collision"), and then it replaces
+           the generic line rather than sitting under it. */
+        <HoverCard x={at.x} y={at.y} width={214} title="Did not finish"
           accent="rgb(251 113 133)"
-          rows={[
-            { k: "Retired", v: lap ? `after lap ${lap}` : "lap not recorded" },
-            ...(row.retirement_reason ? [{ k: "Reason", v: row.retirement_reason }] : []),
-          ]} />
+          rows={[{ k: reason ? reason : "Lap retired", v: lap ? `Lap ${lap}` : "not recorded" }]} />
       )}
     </span>
   );

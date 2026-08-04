@@ -151,8 +151,13 @@ for (const s of [
   "neutral",
 ]) ise(s);
 
+/* ONE DIRECTION, ON PURPOSE.
+   There is no American→British map any more. The product is WRITTEN in British
+   English, so American is a rendering of it and British is the original — going
+   back is a restore from the cache below, never an inverse conversion. A second
+   map was a second thing that could disagree with the first, and several pairs
+   genuinely are not bijective ("meter" is a British word too). */
 const GB_TO_US = new Map(PAIRS);
-const US_TO_GB = new Map(PAIRS.map(([g, u]) => [u, g] as [string, string]));
 
 /**
  * One alternation over every word in the map, longest first.
@@ -166,7 +171,6 @@ function alternation(map: Map<string, string>): RegExp {
   return new RegExp(`\\b(${words.join("|")})\\b`, "gi");
 }
 const RE_GB = alternation(GB_TO_US);
-const RE_US = alternation(US_TO_GB);
 
 /** TYRE → TIRE, Tyre → Tire, tyre → tire. Anything else is left alone. */
 function matchCase(sample: string, replacement: string): string {
@@ -217,6 +221,25 @@ export const sp = (text: string, spelling: Spelling): string =>
 const ATTRS = ["placeholder", "title", "aria-label", "alt"];
 const SKIP = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "CODE", "PRE", "TEXTAREA"]);
 
+/* THE AUTHORED TEXT OUTLIVES THE EFFECT, AND IT HAS TO.
+ *
+ * These caches used to be created inside the effect, which re-runs whenever the
+ * preference changes — so the sequence was:
+ *
+ *   en-GB → en-US   fresh cache; every node's British text is cached and the
+ *                   American text written over it. Correct.
+ *   en-US → en-GB   cleanup, then a fresh EMPTY cache. `applyText` falls back to
+ *                   "whatever the node says now", which by then is the AMERICAN
+ *                   text — so American became the new authored baseline and the
+ *                   British spelling could never come back.
+ *
+ * One switch worked and the other silently did nothing, which is exactly what
+ * was reported. Module scope fixes it: the cache is keyed by node in a WeakMap,
+ * so it is collected with the nodes and survives every re-render in between.
+ */
+const AUTHORED = new WeakMap<Node, string>();
+const AUTHORED_ATTR = new WeakMap<Element, Map<string, string>>();
+
 export function SpellingBridge() {
   const { prefs, ready } = usePrefs();
   const spelling = prefs.spelling;
@@ -224,17 +247,21 @@ export function SpellingBridge() {
   useEffect(() => {
     if (!ready) return;
     const root = document.body;
-    // authored text, kept per node so a revert is exact rather than inverted
-    const original = new WeakMap<Node, string>();
-    const originalAttr = new WeakMap<Element, Map<string, string>>();
+    const original = AUTHORED, originalAttr = AUTHORED_ATTR;
 
-    const re = spelling === "en-US" ? RE_GB : RE_US;
-    const map = spelling === "en-US" ? GB_TO_US : US_TO_GB;
+    /* ONE FUNCTION DECIDES WHAT A STRING LOOKS LIKE, and every comparison in
+       here asks it rather than re-deriving the answer. The transform is
+       one-way by design — British is what the product is written in, American
+       is a rendering of it — so going back is a RESTORE, never an inverse
+       conversion, and there is no second regex in the runtime path to get out
+       of step with the first. */
+    const render = (authored: string) =>
+      spelling === "en-US" ? convert(authored, RE_GB, GB_TO_US) : authored;
 
     function applyText(node: Text) {
       const authored = original.get(node) ?? node.nodeValue ?? "";
       if (!original.has(node)) original.set(node, authored);
-      const next = spelling === "en-US" ? convert(authored, re, map) : authored;
+      const next = render(authored);
       if (next !== node.nodeValue) node.nodeValue = next;
     }
 
@@ -246,7 +273,7 @@ export function SpellingBridge() {
         if (!store) { store = new Map(); originalAttr.set(el, store); }
         const authored = store.get(name) ?? current;
         if (!store.has(name)) store.set(name, authored);
-        const next = spelling === "en-US" ? convert(authored, re, map) : authored;
+        const next = render(authored);
         if (next !== current) el.setAttribute(name, next);
       }
     }
@@ -282,7 +309,7 @@ export function SpellingBridge() {
           // React just wrote this node, so whatever it wrote is the new authored
           // text — unless it wrote what we last converted it to
           const last = original.get(n);
-          if (last !== undefined && convert(last, re, map) === n.nodeValue) continue;
+          if (last !== undefined && render(last) === n.nodeValue) continue;
           original.delete(n);
           applyText(n);
         } else if (r.type === "attributes") {
@@ -290,7 +317,7 @@ export function SpellingBridge() {
           const name = r.attributeName!;
           const store = originalAttr.get(el);
           const current = el.getAttribute(name);
-          if (store && current != null && convert(store.get(name) ?? "", re, map) === current) continue;
+          if (store && current != null && render(store.get(name) ?? "") === current) continue;
           store?.delete(name);
           applyAttrs(el);
         } else {
