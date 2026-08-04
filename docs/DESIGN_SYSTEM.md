@@ -3378,3 +3378,79 @@ knew who was actually racing and what colour they were.
 
 > When the design system stops being the thing that breaks, the data becomes
 > the product.
+
+---
+
+## A provider's spelling is an input, never an identity
+
+Two feeds supply this product and they do not agree on what a team is called.
+Live timing says "Racing Bulls", "Alpine", "Red Bull Racing". Jolpica says
+"RB F1 Team", "Alpine F1 Team", "Red Bull". Both strings reached the interface
+untouched, and each one keyed its own slug, its own asset lookup and its own
+colour — so the same constructor rendered as a branded badge on the pace board
+and a grey placeholder shield in the championship table, with a different name
+above it.
+
+The tell that this was structural rather than a missing file: `teamIdentity`
+already knew "F1 Team" was noise. It stripped the suffix — to build a fallback
+code, and then never retried the lookup with it removed. Half a fix is how a
+lookup ends up failing on exactly the names it was written to handle.
+
+Resolution now runs in order of confidence, and each step earns its place
+against a real provider habit:
+
+* **Exact name or alias** — the common case.
+* **With suffix noise removed** — "Alpine F1 Team", "Cadillac F1 Team". Applied
+  to display as well as lookup, because "Haas F1 Team" tells a reader of a
+  Formula 1 product nothing they did not already know.
+* **A known name found inside a sponsor-laden one** — "MoneyGram Haas F1 Team",
+  "Oracle Red Bull Racing", "Stake F1 Team Kick Sauber". Longest key first, so
+  "red bull racing" beats "red bull" to the match.
+* **A generated record** — a slug, a code and a title-cased name, so an entrant
+  nobody has heard of is a row rather than a hole.
+
+> When two upstreams disagree about a name, the fix is not to teach every page
+> both names. It is to stop letting either name be the identity.
+
+---
+
+## The component that renders a brand should own the brand
+
+The badge used to take its livery from whichever component rendered it, which
+meant it wore whatever that page's feed happened to say. That is how Audi
+appeared on Kick Sauber's inherited green in the championship and in its own red
+on the pace board — two correct components, two different feeds, one wrong
+screen.
+
+It resolves its own colour now. A record we hold wins; the caller's value is the
+fallback only for a constructor we have no record of, where their feed is the
+only source there is. The caller keeps one job it cannot delegate — running the
+colour through the reader's colour-vision palette — and loses the one it was
+never qualified for.
+
+The same argument produced three livery tables in the first place: one in the
+frontend, one in the Jolpica adapter, one in the mock. Each was written where it
+was needed, each was right on the day, and they drifted. They are aligned now,
+and the frontend is authoritative, but the durable lesson is the ownership rule
+rather than the alignment.
+
+> Anything that can be resolved from an identity should be, at the point the
+> identity is known. Passing it in is an invitation to pass in something else.
+
+---
+
+## Make the fixture spell things the way the world does
+
+Three releases of sweeps walked past this bug. Every one of them was thorough —
+both themes, three widths, alignment, stretch, overflow, network — and every one
+of them ran against demo data whose constructor names were clean, tidy and
+nothing like what Jolpica actually returns. The bug could not appear, because
+the input that triggers it never reached the code.
+
+Demo mode now uses the provider's real spellings: "RB F1 Team", "Alpine F1
+Team", "Cadillac F1 Team", "Red Bull". It is uglier and it is correct, and
+anything that regresses the resolution is visible on the first screen a
+developer opens rather than in a screenshot a user sends three releases later.
+
+> A fixture that is tidier than production is not a simplification. It is a
+> blind spot with test coverage.

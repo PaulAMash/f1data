@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import {
-  LOGO_COMPOSED_COVERAGE, logoFit, logoSrc, markField, opticalScale,
+  LOGO_COMPOSED_COVERAGE, logoFit, logoSrc, markField, opticalScale, teamIdentity,
 } from "@/lib/constructors";
+import { useLivery } from "@/lib/liveryColor";
 import { cx } from "@/lib/format";
 import { ConstructorShield } from "./ConstructorMark";
 
@@ -153,13 +154,15 @@ export function ConstructorBadge({
   team, color, size = 24, className, title,
 }: {
   team: string;
-  /** The livery, already through the reader's palette. */
+  /** The caller's livery, already through the reader's palette. Used only for a
+   *  constructor this product has no record of — see below. */
   color: string;
   size?: BadgeSize;
   className?: string;
   /** Set when the badge is the only thing naming the team. */
   title?: string;
 }) {
+  const paint = useLivery();
   const src = logoSrc(team);
   const [state, setState] = useState<Probe | null>(() => RESOLVED.get(src) ?? null);
 
@@ -175,7 +178,18 @@ export function ConstructorBadge({
     return () => { live = false; };
   }, [src]);
 
-  const label = title ?? team;
+  /* THE BADGE DOES NOT TAKE THE CALLER'S WORD FOR THE LIVERY.
+     Callers hand it whatever their own feed said, and the feeds disagree: the
+     championship table had Audi on Kick Sauber's inherited green while the pace
+     board, reading the session, drew the same team red. A record we hold wins,
+     so one constructor is one colour on every page no matter which provider the
+     page happens to be reading. The caller's colour is the fallback for a team
+     we have no record of — a 1998 Jordan — where their feed is the only source
+     there is. `paint` keeps the reader's colour-vision setting applied either
+     way. */
+  const identity = teamIdentity(team);
+  const livery = identity.colour ? paint(identity.colour) : color;
+  const label = title ?? identity.name;
   const ar = state?.ok ? state.ar : 0;
   /* COVERAGE, NOT ASPECT RATIO, decides this. A composed roundel fills its
      square; a bare silhouette on the same square canvas does not, and V70's
@@ -188,7 +202,7 @@ export function ConstructorBadge({
   const h = ar >= 1 ? fit / ar : fit;
   /* The livery, taken as far as the mark's own ink requires — see markField.
      Only a bare mark gets one; a composed roundel brings its own. */
-  const field = state?.ok && !composed ? markField(color, state.ink) : null;
+  const field = state?.ok && !composed ? markField(livery, state.ink) : null;
 
   /* ONE CONTAINER FOR ALL THREE STATES.
      Pending, resolved-mark and resolved-shield all paint into the same circle
@@ -204,7 +218,7 @@ export function ConstructorBadge({
         field && "is-field", state && !state.ok && "is-drawn", className)}
       style={{
         width: size, height: size,
-        ["--livery" as string]: color,
+        ["--livery" as string]: livery,
         ...(field ? { ["--field" as string]: field } : null),
       }}>
       {state?.ok ? (
@@ -213,7 +227,7 @@ export function ConstructorBadge({
           className="cbadge-img"
           style={{ width: `${w * 100}%`, height: `${h * 100}%` }} />
       ) : state ? (
-        <ConstructorShield team={team} color={color} size={size} className="cbadge-img" />
+        <ConstructorShield team={team} color={livery} size={size} className="cbadge-img" />
       ) : null}
     </span>
   );

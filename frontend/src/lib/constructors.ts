@@ -24,12 +24,33 @@
 /* DROP-IN READY. Nothing here enumerates which teams have files. Put a new    */
 /* mark at /teams/<id>.webp and it is used on the next load, in every surface  */
 /* at once — exactly the way the curated driver portrait works. See            */
-/* public/teams/README.md and scripts/fetch-team-logos.sh.                     */
+/* public/teams/README.md.                                                    */
+/*                                                                            */
+/* ONE SOURCE OF TRUTH, AND WHY IT HAS TO BE THIS ONE.                        */
+/*                                                                            */
+/* Two providers name the same constructor differently, and both names reach  */
+/* the interface. A session comes from the live-timing feed and says "Racing   */
+/* Bulls", "Alpine", "Red Bull Racing"; a championship table comes from        */
+/* Jolpica and says "RB F1 Team", "Alpine F1 Team", "Red Bull". Every one of   */
+/* those strings used to key its own slug, its own asset lookup and its own    */
+/* colour, so the SAME team rendered as a branded badge on one page and a grey */
+/* placeholder shield on another — with a different name above it.             */
+/*                                                                            */
+/* So a provider's spelling is an INPUT, never an identity. Everything the     */
+/* interface shows about a constructor — mark, colour, accent, display name —  */
+/* comes from the record resolved here, and the resolution is deliberately     */
+/* tolerant: exact match, then with the provider's suffix noise removed, then  */
+/* by finding a known name inside a sponsor-laden one. "Oracle Red Bull        */
+/* Racing", "Red Bull", "RB F1 Team" and "Racing Bulls" all land where they    */
+/* should, and a name nobody has seen before still gets a usable record        */
+/* instead of a hole.                                                         */
 /* -------------------------------------------------------------------------- */
 
 export interface TeamIdentity {
   /** Stable slug — also the asset filename under /public/teams. */
   id: string;
+  /** What the interface calls this team, whatever the provider called it. */
+  name: string;
   /** Short mark. Initials collide (Red Bull Racing vs Racing Bulls), so these
    *  are explicit wherever a naive abbreviation would name the wrong team. */
   code: string;
@@ -41,48 +62,113 @@ export interface TeamIdentity {
   colour?: string;
 }
 
-const TEAMS: Record<string, TeamIdentity> = {
-  "mclaren":          { id: "mclaren", code: "MCL", accent: "#47c7fc", colour: "#ff8000" },
-  "ferrari":          { id: "ferrari", code: "SF", accent: "#fff200", colour: "#e8002d" },
-  "scuderia ferrari": { id: "ferrari", code: "SF", accent: "#fff200", colour: "#e8002d" },
-  "red bull racing":  { id: "red-bull", code: "RBR", accent: "#ffc906", colour: "#3671c6" },
-  "red bull":         { id: "red-bull", code: "RBR", accent: "#ffc906", colour: "#3671c6" },
-  "mercedes":         { id: "mercedes", code: "MER", accent: "#c8cdd4", colour: "#27f4d2" },
-  "aston martin":     { id: "aston-martin", code: "AMR", accent: "#cedc00", colour: "#229971" },
-  "alpine":           { id: "alpine", code: "ALP", accent: "#0090ff", colour: "#ff87bc" },
-  "williams":         { id: "williams", code: "WIL", accent: "#e8ecf5", colour: "#64c4ff" },
-  "racing bulls":     { id: "racing-bulls", code: "RB", accent: "#e8002d", colour: "#6692ff" },
-  "rb":               { id: "racing-bulls", code: "RB", accent: "#e8002d", colour: "#6692ff" },
-  "kick sauber":      { id: "sauber", code: "SAU", accent: "#e8ecf5", colour: "#52e252" },
-  "sauber":           { id: "sauber", code: "SAU", accent: "#e8ecf5", colour: "#52e252" },
-  "haas f1 team":     { id: "haas", code: "HAA", accent: "#e6002b", colour: "#b6babd" },
-  "haas":             { id: "haas", code: "HAA", accent: "#e6002b", colour: "#b6babd" },
-  "audi":             { id: "audi", code: "AUD", accent: "#e8ecf5", colour: "#52e252" },
-  "cadillac":         { id: "cadillac", code: "CAD", accent: "#ffc906", colour: "#b6babd" },
-  "alphatauri":       { id: "alphatauri", code: "AT", accent: "#e8ecf5", colour: "#5e8faa" },
-  "alfa romeo":       { id: "alfa-romeo", code: "ALF", accent: "#e8ecf5", colour: "#c92d4b" },
+/* One record per constructor. `name` is what the interface calls the team, and
+   it is not always what any provider calls it: Jolpica's "RB F1 Team" is
+   nobody's idea of a team name, and "Haas F1 Team" says "F1 Team" on a page
+   about Formula 1. Aliases are the spellings seen in the wild, and they exist
+   only for the ones the rules below cannot reach on their own. */
+const CANON: TeamIdentity[] = [
+  { id: "mclaren", name: "McLaren", code: "MCL", accent: "#47c7fc", colour: "#ff8000" },
+  { id: "ferrari", name: "Ferrari", code: "SF", accent: "#fff200", colour: "#e8002d" },
+  { id: "red-bull", name: "Red Bull Racing", code: "RBR", accent: "#ffc906", colour: "#3671c6" },
+  { id: "mercedes", name: "Mercedes", code: "MER", accent: "#c8cdd4", colour: "#27f4d2" },
+  { id: "aston-martin", name: "Aston Martin", code: "AMR", accent: "#cedc00", colour: "#229971" },
+  /* ALPINE IS BLUE. The pink is a sponsor's, worn over a blue car for two
+     seasons, and it was filed here as the primary with Alpine's own blue
+     demoted to the accent — so the badge came out a dusty rose on a page where
+     the session feed was drawing the same team in blue. */
+  { id: "alpine", name: "Alpine", code: "ALP", accent: "#ff87bc", colour: "#0090ff" },
+  { id: "williams", name: "Williams", code: "WIL", accent: "#e8ecf5", colour: "#64c4ff" },
+  { id: "racing-bulls", name: "Racing Bulls", code: "RB", accent: "#e8002d", colour: "#6692ff" },
+  /* AUDI IS RED, AND WAS INHERITING KICK SAUBER'S GREEN. Audi took the Sauber
+     entry over, and the record was cloned rather than written — so the official
+     rings rendered on Kick Sauber's green in the championship while the session
+     feed drew the same team red two tabs away. */
+  { id: "audi", name: "Audi", code: "AUD", accent: "#e8ecf5", colour: "#bb0a30" },
+  { id: "haas", name: "Haas", code: "HAA", accent: "#e6002b", colour: "#b6babd" },
+  { id: "cadillac", name: "Cadillac", code: "CAD", accent: "#ffc906", colour: "#b6babd" },
+  /* Teams that have stopped racing under these names. They keep their records
+     so a 2023 session still recognises them; they have no marks and are not
+     meant to. */
+  { id: "sauber", name: "Kick Sauber", code: "SAU", accent: "#e8ecf5", colour: "#52e252" },
+  { id: "alphatauri", name: "AlphaTauri", code: "AT", accent: "#e8ecf5", colour: "#5e8faa" },
+  { id: "alfa-romeo", name: "Alfa Romeo", code: "ALF", accent: "#e8ecf5", colour: "#c92d4b" },
+];
+
+/* Every string that should resolve to a record: its canonical name, plus the
+   spellings the rules below cannot derive. Jolpica's constructorIds are here
+   because a caller holding an id rather than a name should not have to care. */
+const ALIASES: Record<string, string> = {
+  "scuderia ferrari": "ferrari", "ferrari": "ferrari",
+  "red bull": "red-bull", "red_bull": "red-bull", "oracle red bull racing": "red-bull",
+  "rb": "racing-bulls", "visa cash app rb": "racing-bulls",
+  "aston_martin": "aston-martin",
+  "alfa romeo racing": "alfa-romeo", "alfa_romeo": "alfa-romeo",
+  "kick sauber": "sauber", "stake": "sauber", "sauber": "sauber",
 };
 
 function norm(team: string): string {
   return team.normalize("NFKD").replace(/[̀-ͯ]/g, "")
-    .toLowerCase().replace(/\s+/g, " ").trim();
+    .toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/* Provider suffix noise. "Alpine F1 Team" and "Alpine" are the same team, and
+   "Haas F1 Team" tells a reader of a Formula 1 product nothing they did not
+   already know. Stripped for lookup AND for display. */
+const SUFFIX = /\s*\b(formula\s*(1|one)\s*)?(f1\s*)?team\b\s*$|\s*\bracing\s+team\b\s*$|\s*\bf1\b\s*$/g;
+
+const BY_ID = new Map(CANON.map((t) => [t.id, t]));
+/* Longest first: "red bull racing" has to beat "red bull" to the match, and
+   both have to beat anything shorter that happens to appear inside them. */
+const LOOKUP: [string, string][] = [
+  ...CANON.map((t) => [norm(t.name), t.id] as [string, string]),
+  ...Object.entries(ALIASES).map(([k, v]) => [norm(k), v] as [string, string]),
+].sort((a, b) => b[0].length - a[0].length);
+
+/** Title-case a provider string we have no record for, so it still reads as a name. */
+function titleCase(s: string): string {
+  return s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
 }
 
 /**
- * Identity for any constructor — including one that doesn't exist yet.
+ * Identity for any constructor — including one that does not exist yet.
  *
- * A new entrant must not render as a hole in the grid, so an unknown name still
- * yields a slug and a sensible mark rather than an empty badge.
+ * Resolution is tried in order of confidence: an exact name or alias, then the
+ * same with the provider's suffix noise removed, then a known name appearing
+ * inside a sponsor-laden one ("Moneygram Haas F1 Team", "BWT Alpine F1 Team").
+ * A new entrant nobody has a record for must not render as a hole in the grid,
+ * so it still yields a slug, a code and a readable name.
  */
 export function teamIdentity(team: string): TeamIdentity {
-  const key = norm(team);
-  const known = TEAMS[key];
-  if (known) return known;
-  const words = key.replace(/\bf1 team\b/g, "").trim().split(/\s+/).filter(Boolean);
+  const raw = norm(team);
+  const stripped = raw.replace(SUFFIX, "").trim();
+
+  for (const candidate of [raw, stripped]) {
+    if (!candidate) continue;
+    const hit = LOOKUP.find(([k]) => k === candidate);
+    if (hit) return BY_ID.get(hit[1])!;
+  }
+  /* Whole-word containment, longest key first. A sponsor in front of the name
+     is the one shape neither exact matching nor suffix stripping can reach. */
+  const inside = LOOKUP.find(([k]) =>
+    new RegExp(`(^|\\s)${k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`).test(stripped));
+  if (inside) return BY_ID.get(inside[1])!;
+
+  const words = stripped.split(/\s+/).filter(Boolean);
   const code = words.length === 1
     ? words[0].slice(0, 3).toUpperCase()
     : words.slice(0, 3).map((w) => w[0]).join("").toUpperCase();
-  return { id: key.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "team", code };
+  return {
+    id: stripped.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "team",
+    name: titleCase(stripped) || team,
+    code: code || "?",
+  };
+}
+
+/** What the interface calls this constructor, whatever the provider called it. */
+export function teamName(team: string | null | undefined): string {
+  if (!team) return "—";
+  return teamIdentity(team).name;
 }
 
 /** Where a constructor's mark lives. Absent by default; used the moment it exists. */

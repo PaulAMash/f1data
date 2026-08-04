@@ -3,10 +3,63 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V73**. A full-application audit: 2 themes × 3 widths (1440×950, 1024×800,
-390×844) × 5 pages × 7 Explore tabs at device-pixel-ratio 2, asserting on every badge's
-squareness, optical centring, corner radius, stretch and overflow, on every HTTP response,
-and on every uncaught error. No failures.
+Last pass: **V74**. A cross-surface identity audit: every badge on every current-season
+surface, in both themes at three widths, asserting that one constructor resolves to the
+same asset, the same colour and the same name wherever it appears. No failures.
+
+---
+
+## Fixed in V74
+
+### 1. Two providers, two spellings, two identities — *was the brief, and the root cause*
+
+The championship table showed grey placeholder shields for Racing Bulls, Alpine and
+Cadillac while the pace board two tabs away showed all three branded. Nothing was wrong
+with the badge. **The two pages were reading different providers, and the providers do not
+agree on what a team is called.** A session comes from live timing and says "Racing Bulls",
+"Alpine", "Red Bull Racing"; a championship table comes from Jolpica and says "RB F1 Team",
+"Alpine F1 Team", "Red Bull".
+
+Every one of those strings keyed its own slug, its own asset lookup and its own colour.
+`teamIdentity` even stripped the "F1 Team" suffix — but only to build a fallback code, and
+never retried the lookup with it removed. So "Alpine F1 Team" resolved to the slug
+`alpine-f1-team`, found no asset, and drew a shield.
+
+A provider's spelling is an input now, never an identity. Resolution runs in order of
+confidence: exact name or alias, then with the provider's suffix noise removed, then a
+known name found inside a sponsor-laden one. "Oracle Red Bull Racing", "Red Bull",
+"RB F1 Team", "MoneyGram Haas F1 Team", "BWT Alpine F1 Team" and "Stake F1 Team Kick
+Sauber" all land where they should, and a name nobody has a record for still yields a
+usable slug, code and readable name rather than a hole.
+
+### 2. One name, whatever the provider called it
+
+`TeamIdentity` carries a canonical `name`, and every surface renders that instead of the
+raw string. No page says "RB F1 Team" while another says "Racing Bulls", and "Haas F1
+Team" — which tells a reader of a Formula 1 product nothing — is just Haas.
+
+### 3. Three livery tables, and they had drifted apart
+
+`constructors.ts`, the Jolpica adapter and the mock simulator each held their own colours.
+That is how Audi ended up rendering on Kick Sauber's inherited green in the championship
+while the session feed drew the same team red on the pace board.
+
+The frontend record is authoritative now: **the badge no longer takes the caller's word for
+the livery.** A record we hold wins; the caller's colour is the fallback only for a
+constructor we have no record of — a 1998 Jordan — where their feed is the only source
+there is. Both backend tables were aligned to match, so the two sources agree at origin as
+well.
+
+Two corrections came with it, both flagged in V72 and V73 and both now explicitly asked
+for: **Audi is red**, off Kick Sauber's green; **Alpine is blue**, with the sponsor's pink
+demoted to the accent it always was.
+
+### 4. Demo mode now spells teams the way the real provider does
+
+`_MOCK_CONSTRUCTORS` used clean names, which is exactly why three releases of sweeps never
+saw this: the bug needs Jolpica's spellings to appear, and demo mode did not have them. It
+does now — "RB F1 Team", "Alpine F1 Team", "Cadillac F1 Team", "Red Bull" — so anything
+that regresses the resolution is visible on the first screen a developer opens.
 
 ---
 
@@ -1249,25 +1302,17 @@ it. Corrected.
 
 ## Open — recommended, not yet done
 
-### 0a. Three constructors wear a colour that is not theirs — *medium, needs a decision, not a guess*
+### 0a. Cadillac and Haas still share a colour — *low, one value away*
 
-The badge takes its field from `teamIdentity().colour`, so a mark is only as correct as the
-livery behind it. Now that every team has a real mark, three entries look wrong under them:
+Audi and Alpine were corrected in V74. The third entry flagged in V73 remains: **Cadillac
+and Haas both carry `#b6babd`**, so their badges are the same grey disc, and the livery is
+not only the badge — it is each team's standings rail, its bars and its line on every
+chart. Only the marks tell them apart, and below about 22px that is thin. Cadillac already
+has `#ffc906` filed as its accent, which is the obvious candidate; it is one value in
+`CANON`, and the audit script reports the clash on every run.
 
-* **Audi** carries `#52e252`, which is Kick Sauber's green, inherited when the entry was
-  cloned. Audi's own F1 identity is not green. The badge renders four white rings on a
-  green disc, which is a correct mark on the wrong brand.
-* **Alpine** carries `#ff87bc` as its primary and `#0090ff` — Alpine blue — as its accent.
-  The badge is therefore a dusty rose. Alpine reads as blue to anyone who watches the sport.
-* **Cadillac and Haas both carry `#b6babd`**, so their badges are the same grey disc. Two
-  teams sharing a livery contradicts the product's own argument that colour is how you
-  recognise a car; only the marks tell them apart, and below about 22px that is thin.
-  Cadillac already has `#ffc906` filed as its accent, which is the obvious candidate.
-
-All three were left alone deliberately. A constructor's colour is an assertion, and it is
-not only the badge: the same value paints that team's standings rail, its bar, its line on
-every chart and its focus card. Changing it is a product decision with reach, and the right
-one is the user's to make. `node scripts/check-team-logos.mjs` now reports the collision.
+Left alone because a constructor's colour is an assertion, and this one has no
+corroborating source in the product the way Audi's red and Alpine's blue did.
 
 ### 0b. Every mark is 48px, and fine linework is at its limit — *low*
 

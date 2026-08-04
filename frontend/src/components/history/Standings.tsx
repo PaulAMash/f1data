@@ -1,3 +1,4 @@
+
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { Trophy, Users } from "lucide-react";
@@ -6,7 +7,7 @@ import { Skeleton, EmptyState } from "@/components/ui/misc";
 import { ConstructorBadge } from "@/components/ui/ConstructorBadge";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
 import { api } from "@/lib/api";
-import { teamColour } from "@/lib/constructors";
+import { teamColour, teamName } from "@/lib/constructors";
 import { useLivery } from "@/lib/liveryColor";
 import { useLocale } from "@/lib/locale";
 import type { DataSource, Driver } from "@/lib/types";
@@ -230,10 +231,10 @@ function StandingRow({ row, lead, constructor, driver, portraits }: {
             top
               ? cx("font-semibold", portraits ? "text-[15px]" : "text-[16px] tracking-[-0.01em]")
               : cx(portraits ? "text-[13.5px]" : "text-[14.5px]"))}>
-            {row.name}
+            {constructor ? teamName(row.name) : row.name}
           </span>
           {!constructor && row.team && (
-            <span className="truncate text-[11.5px] text-ink-faint">{row.team}</span>
+            <span className="truncate text-[11.5px] text-ink-faint">{teamName(row.team)}</span>
           )}
         </span>
         {/* how far behind the leader, which is what a table like this is for */}

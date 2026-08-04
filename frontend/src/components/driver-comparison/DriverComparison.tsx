@@ -15,6 +15,7 @@ import { Spinner, ErrorState } from "@/components/ui/misc";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
 import { ConstructorBadge } from "@/components/ui/ConstructorBadge";
+import { teamName } from "@/lib/constructors";
 import { useGrowIn } from "@/components/ui/Visuals";
 import { deriveWindows, EVENT, type Win } from "@/lib/raceEvents";
 import {
@@ -246,7 +247,7 @@ function HeadToHead({ bundle, data, a, b, drvOf, nameOf, colorOf, swings }: any)
           {drvOf(code)?.team && (
             <ConstructorBadge team={drvOf(code)!.team} color={colorOf(code)} size={18} />
           )}
-          <span className="truncate">{drvOf(code)?.team}</span>
+          <span className="truncate">{teamName(drvOf(code)?.team)}</span>
         </div>
       </div>
       <span className="ml-auto text-2xl font-extrabold tabular-nums"
