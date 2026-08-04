@@ -53,7 +53,7 @@ TEAM_COLORS = {
     "Williams": "#64C4FF",
     "Alpine": "#FF87BC",
     "Haas F1 Team": "#B6BABD",
-    "Kick Sauber": "#52E252",
+    "Audi": "#52E252",
     "Racing Bulls": "#6692FF",
 }
 
@@ -126,7 +126,7 @@ PLANS: list[Plan] = [
          [("SOFT", 17), ("MEDIUM", 40), ("HARD", TOTAL_LAPS)], "France"),
     Plan("23", "ALB", "Alexander Albon", "Williams", 11, 66.34,
          [("MEDIUM", 24), ("HARD", TOTAL_LAPS)], "Thailand"),
-    Plan("27", "HUL", "Nico Hulkenberg", "Kick Sauber", 12, 66.55,
+    Plan("27", "HUL", "Nico Hulkenberg", "Audi", 12, 66.55,
          [("HARD", 30), ("MEDIUM", TOTAL_LAPS)], "Germany"),
     Plan("31", "OCO", "Esteban Ocon", "Haas F1 Team", 13, 66.60,
          [("MEDIUM", 26), ("HARD", TOTAL_LAPS)], "France"),

@@ -8,7 +8,8 @@ resolves the path from the constructor's name, measures the file once per
 session, and falls back to the drawn shield when there is nothing there.
 
 Run `node scripts/check-team-logos.mjs` from `frontend/` to see which marks are
-present, how large they are, and how the badge will treat each one.
+present, how large they are, and whether any two constructors share a livery.
+The grid is complete as of V73; the script is there for the next time it is not.
 
 ## Slugs
 
@@ -26,7 +27,7 @@ The slug is `teamIdentity(name).id` in `src/lib/constructors.ts`.
 | Audi Revolut F1 Team | `audi.webp`           | V72     |
 | Williams F1 Team     | `williams.webp`       | V72     |
 | Aston Martin F1 Team | `aston-martin.webp`   | V72     |
-| Cadillac Formula 1   | `cadillac.webp`       | —       |
+| Cadillac Formula 1   | `cadillac.webp`       | V73     |
 
 A team whose name changes gets a new slug, which is the point: "Kick Sauber"
 and "Audi" are different keys, so a 2024 row can never end up wearing a 2026

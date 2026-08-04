@@ -3,8 +3,51 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V72**. Reviewed at 1440×950, 1024×800 and 390×844, in both themes, at
-device-pixel-ratio 2, with ten of eleven official constructor marks in place.
+Last pass: **V73**. A full-application audit: 2 themes × 3 widths (1440×950, 1024×800,
+390×844) × 5 pages × 7 Explore tabs at device-pixel-ratio 2, asserting on every badge's
+squareness, optical centring, corner radius, stretch and overflow, on every HTTP response,
+and on every uncaught error. No failures.
+
+---
+
+## Fixed in V73
+
+### 1. Cadillac completes the grid
+
+Eleven of eleven current constructors now carry their official mark. Like V72, the release
+is one file: no component, no mapping, no threshold, no special case.
+
+### 2. The championship table asked for a driver's logo — *was ours, and it was live*
+
+The audit's HTTP assertion caught it, and nothing else would have. Pressing **Constructors**
+on the standings flips `type` immediately while the fetch resolves a moment later, so for
+one render the **drivers'** rows were being drawn as constructors: nineteen driver names
+went into the constructor badge, which asked the server for `/teams/max-verstappen.webp`,
+took a 404 apiece, and briefly painted a drawn shield reading "MAX" where a team's mark
+belongs.
+
+It also poisoned the badge's module-level probe cache with driver names for the rest of the
+session — the cache that exists precisely so a resolved constructor never flickers again.
+
+The rows now carry the type they *are*, and a mismatch renders the skeleton, because rows
+that do not match the type is what "still loading" actually looks like. `loading` alone was
+one render too late: pressing the tab re-renders before the effect that sets it runs. Zero
+4xx across the whole audit afterwards.
+
+### 3. The demo grid still fielded Kick Sauber — *was low, and it was the last placeholder*
+
+The simulated 2026 season listed Kick Sauber, which for 2026 is Audi. The badge behaved
+correctly — different constructor name, different key, no mark, drawn shield — but the
+practical effect was one placeholder left in the current-season experience with every asset
+present. Renamed in the simulator, the mock championship and the question-answering alias
+table, where "sauber" and "kick" stay as aliases so an old query still resolves.
+
+### 4. The tool now catches a colour collision, not just a missing file
+
+Cadillac and Haas both carry `#b6babd`, so their badges are the same grey disc — and the
+livery is not only the badge, it is that team's rail, its bars and its line on every chart.
+`check-team-logos.mjs` reads `constructors.ts` and reports duplicates rather than keeping a
+second copy of the colours that could drift.
 
 ---
 
@@ -1206,23 +1249,27 @@ it. Corrected.
 
 ## Open — recommended, not yet done
 
-### 0a. Two constructors wear a colour that is not theirs — *medium, needs a decision, not a guess*
+### 0a. Three constructors wear a colour that is not theirs — *medium, needs a decision, not a guess*
 
 The badge takes its field from `teamIdentity().colour`, so a mark is only as correct as the
-livery behind it. Two entries predate the marks and now look wrong next to them:
+livery behind it. Now that every team has a real mark, three entries look wrong under them:
 
 * **Audi** carries `#52e252`, which is Kick Sauber's green, inherited when the entry was
   cloned. Audi's own F1 identity is not green. The badge renders four white rings on a
   green disc, which is a correct mark on the wrong brand.
 * **Alpine** carries `#ff87bc` as its primary and `#0090ff` — Alpine blue — as its accent.
   The badge is therefore a dusty rose. Alpine reads as blue to anyone who watches the sport.
+* **Cadillac and Haas both carry `#b6babd`**, so their badges are the same grey disc. Two
+  teams sharing a livery contradicts the product's own argument that colour is how you
+  recognise a car; only the marks tell them apart, and below about 22px that is thin.
+  Cadillac already has `#ffc906` filed as its accent, which is the obvious candidate.
 
-Both were left alone deliberately. A constructor's colour is an assertion, and it is not
-only the badge: the same value paints that team's standings rail, its bar, its line on
-every chart and its focus card. Changing it is a product decision with reach, and the
-right one is the user's to make.
+All three were left alone deliberately. A constructor's colour is an assertion, and it is
+not only the badge: the same value paints that team's standings rail, its bar, its line on
+every chart and its focus card. Changing it is a product decision with reach, and the right
+one is the user's to make. `node scripts/check-team-logos.mjs` now reports the collision.
 
-### 0b. Every mark is 48px, and fine linework is at its limit — *low, worth closing with V73*
+### 0b. Every mark is 48px, and fine linework is at its limit — *low*
 
 The largest badge is 38px, which is 76 device pixels on a 2× display, so a 48px file
 upscales about 1.2× there and softens. Every table row draws at 27px or less, where the
