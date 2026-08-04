@@ -21,11 +21,11 @@ The slug is `teamIdentity(name).id` in `src/lib/constructors.ts`.
 | McLaren Racing       | `mclaren.webp`        | V71     |
 | Red Bull Racing      | `red-bull.webp`       | V71     |
 | Racing Bulls         | `racing-bulls.webp`   | V71     |
-| Alpine F1 Team       | `alpine.webp`         | —       |
-| Haas F1 Team         | `haas.webp`           | —       |
-| Audi Revolut F1 Team | `audi.webp`           | —       |
-| Williams F1 Team     | `williams.webp`       | —       |
-| Aston Martin F1 Team | `aston-martin.webp`   | —       |
+| Alpine F1 Team       | `alpine.webp`         | V72     |
+| Haas F1 Team         | `haas.webp`           | V72     |
+| Audi Revolut F1 Team | `audi.webp`           | V72     |
+| Williams F1 Team     | `williams.webp`       | V72     |
+| Aston Martin F1 Team | `aston-martin.webp`   | V72     |
 | Cadillac Formula 1   | `cadillac.webp`       | —       |
 
 A team whose name changes gets a new slug, which is the point: "Kick Sauber"
@@ -67,9 +67,11 @@ next to the others, not by looking at the file.
   mark that ships its own opaque background will be detected as composed and
   rendered as-is, which is also correct but gives up the consistent field.
 * **At least 96px on the longest edge.** The largest badge in the product is
-  38px, which is 76 device pixels on a 2× display; the five marks shipped in
-  V71 are 48px and will soften slightly there. They are crisp at 27px and below,
-  which is every table row.
+  38px, which is 76 device pixels on a 2× display; every mark shipped so far is
+  48px and softens slightly there. They are crisp at 27px and below, which is
+  every table row. Fine linework suffers most — the Aston Martin wings resolve
+  to about 1% opaque coverage at 48px, which reads correctly but has nothing
+  left to give.
 * **Square canvas, mark centred, no padding of its own.** The badge does the
   padding, and baked-in whitespace makes a mark read smaller than its
   neighbours.

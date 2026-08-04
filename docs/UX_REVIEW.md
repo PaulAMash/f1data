@@ -3,9 +3,32 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V71**. Reviewed at 1440×950, 1024×800 and 390×844, in both themes, at
-device-pixel-ratio 2, with the first five official constructor marks in place and six
-teams deliberately still on the drawn shield.
+Last pass: **V72**. Reviewed at 1440×950, 1024×800 and 390×844, in both themes, at
+device-pixel-ratio 2, with ten of eleven official constructor marks in place.
+
+---
+
+## Fixed in V72
+
+### 1. Five more constructors, and no second implementation
+
+Alpine, Haas, Audi, Williams and Aston Martin render their official marks everywhere the
+current season shows a constructor. The release is five files and a documentation update:
+no component changed, no mapping was edited, no page learned a new name. That was the
+point of building it this way in V70 and measuring rather than guessing in V71, and it is
+the first release where the system was exercised as designed rather than being written.
+
+Cadillac is the last one outstanding. Historical is unchanged — 1998 and 2015 render zero
+badges and issue zero requests to `/teams`, checked again rather than assumed.
+
+### 2. The rollout is visible in one place
+
+`node scripts/check-team-logos.mjs` now reports 10/11 present. Its header claimed to report
+opaque coverage and ink luminance, which it never did — those need the pixels decoded, and
+the badge already measures both on a canvas at runtime. Reproducing it in the build tooling
+would be a WEBP decoder plus a second copy of the classification to keep in step, so the
+comment was corrected to describe what the script actually answers rather than the script
+grown to match the comment.
 
 ---
 
@@ -1183,16 +1206,33 @@ it. Corrected.
 
 ## Open — recommended, not yet done
 
-### 0. Six constructors are still on the drawn shield, and five are 48px — *staged, and one is worth fixing*
+### 0a. Two constructors wear a colour that is not theirs — *medium, needs a decision, not a guess*
 
-Alpine, Haas, Audi, Williams, Aston Martin and Cadillac have no file yet; V72/V73 add them
-and no code changes with them.
+The badge takes its field from `teamIdentity().colour`, so a mark is only as correct as the
+livery behind it. Two entries predate the marks and now look wrong next to them:
 
-The five shipped in V71 are **48×48**. The largest badge in the product is 38px, which is
-76 device pixels on a 2× display, so those marks upscale about 1.2× there and soften
-slightly. Every table row draws them at 27px or less, where they are at or below 1:1 and
-crisp. Re-supplying the set at 96px or more on the longest edge would close it; nothing
-else needs to change. `node scripts/check-team-logos.mjs` flags this per file.
+* **Audi** carries `#52e252`, which is Kick Sauber's green, inherited when the entry was
+  cloned. Audi's own F1 identity is not green. The badge renders four white rings on a
+  green disc, which is a correct mark on the wrong brand.
+* **Alpine** carries `#ff87bc` as its primary and `#0090ff` — Alpine blue — as its accent.
+  The badge is therefore a dusty rose. Alpine reads as blue to anyone who watches the sport.
+
+Both were left alone deliberately. A constructor's colour is an assertion, and it is not
+only the badge: the same value paints that team's standings rail, its bar, its line on
+every chart and its focus card. Changing it is a product decision with reach, and the
+right one is the user's to make.
+
+### 0b. Every mark is 48px, and fine linework is at its limit — *low, worth closing with V73*
+
+The largest badge is 38px, which is 76 device pixels on a 2× display, so a 48px file
+upscales about 1.2× there and softens. Every table row draws at 27px or less, where the
+marks are at or below 1:1 and crisp.
+
+Detail is the real constraint rather than size. The Aston Martin wings resolve to roughly
+**1% opaque coverage** at 48px — almost the entire mark is antialiased edge below the alpha
+cut. It renders correctly and reads as the wings, but there is nothing left to give, and it
+is the one mark that would visibly improve at 96px or more. `node
+scripts/check-team-logos.mjs` flags the size per file.
 
 ### A. A first visit can land on an empty product — *high, needs a product decision*
 

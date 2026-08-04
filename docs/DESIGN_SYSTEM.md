@@ -3278,3 +3278,48 @@ The lesson is not "remember harder". Two things actually help:
 
 > The value of writing a trap down is not that you avoid it. It is that you
 > recognise it in one screenshot instead of thirty minutes.
+
+---
+
+## A system is proved by the release that changes no code
+
+V70 built the constructor badge. V71 shipped five marks and had to rewrite how
+the badge decides what it is holding, because the first real assets broke an
+assumption. V72 shipped five more and changed **nothing but the files** — no
+component, no mapping, no page, no threshold.
+
+That third release is the only evidence that any of it worked. A system that
+needs a small edit for each new case is a pattern with extra steps; the test is
+whether the second and third batch cost anything, and the way to make that true
+is to keep every decision derivable from the asset rather than recorded beside
+it. Nothing in this product knows which teams have marks. There is no list to
+extend, so there is nothing to forget to extend.
+
+What did surface in V72 is the layer underneath: the badge takes its field from
+the constructor's stored livery, so a mark is only ever as right as that colour.
+Two entries are visibly wrong now that the official marks sit on them — the sort
+of thing a placeholder happily hides and a real logo cannot.
+
+> Correct branding is a data problem wearing a rendering problem's clothes. The
+> component was never going to be the hard part.
+
+---
+
+## Fix the comment, not the tool
+
+`check-team-logos.mjs` claimed in its header to report each mark's opaque
+coverage and ink luminance. It never did — both need the pixels decoded, and the
+badge already measures them on a canvas at runtime where the answer is free.
+
+The tempting repair is to make the tool live up to the comment: pull in a WEBP
+decoder, reimplement the classification, and now the same rule exists twice in
+two languages with nothing keeping them in step. The one that drifts will be the
+one nobody is looking at, and it will drift silently because a build script that
+disagrees with the product still exits zero.
+
+So the comment was corrected to describe what the script actually answers, and
+the thresholds live in one place — `public/teams/README.md` — pointing at the
+single implementation.
+
+> When documentation and implementation disagree, check which one is cheaper to
+> be wrong about before deciding which to change.
