@@ -10,6 +10,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { Term } from "@/components/ui/Term";
 import { DriverBadge } from "@/components/ui/DriverBadge";
+import { ConstructorBadge } from "@/components/ui/ConstructorBadge";
 import {
   CHART_MARGIN, GRID_COLOR, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE, TOOLTIP_STYLE,
   axisLine, axisTick,
@@ -429,6 +430,7 @@ function TeamTrend({ session, pace, teams }: {
 
 /* ---- advanced-mode constructor table: the numbers under the chart ---- */
 function TeamTable({ rows }: { rows: TeamPace[] }) {
+  const paint = useLivery();
   if (!rows.length) return <p className="text-sm text-ink-faint">No constructor pace data for this session.</p>;
   return (
     <div className="space-y-4">
@@ -450,7 +452,7 @@ function TeamTable({ rows }: { rows: TeamPace[] }) {
                 <td className="py-2 pr-2 tabular-nums text-ink-faint">{i + 1}</td>
                 <td className="py-2 pr-2">
                   <span className="inline-flex items-center gap-2 font-semibold">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: t.color }} />
+                    <ConstructorBadge team={t.team} color={paint(t.color)} size={22} />
                     {t.team}
                   </span>
                 </td>

@@ -3097,3 +3097,101 @@ height either way and the reader never scans a row that is going to be empty of
 meaning.
 
 > Data being present is not a reason to render it.
+
+---
+
+## A constructor is a mark in the same circle a driver's face is in
+
+The rule this release exists to state: **whenever two kinds of identity appear
+in one row, they get one shape.** A driver was a portrait in a 27px circle and
+the constructor beside them was a 10px coloured dot, so the row read as a
+photograph next to a piece of punctuation. Both are circles now, at the same
+diameter, set the same way.
+
+That decides the container shape on its own, and a second argument agrees with
+it: a team's own mark usually arrives as a composed roundel, and a circular
+asset inside a rounded square leaves four lit corners of livery behind it —
+which is precisely the "pasted on" look the work was meant to remove.
+
+The wash and the ring are drawn on the CONTAINER, under whatever it holds. That
+is what makes one treatment correct for two kinds of file with nothing to
+configure per asset: an opaque roundel covers them and you see the official
+badge with a hairline around it; a transparent emblem lets them through and gets
+the soft livery field it needs to sit on.
+
+> When one component owns the container, every other component can stop having
+> an opinion about it.
+
+---
+
+## `object-fit: contain` is not normalisation
+
+Contain guarantees that nothing overflows. It says nothing about whether two
+marks look the same size — and they do not: a wide mark touches both side edges
+while a square one touches all four, so the wide one reads as roughly half the
+size of its neighbour. That is the entire "Mercedes looks tiny while Ferrari
+fills the container" complaint, and it is not fixed by picking a better number.
+
+Two regimes, decided from the asset's own aspect ratio at load, with no
+per-team table:
+
+* **Near-square (0.86–1.16)** is a mark that already carries its own padding.
+  It gets the whole container, so it aligns with the circle instead of floating
+  inside a second one.
+* **Anything else** is fitted by its LONGEST edge, because equal longest edges
+  is what the eye reads as equal size.
+
+And the second-order correction, which is the one worth remembering: **a circle
+is not a square.** A square emblem has to stay inside the inscribed square or
+its corners cut the rim. A thin mark has no corners to cut — it lives along the
+diameter, where there is materially more room — so its allowance grows from 74%
+to 92% as it gets thinner. At 38px that took a 4.3:1 wordmark from 28px wide to
+35px, which is the difference between "half the size of its neighbour" and "the
+same size".
+
+A per-mark escape hatch exists and is empty on purpose. Every entry in it is a
+promise to hand-tune the next asset too, and a correction made by looking at the
+file rather than at the badge beside its neighbours is a bug you cannot see.
+
+> Automatic beats a lookup table whenever the rule can be derived from the asset
+> itself — and it is the only thing that works for a file you have never seen.
+
+---
+
+## Pending, present and absent are one shape
+
+A badge that shows a placeholder and then swaps to the real mark is a mark that
+changes under the reader's eye, and an identity that changes is worse than an
+identity that arrives late. All three states paint into the same circle at the
+same size: pending is the circle with its wash and nothing in it, and what
+arrives — the mark, or the drawn shield for a team that has no file — arrives
+into space that was already there. Nothing in the row ever moves.
+
+The resolution cache behind that is a module constant rather than state in a
+provider, for the same reason: whether an asset exists is a property of the
+deployment, not of the tree, so it has to survive every unmount between one page
+and the next. A constructor resolved once is answered synchronously for the rest
+of the session and never flickers again. Per-instance probing meant twenty rows
+requested the same file twenty times and every re-render started again from
+"unknown".
+
+> The question "does this asset exist" has one answer per deployment. Cache it
+> where that is true.
+
+---
+
+## The gate is whether the asset exists, not what year it is
+
+A product spanning seventy-seven seasons cannot key branding on a cutoff year:
+somebody has to pick it, and it goes stale the first winter afterwards.
+
+The lookup is keyed on the constructor's NAME instead — and a constructor's name
+changing is precisely when its identity changed. "Kick Sauber" and "Audi" are
+different keys, so a 2024 row can never end up wearing a 2026 badge. A 2019
+Mercedes row wears the Mercedes mark because it genuinely is the same
+constructor with the same mark. Nothing enumerates which teams have files, so
+adding one is a file drop, and a team that last raced in 1976 falls to the drawn
+shield without anybody writing it down.
+
+> A rule that derives itself from the data cannot go out of date; a list of
+> exceptions always does.

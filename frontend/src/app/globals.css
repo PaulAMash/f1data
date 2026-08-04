@@ -3179,3 +3179,69 @@ html.theme-sweep::view-transition-new(root) {
   }
 }
 
+
+/* ---------------------------------------------------------------------------
+   THE CONSTRUCTOR BADGE.
+
+   A driver is a face in a circle everywhere in this product. A constructor is
+   now a mark in a circle of the same size, so a row carrying both reads as one
+   object instead of a photo beside a logo.
+
+   The wash and the ring are drawn on the CONTAINER, under whatever it holds.
+   That is what makes one treatment correct for two kinds of file: a composed
+   opaque roundel covers them and you see the official badge with a hairline
+   around it; a transparent emblem lets them through and gets the soft livery
+   field it needs to sit on. Nothing is configured per asset.
+
+   Deliberately quiet. `--livery` at 14% is a tint, not a fill — the brief for
+   this release was branding that supports the data rather than competing with
+   it, and a row of saturated circles beside a column of numbers is the failure
+   mode. The ring carries the identity; the wash only stops the mark floating.
+   --------------------------------------------------------------------------- */
+.cbadge {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--livery) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--livery) 30%, transparent);
+}
+/* A composed roundel already carries its own edge, so the ring tightens to a
+   hairline that separates it from the row rather than framing it twice — and
+   the wash goes, because nothing of it can be seen behind an opaque mark
+   anyway and a colour you cannot see is a colour that will surprise you the
+   day somebody ships a mark with a transparent corner. */
+.cbadge.is-composed {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgb(var(--tint) / .14);
+}
+:root[data-theme="light"] .cbadge.is-composed {
+  box-shadow: inset 0 0 0 1px rgb(15 23 42 / .13);
+}
+/* The drawn shield IS a container — livery fill, two rims, its own code. Left
+   inside the circle it read as a badge inside a badge, and the grey teams were
+   a grey shield on a grey disc. It keeps the footprint and loses the frame. */
+.cbadge.is-drawn { background: transparent; box-shadow: none; overflow: visible; }
+/* On paper the wash has to lift off the page rather than sink into it: a touch
+   more livery, and a rim that is dark instead of light, because a light rim on
+   white is not a rim. Light is not dark with the lights on. */
+:root[data-theme="light"] .cbadge {
+  background: color-mix(in srgb, var(--livery) 15%, white);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--livery) 42%, transparent);
+}
+
+.cbadge-img {
+  display: block;
+  object-fit: contain;
+  /* The mark arrives rather than pops. One property, one duration, and it runs
+     once per badge per session because the probe cache answers synchronously
+     after that — see components/ui/ConstructorBadge. */
+  animation: cbadge-in var(--dur-3) var(--ease-out) backwards;
+}
+@keyframes cbadge-in { from { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .cbadge-img { animation: none; }
+}

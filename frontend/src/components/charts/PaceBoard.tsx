@@ -3,9 +3,11 @@ import { useState } from "react";
 import type { Driver } from "@/lib/types";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { DriverAvatar, DriverBadge } from "@/components/ui/DriverBadge";
+import { ConstructorBadge } from "@/components/ui/ConstructorBadge";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { EmptyState } from "@/components/ui/misc";
 import { useGrowIn } from "@/components/ui/Visuals";
+import { useLivery } from "@/lib/liveryColor";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
@@ -72,6 +74,9 @@ export function PaceBoard({
 }) {
   const [active, setActive] = useState(views[0]?.id);
   const grown = useGrowIn();
+  /* Entries carry the raw livery; the badge has to wear the reader's palette,
+     the same as every other coloured thing on this board. */
+  const paint = useLivery();
   const view = views.find((v) => v.id === active) ?? views[0];
   if (!view) return null;
 
@@ -114,9 +119,14 @@ export function PaceBoard({
             {leader && (
               <div className="mb-1 rounded-xl border border-white/[0.07] bg-base-800/50 p-3">
                 <div className="flex items-center gap-3">
+                  {/* AN ENTRY WITHOUT A DRIVER IS A CONSTRUCTOR — that is the
+                      contract every view here already builds to, and it is why
+                      this slot can carry the team's own mark without any of the
+                      three callers passing a flag. A livery sliver said "this
+                      row has a colour"; the badge says which team it is. */}
                   {leader.driver !== undefined
                     ? <DriverAvatar driver={leader.driver} size={38} />
-                    : <span className="h-9 w-1.5 shrink-0 rounded-full" style={{ background: leader.color }} />}
+                    : <ConstructorBadge team={leader.name} color={paint(leader.color)} size={38} />}
                   <div className="min-w-0">
                     <div className="text-[11px] font-semibold uppercase tracking-wider text-speed/85">
                       {view.heroLabel}
@@ -148,7 +158,7 @@ export function PaceBoard({
                     team={e.sub} teamColor={e.color} size={24} className="w-32 shrink-0 sm:w-44" />
                 ) : (
                   <span className="flex w-32 shrink-0 items-center gap-2 sm:w-44">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: e.color }} />
+                    <ConstructorBadge team={e.name} color={paint(e.color)} size={24} />
                     <span className="truncate text-sm font-medium">{e.name}</span>
                   </span>
                 )}
