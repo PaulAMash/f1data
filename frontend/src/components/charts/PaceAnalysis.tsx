@@ -19,6 +19,7 @@ import { PaceBoard } from "./PaceBoard";
 import { useIsSimple } from "@/lib/mode";
 import { cx, fmtLap } from "@/lib/format";
 import { useLivery } from "@/lib/liveryColor";
+import { teamName } from "@/lib/constructors";
 
 type PaceView = "drivers" | "teams";
 
@@ -453,7 +454,7 @@ function TeamTable({ rows }: { rows: TeamPace[] }) {
                 <td className="py-2 pr-2">
                   <span className="inline-flex items-center gap-2 font-semibold">
                     <ConstructorBadge team={t.team} color={paint(t.color)} size={22} />
-                    {t.team}
+                    {teamName(t.team)}
                   </span>
                 </td>
                 <td className="py-2 pr-2 tabular-nums text-speed">{fmtLap(t.avg)}</td>

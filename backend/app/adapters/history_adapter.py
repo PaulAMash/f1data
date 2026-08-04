@@ -98,11 +98,21 @@ _MOCK_DRIVERS = [
     ("Fernando Alonso", "ALO", "Aston Martin", 74, 0),
     ("Alexander Albon", "ALB", "Williams", 61, 0),
 ]
+# SPELLED THE WAY THE REAL PROVIDER SPELLS THEM, on purpose.
+#
+# Jolpica does not answer with the names a session does: it says "RB F1 Team"
+# where live timing says "Racing Bulls", "Red Bull" where the session says "Red
+# Bull Racing", and hangs "F1 Team" off half the grid. Those strings used to
+# reach the interface untouched, so the same constructor rendered as a branded
+# badge on one page and a grey placeholder on another. The frontend resolves
+# every spelling to one identity now (see lib/constructors), and demo mode uses
+# the awkward spellings deliberately so that anything which regresses that
+# resolution is visible on the first screen a developer opens.
 _MOCK_CONSTRUCTORS = [
-    ("McLaren", 581, 9), ("Red Bull Racing", 421, 6), ("Ferrari", 485, 4),
+    ("McLaren", 581, 9), ("Red Bull", 421, 6), ("Ferrari", 485, 4),
     ("Mercedes", 312, 2), ("Williams", 182, 0), ("Aston Martin", 96, 0),
-    ("Racing Bulls", 58, 0), ("Alpine", 41, 0), ("Haas F1 Team", 35, 0),
-    ("Audi", 22, 0),
+    ("RB F1 Team", 58, 0), ("Alpine F1 Team", 41, 0), ("Haas F1 Team", 35, 0),
+    ("Audi", 22, 0), ("Cadillac F1 Team", 0, 0),
 ]
 
 

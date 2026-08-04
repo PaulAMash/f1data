@@ -5,6 +5,7 @@ import { cx } from "@/lib/format";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
 import { ConstructorBadge } from "@/components/ui/ConstructorBadge";
 import { useLivery } from "@/lib/liveryColor";
+import { teamName } from "@/lib/constructors";
 
 /* -------------------------------------------------------------------------- */
 /* One focus-card identity shared by the Position and Tyre charts, so focusing */
@@ -55,7 +56,7 @@ export function FocusCardShell({
                 the mark says whose car it is — and it is the same badge, at the
                 same size, as the one in the gallery this card was opened from. */}
             <div className="mt-1 flex items-center gap-1.5 text-xs font-medium text-ink-muted">
-              <ConstructorBadge team={driver.team} color={tc} size={18} /> {driver.team}
+              <ConstructorBadge team={driver.team} color={tc} size={18} /> {teamName(driver.team)}
             </div>
           </div>
         </button>

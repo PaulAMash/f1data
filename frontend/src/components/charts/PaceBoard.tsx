@@ -8,6 +8,7 @@ import { InfoTip } from "@/components/ui/InfoTip";
 import { EmptyState } from "@/components/ui/misc";
 import { useGrowIn } from "@/components/ui/Visuals";
 import { useLivery } from "@/lib/liveryColor";
+import { teamName } from "@/lib/constructors";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
@@ -131,7 +132,9 @@ export function PaceBoard({
                     <div className="text-[11px] font-semibold uppercase tracking-wider text-speed/85">
                       {view.heroLabel}
                     </div>
-                    <div className="truncate text-sm font-bold text-ink">{leader.name}</div>
+                    <div className="truncate text-sm font-bold text-ink">
+                      {leader.driver === undefined ? teamName(leader.name) : leader.name}
+                    </div>
                     {leader.sub && <div className="truncate text-[11.5px] text-ink-muted">{leader.sub}</div>}
                   </div>
                   <span className="ml-auto shrink-0 text-sm font-semibold tabular-nums text-speed">
@@ -159,7 +162,7 @@ export function PaceBoard({
                 ) : (
                   <span className="flex w-32 shrink-0 items-center gap-2 sm:w-44">
                     <ConstructorBadge team={e.name} color={paint(e.color)} size={24} />
-                    <span className="truncate text-sm font-medium">{e.name}</span>
+                    <span className="truncate text-sm font-medium">{teamName(e.name)}</span>
                   </span>
                 )}
                 <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-white/[0.05]">

@@ -4,6 +4,7 @@ import type { Driver } from "@/lib/types";
 import { curatedPortrait } from "@/lib/portraits";
 import { cx } from "@/lib/format";
 import { useLivery } from "@/lib/liveryColor";
+import { teamName } from "@/lib/constructors";
 
 // A friendly driver identity: the official Formula1.com portrait where the
 // provider resolved one, else a clean team-coloured initials avatar. Used
@@ -56,7 +57,7 @@ export function DriverBadge({
         <span className="block truncate text-sm font-semibold">
           {compact ? (d?.code ?? "—") : (d?.name ?? d?.code ?? "—")}
         </span>
-        {!compact && (d?.team) && <span className="block truncate text-[11px] text-ink-faint">{d.team}</span>}
+        {!compact && (d?.team) && <span className="block truncate text-[11px] text-ink-faint">{teamName(d.team)}</span>}
       </span>
     </span>
   );

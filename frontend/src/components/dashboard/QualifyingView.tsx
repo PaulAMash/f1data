@@ -4,6 +4,7 @@ import { ArrowUp, Building2, ChevronRight, Gavel, User } from "lucide-react";
 import { AlertTriangle, ArrowDownWideNarrow, Flag, Gauge, LineChart, Medal, Ruler, Sparkles, Target, Thermometer, TrendingDown, TrendingUp, Zap } from "@/components/ui/MotionIcon";
 import type { Driver, QualifyingSummary, RaceSession } from "@/lib/types";
 import { useIsSimple } from "@/lib/mode";
+import { teamName } from "@/lib/constructors";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { DriverAvatar, DriverBadge } from "@/components/ui/DriverBadge";
@@ -734,7 +735,7 @@ function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSessio
                     <div key={t.team} className="flex items-center gap-2.5">
                       <span className="flex w-32 shrink-0 items-center gap-2 sm:w-40">
                         <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: t.color }} />
-                        <span className="truncate text-[12.5px] text-ink-muted">{t.team}</span>
+                        <span className="truncate text-[12.5px] text-ink-muted">{teamName(t.team)}</span>
                       </span>
                       <span className="h-2 flex-1 overflow-hidden rounded-full bg-white/[0.05]">
                         <span className="block h-full rounded-full transition-[width] duration-700 ease-out"
