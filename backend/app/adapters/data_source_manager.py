@@ -699,6 +699,12 @@ def _essential_for(category: str, year: int) -> set[str]:
             if year >= _FACET_FROM.get(f, 0)}
 
 
+#: Facets whose true value can be zero. For these, a recorded source — including
+#: our own derivation — means the question was asked and answered, and an empty
+#: list is the answer rather than a gap. Everything else (results, the entry
+#: list, lap times, stints, weather) is empty only when nothing supplied it.
+_MAY_BE_EMPTY = {"overtakes", "race_control", "pit_stops"}
+
 #: facet -> (attribute holding it, human name for the reader)
 _CANONICAL_FACETS: dict[str, tuple[str, str]] = {
     "results": ("classification", "results & classification"),
@@ -736,8 +742,16 @@ def _audit_report(session: RaceSession) -> None:
         # a feed that had not been invented yet is not a gap in our data
         if session.year < _FACET_FROM.get(name, 0):
             continue
-        present = bool(getattr(session, attr, None))
         prior = known.get(name)
+        # AN EMPTY ANSWER IS NOT AN ABSENT ONE, for the facets that can
+        # legitimately count zero. A race with no safety car has an empty
+        # race-control log; a race nobody pitted in has no pit stops; Monaco has
+        # no overtakes. Recomputing presence from `bool(list)` alone discarded
+        # the provenance that said a source had answered, turned a true zero
+        # into a gap, and made the session partial for holding a fact.
+        answered = bool(prior and prior.source != "none")
+        present = bool(getattr(session, attr, None)) or (
+            name in _MAY_BE_EMPTY and answered)
         if present:
             # keep the adapter's provenance; only invent one if nobody claimed it
             facets.append(prior if prior and prior.source != "none" else FacetSource(
@@ -762,9 +776,30 @@ def _audit_report(session: RaceSession) -> None:
     # THE ONE VERDICT. Split by what this kind of session cannot be
     # reconstructed without — see _ESSENTIAL_FACETS — so that "a weather trace
     # is absent" and "the entry list never arrived" stop being the same answer.
+    # STRICT, and only fair because two other rules run before it.
+    #
+    # V75 gated on the essential facets alone, which left a session missing
+    # something real still rendering with a chip on it. The product rule is
+    # simpler: a page this product is not certain of is a page it does not show.
+    # `missing` is empty or the session is unavailable.
+    #
+    # Both of the rules above exist to stop that being brutal, and both are
+    # about not inventing a gap in the first place:
+    #
+    #   * a feed that had not been invented yet is not missing (the era
+    #     boundaries — a 1975 Grand Prix has no lap times and never will);
+    #   * a question asked and answered "none" is not missing either
+    #     (_MAY_BE_EMPTY — Monaco genuinely has no overtakes to report).
+    #
+    # Without those two, strict would declare most of the sport unavailable.
+    # With them, everything left in `missing` is a real absence.
+    #
+    # `essential_missing` survives as diagnosis rather than as the gate: it is
+    # what the unavailable screen leads with, because "the entry list never
+    # arrived" is a more useful sentence than "something is missing".
     essential = _essential_for(cat, session.year)
     report.essential_missing = [m for m in missing if m in essential]
-    report.complete = not report.essential_missing
+    report.complete = not missing
     if not missing:
         report.missing_reason = None
     session.partial = report.partial
@@ -799,11 +834,23 @@ def _post_process(session: RaceSession, primary: str) -> None:
     except Exception as exc:  # noqa: BLE001
         log.info("pitstop enrich failed: %s", exc)
 
-    # overtakes: infer if the source didn't supply them (races/sprints only)
+    # overtakes: infer if the source didn't supply them (races/sprints only).
+    #
+    # THE ANSWER "NONE" IS AN ANSWER. A derivation that runs over a complete
+    # position trace and finds nothing has told us something true about the
+    # race — Monaco is the sport's own example of a Grand Prix where barely a
+    # car is passed on track. Recording the facet only when the list came back
+    # non-empty is what made a clean street race indistinguishable from a feed
+    # that never replied, and it is why Monaco wore a partial-data chip while
+    # holding every fact it needed.
     if not session.overtakes and session.category in ("race", "sprint") and session.positions:
         session.overtakes = infer_overtakes(session)
         _set_facet(session, "overtakes", "inferred", "medium",
-                   "Derived from the lap-by-lap position trace.")
+                   f"Derived from the lap-by-lap position trace — "
+                   f"{len(session.overtakes)} found."
+                   if session.overtakes else
+                   "Derived from the lap-by-lap position trace: no on-track "
+                   "passes were detected in this session.")
 
     # driver portraits: season-wide map fills what the session record lacked
     try:

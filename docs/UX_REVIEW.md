@@ -3,9 +3,52 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V75**. A data-pipeline audit rather than a visual one: what a session is
-missing, why, and whether the product is entitled to render it. Fourteen new tests hold
-the three answers.
+Last pass: **V76**. The integrity gate finished: strict, central, and fair because the two
+rules that stop it inventing a gap run before it. 17 tests in `test_session_integrity.py`.
+
+---
+
+## Fixed in V76
+
+### 1. Monaco was holding every fact it needed and being called partial — *the root cause*
+
+V75 fixed Monaco's entry list, and the screenshot proves it: the names are there, the
+winner is named, the margin is there. What remained was **overtakes** — and Monaco is the
+sport's own example of a Grand Prix where barely a car is passed on track.
+
+`_audit_report` recomputed every facet's presence from `bool(list)`, which threw away the
+provenance saying a source had already answered. **An answer of "none" became
+indistinguishable from no answer at all.** The overtake derivation ran over a complete
+position trace, found nothing, correctly recorded itself as the source — and the audit
+overwrote that with `source: "none"` and filed it under missing.
+
+A facet whose true value can be zero — overtakes, the race-control log, pit stops — is
+present when something answered for it, whatever the count. Everything else is still empty
+only when nothing supplied it. Not a Monaco fix: a street race with no passes, a race with
+no safety car and a race nobody pitted in all stop being reported as gaps.
+
+### 2. The gate is strict now — *the product rule*
+
+V75 split facets into essential and enriching and gated on the essential ones, which left a
+session missing something real still rendering with a chip on it. `complete` is now simply
+`missing == []`.
+
+That is only fair because two rules run before it, and both exist to stop the product
+inventing a gap: a feed that had not been invented yet is not missing (the era boundaries —
+a 1975 Grand Prix has no lap times and never will), and a question asked and answered
+"none" is not missing either. Without those, strict would declare most of the sport
+unavailable. With them, everything still listed in `missing` is a real absence.
+
+### 3. "Partial data" no longer exists in the interface
+
+The chip beside the title and the banner above the tabs are both gone, along with the
+component behind them. There is nothing left for them to mark: a session the product is not
+certain of does not render, and one that does render has nothing to disclaim. A chip saying
+"some of this may be wrong" was always the product asking the reader to do its job.
+
+`essential_missing` survives as diagnosis rather than as the gate — the unavailable screen
+leads with it, because "the entry list never arrived" is a more useful sentence than
+"something is missing", and falls back to naming whatever is genuinely absent.
 
 ---
 

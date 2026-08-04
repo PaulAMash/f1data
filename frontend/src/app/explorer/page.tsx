@@ -198,9 +198,10 @@ export default function ExplorerPage() {
                   : session ? session.grand_prix : loading ? "Loading…" : "Race Explorer"}
               </h1>
               {view === "session" && bundle?.source === "mock" && <DemoChip />}
-              {view === "session" && bundle?.source !== "mock" && session?.partial && (
-                <PartialChip onClick={() => setTab("data")} />
-              )}
+              {/* NO PARTIAL CHIP. A session this product is not certain of does
+                  not render at all now, so the chip has nothing left to mark —
+                  and a chip that says "some of this may be wrong" was always
+                  the product asking the reader to do its job. */}
             </div>
             {view === "season" ? (
               <p className="mt-1 text-sm text-ink-muted">
@@ -245,24 +246,9 @@ export default function ExplorerPage() {
           </p>
         ) : null}
 
-        {/* tell the user exactly what's missing instead of a bare "Partial data" */}
-        {bundle?.source !== "mock" && session?.partial &&
-          (session.source_report?.missing?.length ?? 0) > 0 && !loading && (
-          <p className="mb-4 rounded-lg border border-sky-400/15 bg-sky-400/[0.04] px-3 py-1.5 text-xs text-sky-300/90">
-            The sources couldn&apos;t provide{" "}
-            {session.source_report!.missing.slice(0, 6).map(humanFacet).join(", ")} for this
-            session — the tabs that need them will be limited.{" "}
-            {/* When the backend knows *why*, say why. "Partial data" with no
-                cause reads as a fault in the app; naming the source that
-                wasn't answering makes it a fact about the session. */}
-            {session.source_report?.missing_reason ? (
-              <span className="text-sky-200/75">{session.source_report.missing_reason} </span>
-            ) : null}
-            <button onClick={() => setTab("data")} className="underline decoration-dotted">
-              See exactly what&apos;s available
-            </button>
-          </p>
-        )}
+        {/* The banner that used to explain what was missing went with the chip.
+            Anything it would have had to report now means the session is not
+            shown, and the unavailable screen says it properly. */}
 
         {view === "session" && (bundle || loading) && (
           <div className="mb-5 flex items-center gap-2">
@@ -452,6 +438,9 @@ const ATTEMPT_STATE: Record<string, string> = {
 const FACET_LABEL: Record<string, string> = {
   drivers: "the entry list", results: "the classification",
   laps: "the lap times", positions: "the position trace",
+  stints: "the tyre stints", weather: "the weather trace",
+  race_control: "the race-control log", pit_stops: "the pit stops",
+  overtakes: "the overtakes",
 };
 
 /** "a, b and c" — a list a person would read out loud. */
@@ -464,8 +453,12 @@ function DataUnavailable({ error, incomplete, session, onRetry, onPick, onOpenDa
   error?: ApiError; incomplete?: RaceSession; session: Selection;
   onRetry: () => void; onPick: (s: Selection) => void; onOpenData: () => void;
 }) {
-  const missing = (incomplete?.source_report?.essential_missing ?? [])
-    .map((m: string) => FACET_LABEL[m] ?? m);
+  /* Lead with the essential absences — "the entry list never arrived" is a more
+     useful sentence than "something is missing" — and fall back to whatever is
+     genuinely missing, so this always names something concrete. */
+  const report = incomplete?.source_report;
+  const missing = ((report?.essential_missing?.length ? report.essential_missing
+                    : report?.missing) ?? []).map((m: string) => FACET_LABEL[m] ?? m);
   const verdict = incomplete
     ? {
         who: "provider" as const,
@@ -575,15 +568,6 @@ function DemoChip() {
       title="Explicit demo mode is enabled on the backend (sample data).">
       Demo data
     </span>
-  );
-}
-function PartialChip({ onClick }: { onClick: () => void }) {
-  return (
-    <button onClick={onClick}
-      className="inline-flex items-center gap-1 rounded-full border border-sky-400/30 bg-sky-400/10 px-2 py-0.5 text-[11px] font-semibold text-sky-300"
-      title="Some data facets weren't available for this session — see Data.">
-      Partial data
-    </button>
   );
 }
 

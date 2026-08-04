@@ -138,16 +138,58 @@ def test_missing_entry_list_makes_a_race_incomplete():
     assert s.complete is False
 
 
-def test_missing_weather_alone_leaves_a_race_complete():
-    """Enriching facets are explained, never a gate."""
+def test_a_real_absence_makes_a_session_unavailable_even_when_it_is_enriching():
+    """V76 made the gate strict: `missing` is empty or the page is not shown.
+
+    V75 gated on the essential facets only, which left a session that was
+    genuinely missing something still rendering with a chip on it asking the
+    reader how much to believe. The product rule is that a page we are not
+    certain of is a page we do not show.
+    """
     s = _race(classification=[_row("VER", position=1)],
               drivers=[Driver(number="1", code="VER", name="Max", team="Red Bull Racing")],
               laps=[Lap(driver="VER", lap=1)], weather=[])
     dsm._audit_report(s)
     assert "weather" in s.source_report.missing
-    assert s.source_report.essential_missing == []
+    assert s.source_report.essential_missing == []   # still diagnosed as enriching
+    assert s.source_report.complete is False         # and still not rendered
+
+
+def test_a_question_answered_none_is_not_a_missing_facet():
+    """THE MONACO CASE, and the reason strict is fair.
+
+    A derivation that runs over a complete position trace and finds no on-track
+    passes has told us something true about the race. Recomputing presence from
+    `bool(list)` threw that away, turned a clean street race into a gap, and put
+    a partial-data chip on a session holding every fact it needed.
+    """
+    from app.models import Compound, PositionPoint, Stint, WeatherPoint
+    s = _race(classification=[_row("VER", position=1)],
+              drivers=[Driver(number="1", code="VER", name="Max", team="Red Bull Racing")],
+              laps=[Lap(driver="VER", lap=1)],
+              positions=[PositionPoint(driver="VER", lap=1, position=1)],
+              stints=[Stint(driver="VER", stint=1, compound=Compound.SOFT,
+                            start_lap=1, end_lap=78, laps=78)],
+              weather=[WeatherPoint(lap=1, air_temp=23.0)],
+              overtakes=[], race_control=[], pit_stops=[])
+    # the three that can legitimately count zero were asked, and answered "none"
+    dsm._set_facet(s, "overtakes", "inferred", "medium",
+                   "no on-track passes were detected in this session.")
+    dsm._set_facet(s, "race_control", "f1-archive", "high", "green flag throughout.")
+    dsm._set_facet(s, "pit_stops", "openf1", "high", "no stops recorded.")
+    dsm._audit_report(s)
+    assert "overtakes" not in s.source_report.missing
     assert s.source_report.complete is True
-    assert s.partial is True          # still reported, still explained
+
+
+def test_a_facet_nothing_answered_for_is_still_missing():
+    """The other half of the same rule — silence is not zero."""
+    s = _race(classification=[_row("VER", position=1)],
+              drivers=[Driver(number="1", code="VER", name="Max", team="Red Bull Racing")],
+              laps=[Lap(driver="VER", lap=1)], overtakes=[])
+    dsm._audit_report(s)
+    assert "overtakes" in s.source_report.missing
+    assert s.source_report.complete is False
 
 
 def test_an_era_that_never_recorded_laps_is_not_incomplete():
@@ -160,9 +202,18 @@ def test_an_era_that_never_recorded_laps_is_not_incomplete():
     assert s.source_report.complete is True
 
 
-def test_practice_does_not_need_results_to_be_complete():
+def test_practice_with_nothing_but_an_entry_list_is_not_rendered():
+    """Strict applies to every category, not only to races."""
     s = _race(session_type="Practice 1", category="practice",
               drivers=[Driver(number="1", code="VER", name="Max", team="Red Bull Racing")],
               classification=[])
     dsm._audit_report(s)
-    assert s.source_report.complete is True
+    assert s.source_report.complete is False
+
+
+def test_the_verdict_is_the_same_object_every_page_reads():
+    """One gate: the session mirrors the report, so no caller can disagree."""
+    s = _race(classification=[_row("VER", position=1)], drivers=[], laps=[])
+    dsm._audit_report(s)
+    assert s.complete is s.source_report.complete
+    assert s.partial is s.source_report.partial

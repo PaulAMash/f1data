@@ -3527,3 +3527,50 @@ already said.
 
 > If two correct components can combine into a wrong result, the correctness
 > belongs one level up.
+
+---
+
+## "None" is an answer; make sure your model can hold it
+
+The audit recomputed each facet's presence from `bool(list)`. That is one line
+and it silently collapses two different states: *nothing answered* and
+*something answered, and the answer was zero*. Monaco is where the difference
+shows — a street circuit where barely a car is passed on track — and the product
+reported a race holding every fact it needed as partial, because the honest
+answer to "how many overtakes" was none.
+
+The provenance was already there. A derivation had run over a complete position
+trace and recorded itself as the source; the audit then overwrote that with
+"none" because the list was short. **The fix is to stop discarding the evidence
+that the question was asked**, not to special-case the facet.
+
+Which facets can legitimately count zero is a property of the facet, not of the
+race: overtakes, a race-control log on a clean afternoon, pit stops in a race
+nobody stopped in. Results and entry lists cannot; an empty one of those means
+nothing answered.
+
+> Before treating emptiness as absence, ask whether zero is a value the thing
+> can legitimately take. If it is, the count is not the evidence — the
+> provenance is.
+
+---
+
+## A strict rule needs its exemptions built first
+
+"A page this product is not certain of is a page it does not show" is the right
+rule and it is unshippable on its own — applied to this archive it would declare
+most of the sport unavailable. It only became safe once two earlier rules were
+in place, and both are about not inventing a gap in the first place:
+
+* a feed that had not been invented yet is not missing (a 1975 Grand Prix has no
+  lap times and never will);
+* a question asked and answered "none" is not missing either.
+
+The order matters more than either rule. V75 shipped a lenient gate because the
+strict one would have been wrong *given what the audit then believed was
+missing* — the answer was not to soften the gate but to stop over-reporting
+absence. Once `missing` contained only real absences, strict became the simple
+rule it always looked like.
+
+> If a rule you believe in produces obviously wrong results, check what you are
+> feeding it before you weaken it.
