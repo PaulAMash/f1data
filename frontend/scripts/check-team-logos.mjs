@@ -11,12 +11,16 @@
 
      present     is there a file at all — a missing one is not an error, it is
                  the drawn shield, which is a designed state
-     size        pixels; a mark below MIN_EDGE will be upscaled at the largest
-                 badge on a 2× display and will look soft
-     coverage    opaque fraction. Above LOGO_COMPOSED_COVERAGE the badge treats
-                 the file as a composed roundel: full bleed, no livery field
-     ink         mean luminance of the mark, 0–1, which is what decides whether
-                 its team-colour field is taken dark or light
+     size        pixels, read straight out of the WEBP header. A mark below
+                 MIN_EDGE is upscaled at the largest badge on a 2× display and
+                 will look soft
+
+   It deliberately stops there. The other two things that decide how a mark
+   renders — its opaque coverage and the luminance of its ink — need the pixels
+   decoded, and the badge already measures both on a canvas at runtime where
+   the answer is free. Reproducing that here would mean a WEBP decoder in the
+   build tooling and two implementations of the classification to keep in step.
+   `public/teams/README.md` documents what those thresholds are.
 
        node scripts/check-team-logos.mjs
    --------------------------------------------------------------------------- */
