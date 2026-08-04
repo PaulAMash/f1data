@@ -26,7 +26,7 @@ import { DriverComparison } from "@/components/driver-comparison/DriverCompariso
 import { useMode } from "@/lib/mode";
 import { api, ApiError } from "@/lib/api";
 import { cx } from "@/lib/format";
-import type { Meta, RaceBundle } from "@/lib/types";
+import type { Meta, RaceBundle, RaceSession } from "@/lib/types";
 import { Standings } from "@/components/history/Standings";
 
 // Three purpose-built experiences: a race asks "why did it unfold this way?",
@@ -293,7 +293,22 @@ export default function ExplorerPage() {
             onPick={(s) => setSel(s)} onOpenData={() => setTab("data")} />
         )}
 
-        {bundle && session && !loading && !error && (
+        {/* ONE VERDICT DECIDES WHETHER THERE IS A PAGE AT ALL.
+            `complete` is false only when something the session cannot be
+            reconstructed without is absent — the entry list, the results, a
+            race's lap times. Rendering those anyway is how a Grand Prix came to
+            show a column of car numbers under a "partial data" chip, which asks
+            the reader to decide how much of it to believe. The unavailable
+            screen is the honest answer and the better one. Enriching facets that
+            are missing never reach here: they are explained in Sources and the
+            page is still worth reading. */}
+        {bundle && session && !loading && !error && session.complete === false && (
+          <DataUnavailable session={sel} incomplete={session}
+            onRetry={() => setRefreshKey((k) => k + 1)}
+            onPick={(s) => setSel(s)} onOpenData={() => setTab("data")} />
+        )}
+
+        {bundle && session && !loading && !error && session.complete !== false && (
           <div className="animate-fade-in" data-tour="panel">
             {isRaceLike && tab === "story" && <RaceStory bundle={bundle} onJump={setTab} />}
             {isRaceLike && tab === "charts" && (
@@ -428,18 +443,44 @@ const ATTEMPT_STATE: Record<string, string> = {
   error: "returned an error",
 };
 
-function DataUnavailable({ error, session, onRetry, onPick, onOpenData }: {
-  error: ApiError; session: Selection;
+/* ONE SCREEN FOR BOTH WAYS A SESSION CAN BE UNAVAILABLE.
+   A fetch that failed and a fetch that succeeded without the pieces the page is
+   built on are the same thing to a reader: there is no race here to read. They
+   used to be handled in two places and only one of them was designed — the
+   other quietly rendered the race anyway with a chip on it. `incomplete` is the
+   second case, and it says which feeds were the ones that did not arrive. */
+const FACET_LABEL: Record<string, string> = {
+  drivers: "the entry list", results: "the classification",
+  laps: "the lap times", positions: "the position trace",
+};
+
+/** "a, b and c" — a list a person would read out loud. */
+function listOf(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+function DataUnavailable({ error, incomplete, session, onRetry, onPick, onOpenData }: {
+  error?: ApiError; incomplete?: RaceSession; session: Selection;
   onRetry: () => void; onPick: (s: Selection) => void; onOpenData: () => void;
 }) {
-  const verdict = WHOSE[error.reason] ?? {
-    who: "provider" as const,
-    line: "Something upstream did not answer as expected. The session itself is fine; this page will load once the source is back.",
-  };
+  const missing = (incomplete?.source_report?.essential_missing ?? [])
+    .map((m: string) => FACET_LABEL[m] ?? m);
+  const verdict = incomplete
+    ? {
+        who: "provider" as const,
+        line: missing.length
+          ? `The session loaded, but ${listOf(missing)} never arrived — and a race cannot be read without ${missing.length > 1 ? "them" : "it"}. Rather than show you a page with holes in it, we are showing you this.`
+          : "The session loaded without the data the analysis is built on. Rather than show you a page with holes in it, we are showing you this.",
+      }
+    : WHOSE[error?.reason ?? ""] ?? {
+        who: "provider" as const,
+        line: "Something upstream did not answer as expected. The session itself is fine; this page will load once the source is back.",
+      };
   const upstream = verdict.who === "provider";
 
   return (
-    <Card>
+    <Card className="unavail">
       <CardBody className="p-0">
         {/* ---- 1. which session, and one word for the state ---------------- */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-white/[0.06] px-6 py-5">
@@ -465,18 +506,18 @@ function DataUnavailable({ error, session, onRetry, onPick, onOpenData }: {
         {/* ---- 2. why, and whose problem it is ---------------------------- */}
         <div className="space-y-3 px-6 py-5">
           <p className="max-w-2xl text-[13.5px] leading-relaxed text-ink">{verdict.line}</p>
-          {error.message && (
+          {error?.message && (
             <p className="max-w-2xl text-[12.5px] leading-relaxed text-ink-muted">{error.message}</p>
           )}
 
           {/* ---- 3. what each provider actually said ---------------------- */}
-          {error.attempts?.length > 0 && (
+          {(error?.attempts?.length ?? 0) > 0 && (
             <div className="mt-1 overflow-hidden rounded-xl border border-white/[0.06] bg-base-900/40">
               <p className="border-b border-white/[0.06] px-3.5 py-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
                 What each source said
               </p>
               <ul>
-                {error.attempts.slice(0, 4).map((a: any, i: number) => (
+                {error!.attempts.slice(0, 4).map((a: any, i: number) => (
                   <li key={i}
                     className="flex items-center gap-3 border-b border-white/[0.04] px-3.5 py-2 text-[12.5px] last:border-b-0">
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber/70" />
@@ -492,7 +533,7 @@ function DataUnavailable({ error, session, onRetry, onPick, onOpenData }: {
 
           {/* ---- 4. what to do now ---------------------------------------- */}
           <div className="flex flex-wrap items-center gap-2 pt-1">
-            {error.retryable && (
+            {(error?.retryable ?? true) && (
               <button onClick={onRetry} className="pill-btn"><RefreshCw size={14} /> Try again</button>
             )}
             <a href="/history" className="pill-btn"><BookOpen size={14} /> Official results in Seasons</a>

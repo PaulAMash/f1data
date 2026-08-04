@@ -52,7 +52,7 @@ TEAM_COLORS = {
     "Aston Martin": "#229971",
     "Williams": "#64C4FF",
     "Alpine": "#0090FF",
-    "Haas F1 Team": "#B6BABD",
+    "Haas F1 Team": "#969C9F",
     "Audi": "#BB0A30",
     "Racing Bulls": "#6692FF",
 }

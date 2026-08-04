@@ -47,6 +47,8 @@ export interface SourceReport {
   data_source: DataSource; fetched_at?: string | null; facets: FacetSource[];
   probes: SourceProbe[]; missing: string[]; missing_reason?: string | null;
   partial: boolean; cache_key?: string | null;
+  /** Essential facets absent — see the backend's _ESSENTIAL_FACETS. */
+  essential_missing?: string[]; complete?: boolean;
 }
 export interface RaceControlEvent {
   lap?: number | null; time?: string | null; category: string; flag?: string | null;
@@ -73,7 +75,8 @@ export type SessionCategory = "race" | "qualifying" | "sprint" | "sprint_qualify
 export interface RaceSession {
   year: number; grand_prix: string; official_name?: string | null; session_type: string;
   category: SessionCategory; circuit?: Circuit | null; total_laps: number; data_source: DataSource;
-  fetched_at?: string | null; partial: boolean; pit_data_reliable?: boolean;
+  fetched_at?: string | null; partial: boolean; complete?: boolean;
+  pit_data_reliable?: boolean;
   notes: string[]; source_report?: SourceReport | null;
   drivers: Driver[]; constructors: Constructor[]; classification: ClassificationRow[];
   laps: Lap[]; stints: Stint[]; pit_stops: PitStop[]; overtakes: Overtake[];

@@ -18,9 +18,11 @@ import time
 
 from .. import cache
 from ..analysis.events import infer_overtakes
+from ..analysis.normalize import order_classification
 from ..config import get_settings
 from ..models import (
     DataSource,
+    Driver,
     FacetSource,
     GrandPrix,
     RaceSession,
@@ -228,9 +230,61 @@ def _merge_missing_facets(session: RaceSession, primary: str) -> None:
                 session.classification = rows
                 if not session.drivers:
                     session.drivers = _drivers
+                    _set_facet(session, "drivers", "jolpica", "high")
                 _set_facet(session, "results", "jolpica", "high")
         except Exception as exc:  # noqa: BLE001
             log.info("jolpica classification merge failed: %s", exc)
+
+
+def _backfill_drivers(session: RaceSession, primary: str) -> None:
+    """The entry list, which used to be a by-product and is a facet.
+
+    THIS IS WHY A GRAND PRIX RENDERED AS CAR NUMBERS. The driver list was only
+    ever filled inside the branch that backfills a MISSING classification — so a
+    source that returned results but no entry list left `drivers` empty, nothing
+    else looked at it, and every surface that resolves a name from a code fell
+    back to the number. The page loaded, said "partial data", and showed "12"
+    where "Verstappen" belongs.
+
+    Two ways back, cheapest first:
+
+      1. DERIVE IT FROM THE CLASSIFICATION we already hold. Every row carries a
+         code, a name, a team and a colour — which is an entry list. It costs no
+         network call and it cannot fail, so it runs first and handles the case
+         completely whenever results exist.
+      2. ASK JOLPICA, for the sessions that have no classification either. This
+         is the genuinely thin case, and it is allowed to fail.
+
+    Derived entries are marked as such: their provenance is the results, and the
+    sources panel should say so rather than implying a driver feed answered.
+    """
+    if session.drivers:
+        return
+    if session.classification:
+        seen: dict[str, Driver] = {}
+        for row in session.classification:
+            if not row.driver or row.driver in seen:
+                continue
+            seen[row.driver] = Driver(
+                number="", code=row.driver, name=row.name or row.driver,
+                team=row.team or "", team_color=row.team_color or "#888888",
+                grid=row.grid)
+        if seen:
+            session.drivers = list(seen.values())
+            _set_facet(session, "drivers", "derived", "medium",
+                       "Entry list rebuilt from the classification — no separate "
+                       "driver feed answered for this session.")
+            return
+    if primary == "jolpica" or session.category not in ("race", "sprint"):
+        return
+    try:
+        drivers, _rows, _meta = jolpica_adapter.fetch_classification(
+            session.year, session.grand_prix)
+        if drivers:
+            session.drivers = drivers
+            _set_facet(session, "drivers", "jolpica", "high")
+    except Exception as exc:  # noqa: BLE001
+        log.info("jolpica entry-list merge failed: %s", exc)
 
 
 #: Facets the F1 live-timing archive carries that Jolpica does not. Jolpica is a
@@ -606,6 +660,45 @@ def _era_note(year: int) -> str | None:
     return None
 
 
+#: WHAT A SESSION CANNOT BE RECONSTRUCTED WITHOUT.
+#:
+#: Every facet below is one the page is built ON rather than enriched by. Without
+#: the entry list a classification is a column of car numbers with question marks
+#: under them — which is exactly what a Grand Prix rendered as when the driver
+#: list failed to arrive and nothing backfilled it. Without results there is no
+#: race to write about.
+#:
+#: Lap times are essential to a RACE and a SPRINT and to nothing else: the whole
+#: product — pace, strategy, the position trace, the story — is derived from
+#: them, and a race page without them is four empty tabs and a results table.
+#: A practice or qualifying hour is a different claim and stands on its own
+#: results.
+#:
+#: Everything not listed here — stints, weather, race control, pit stops,
+#: overtakes — is enriching. Its absence is explained in the sources panel and
+#: never gates the page, because a 2024 race with no weather trace is still a
+#: complete and trustworthy read of that race.
+_ESSENTIAL_FACETS: dict[str, set[str]] = {
+    "race": {"results", "drivers", "laps"},
+    "sprint": {"results", "drivers", "laps"},
+    "qualifying": {"results", "drivers"},
+    "sprint_qualifying": {"results", "drivers"},
+    "practice": {"drivers"},
+}
+
+
+def _essential_for(category: str, year: int) -> set[str]:
+    """Essential facets for this category, minus any the era never recorded.
+
+    A 1975 Grand Prix has no lap times and never will; demanding them would
+    declare half of the sport's history unavailable, which is the opposite of
+    honest. The era boundary already decided that absence is not a gap, and this
+    keeps the two rules from contradicting each other.
+    """
+    return {f for f in _ESSENTIAL_FACETS.get(category, {"results", "drivers"})
+            if year >= _FACET_FROM.get(f, 0)}
+
+
 #: facet -> (attribute holding it, human name for the reader)
 _CANONICAL_FACETS: dict[str, tuple[str, str]] = {
     "results": ("classification", "results & classification"),
@@ -666,9 +759,16 @@ def _audit_report(session: RaceSession) -> None:
     report.facets = facets
     report.missing = missing
     report.partial = bool(missing)
+    # THE ONE VERDICT. Split by what this kind of session cannot be
+    # reconstructed without — see _ESSENTIAL_FACETS — so that "a weather trace
+    # is absent" and "the entry list never arrived" stop being the same answer.
+    essential = _essential_for(cat, session.year)
+    report.essential_missing = [m for m in missing if m in essential]
+    report.complete = not report.essential_missing
     if not missing:
         report.missing_reason = None
     session.partial = report.partial
+    session.complete = report.complete
 
     # and say which feeds had not started yet, so the absence has a reason
     note = _era_note(session.year)
@@ -710,6 +810,16 @@ def _post_process(session: RaceSession, primary: str) -> None:
         headshots.enrich(session)
     except Exception as exc:  # noqa: BLE001
         log.info("headshot enrich failed: %s", exc)
+
+    # the entry list, before anything that resolves a name from a code
+    _backfill_drivers(session, primary)
+
+    # FIA order, after every merge — see analysis/normalize.order_classification
+    if session.category in ("race", "sprint"):
+        try:
+            order_classification(session)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("classification ordering failed: %s", exc)
 
     # a facet a session type cannot have is not a gap in our data
     _prune_inapplicable_facets(session)

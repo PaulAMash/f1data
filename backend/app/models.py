@@ -267,6 +267,23 @@ class SourceReport(BaseModel):
     # says a source wasn't answering reads as the truth about the session.
     missing_reason: Optional[str] = None
     partial: bool = False
+    # ---- one verdict, and every page reads this one ----------------------
+    #
+    # `partial` was the only axis for four releases and it could not carry the
+    # decision, because it lumps two different situations together. A 2024 race
+    # with no weather trace is partial and completely worth reading. A race whose
+    # ENTRY LIST never arrived is partial too — and it renders as a page of car
+    # numbers with question marks under them, which is not a race analysis at
+    # all.
+    #
+    # So the facets are split by what a session cannot be reconstructed without.
+    # `essential_missing` is empty or it is not; if it is not, the product owes
+    # the reader the unavailable screen rather than a page they would have to
+    # take on trust. Enriching facets that are absent stay in `missing`, are
+    # explained in the sources panel, and never gate the page.
+    essential_missing: list[str] = Field(default_factory=list)
+    #: True when everything essential to this kind of session is present.
+    complete: bool = True
     cache_key: Optional[str] = None
 
 
@@ -299,6 +316,11 @@ class RaceSession(BaseModel):
     data_source: DataSource = DataSource.MOCK
     fetched_at: Optional[str] = None
     partial: bool = False             # some facets missing but session still usable
+    # True when nothing ESSENTIAL to this kind of session is missing — see
+    # SourceReport.complete. The UI gates the whole race page on this: complete
+    # sessions render, incomplete ones get the unavailable screen rather than a
+    # page the reader would have to take on trust.
+    complete: bool = True
     pit_data_reliable: bool = True    # False when the source has no trustworthy pit data
     notes: list[str] = Field(default_factory=list)
     source_report: Optional[SourceReport] = None

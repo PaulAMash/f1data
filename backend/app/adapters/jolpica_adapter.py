@@ -46,8 +46,8 @@ _HOST = "api.jolpi.ca"
 TEAM_COLORS = {
     "red_bull": "#3671C6", "ferrari": "#E8002D", "mclaren": "#FF8000",
     "mercedes": "#27F4D2", "aston_martin": "#229971", "williams": "#64C4FF",
-    "alpine": "#0090FF", "haas": "#B6BABD", "rb": "#6692FF",
-    "audi": "#BB0A30", "cadillac": "#B6BABD",
+    "alpine": "#0090FF", "haas": "#969C9F", "rb": "#6692FF",
+    "audi": "#BB0A30", "cadillac": "#7B7B7E",
     # teams that have stopped racing under these names
     "sauber": "#52E252", "alphatauri": "#5E8FAA", "alfa": "#C92D4B",
 }
