@@ -3454,3 +3454,76 @@ developer opens rather than in a screenshot a user sends three releases later.
 
 > A fixture that is tidier than production is not a simplification. It is a
 > blind spot with test coverage.
+
+---
+
+## A boolean cannot answer two questions
+
+`partial` meant "something is missing" for four releases, and it was asked to
+decide whether a page should render. It cannot, because the two situations it
+covers have opposite answers:
+
+* A 2024 race with no weather trace is **partial and completely worth reading**.
+* A race whose entry list never arrived is partial too — and renders as a column
+  of car numbers with question marks under them, which is not a race analysis.
+
+Both got the same chip, so the chip meant nothing, and the reader was left to
+work out for themselves how much of the page to believe. The split is by what a
+session **cannot be reconstructed without**: results, the entry list, and for a
+race its lap times. Everything else enriches, is explained where it is missing,
+and never gates anything.
+
+Two rules keep the split honest. The era boundary wins over the essential list —
+a 1975 Grand Prix has no lap times and never will, and demanding them would
+declare half the sport's history unavailable. And the verdict is computed in one
+function from the session as built, not asserted by whichever adapter answered
+first, so it cannot disagree with itself between two pages.
+
+> When one flag has to carry two decisions, it is not a flag. It is a coin toss
+> the reader is being asked to call.
+
+---
+
+## A derived field is not a second-class source
+
+The entry list was filled as a side effect of backfilling the results — inside
+`if not session.classification` — so a source returning results *without* an
+entry list left it empty and nothing else looked. The page loaded, said partial,
+and showed car numbers.
+
+The cheap fix turned out to be the right one: every classification row already
+carries a code, a name, a team and a colour, which **is** an entry list. Rebuilt
+from what we already hold, at no network cost, it cannot fail and it covers the
+case completely whenever results exist. The network path stays for the genuinely
+thin sessions that have neither.
+
+The condition is that it says so. The facet is marked `derived` with a sentence
+naming the classification as its origin, because a reader checking the sources
+panel is owed the difference between "a driver feed answered" and "we worked it
+out from the results".
+
+> Look at what you already have before you ask anyone for it again — and then
+> say which of the two you did.
+
+---
+
+## Order is a property of the session, not of the adapter
+
+Three adapters each ordered their classification correctly by their own
+provider's convention. Live timing gives a retirement no position; the results
+archive numbers retirements straight on after the finishers. Both are internally
+consistent, and the enrichment step takes the classification from one and the
+retirement flags from the other — so a driver who took the flag ends up between
+two DNFs, and no single file is wrong.
+
+Anything a merge can invalidate has to be decided after the merge. The order is
+settled once now, from the facts on the rows, identically for every source: the
+classified first, the retirements behind them ranked by how far they got.
+
+Renumbering the finishers contiguously is part of it rather than a liberty. A
+number that disagrees with the row's own position in the table is worse than no
+number, and a retirement showing NC is both true and what the badge beside it
+already said.
+
+> If two correct components can combine into a wrong result, the correctness
+> belongs one level up.

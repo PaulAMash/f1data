@@ -3,9 +3,72 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V74**. A cross-surface identity audit: every badge on every current-season
-surface, in both themes at three widths, asserting that one constructor resolves to the
-same asset, the same colour and the same name wherever it appears. No failures.
+Last pass: **V75**. A data-pipeline audit rather than a visual one: what a session is
+missing, why, and whether the product is entitled to render it. Fourteen new tests hold
+the three answers.
+
+---
+
+## Fixed in V75
+
+### 1. A Grand Prix rendered as a column of car numbers — *was high, and it was ours*
+
+Monaco showed "12" where "Verstappen" belongs, "?" under every row, and a winner card
+reading "12 won the Monaco Grand Prix". The upstream sources were not at fault. **The entry
+list was only ever backfilled as a side effect of backfilling the results**: the merge step
+filled `drivers` inside `if not session.classification`, so a source that returned results
+*without* an entry list left `drivers` empty and nothing else ever looked.
+
+It is a facet in its own right now, with its own step, and the cheap path handles it
+completely: every classification row already carries a code, a name, a team and a colour —
+which *is* an entry list. Rebuilt from what we hold, at no network cost, and marked
+`derived` so the sources panel says where it came from rather than implying a driver feed
+answered. Jolpica is asked only for the sessions that have no classification either.
+
+### 2. A finisher sat between two retirements — *was medium, systemic, and not Barcelona's fault*
+
+Albon finished and was listed P18, between DNFs at 17 and 19. Each adapter ordered its own
+rows correctly by its own provider's convention — live timing gives a retirement no
+position at all; the results archive numbers retirements straight on after the finishers —
+and then the enrichment step took the classification from one and the retirement flags from
+the other. The order was decided in three places and the merge mixed conventions.
+
+`order_classification` decides it once, after every merge, from the facts on the rows:
+classified finishers first in their existing order, then retirements ranked by how far they
+got. Finishers are renumbered contiguously — closing the gaps a retirement used to hold, so
+the printed position and the row's place agree — and retirements lose their number, which
+is what NC means and what the DNF badge beside them already said. Verified in the running
+app: 16 rows, every finisher above every retirement.
+
+### 3. "Partial" could not carry the decision it was being asked to make — *was the brief*
+
+One boolean covered both "no weather trace" and "no entry list". So Monaco said partial and
+rendered anyway, and Miami — missing its own pieces — said nothing, because what it lacked
+was derived rather than a facet. Neither answer told a reader whether to trust the page.
+
+The facets are split by what a session cannot be reconstructed **without**: results, the
+entry list, and for a race or sprint its lap times. `essential_missing` is empty or it is
+not, and `complete` follows from it. Enriching facets that are absent stay in `missing`,
+stay explained in the sources panel, and never gate anything — a 2024 race with no weather
+is a complete and trustworthy read of that race. The era rule still wins over both: a 1975
+Grand Prix has no lap times and never will, and demanding them would declare half the
+sport's history unavailable.
+
+### 4. An incomplete session gets the unavailable screen, not a page with holes in it
+
+A fetch that failed and a fetch that succeeded without the pieces the page is built on are
+the same thing to a reader. They were handled in two places and only one of them was
+designed. One screen now serves both, and when it is the second case it says which feeds
+did not arrive — "the entry list and the lap times never arrived, and a race cannot be read
+without them" — rather than a chip that asks the reader to guess how much to believe. It
+sits over a slow ambient trace, because a dead panel confirms the suspicion that something
+broke and a room still running says the product is fine and the session is not.
+
+### 5. Haas and Cadillac stop sharing a colour
+
+Sampled from the supplied references: Haas `#969c9f`, keeping the cool cast its reference
+shows; Cadillac `#7b7b7e`, neutral and materially darker. They had carried a byte-identical
+hex, so two teams shared one rail, one bar and one line on every chart.
 
 ---
 

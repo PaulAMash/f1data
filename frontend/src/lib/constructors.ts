@@ -85,8 +85,13 @@ const CANON: TeamIdentity[] = [
      rings rendered on Kick Sauber's green in the championship while the session
      feed drew the same team red two tabs away. */
   { id: "audi", name: "Audi", code: "AUD", accent: "#e8ecf5", colour: "#bb0a30" },
-  { id: "haas", name: "Haas", code: "HAA", accent: "#e6002b", colour: "#b6babd" },
-  { id: "cadillac", name: "Cadillac", code: "CAD", accent: "#ffc906", colour: "#b6babd" },
+  /* HAAS AND CADILLAC, SAMPLED FROM THE SUPPLIED REFERENCES. Both are grey and
+     Cadillac is the darker of the two, which is the distinction that had been
+     lost — they carried a byte-identical hex, so two teams shared one rail, one
+     bar and one line on every chart. Haas keeps the cool cast its reference
+     shows; Cadillac is neutral and materially darker. */
+  { id: "haas", name: "Haas", code: "HAA", accent: "#e6002b", colour: "#969c9f" },
+  { id: "cadillac", name: "Cadillac", code: "CAD", accent: "#ffc906", colour: "#7b7b7e" },
   /* Teams that have stopped racing under these names. They keep their records
      so a 2023 session still recognises them; they have no marks and are not
      meant to. */

@@ -424,3 +424,52 @@ def normalize_session(session: RaceSession) -> None:
         for c in session.classification:
             if c.best_lap is None:
                 c.best_lap = best.get(c.driver)
+
+
+def order_classification(session: RaceSession) -> None:
+    """FIA order, settled once, from the session as built.
+
+    A FINISHER IS NEVER BELOW A RETIREMENT. That is the rule, and the reason it
+    had to move here is that it cannot be enforced anywhere else: each adapter
+    ordered its own rows correctly by its own provider's convention, and then
+    the merge steps mixed conventions. Live timing gives a retirement no
+    position at all; the results archive numbers retirements straight on after
+    the finishers. Take the classification from one and the retirement flags
+    from the other — which is exactly what `_enrich_retirements` does — and a
+    driver who took the flag ends up sitting between two DNFs.
+
+    So the order is decided after every merge, from the facts on the rows,
+    identically for every source and every session:
+
+      * Classified finishers first, in their existing order (position where a
+        source gave one, then laps completed, then classified race time).
+      * Retirements after them, the ones who got furthest first, which is the
+        order the sport itself ranks them in.
+
+    Finishers are then renumbered 1..N. That is not rewriting a result: it
+    closes the gaps left where a retirement used to hold a number, so the
+    printed position and the row's place in the table agree. Retirements lose
+    their number on purpose — the table reads NC, which is what they are, and
+    it is what the DNF badge beside them already said.
+    """
+    rows = session.classification
+    if not rows:
+        return
+
+    def finished_key(c):
+        return (c.position is None, c.position or 999,
+                -(c.laps_completed or 0), c.race_time if c.race_time is not None else 9e9)
+
+    def retired_key(c):
+        # furthest first; a source-given position breaks ties among equals
+        return (-(c.laps_completed or 0), c.position is None, c.position or 999)
+
+    finishers = sorted((c for c in rows if not c.retired), key=finished_key)
+    retirements = sorted((c for c in rows if c.retired), key=retired_key)
+
+    for i, c in enumerate(finishers, start=1):
+        c.position = i
+    for c in retirements:
+        c.position = None
+
+    session.classification = finishers + retirements
