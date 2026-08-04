@@ -4,7 +4,7 @@ import { Search, X } from "lucide-react";
 import type { Driver } from "@/lib/types";
 import { cx } from "@/lib/format";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
-import { ConstructorMark } from "@/components/ui/ConstructorMark";
+import { ConstructorBadge } from "@/components/ui/ConstructorBadge";
 import { Modal } from "@/components/ui/Modal";
 
 /* -------------------------------------------------------------------------- */
@@ -148,7 +148,7 @@ function ConstructorCard({
             any of them — that space now carries the one thing the reader is
             actually scanning for. */}
         <span className="transition-transform duration-300 ease-out group-hover/team:scale-110">
-          <ConstructorMark team={team} color={color} size={26} />
+          <ConstructorBadge team={team} color={color} size={26} />
         </span>
         <span className="truncate text-[12.5px] font-bold uppercase tracking-[0.13em] text-ink-muted transition-colors duration-200 group-hover/team:text-ink">
           {team}

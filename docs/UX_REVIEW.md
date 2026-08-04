@@ -3,10 +3,76 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V69**. Reviewed at 1920×1080, 1512×982, 1440×900, 1366×768, 1280×720 and
-1024×640, in both themes, with the welcome field sampled frame by frame through every
-control on the setup screen, and the spelling preference cycled twice in each direction
-across Home, Settings, Seasons, Ask and Explore.
+Last pass: **V70**. Reviewed at 1440×950 in both themes, with the constructor badge
+exercised against marks of deliberately hostile aspect ratios (4.3:1, 1:3, composed
+roundels, and three teams with no asset at all) across the championship table, both pace
+boards, the constructor table, the driver gallery, the focus card and the comparison.
+
+---
+
+## Fixed in V70
+
+### 1. A constructor had no identity where a driver had a face — *was the brief*
+
+Every driver in this product is a portrait in a circle. Every constructor beside them was
+a 10px coloured dot, a 2.5px livery sliver, or nothing — so a row carrying both read as a
+photograph next to a piece of punctuation. Constructors now wear their own mark in a
+circle of the same diameter, set the same way, in the current championship table, both
+constructor pace boards, the advanced constructor table, the driver gallery, the focus
+card and the driver comparison.
+
+One component does all of it. `ConstructorBadge` resolves `/teams/<slug>.webp` from the
+constructor's name, probes it once per session, normalises it, and falls back to the drawn
+shield when there is nothing there. Nothing enumerates which teams have files, so a new
+mark is a file drop and no code change.
+
+### 2. `object-fit: contain` is not normalisation — *the hard part of the brief*
+
+"Mercedes shouldn't look tiny while Ferrari fills the container" is a real problem and
+contain does not solve it: contain guarantees nothing overflows, which means a wide mark
+touches both side edges while a square one touches all four, and the wide one reads as
+half the size. The badge decides from the asset's own aspect ratio, with no per-team table:
+
+* **Near-square (0.86–1.16)** is a mark that already carries its own padding — a roundel, a
+  shield, a composed badge — so it gets the whole circle and aligns with the container
+  rather than floating inside a second one. The livery wash is dropped with it, because
+  nothing of it can be seen behind an opaque mark.
+* **Anything else** is fitted by its longest edge, and that edge is allowed to grow from 74%
+  to 92% of the badge as the mark gets thinner. **A circle is not a square**: a thin mark
+  has no corners to cut, and lives along the diameter where there is materially more room.
+  Measured at 38px, a 4.3:1 wordmark went from 28px wide to 35px — the difference between
+  "half the size of its neighbour" and "the same size".
+
+### 3. Two components each had an opinion about the container — *was ours*
+
+The old mark drew its own shield at `size × 1.1`, so a constructor was 10% taller than the
+portrait beside it and rows carrying both never quite lined up. The badge owns the circle
+now and the shield is handed the space that is left. Every badge in the product reports an
+exactly square footprint at every size from 18 to 38.
+
+### 4. Pending, present and absent were three different shapes — *found while building*
+
+Showing the shield first and swapping to the mark a frame later is a badge that changes
+under the reader's eye, which is the one thing a badge must never do. All three states
+paint into the same circle: pending is the circle with its wash and nothing in it, and
+what arrives — mark or shield — arrives into the space that was already there. The probe
+cache is a module constant, so a constructor resolved once is answered synchronously for
+the rest of the session and never flickers again.
+
+### 5. The focus card ignored the colour-vision setting — *was medium, and found in passing*
+
+`FocusCardShell` took `driver.team_color` raw rather than through `useLivery()`, so in all
+three colour-vision modes the most prominent card in the product — its rail, its wash, the
+ring around the portrait, the eyebrow — was the one surface still painted in colours those
+readers cannot separate. Found because the constructor badge would have inherited the same
+bug. One line; the whole card is correct now.
+
+### 6. Historical stays text-only — *verified, not assumed*
+
+Past seasons render zero badges and issue zero requests to `/teams` — checked at 1998 and
+2015, drivers' and constructors' tables both. The gate was already the right one: the
+standings take `portraits` from the caller, and the Historical page passes it only for the
+season in progress.
 
 ---
 
@@ -1058,6 +1124,21 @@ it. Corrected.
 
 ## Open — recommended, not yet done
 
+### 0. The constructor marks are not in the tree — *blocked, not undone*
+
+Everything V70 built is shipped and wired; the eleven `.webp` files are not, because
+`cdn.search.brave.com:443` is refused by this session's egress policy (`403` to `CONNECT`,
+confirmed against `/__agentproxy/status`, and the proxy's own guidance is to report a policy
+denial rather than route around it). Until they land, every constructor renders the drawn
+shield — which is the designed fallback, not a hole, and is why the release was still worth
+shipping: the badge system, the normalisation, the equal footprint with the driver portrait
+and the five surfaces that never had a mark at all are all in.
+
+To finish it: `cd frontend && ./scripts/fetch-team-logos.sh`. No code changes, no registry,
+no build step — see `frontend/public/teams/README.md`. Verified end to end against stand-in
+marks at 4.3:1, 1:3, 1.5:1 and composed square, plus three teams deliberately left without
+an asset.
+
 ### A. A first visit can land on an empty product — *high, needs a product decision*
 
 "Start exploring" goes to the Race Explorer, which fetches live timing data. When the archive
@@ -1138,6 +1219,21 @@ label (`aria-label^="Guided tour, step"`), never on the role.
 name="Start exploring")` times out on an `<a href>` that happens to be styled as a button, and
 a 30-second timeout in a `try` block silently changes the timing of everything after it — which
 is how a tour that only fails when started quickly looked like a tour that always worked.
+
+**`PITWALL_IQ_MOCK_MODE=true` makes the whole product reviewable with no route to the data
+providers.** Two versions were verified against the unavailable-session screen because the
+backend was started without it — which is the correct screen, and not the one the work was
+about. Start the API with it whenever the container has no egress: a full simulated race,
+a championship table and a driver roster all render, and every surface a review needs is
+reachable.
+
+**Verify a normalisation against shapes worse than the real ones.** The constructor badge
+was checked with stand-in marks at 4.3:1, 1:3, 1.5:1 and composed square before any real
+asset existed, which is what exposed both bugs worth having: `contain` alone leaves a wide
+mark reading half-size, and a circle affords a thin mark more room than the inscribed
+square does. Real F1 marks are all between 1:1 and 2:1 and would have hidden both. Build
+the hostile set, put it in `public/`, screenshot, then delete it — the stand-ins must never
+reach a commit, because an abstract shape in a badge looks exactly like broken branding.
 
 **Headless Chromium reports `navigator.language === "en-US"`, so the product's first-run
 default there is American.** A spelling probe that assumes British is the baseline compares

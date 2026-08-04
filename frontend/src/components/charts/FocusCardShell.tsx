@@ -3,6 +3,8 @@ import { X } from "lucide-react";
 import type { Driver } from "@/lib/types";
 import { cx } from "@/lib/format";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
+import { ConstructorBadge } from "@/components/ui/ConstructorBadge";
+import { useLivery } from "@/lib/liveryColor";
 
 /* -------------------------------------------------------------------------- */
 /* One focus-card identity shared by the Position and Tyre charts, so focusing */
@@ -29,7 +31,13 @@ export function FocusCardShell({
   driver: Driver; eyebrow?: string; tiles: FocusTile[]; takeaway?: string; big?: boolean;
   onClear: () => void; onDeepDive?: (code: string) => void; children?: React.ReactNode;
 }) {
-  const tc = driver.team_color;
+  /* THROUGH THE READER'S PALETTE, like everything else that wears a livery.
+     This card took `driver.team_color` raw, so in the three colour-vision modes
+     the most prominent surface in the product — the rail, the wash, the ring
+     around the portrait, the eyebrow — was the one place still painted in
+     colours those readers cannot separate. Found while giving the constructor
+     its badge here; the badge would have inherited the same bug. */
+  const tc = useLivery()(driver.team_color);
   return (
     <div className="relative overflow-hidden rounded-2xl border p-4 pl-5 animate-fade-in"
       style={{ borderColor: `${tc}55`, background: `linear-gradient(120deg, ${tc}24 0%, ${tc}0d 26%, transparent 62%)` }}>
@@ -42,8 +50,12 @@ export function FocusCardShell({
           <div className="min-w-0">
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: tc }}>{eyebrow}</div>
             <div className={cx("truncate font-extrabold leading-tight tracking-tight", big ? "text-[26px]" : "text-2xl")}>{driver.name}</div>
-            <div className="mt-0.5 flex items-center gap-1.5 text-xs font-medium text-ink-muted">
-              <span className="h-2 w-2 rounded-full" style={{ background: tc }} /> {driver.team}
+            {/* The constructor beside the driver, which is the pairing this
+                card exists to state. A 8px dot said "there is a colour here";
+                the mark says whose car it is — and it is the same badge, at the
+                same size, as the one in the gallery this card was opened from. */}
+            <div className="mt-1 flex items-center gap-1.5 text-xs font-medium text-ink-muted">
+              <ConstructorBadge team={driver.team} color={tc} size={18} /> {driver.team}
             </div>
           </div>
         </button>

@@ -14,6 +14,7 @@ import {
 import { Spinner, ErrorState } from "@/components/ui/misc";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
+import { ConstructorBadge } from "@/components/ui/ConstructorBadge";
 import { useGrowIn } from "@/components/ui/Visuals";
 import { deriveWindows, EVENT, type Win } from "@/lib/raceEvents";
 import {
@@ -238,7 +239,15 @@ function HeadToHead({ bundle, data, a, b, drvOf, nameOf, colorOf, swings }: any)
           <span className="truncate text-sm font-bold text-ink">{nameOf(code)}</span>
           {won && <Crown size={14} className="shrink-0 text-amber" />}
         </div>
-        <div className="text-xs text-ink-muted">{drvOf(code)?.team}</div>
+        {/* The two cars are the whole subject of this comparison, so each side
+            names its constructor with the constructor's own mark — the same
+            badge, one size down, as the driver's portrait beside it. */}
+        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-muted">
+          {drvOf(code)?.team && (
+            <ConstructorBadge team={drvOf(code)!.team} color={colorOf(code)} size={18} />
+          )}
+          <span className="truncate">{drvOf(code)?.team}</span>
+        </div>
       </div>
       <span className="ml-auto text-2xl font-extrabold tabular-nums"
         style={{ color: colorOf(code) }}>

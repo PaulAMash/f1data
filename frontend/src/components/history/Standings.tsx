@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Trophy, Users } from "lucide-react";
 import { Tabs } from "@/components/ui/Tabs";
 import { Skeleton, EmptyState } from "@/components/ui/misc";
-import { ConstructorMark } from "@/components/ui/ConstructorMark";
+import { ConstructorBadge } from "@/components/ui/ConstructorBadge";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
 import { api } from "@/lib/api";
 import { teamColour } from "@/lib/constructors";
@@ -195,7 +195,10 @@ function StandingRow({ row, lead, constructor, driver, portraits }: {
           placeholder, not initials in a circle. An empty column is a design
           decision; a column of fallbacks is a failure to load. */}
       {portraits && (constructor ? (
-        <ConstructorMark team={row.name} color={tint} size={22} />
+        /* The same circle, at the same size, as the face in the drivers' table
+           beside it — a championship should not change shape when you change
+           which championship you are reading. */
+        <ConstructorBadge team={row.name} color={tint} size={top ? 32 : 27} />
       ) : (
         /* the face beside the name. A championship is a list of people, and it
            had been reading like a spreadsheet of them. */
