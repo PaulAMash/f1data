@@ -46,9 +46,10 @@ const RACE_TABS = [
      property of the season around it — and a seventh tab beside Ask said
      otherwise to every reader who found it there.
 
-     It lives on Seasons, with the season picker that governs it, and the Race
-     Story hands the reader off to it at the point the question actually occurs
-     to them: after the result. One table, in the place its own subject lives. */
+     It is a SCOPE of this page instead — the switch opposite the heading says
+     whether you are reading a session in this season or the season itself,
+     which is the one control high enough to govern both. One table, reached
+     from the place its own subject already lives. */
 ];
 const QUALI_TABS = [
   { id: "story", label: "Qualifying Story", icon: <BookOpen size={14} /> },
@@ -294,9 +295,7 @@ export default function ExplorerPage() {
 
         {bundle && session && !loading && !error && (
           <div className="animate-fade-in" data-tour="panel">
-            {isRaceLike && tab === "story" && (
-              <RaceStory bundle={bundle} onJump={setTab} onChampionship={() => setView("season")} />
-            )}
+            {isRaceLike && tab === "story" && <RaceStory bundle={bundle} onJump={setTab} />}
             {isRaceLike && tab === "charts" && (
               <div className="space-y-4">
                 <Tabs items={[

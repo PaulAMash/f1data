@@ -1,5 +1,4 @@
 "use client";
-import { ArrowRight, Trophy } from "lucide-react";
 import { Crown, Flag, Sparkles, TrendingDown, TrendingUp } from "@/components/ui/MotionIcon";
 import type { RaceBundle } from "@/lib/types";
 import { useIsSimple } from "@/lib/mode";
@@ -22,8 +21,15 @@ import { RaceTimeline } from "./RaceTimeline";
  *    verdicts, and the full-field classification with DNF detail.
  * Identity (portraits + full names) is identical in both.
  */
-export function RaceStory({ bundle, onJump, onChampionship }: {
-  bundle: RaceBundle; onJump?: (tab: string) => void; onChampionship?: () => void;
+/* NO CHAMPIONSHIP CAPTION UNDER THE CLASSIFICATION.
+   V68 put a handoff line there, back when the standings had just moved and the
+   reader needed telling where. They have a scope switch at the top of the page
+   now — Session or Championship, opposite the heading, visible before they read
+   anything — so a second pointer at the bottom is a caption explaining a
+   control the reader has already met. A results table is the strongest thing on
+   this page; it should end on the last row. */
+export function RaceStory({ bundle, onJump }: {
+  bundle: RaceBundle; onJump?: (tab: string) => void;
 }) {
   const simple = useIsSimple();
   const { session, strategy } = bundle;
@@ -166,23 +172,6 @@ export function RaceStory({ bundle, onJump, onChampionship }: {
       {/* classification + movers + weather — points scorers in Simple,
           the full field with strategy verdicts in Advanced */}
       <RaceOverview bundle={bundle} simple={simple} maxNet={maxNet} />
-
-      {/* WHERE THE CHAMPIONSHIP WENT, AND WHY IT IS A HANDOFF.
-          It was a tab beside Ask, which said it was a reading of THIS session;
-          then it was on Seasons, which is right for 1974 and wrong for the title
-          race somebody is following. It is the OTHER scope of this page, and
-          the reader is handed to it at the moment the question occurs to them —
-          after the result. `onChampionship` flips the page's own scope switch
-          rather than navigating, because it is the same season either way. */}
-      {onChampionship && (
-        <button type="button" onClick={onChampionship}
-          className="group/champ flex w-full items-center gap-2.5 rounded-xl border border-white/[0.07] bg-base-900/50 px-4 py-3 text-left text-[13.5px] text-ink-muted transition-all duration-[--dur-2] ease-[--ease-out] hover:border-white/[0.16] hover:text-ink">
-          <Trophy size={15} className="shrink-0 text-accent-soft" />
-          Where the {session.year} championship stands after this Grand&nbsp;Prix
-          <ArrowRight size={14}
-            className="ml-auto shrink-0 text-ink-faint transition-transform duration-[--dur-2] group-hover/champ:translate-x-0.5 group-hover/champ:text-accent-soft" />
-        </button>
-      )}
     </div>
   );
 }

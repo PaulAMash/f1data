@@ -53,7 +53,6 @@ import { cx } from "@/lib/format";
 export default function Landing() {
   const { prefs, ready } = usePrefs();
   const router = useRouter();
-  const statBand = useReveal<HTMLDivElement>();
   const featureBand = useReveal<HTMLElement>();
   const doorBand = useReveal<HTMLElement>();
   const { start } = useTour();
@@ -180,11 +179,34 @@ export default function Landing() {
         {/* the fade into the next chapter, so the hero ends rather than stops */}
         <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-28"
           style={{ background: "linear-gradient(to bottom, transparent, rgb(var(--base-950)))" }} />
+
+        {/* THE HERO IS THE FIRST CHAPTER, NOT THE PAGE.
+            A full-bleed hero that fills the viewport and fades to the page
+            colour reads as a finished thing — several readers stopped at it,
+            which is a costly mistake on a page whose argument continues for
+            three more sections. What it needed was not a bouncing chevron: a
+            generic scroll hint says "there is more" and nothing else, and it is
+            the first thing on the screen that looks like a template.
+
+            This says what is next. The chapter number and its word — the same
+            "01 · READ" the section below wears — under a hairline that draws
+            itself downward on a slow loop, as if the page were being fed from
+            above. It is a label the reader will meet again four hundred pixels
+            later, so it teaches the page's structure rather than just pointing
+            at it, and it fades out the moment they act on it. */}
+        <ScrollCue />
       </section>
 
-      {/* ---- 2. the scale ------------------------------------------------ */}
+      {/* ---- 2. the scale ------------------------------------------------
+          NOT A SCROLL REVEAL. These figures are the hero's evidence — the
+          sentence above says "we read every lap", and this is the proof of it —
+          so they belong to the hero's own arrival, not to a section the reader
+          travels to. As a reveal they were invisible on load and appeared only
+          after a scroll, because the observer runs with a -12% bottom margin
+          and at 900px the band sits just under that line. A claim whose proof
+          is below the fold has not been made. */}
       <section className="mx-auto max-w-7xl px-4 sm:px-6">
-        <ScaleBand ref_={statBand.ref} className={statBand.className} />
+        <ScaleBand className="stagger-4" />
       </section>
 
       {/* ---- 3. a real race, right now ----------------------------------- */}
@@ -229,6 +251,42 @@ export default function Landing() {
  * possible progress indicator — it costs no chrome and tells the reader where
  * they are in the argument.
  */
+/**
+ * What is below, said once.
+ *
+ * It removes itself as soon as the reader has scrolled at all — an indicator
+ * still pointing down after you have gone down is chrome that has stopped
+ * paying attention. Passive listener, one boolean, no work per frame.
+ */
+function ScrollCue() {
+  const [gone, setGone] = useState(false);
+  useEffect(() => {
+    const onScroll = () => { if (window.scrollY > 24) setGone(true); };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  return (
+    /* NO aria-label. One would override the words on the face of it, and a
+       control whose spoken name is not the name you can read is one a voice
+       user cannot ask for. The chapter number and the rule are decoration, so
+       they are hidden and the accessible name is exactly "Read a race".
+       Once it is gone it is also out of the tab order — an invisible thing
+       that can still take focus is worse than no cue at all. */
+    <button type="button"
+      tabIndex={gone ? -1 : undefined} aria-hidden={gone || undefined}
+      onClick={() => window.scrollBy({ top: window.innerHeight * 0.82, behavior: "smooth" })}
+      className={cx("scroll-cue group/cue", gone && "is-gone")}>
+      <span aria-hidden className="scroll-cue-rail"><i /></span>
+      <span className="scroll-cue-label">
+        <span aria-hidden className="font-mono text-accent-soft">01</span>
+        <span aria-hidden className="scroll-cue-dot" />
+        Read a race
+      </span>
+    </button>
+  );
+}
+
 function SectionHead({ n, chapter, title, line, aside }: {
   n: string; chapter: string; title: string; line: string; aside?: React.ReactNode;
 }) {
@@ -264,9 +322,7 @@ function SectionHead({ n, chapter, title, line, aside }: {
  * plausible-looking guess. A flourish may fail to no flourish; it may never
  * make the product wrong.
  */
-function ScaleBand({ ref_, className }: {
-  ref_: React.Ref<HTMLDivElement>; className: string;
-}) {
+function ScaleBand({ className }: { className: string }) {
   const [scale, setScale] = useState<ArchiveScale | null>(null);
   const [failed, setFailed] = useState(false);
   const { num } = useLocale();
@@ -282,7 +338,7 @@ function ScaleBand({ ref_, className }: {
   const year = new Date().getFullYear();
 
   return (
-    <div ref={ref_}
+    <div
       className={cx("flex flex-wrap items-center gap-x-9 gap-y-5 border-b border-white/[0.06] pb-8",
         className)}>
       {scale ? (

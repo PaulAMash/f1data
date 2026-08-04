@@ -3,11 +3,98 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V68**. Reviewed at 1440×1000, 1440×900 and 420×1000, in both themes, in all
-four colour-vision palettes, and walked end to end as a first-time visitor through the
-expanded welcome setup (defaults accepted in one press, and every preference changed by
-hand), the seven beats of the tour, the Explore scope switch in both directions, and a
-deliberately failed session load.
+Last pass: **V69**. Reviewed at 1920×1080, 1512×982, 1440×900, 1366×768, 1280×720 and
+1024×640, in both themes, with the welcome field sampled frame by frame through every
+control on the setup screen, and the spelling preference cycled twice in each direction
+across Home, Settings, Seasons, Ask and Explore.
+
+---
+
+## Fixed in V69
+
+### 1. The welcome background went black whenever the reader touched a control — *was high*
+
+Expanding any of the four disclosure rows, or switching text size, made the whole ambient
+field blink. The cause was not React and not the animation: **setting a canvas's `width` or
+`height` erases it**, and that is the spec, not a bug. The `ResizeObserver` fired on every
+layout change and reassigned both, wiping the buffer, and the next paint was one animation
+frame away — one black frame, every time, on the most expensive-looking surface in the
+product. `size()` now returns whether anything actually changed, no-op resizes never touch
+the canvas at all, and a real resize repaints on the same tick rather than waiting for
+`requestAnimationFrame`. Sampled luminance across 59 frames of an expand: `161 → 161`.
+
+### 2. American spelling was a one-way door — *was high*
+
+British → American worked. American → British did nothing, anywhere, for the rest of the
+session. The bridge caches each node's authored text so that going back is a *restore*
+rather than a second conversion — but the two `WeakMap`s were created **inside** the effect,
+so the moment the preference changed the effect re-ran, the caches were thrown away, and the
+American text it had just written became the new authored baseline. Hoisted to module scope,
+they survive the re-run. The reverse dictionary and its regex were deleted outright: the
+product is written in British English, American is a rendering of it, and a second map is a
+second thing that can disagree with the first.
+
+Verified across the application, not just the welcome screen: Home changes 3 word-runs and
+Settings 12, `title` attributes included, and British restores byte-identically twice in a
+row.
+
+### 3. The welcome screen scrolled on ordinary laptops — *was medium*
+
+A landing page you have to scroll to read has not landed. The first act now measures itself
+and scales to the viewport, down to a floor of 0.68, below which it stops shrinking and
+allows a scroll rather than becoming unreadable — and the trust card became two columns
+rather than two stacked rows, which is both the honest structure (they are two subjects) and
+the single largest height saving available. No scroll and no clipping at 1920×1080 through
+1280×720; 1024×640 degrades to a scroll without ever cutting anything off.
+
+### 4. Home hid its own evidence until you scrolled — *was medium, and ours*
+
+The statistics band under the hero was a scroll reveal, and the reveal observer runs with a
+`-12%` bottom margin — at 900px the band sits just under that line, so the proof of "we read
+every lap" was invisible on arrival and appeared only if you scrolled and came back. It
+belongs to the hero's arrival, not to a section you travel to. Fully in view at `scrollY: 0`
+at every size from 1920×1080 down to 1280×720.
+
+### 5. Nothing on Home said there was more below it — *was medium*
+
+Not a bouncing chevron: that says "there is more" and nothing else, and it is the first
+thing on a landing page that looks like a template. It carries the **name** of what is next
+— the same `01 · Read a race` the section below wears — under a hairline whose light travels
+downward on a slow loop, as if the page were being fed from above. The reader meets that
+label again four hundred pixels later, so the cue teaches the page's structure instead of
+merely pointing past it, and it removes itself the moment they act on it.
+
+### 6. The DNF card repeated its own heading back at the reader — *was low*
+
+"Did not finish / Retired — after lap 41 / Reason: Retired". For almost every car the
+source's stated reason *is* the word "Retired", so the row added a third line saying the
+thing the card was already called. One row now, because there is one fact: the lap. A named
+reason ("Hydraulics", "Collision damage") replaces that line rather than sitting under it.
+
+### 7. The classification ended on a caption — *was low*
+
+V68 put a "where the championship stands" handoff under the Race Story leaderboard, back
+when the standings had just moved and the reader needed telling where. They meet the scope
+switch at the top of the page now, before they read anything, so a second pointer at the
+bottom explains a control they have already used. A results table is the strongest thing on
+that page; it should end on the last row.
+
+### 8. Light mode painted the whole field one grey — *found in passing*
+
+`:root[data-theme="light"] .wc-inst-code` outweighs `.wc-inst-code.is-lead` on specificity,
+so on paper the welcome screen's field strip lost the leader highlight — the only thing that
+strip says. The same swallow was eating `.wc-inst-v.is-good` and `.is-warn`, which is why a
+green flag read as plain ink in the light room. A light override written for a base state has
+to restate every modifier it outweighs; an audit script now exists for the pattern and finds
+no others.
+
+### 9. The scroll cue could take focus after it had gone — *found in passing*
+
+It fades to `opacity: 0` and `pointer-events: none`, which stops the mouse and not the Tab
+key: a control you cannot see was still a stop in the tab order. It leaves the tab order and
+the accessibility tree together now. Its `aria-label` also went — the spoken name was "Read
+on" while the visible words were "Read a race", which is a WCAG 2.5.3 failure and a control a
+voice user cannot ask for by the name written on it.
 
 ---
 
@@ -1051,6 +1138,18 @@ label (`aria-label^="Guided tour, step"`), never on the role.
 name="Start exploring")` times out on an `<a href>` that happens to be styled as a button, and
 a 30-second timeout in a `try` block silently changes the timing of everything after it — which
 is how a tour that only fails when started quickly looked like a tour that always worked.
+
+**Headless Chromium reports `navigator.language === "en-US"`, so the product's first-run
+default there is American.** A spelling probe that assumes British is the baseline compares
+American with American, reports "0 words changed" and "British was not restored", and reads
+exactly like the bug it was written to catch. Set the preference explicitly before the first
+capture; never trust the state a fresh browser happens to boot into.
+
+**A page with no convertible words on it neither passes nor fails a spelling test.** Two runs
+were spent on `/explorer?tab=charts`, whose "Tyres" sub-tab only exists once a session has
+loaded — and no session loads in a container with no route to the data providers. Diff whole
+`innerText` between the two states rather than probing for one expected word: an empty diff
+on a page with nothing to convert is then visibly different from a broken conversion.
 
 **And the original one: headless Chromium at `device_scale_factor: 2` does not run smooth
 scrolling at all.** A bare

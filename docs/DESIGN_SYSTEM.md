@@ -2961,3 +2961,139 @@ again, and it sits in the same register as Explore and Seasons — one word, an
 instruction, no noun borrowed from broadcast.
 
 > A placeholder that cannot say what it is for is just a dead button.
+
+---
+
+## A canvas has to agree with the document, not with React
+
+Setting `canvas.width` or `canvas.height` erases the canvas. That is the
+specification, not a quirk, and it is the whole reason an ambient background
+blinks: a `ResizeObserver` that reassigns both on every layout change wipes the
+buffer, and the next paint is one animation frame away. One black frame, on the
+most expensive-looking surface in the product, every time the reader opens a
+disclosure row.
+
+Two rules follow, and they are general:
+
+* **A resize handler must be able to say "nothing changed".** `size()` returns a
+  boolean; a no-op resize never touches the canvas at all. Most layout changes
+  near a full-bleed background do not change its size.
+* **When a resize is real, repaint on the same tick.** Not in the next frame —
+  the frame between the clear and the redraw is exactly the flash.
+
+The same applies to a theme change, an accent change and anything else that
+invalidates what is painted: the repaint belongs on the tick that invalidated it.
+
+> An animation is continuous if nothing else in the product is allowed to
+> interrupt it. Continuity is a property of the interruptions, not of the loop.
+
+---
+
+## One direction, and a cache to come back by
+
+The interface is *written* in British English. American is a rendering of it.
+
+This is not pedantry about which is correct — it is the difference between one
+transformation and two. A reverse dictionary is a second thing that can disagree
+with the first, and several classic pairs genuinely are not bijective: "meter" is
+a British word too, "programme" and "licence" collide with words British English
+spells the American way, "storey → story" would rewrite Race Story. So there is
+one map, `GB_TO_US`, and going back is a **restore from cache**, never an inverse
+conversion.
+
+Which puts the whole mechanism's correctness in the cache — and a cache built
+inside the effect that reads the preference is destroyed the moment the
+preference changes. That is not a subtle failure: the converted text becomes the
+new authored baseline, and the original spelling can never come back. The caches
+live at module scope, outside every effect, deliberately.
+
+> If going back is a restore rather than an inverse, the thing you are restoring
+> from must outlive whatever triggered the change.
+
+---
+
+## A light override for a base state must restate the modifiers it outweighs
+
+`:root[data-theme="light"] .wc-inst-code` has three simple selectors; the state
+modifier it is meant to leave alone, `.wc-inst-code.is-lead`, has two. The theme
+override wins, silently, and light mode paints the leader the same grey as
+everybody else — the strip's only piece of information, gone, in one theme.
+
+This is structural, not a typo: every `[data-theme="light"] .x` in the sheet
+outranks every `.x.is-something`, and the bug is invisible in the theme it was
+authored in. The pattern is worth auditing mechanically — enumerate the light
+overrides, enumerate the modifier selectors on the same base class, and flag
+every pair with no light counterpart. Two real losses turned up that way
+(`is-lead`, and `is-good`/`is-warn` on the instrument values); one flagged pair
+was a false positive, because the override and the modifier set different
+properties.
+
+> Specificity bugs are not found by reading the theme you are looking at.
+
+---
+
+## What is below the fold, named rather than pointed at
+
+A landing page whose first screen resolves cleanly has a real problem: several
+readers stop there. The standard answer is a bouncing chevron, and it is the
+first thing on the screen that looks like a template — it says "there is more"
+and nothing else.
+
+The cue on Home says what is next instead: the chapter number and its word, the
+same `01 · Read a race` the section below wears, under a hairline whose light
+travels downward on a slow loop, as if the page were being fed from above. The
+reader meets that label again four hundred pixels later, so the cue teaches the
+page's structure rather than pointing past it.
+
+Three properties make it feel designed rather than added:
+
+* **It leaves.** An indicator still pointing down after the reader has gone down
+  is chrome that has stopped paying attention — and it leaves the tab order and
+  the accessibility tree with it, because a control you cannot see is worse than
+  no cue at all.
+* **It is placed where it survives.** Below the statistics band it would be off
+  screen on a 1366×768 laptop, which is where a scroll hint is needed most.
+* **Its name is the words on its face.** No `aria-label`: an override makes the
+  spoken name something other than the visible one, and a voice user cannot ask
+  for a control by a name that is not written on it.
+
+> A hint that cannot say what it is pointing at is decoration.
+
+---
+
+## A landing page that has to be scrolled has not landed
+
+The welcome screen's first act now measures itself and scales to fit the
+viewport, with a floor: at 0.68 it stops shrinking and allows a scroll, because
+type too small to read is a worse failure than a scrollbar.
+
+Two things this got wrong on the way, both worth keeping:
+
+* **A CSS `transform: scale()` is visual only — layout does not notice it.** The
+  scaled column still occupied its full unscaled height, and a grid item taller
+  than its cell stops being centred, so the visually-correct content sat 135px
+  below where it belonged and clipped. The wrapper reserves `natural × fit` and
+  the column scales from `origin-top`.
+* **Scaling is the last resort, not the first.** The largest single saving came
+  from the trust card becoming two columns rather than two stacked rows — which
+  is also the more honest structure, because they are two subjects rather than
+  two paragraphs of one. Fix the layout first; scale what is left.
+
+> Reach for a transform when the content is already as short as it should be.
+
+---
+
+## A tooltip that repeats its own heading has one row too many
+
+"Did not finish / Retired — after lap 41 / Reason: Retired." Every line of that
+card was correct and one of them was worthless: for almost every retirement the
+source's stated reason *is* the word "Retired".
+
+The rule generalises past this card. A field whose value is usually a restatement
+of the label above it is not a field — it is noise with a schema. Show it when the
+source actually says something ("Hydraulics", "Collision damage"), and let it
+**replace** the generic line rather than sit under it, so the card is the same
+height either way and the reader never scans a row that is going to be empty of
+meaning.
+
+> Data being present is not a reason to render it.

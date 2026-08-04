@@ -231,10 +231,25 @@ export function WelcomeField() {
     const track = new MiniTrack(mulberry32(7));
     let lastT = 0;
 
+    /* SETTING A CANVAS'S WIDTH OR HEIGHT ERASES IT. That is the spec, and it is
+       the whole of the "background flashes black" report: expanding the setup
+       disclosure makes the page taller, changing the text size rescales the
+       root, and both resize this element — so the ResizeObserver fires, the
+       canvas is re-dimensioned, and the room is blank until the NEXT animation
+       frame paints it again. One empty frame is a blink; a height that animates
+       fires the observer repeatedly and the blink becomes a strobe.
+
+       Two things stop it. Nothing is re-dimensioned unless the size genuinely
+       CHANGED — the observer fires on sub-pixel reflows that leave the rounded
+       dimensions identical, and re-assigning the same width still erases the
+       bitmap. And when it has changed, the room is repainted in the same
+       synchronous block rather than being left dark until the next frame. */
     function size() {
       const r = host!.getBoundingClientRect();
-      w = Math.max(1, Math.round(r.width));
-      h = Math.max(1, Math.round(r.height));
+      const nw = Math.max(1, Math.round(r.width));
+      const nh = Math.max(1, Math.round(r.height));
+      if (nw === w && nh === h) return false;
+      w = nw; h = nh;
       rw = Math.max(1, Math.round(w * ROOM)); rh = Math.max(1, Math.round(h * ROOM));
       fw = Math.max(1, Math.round(w * FEED_DPR)); fh = Math.max(1, Math.round(h * FEED_DPR));
       rc!.width = rw; rc!.height = rh;
@@ -242,6 +257,7 @@ export function WelcomeField() {
       fc!.width = fw; fc!.height = fh;
       fc!.style.width = `${w}px`; fc!.style.height = `${h}px`;
       buildGrid();
+      return true;
     }
 
     function buildGrid() {
@@ -444,14 +460,17 @@ export function WelcomeField() {
     }
 
     size();
-    const ro = new ResizeObserver(() => { size(); if (still) frame(0, 0); });
+    // repaint on the same tick as the resize, so there is never an empty frame
+    const ro = new ResizeObserver(() => { if (size()) frame(still ? 0 : lastT, 0); });
     ro.observe(host);
 
     // the theme (and the accent) live on <html>; the canvas follows them there
     const mo = new MutationObserver(() => {
       s = readSurface();
       buildGrid();
-      if (still) frame(0, 0);
+      // the theme changed under a live canvas: repaint now rather than showing
+      // one frame of the old room, for the same reason the resize does
+      frame(still ? 0 : lastT, 0);
     });
     mo.observe(document.documentElement, {
       attributes: true, attributeFilter: ["data-theme", "data-accent", "style"],
