@@ -3217,16 +3217,63 @@ html.theme-sweep::view-transition-new(root) {
   background: transparent;
   box-shadow: inset 0 0 0 1px rgb(var(--tint) / .14);
 }
-:root[data-theme="light"] .cbadge.is-composed {
-  box-shadow: inset 0 0 0 1px rgb(15 23 42 / .13);
-}
 /* The drawn shield IS a container — livery fill, two rims, its own code. Left
    inside the circle it read as a badge inside a badge, and the grey teams were
    a grey shield on a grey disc. It keeps the footprint and loses the frame. */
 .cbadge.is-drawn { background: transparent; box-shadow: none; overflow: visible; }
-/* On paper the wash has to lift off the page rather than sink into it: a touch
-   more livery, and a rim that is dark instead of light, because a light rim on
-   white is not a rim. Light is not dark with the lights on. */
+
+/* ---------------------------------------------------------------------------
+   A BARE MARK GETS THE TEAM'S COLOUR, NOT A HINT OF IT.
+
+   The 14% wash was written for a badge that might be holding an opaque roundel,
+   where the tint is only ever glimpsed at the edges. A transparent silhouette
+   is the opposite case: the field IS the badge, and a white star on a 14% tint
+   of anything is a white star on paper — invisible in light mode and weak in
+   dark.
+
+   `--field` is the livery taken as far as the mark's own measured ink requires
+   (see lib/constructors `markField`), so this is a flat, confident team colour
+   rather than a computed-in-CSS approximation of one. The rim is a whisper of
+   white over it — enough to seat the disc on a dark row — and it does NOT
+   change with the theme, because the mark's ink does not either.
+   --------------------------------------------------------------------------- */
+.cbadge.is-field {
+  background: var(--field);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .13);
+}
+/* ---------------------------------------------------------------------------
+   THE LIGHT ROOM, AND THE SPECIFICITY TRAP UNDER IT.
+
+   `:root[data-theme="light"] .cbadge` counts three simple selectors and every
+   modifier under it counts two, so the theme rule wins and the modifiers do
+   nothing — which on the first light-mode screenshot of this release turned all
+   five official marks into white ink on a pale wash. Invisible. Exactly the
+   swallow V69 found on the welcome instruments, in the theme it was not
+   authored in, one release later.
+
+   So each modifier is restated here at a weight that can win, and the base
+   light rule comes LAST so it can never be mistaken for the general case.
+   --------------------------------------------------------------------------- */
+
+/* A team-colour field does not change with the theme — the mark's ink does not
+   change either. On paper it becomes the darkest object in the row, so it
+   trades its inner rim for a shadow: a light rim on white is not a rim, and
+   without the shadow the disc reads as a hole punched in the page. */
+:root[data-theme="light"] .cbadge.is-field {
+  background: var(--field);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .16), 0 1px 2px rgb(15 23 42 / .2);
+}
+:root[data-theme="light"] .cbadge.is-composed {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgb(15 23 42 / .13);
+}
+:root[data-theme="light"] .cbadge.is-drawn {
+  background: transparent;
+  box-shadow: none;
+}
+/* The wash, for a badge holding nothing yet. On paper it has to lift off the
+   page rather than sink into it: a touch more livery, and a rim that is dark
+   instead of light. Light is not dark with the lights on. */
 :root[data-theme="light"] .cbadge {
   background: color-mix(in srgb, var(--livery) 15%, white);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--livery) 42%, transparent);

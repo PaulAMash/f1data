@@ -3,10 +3,69 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V70**. Reviewed at 1440×950 in both themes, with the constructor badge
-exercised against marks of deliberately hostile aspect ratios (4.3:1, 1:3, composed
-roundels, and three teams with no asset at all) across the championship table, both pace
-boards, the constructor table, the driver gallery, the focus card and the comparison.
+Last pass: **V71**. Reviewed at 1440×950, 1024×800 and 390×844, in both themes, at
+device-pixel-ratio 2, with the first five official constructor marks in place and six
+teams deliberately still on the drawn shield.
+
+---
+
+## Fixed in V71
+
+### 1. Five constructors have their own marks — *was the brief*
+
+Mercedes, Ferrari, McLaren, Red Bull Racing and Racing Bulls now render their official
+marks in the championship table, both constructor pace boards, the advanced constructor
+table, the driver gallery, the focus card and the driver comparison. The other six render
+the drawn shield, which is a designed state rather than a gap, and V72/V73 need only add
+files.
+
+### 2. A square mark is not a composed badge — *was ours, and it would have shipped broken*
+
+V70 decided from the aspect ratio whether an asset already carried its own background: a
+square file was assumed to be a composed roundel, given the whole circle, and had its
+livery background removed on the grounds that an opaque roundel hides it anyway.
+
+Every one of the five marks is a transparent silhouette on a **square** canvas. Under
+V70's rule all five would have been handed the full circle with the background taken away
+— four of them are pure white ink, so on paper they would have rendered as nothing at all.
+
+The question is measured now instead of inferred. The mark is drawn to an offscreen canvas
+once per session and its **opaque coverage** decides the case: a roundel filling its square
+covers π/4 ≈ 78% of it, these five cover 17–41%, and the threshold sits at 70% in the gap
+between them. Aspect ratio still decides the fit, which is all it was ever able to answer.
+
+### 3. "Use the team colour" is necessary and not sufficient — *the interesting part*
+
+A team colour is whatever the team chose and a mark is whatever the mark is. Mercedes'
+petronas green is luminous and its star is white: at full strength that is white on
+near-white, brand-accurate and completely empty.
+
+So the livery sets the hue and the mark's own measured ink sets how far that hue is taken.
+White ink is dropped onto a deep field, dark ink lifted onto a pale one, each landing near
+5:1 contrast — Mercedes `#27f4d2` → `rgb(20 125 108)`, McLaren `#ff8000` → `rgb(175 88 0)`,
+Ferrari essentially unchanged at `rgb(224 0 43)` because it was already dark enough to
+carry a white shield. Eleven teams whose colours run from Ferrari red to Haas gunmetal
+come out looking like one set, and nothing is configured per team.
+
+The field does **not** follow the theme, because the mark's ink does not either. A badge
+that restyled itself per theme would be a brand that restyled itself per theme.
+
+### 4. The light-mode rule swallowed every modifier — *caught by the sweep, one release after documenting it*
+
+`:root[data-theme="light"] .cbadge` counts three simple selectors; `.cbadge.is-field`
+counts two. The theme rule won and the first light-mode screenshot of this release showed
+all five marks as white ink on a pale wash — invisible. This is exactly the swallow V69
+found on the welcome instruments, written into the design system as a rule, and then
+repeated in the theme it was not authored in. Each modifier is restated at a weight that
+can win, and the base light rule now comes last in the block so it cannot read as the
+general case.
+
+### 5. The staged rollout got a tool rather than a checklist
+
+`node scripts/check-team-logos.mjs` reports, for all eleven slugs: present or on the
+shield, pixel size against the 96px the largest badge wants on a 2× display, and how the
+badge will classify the file. It replaced a fetch script whose upstream is no longer the
+source of truth.
 
 ---
 
@@ -1124,20 +1183,16 @@ it. Corrected.
 
 ## Open — recommended, not yet done
 
-### 0. The constructor marks are not in the tree — *blocked, not undone*
+### 0. Six constructors are still on the drawn shield, and five are 48px — *staged, and one is worth fixing*
 
-Everything V70 built is shipped and wired; the eleven `.webp` files are not, because
-`cdn.search.brave.com:443` is refused by this session's egress policy (`403` to `CONNECT`,
-confirmed against `/__agentproxy/status`, and the proxy's own guidance is to report a policy
-denial rather than route around it). Until they land, every constructor renders the drawn
-shield — which is the designed fallback, not a hole, and is why the release was still worth
-shipping: the badge system, the normalisation, the equal footprint with the driver portrait
-and the five surfaces that never had a mark at all are all in.
+Alpine, Haas, Audi, Williams, Aston Martin and Cadillac have no file yet; V72/V73 add them
+and no code changes with them.
 
-To finish it: `cd frontend && ./scripts/fetch-team-logos.sh`. No code changes, no registry,
-no build step — see `frontend/public/teams/README.md`. Verified end to end against stand-in
-marks at 4.3:1, 1:3, 1.5:1 and composed square, plus three teams deliberately left without
-an asset.
+The five shipped in V71 are **48×48**. The largest badge in the product is 38px, which is
+76 device pixels on a 2× display, so those marks upscale about 1.2× there and soften
+slightly. Every table row draws them at 27px or less, where they are at or below 1:1 and
+crisp. Re-supplying the set at 96px or more on the longest edge would close it; nothing
+else needs to change. `node scripts/check-team-logos.mjs` flags this per file.
 
 ### A. A first visit can land on an empty product — *high, needs a product decision*
 
@@ -1226,6 +1281,13 @@ backend was started without it — which is the correct screen, and not the one 
 about. Start the API with it whenever the container has no egress: a full simulated race,
 a championship table and a driver roster all render, and every surface a review needs is
 reachable.
+
+**A stand-in that is the wrong KIND of asset validates the wrong thing.** V70's hostile
+shapes were opaque, so every square one exercised the composed-roundel path and the
+aspect-ratio heuristic looked correct. The real assets are transparent silhouettes on
+square canvases — the same aspect, the opposite case — and the heuristic was wrong for all
+five. Vary what a stand-in *is*, not only what shape it is: opaque and transparent, light
+ink and dark, before trusting any branch that claims to tell them apart.
 
 **Verify a normalisation against shapes worse than the real ones.** The constructor badge
 was checked with stand-in marks at 4.3:1, 1:3, 1.5:1 and composed square before any real

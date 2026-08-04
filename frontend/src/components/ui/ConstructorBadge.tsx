@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
-import { LOGO_SQUARE_BAND, logoFit, logoSrc, opticalScale } from "@/lib/constructors";
+import {
+  LOGO_COMPOSED_COVERAGE, logoFit, logoSrc, markField, opticalScale,
+} from "@/lib/constructors";
 import { cx } from "@/lib/format";
 import { ConstructorShield } from "./ConstructorMark";
 
@@ -46,9 +48,86 @@ import { ConstructorShield } from "./ConstructorMark";
    answer is a property of the deployment, not of the tree, and it must survive
    every unmount between one page and the next.
    --------------------------------------------------------------------------- */
-type Probe = { ok: false } | { ok: true; ar: number };
+type Probe =
+  | { ok: false }
+  | {
+      ok: true;
+      /** width ÷ height, for the fit. */
+      ar: number;
+      /** Fraction of the canvas that is meaningfully opaque, 0–1. */
+      coverage: number;
+      /** Mean relative luminance of the ink, 0–1. `null` if unreadable. */
+      ink: number | null;
+    };
 const RESOLVED = new Map<string, Probe>();
 const PENDING = new Map<string, Promise<Probe>>();
+
+/* ---------------------------------------------------------------------------
+   WHAT THE PROBE ACTUALLY HAS TO ANSWER.
+
+   V70 asked the image one question — its aspect ratio — and inferred everything
+   else from it: a square mark was assumed to be a composed roundel, given the
+   whole circle, and had its livery background removed on the grounds that an
+   opaque roundel would hide it anyway.
+
+   That inference is wrong for the most common asset there is. A transparent
+   silhouette — a star, a speedmark, a pair of bulls — ships on a SQUARE canvas
+   too, and V70 would have handed it the full circle and taken away the only
+   thing making it visible. Four of the five marks in this release are pure
+   white on transparent; on paper they would have rendered as nothing at all.
+
+   So the question is asked properly instead of guessed. The image is drawn to
+   an offscreen canvas once and measured:
+
+     COVERAGE separates a composed badge from a bare mark. A roundel filling its
+     square covers ~78% of it (π/4) and a real one covers more; the five marks
+     here cover 17–41%. Anything under the threshold gets padding and a
+     background, which is what a bare mark needs and what a roundel must not
+     have.
+
+     INK is the mean luminance of the opaque pixels, and it decides what colour
+     that background has to be. A white mark needs a dark field and a black mark
+     needs a light one, and no amount of care about the team's brand colour
+     matters if the mark cannot be seen on it.
+
+   Same-origin, so the canvas is never tainted. Once per asset per session.
+   --------------------------------------------------------------------------- */
+const SAMPLE = 64;
+
+function measure(img: HTMLImageElement): Probe {
+  const ar = img.naturalWidth / img.naturalHeight;
+  const base = { ok: true as const, ar, coverage: 1, ink: null as number | null };
+  let cv: HTMLCanvasElement;
+  try {
+    cv = document.createElement("canvas");
+    cv.width = SAMPLE; cv.height = SAMPLE;
+    const ctx = cv.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return base;
+    ctx.drawImage(img, 0, 0, SAMPLE, SAMPLE);
+    const { data } = ctx.getImageData(0, 0, SAMPLE, SAMPLE);
+    let opaque = 0, lum = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const a = data[i + 3];
+      /* A hard alpha cut rather than a weighted mean: antialiased edge pixels
+         are half the ink in a 48px silhouette, and letting them vote drags the
+         measured luminance toward whatever the canvas was cleared to. */
+      if (a < 140) continue;
+      opaque += 1;
+      lum += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+    }
+    const total = SAMPLE * SAMPLE;
+    return {
+      ok: true, ar,
+      coverage: opaque / total,
+      ink: opaque > total * 0.01 ? lum / opaque / 255 : null,
+    };
+  } catch {
+    /* A tainted or unreadable canvas is not a reason to show nothing. Fall back
+       to "treat it as a composed mark", which is the conservative answer: it
+       renders the file as supplied and adds no colour of our own. */
+    return base;
+  }
+}
 
 function probe(src: string): Promise<Probe> {
   const hit = PENDING.get(src);
@@ -60,9 +139,7 @@ function probe(src: string): Promise<Probe> {
        text at full paragraph width, inside a 24px circle. */
     const img = new window.Image();
     img.onload = () => resolve(
-      img.naturalWidth > 0 && img.naturalHeight > 0
-        ? { ok: true, ar: img.naturalWidth / img.naturalHeight }
-        : { ok: false });
+      img.naturalWidth > 0 && img.naturalHeight > 0 ? measure(img) : { ok: false });
     img.onerror = () => resolve({ ok: false });
     img.src = src;
   }).then((r) => { RESOLVED.set(src, r); return r; });
@@ -100,13 +177,18 @@ export function ConstructorBadge({
 
   const label = title ?? team;
   const ar = state?.ok ? state.ar : 0;
-  const [lo, hi] = LOGO_SQUARE_BAND;
-  const composed = !!state?.ok && ar >= lo && ar <= hi;
+  /* COVERAGE, NOT ASPECT RATIO, decides this. A composed roundel fills its
+     square; a bare silhouette on the same square canvas does not, and V70's
+     aspect test called both of them composed. */
+  const composed = !!state?.ok && state.coverage >= LOGO_COMPOSED_COVERAGE;
   /* A composed roundel gets the whole circle; a bare emblem is fitted by its
      longest edge, which is what the eye reads as size. */
   const fit = (composed ? 1 : logoFit(ar || 1)) * opticalScale(team);
   const w = ar >= 1 ? fit : fit * ar;
   const h = ar >= 1 ? fit / ar : fit;
+  /* The livery, taken as far as the mark's own ink requires — see markField.
+     Only a bare mark gets one; a composed roundel brings its own. */
+  const field = state?.ok && !composed ? markField(color, state.ink) : null;
 
   /* ONE CONTAINER FOR ALL THREE STATES.
      Pending, resolved-mark and resolved-shield all paint into the same circle
@@ -119,8 +201,12 @@ export function ConstructorBadge({
     <span
       role="img" aria-label={label} title={title}
       className={cx("cbadge", composed && "is-composed",
-        state && !state.ok && "is-drawn", className)}
-      style={{ width: size, height: size, ["--livery" as string]: color }}>
+        field && "is-field", state && !state.ok && "is-drawn", className)}
+      style={{
+        width: size, height: size,
+        ["--livery" as string]: color,
+        ...(field ? { ["--field" as string]: field } : null),
+      }}>
       {state?.ok ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt="" aria-hidden decoding="async" loading="lazy"

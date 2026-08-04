@@ -3195,3 +3195,86 @@ shield without anybody writing it down.
 
 > A rule that derives itself from the data cannot go out of date; a list of
 > exceptions always does.
+
+---
+
+## Measure the asset; do not infer it from its shape
+
+V70 asked each constructor mark one question — its aspect ratio — and inferred
+everything else from the answer: a square file was taken to be a composed
+roundel, given the whole badge, and had its livery background removed on the
+grounds that an opaque roundel would hide it anyway.
+
+Then five real marks arrived. All five are transparent silhouettes on **square**
+canvases — the same aspect ratio as a roundel, the opposite kind of asset — and
+four of them are pure white ink. Under the old rule every one would have been
+handed a bare circle with its background taken away, and on paper they would
+have rendered as nothing at all.
+
+The fix is not a better threshold. It is asking the question the code actually
+needs answered. The image is drawn to an offscreen canvas once per asset and
+three properties come back:
+
+* **Coverage** — the opaque fraction — separates a composed badge from a bare
+  mark. A circle inscribed in its square covers π/4 ≈ 78%; a real roundel covers
+  more; bare marks measure 17–41%. The threshold sits in open space at 70%
+  rather than on top of either group.
+* **Ink** — mean luminance of the opaque pixels — decides what colour has to go
+  behind it.
+* **Aspect ratio** decides the fit, which is the only thing it was ever able
+  to answer.
+
+> A property you can measure in a few milliseconds should never be guessed from
+> a correlated one. The correlation is where the bug lives.
+
+---
+
+## The brand sets the hue; the mark sets how far you take it
+
+"The logos are transparent, so use the team colour" is the right instruction and
+it is not sufficient on its own. A team colour is whatever the team chose and a
+mark is whatever the mark is. Mercedes' petronas green is luminous; its star is
+white. Put one on the other at full strength and the result is brand-accurate,
+correct in every particular, and completely empty.
+
+So the livery supplies the hue and the mark's own measured ink supplies the
+distance: white ink is dropped onto a deep field, dark ink is lifted onto a pale
+one, each landing near 5:1. Ferrari red is already dark enough for a white
+shield and is left alone, because nudging it to satisfy a formula would make it
+not-quite-Ferrari-red.
+
+Two things fall out of this that are worth keeping:
+
+* **Eleven brands become one set.** Colours running from Ferrari red to Haas
+  gunmetal all land in the same contrast band, so a column of badges reads as a
+  system rather than as eleven separate logos.
+* **The field does not follow the theme.** The mark's ink does not change when
+  the reader turns the lights on, so neither does what sits behind it. A badge
+  that restyled itself per theme would be a brand that restyled itself per
+  theme, and the one thing a constructor's mark has to be is the same mark.
+
+> Accessibility and brand fidelity are not in tension here. Deriving one from
+> the other is what keeps both.
+
+---
+
+## A rule written into this document is not a rule the next release follows
+
+V69 found that `:root[data-theme="light"] .x` outranks every `.x.is-something`
+under it, fixed three instances, and wrote the lesson down a few sections above.
+V71 added `.cbadge.is-field`, and the first light-mode screenshot showed all five
+official marks as white ink on a pale wash — invisible — because the light rule
+swallowed the modifier exactly as documented.
+
+The lesson is not "remember harder". Two things actually help:
+
+* **Order the block so the general case comes last.** A base theme rule sitting
+  above its modifiers reads like a default; sitting below them it reads like
+  what it is — the fallback for the states that did not match.
+* **Screenshot the theme you did not author in, every time, before believing
+  anything.** This class of bug is invisible in the theme you are working in and
+  obvious in the other one, which makes it exactly as cheap to catch as it is
+  easy to reintroduce.
+
+> The value of writing a trap down is not that you avoid it. It is that you
+> recognise it in one screenshot instead of thirty minutes.
