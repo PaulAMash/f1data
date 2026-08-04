@@ -184,6 +184,41 @@ export default function ExplorerPage() {
     return [session.year, session.session_type, session.circuit?.name].filter(Boolean).join(" · ");
   }, [session]);
 
+  /* ---------------------------------------------------------------------
+     THE GATE, AND IT IS ABOVE EVERYTHING.
+
+     V76 put the verdict where the panels are rendered, which made it one more
+     component deciding for itself — so the header, the pickers and the tab bar
+     rendered around a card explaining that the session could not be shown, and
+     the reader got a tab strip for tabs that would never fill.
+
+     A decision that governs the whole page has to be taken before the page. It
+     is taken once, here, and an incomplete session returns a different page
+     rather than a different panel. Nothing below this line runs for a session
+     that failed the check, so there is no component left that could render half
+     of itself.
+
+     The championship scope is deliberately outside it: those standings are a
+     property of the season, not of the session, and they are still true when a
+     session is not. */
+  const blocked = !loading && view === "session"
+    && (Boolean(error) || (Boolean(session) && session!.complete === false));
+
+  if (blocked) {
+    return (
+      <div className="min-h-screen">
+        <NavBar active="explorer" />
+        <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-6">
+          <SessionUnavailable
+            error={error ?? undefined} incomplete={session ?? undefined} session={sel}
+            onRetry={() => setRefreshKey((k) => k + 1)}
+            onPick={(s) => setSel(s)}
+            onChampionship={() => setView("season")} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen">
       <NavBar active="explorer" />
@@ -274,27 +309,8 @@ export default function ExplorerPage() {
           </div>
         ) : (<>
         {loading && <LoadingDashboard />}
-        {error && !loading && (
-          <DataUnavailable error={error} session={sel} onRetry={() => setRefreshKey((k) => k + 1)}
-            onPick={(s) => setSel(s)} onOpenData={() => setTab("data")} />
-        )}
 
-        {/* ONE VERDICT DECIDES WHETHER THERE IS A PAGE AT ALL.
-            `complete` is false only when something the session cannot be
-            reconstructed without is absent — the entry list, the results, a
-            race's lap times. Rendering those anyway is how a Grand Prix came to
-            show a column of car numbers under a "partial data" chip, which asks
-            the reader to decide how much of it to believe. The unavailable
-            screen is the honest answer and the better one. Enriching facets that
-            are missing never reach here: they are explained in Sources and the
-            page is still worth reading. */}
-        {bundle && session && !loading && !error && session.complete === false && (
-          <DataUnavailable session={sel} incomplete={session}
-            onRetry={() => setRefreshKey((k) => k + 1)}
-            onPick={(s) => setSel(s)} onOpenData={() => setTab("data")} />
-        )}
-
-        {bundle && session && !loading && !error && session.complete !== false && (
+        {bundle && session && !loading && !error && (
           <div className="animate-fade-in" data-tour="panel">
             {isRaceLike && tab === "story" && <RaceStory bundle={bundle} onJump={setTab} />}
             {isRaceLike && tab === "charts" && (
@@ -449,9 +465,9 @@ function listOf(items: string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
-function DataUnavailable({ error, incomplete, session, onRetry, onPick, onOpenData }: {
+function SessionUnavailable({ error, incomplete, session, onRetry, onPick, onChampionship }: {
   error?: ApiError; incomplete?: RaceSession; session: Selection;
-  onRetry: () => void; onPick: (s: Selection) => void; onOpenData: () => void;
+  onRetry: () => void; onPick: (s: Selection) => void; onChampionship: () => void;
 }) {
   /* Lead with the essential absences — "the entry list never arrived" is a more
      useful sentence than "something is missing" — and fall back to whatever is
@@ -530,7 +546,7 @@ function DataUnavailable({ error, incomplete, session, onRetry, onPick, onOpenDa
               <button onClick={onRetry} className="pill-btn"><RefreshCw size={14} /> Try again</button>
             )}
             <a href="/history" className="pill-btn"><BookOpen size={14} /> Official results in Seasons</a>
-            <button onClick={onOpenData} className="pill-btn"><Database size={14} /> Data sources</button>
+            <button onClick={onChampionship} className="pill-btn"><Trophy size={14} /> {session.year} championship</button>
           </div>
 
           <div className="pt-1">

@@ -699,11 +699,20 @@ def _essential_for(category: str, year: int) -> set[str]:
             if year >= _FACET_FROM.get(f, 0)}
 
 
-#: Facets whose true value can be zero. For these, a recorded source — including
-#: our own derivation — means the question was asked and answered, and an empty
-#: list is the answer rather than a gap. Everything else (results, the entry
-#: list, lap times, stints, weather) is empty only when nothing supplied it.
-_MAY_BE_EMPTY = {"overtakes", "race_control", "pit_stops"}
+#: THE ONLY FACET WHOSE TRUE VALUE IS ROUTINELY ZERO.
+#:
+#: For this one, a recorded source — including our own derivation — means the
+#: question was asked and answered, and an empty list is the answer rather than
+#: a gap. Monaco is the sport's own example: a Grand Prix can genuinely finish
+#: with nobody passed on track.
+#:
+#: V76 also listed race_control and pit_stops here, and that was too generous.
+#: A modern race always produces race-control messages, and a race in which
+#: nobody pitted has not happened since refuelling ended — so an empty one of
+#: those is a feed that failed, not a fact about the afternoon, and treating it
+#: as a fact let a session through with panels that had nothing to draw. Their
+#: era boundaries already cover the seasons that never recorded them.
+_MAY_BE_EMPTY = {"overtakes"}
 
 #: facet -> (attribute holding it, human name for the reader)
 _CANONICAL_FACETS: dict[str, tuple[str, str]] = {
