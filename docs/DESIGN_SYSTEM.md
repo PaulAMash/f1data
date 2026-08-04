@@ -3574,3 +3574,28 @@ rule it always looked like.
 
 > If a rule you believe in produces obviously wrong results, check what you are
 > feeding it before you weaken it.
+
+
+---
+
+## A gate inside the tree is not a gate
+
+The verdict was correct, central and computed once — and the page still rendered
+its header, its pickers and its tab bar around a card saying the session could
+not be shown. Every one of those components was individually right. The gate was
+simply in the wrong place: rendered as a sibling of the panels, it could only
+ever replace the panels.
+
+"Decide once" and "decide early" are different requirements and the second is the
+one that has teeth. A verdict that governs a page has to be taken *before* the
+page — an early return, above the layout, so that an incomplete session produces
+a different page rather than a different panel. What makes it enforceable is that
+nothing below the return runs: there is no component left that could decide for
+itself, because there is no component left at all.
+
+The test follows from the same idea. Not "does the unavailable card appear" but
+"is anything else on screen" — no tabs, no pickers, no tables, no chart surfaces.
+An all-or-nothing contract is asserted by counting what must be absent.
+
+> If a rule can be enforced by deleting the alternative rather than by every
+> component agreeing to follow it, delete the alternative.

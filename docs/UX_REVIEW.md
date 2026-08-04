@@ -3,8 +3,47 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V76**. The integrity gate finished: strict, central, and fair because the two
-rules that stop it inventing a gap run before it. 17 tests in `test_session_integrity.py`.
+Last pass: **V77**. The integrity gate moved above the page. 18 tests, and the contract
+asserted directly in the browser: a blocked session renders zero tabs, zero pickers, zero
+panels, zero tables and zero charts.
+
+---
+
+## Fixed in V77
+
+### 1. The gate was in the tree, not above it — *the root cause*
+
+V76 put the verdict where the panels are rendered, which made it one more component
+deciding for itself. So the header, the season and session pickers, and the tab bar all
+rendered *around* a card explaining that the session could not be shown — and the reader
+got a tab strip for tabs that would never fill.
+
+A decision that governs the whole page has to be taken before the page. It is taken once
+now, above everything, and an incomplete session returns a **different page** rather than a
+different panel. Nothing below that line runs, so there is no component left that could
+render half of itself.
+
+Asserted rather than eyeballed: with a session marked incomplete, the document contains no
+`[data-tour="tabs"]`, no pickers, no `[data-tour="panel"]`, no `<table>`, no chart surface,
+and the string "partial" appears nowhere. With a complete session, all of them are back.
+
+### 2. Two facets were being forgiven that should not have been
+
+V76 taught the audit that an answer of "none" is an answer, and listed overtakes, the
+race-control log and pit stops as facets whose true value can be zero. Overtakes belongs
+there — Monaco genuinely finishes with nobody passed on track. The other two do not: a
+modern race always produces race-control messages, and a race in which nobody pitted has
+not happened since refuelling ended. An empty one of those is a feed that failed, and
+forgiving it is what let a session through holding panels with nothing to draw.
+
+`_MAY_BE_EMPTY` is `{"overtakes"}`. Their era boundaries already cover the seasons that
+never recorded them.
+
+### 3. The championship is deliberately outside the gate
+
+Those standings are a property of the season, not of the session, and they remain true when
+a session is not. The unavailable page offers them as one of its three ways forward, so a
+reader is never stranded by the gate that protected them.
 
 ---
 

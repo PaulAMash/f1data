@@ -163,7 +163,8 @@ def test_a_question_answered_none_is_not_a_missing_facet():
     `bool(list)` threw that away, turned a clean street race into a gap, and put
     a partial-data chip on a session holding every fact it needed.
     """
-    from app.models import Compound, PositionPoint, Stint, WeatherPoint
+    from app.models import (Compound, PitStop, PositionPoint, RaceControlEvent,
+                            Stint, WeatherPoint)
     s = _race(classification=[_row("VER", position=1)],
               drivers=[Driver(number="1", code="VER", name="Max", team="Red Bull Racing")],
               laps=[Lap(driver="VER", lap=1)],
@@ -171,12 +172,12 @@ def test_a_question_answered_none_is_not_a_missing_facet():
               stints=[Stint(driver="VER", stint=1, compound=Compound.SOFT,
                             start_lap=1, end_lap=78, laps=78)],
               weather=[WeatherPoint(lap=1, air_temp=23.0)],
-              overtakes=[], race_control=[], pit_stops=[])
-    # the three that can legitimately count zero were asked, and answered "none"
+              race_control=[RaceControlEvent(lap=1, message="GREEN LIGHT")],
+              pit_stops=[PitStop(driver="VER", lap=20)],
+              overtakes=[])
+    # the one facet that can legitimately count zero was asked, and answered
     dsm._set_facet(s, "overtakes", "inferred", "medium",
                    "no on-track passes were detected in this session.")
-    dsm._set_facet(s, "race_control", "f1-archive", "high", "green flag throughout.")
-    dsm._set_facet(s, "pit_stops", "openf1", "high", "no stops recorded.")
     dsm._audit_report(s)
     assert "overtakes" not in s.source_report.missing
     assert s.source_report.complete is True
@@ -217,3 +218,21 @@ def test_the_verdict_is_the_same_object_every_page_reads():
     dsm._audit_report(s)
     assert s.complete is s.source_report.complete
     assert s.partial is s.source_report.partial
+
+
+def test_an_empty_race_control_log_is_still_a_gap():
+    """V77 tightened _MAY_BE_EMPTY back to overtakes alone.
+
+    A modern race always produces race-control messages and a race in which
+    nobody pitted has not happened since refuelling ended, so an empty one of
+    those is a feed that failed rather than a fact about the afternoon — and
+    treating it as a fact let a session through with panels that had nothing to
+    draw.
+    """
+    s = _race(classification=[_row("VER", position=1)],
+              drivers=[Driver(number="1", code="VER", name="Max", team="Red Bull Racing")],
+              laps=[Lap(driver="VER", lap=1)], race_control=[])
+    dsm._set_facet(s, "race_control", "f1-archive", "high", "nothing returned.")
+    dsm._audit_report(s)
+    assert "race_control" in s.source_report.missing
+    assert s.source_report.complete is False
