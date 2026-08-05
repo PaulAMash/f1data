@@ -34,9 +34,14 @@ settings = get_settings()
 app = FastAPI(title="Pitwall IQ API", version="2.0.0",
               description="Real, multi-source F1 race intelligence: pace, strategy, tyres, practice, and plain-English answers.")
 
+# CORS Middleware updated to allow your Cloudflare frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list + ["http://127.0.0.1:3000"],
+    allow_origins=settings.cors_origin_list + [
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
+        "https://f1data.paulmash2003.workers.dev"
+    ],
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
