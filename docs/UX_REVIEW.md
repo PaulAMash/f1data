@@ -3,9 +3,60 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V77**. The integrity gate moved above the page. 18 tests, and the contract
-asserted directly in the browser: a blocked session renders zero tabs, zero pickers, zero
-panels, zero tables and zero charts.
+Last pass: **V78**. The gate stopped using a fixed facet list to decide what a race is
+allowed to be missing, and the Position Chart stopped guessing where its own markers land.
+
+---
+
+## Fixed in V78
+
+### 1. A fixed forgiveness list was making the gate race-specific — *the root cause*
+
+V77 declared overtakes, the race-control log and pit stops the three facets whose true
+value can be zero, and used that same list to decide whether a session gates. That
+conflated two different questions. Whether a zero count is legitimate is a property of the
+specific race — Monaco with no overtakes, a race with a genuinely uneventful race-control
+log — not a property of the facet. A list broad enough to forgive Monaco's silence also
+forgave Miami's, and a list narrow enough to catch a genuinely broken feed on one facet
+caught a genuinely empty one on another. Each fix for one race was, by construction, a
+regression for whichever race relied on the opposite reading of the same facet — which is
+why Monaco and Miami kept trading places across releases instead of both staying fixed.
+
+`complete` now follows only `essential_missing` — results, the entry list, and lap times
+for a race or sprint, the facets a session cannot be reconstructed without.
+`_MAY_BE_EMPTY` still exists and still governs the *wording* a facet gets in `missing`
+("answered, zero" versus "never answered"), but it no longer has any say over whether the
+page renders. Two tests prove the two things that used to trade off against each other now
+hold simultaneously: `test_monaco_and_miami_are_both_complete_at_once` builds a
+Monaco-shaped session (empty overtakes) and a Miami-shaped session (empty race control,
+empty pit stops) side by side and asserts both `.complete` in the same test, and
+`test_widening_or_narrowing_may_be_empty_cannot_change_the_gate` mutates `_MAY_BE_EMPTY` —
+empty, one facet, three facets — and asserts `complete` never moves. Verified in the
+running app too: the mock session renders in full with nothing gated, and a session with no
+route to any data source still gets the unavailable screen, naming the essential facets
+that never arrived.
+
+### 2. Event markers on the Position Chart used a lap-count threshold to solve a pixel problem
+
+Two markers were called "near" each other if they landed within 6% of the race distance,
+and near markers alternated between exactly two rows. Both halves were wrong the moment
+three race-control events landed close together — an ordinary safety-car-into-red-flag
+sequence, not an edge case. A lap-count threshold has no relationship to where a lap
+actually renders (`lapToX` does), so two events distant enough to count as "far" by the
+percentage could still land closer on screen than one chip is wide; and two rows is a
+constant while how many events can cluster is not, so a third close event landed back on
+the first event's row and sat directly on top of it.
+
+The band now measures instead of guessing: each column gets its actual pixel footprint from
+`lapToX` and the widest chip it holds, and a classic interval-scheduling greedy places each
+column in the first row whose previous occupant it clears, opening a new row only when
+every row already in use is still occupied at that x. There is no row ceiling — four events
+inside ten laps spread across four rows rather than collapsing two onto each other. A
+second, smaller bug turned up under pixel measurement rather than a screenshot: the row
+step was 22px, and a rendered chip is taller than that (about 22.5px in advanced mode), so
+two stacked rows touched by half a pixel regardless of how cleanly they cleared
+horizontally. The step is now sized to the chip it actually has to clear in each mode, not
+a number that happened to look right at one width.
 
 ---
 

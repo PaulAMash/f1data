@@ -138,21 +138,28 @@ def test_missing_entry_list_makes_a_race_incomplete():
     assert s.complete is False
 
 
-def test_a_real_absence_makes_a_session_unavailable_even_when_it_is_enriching():
-    """V76 made the gate strict: `missing` is empty or the page is not shown.
+def test_an_enriching_absence_is_reported_and_never_gates():
+    """V78: an enriching facet's absence is a fact about the SOURCES panel, not
+    a reason to hide the page.
 
-    V75 gated on the essential facets only, which left a session that was
-    genuinely missing something still rendering with a chip on it asking the
-    reader how much to believe. The product rule is that a page we are not
-    certain of is a page we do not show.
+    V76 made the gate strict — `missing` empty or the page does not render —
+    on the theory that a page we are not fully certain of should not be shown.
+    V77 then had to narrow `_MAY_BE_EMPTY` to stop that strictness swallowing
+    Monaco's genuinely-empty overtake list, and narrowing it broke Miami: a
+    race with a genuinely empty (green-flag) race-control log started failing
+    the same check. Those were one bug, not two — no fixed list of "facets
+    that may be empty" can be right for every race, because whether a zero is
+    a fact or a failure depends on the RACE, not the facet. Gating on
+    essential facets alone has no such seesaw: results, the entry list and lap
+    times are never legitimately empty, for any circuit.
     """
     s = _race(classification=[_row("VER", position=1)],
               drivers=[Driver(number="1", code="VER", name="Max", team="Red Bull Racing")],
               laps=[Lap(driver="VER", lap=1)], weather=[])
     dsm._audit_report(s)
-    assert "weather" in s.source_report.missing
-    assert s.source_report.essential_missing == []   # still diagnosed as enriching
-    assert s.source_report.complete is False         # and still not rendered
+    assert "weather" in s.source_report.missing       # still reported, in Sources
+    assert s.source_report.essential_missing == []
+    assert s.source_report.complete is True           # and still rendered
 
 
 def test_a_question_answered_none_is_not_a_missing_facet():
@@ -183,14 +190,15 @@ def test_a_question_answered_none_is_not_a_missing_facet():
     assert s.source_report.complete is True
 
 
-def test_a_facet_nothing_answered_for_is_still_missing():
-    """The other half of the same rule — silence is not zero."""
+def test_a_facet_nothing_answered_for_is_still_reported_as_missing():
+    """The other half of the same rule — silence is not zero — still holds for
+    `missing` (the Sources panel), even though `missing` no longer gates."""
     s = _race(classification=[_row("VER", position=1)],
               drivers=[Driver(number="1", code="VER", name="Max", team="Red Bull Racing")],
               laps=[Lap(driver="VER", lap=1)], overtakes=[])
     dsm._audit_report(s)
     assert "overtakes" in s.source_report.missing
-    assert s.source_report.complete is False
+    assert s.source_report.complete is True   # overtakes was never essential
 
 
 def test_an_era_that_never_recorded_laps_is_not_incomplete():
@@ -203,11 +211,19 @@ def test_an_era_that_never_recorded_laps_is_not_incomplete():
     assert s.source_report.complete is True
 
 
-def test_practice_with_nothing_but_an_entry_list_is_not_rendered():
-    """Strict applies to every category, not only to races."""
+def test_practice_only_needs_its_own_essentials():
+    """Practice's essential set is just the entry list — no results, no laps —
+    so a practice session with drivers and nothing else is complete."""
     s = _race(session_type="Practice 1", category="practice",
               drivers=[Driver(number="1", code="VER", name="Max", team="Red Bull Racing")],
               classification=[])
+    dsm._audit_report(s)
+    assert s.source_report.complete is True
+
+
+def test_practice_with_no_entry_list_is_not_rendered():
+    s = _race(session_type="Practice 1", category="practice",
+              drivers=[], classification=[])
     dsm._audit_report(s)
     assert s.source_report.complete is False
 
@@ -220,19 +236,68 @@ def test_the_verdict_is_the_same_object_every_page_reads():
     assert s.partial is s.source_report.partial
 
 
-def test_an_empty_race_control_log_is_still_a_gap():
-    """V77 tightened _MAY_BE_EMPTY back to overtakes alone.
+def test_an_empty_race_control_log_is_reported_but_never_blocks_the_page():
+    """THE MIAMI CASE.
 
-    A modern race always produces race-control messages and a race in which
-    nobody pitted has not happened since refuelling ended, so an empty one of
-    those is a feed that failed rather than a fact about the afternoon — and
-    treating it as a fact let a session through with panels that had nothing to
-    draw.
+    A clean, green-flag race has an empty race-control log — that is a fact
+    about the afternoon, not a failed feed, and V77 could not tell the two
+    apart from the count alone (unlike overtakes, there is no derivation that
+    definitively answers "zero race-control messages"). Listing the facet in
+    `_MAY_BE_EMPTY` isn't right either: for a DIFFERENT race an empty log is a
+    dropped feed. The only fix that works for every race is to stop the facet
+    from gating at all, because it was never essential to begin with.
     """
     s = _race(classification=[_row("VER", position=1)],
               drivers=[Driver(number="1", code="VER", name="Max", team="Red Bull Racing")],
               laps=[Lap(driver="VER", lap=1)], race_control=[])
     dsm._set_facet(s, "race_control", "f1-archive", "high", "nothing returned.")
     dsm._audit_report(s)
-    assert "race_control" in s.source_report.missing
-    assert s.source_report.complete is False
+    assert "race_control" in s.source_report.missing   # still shown in Sources
+    assert s.source_report.complete is True            # but the race still renders
+
+
+def test_widening_or_narrowing_may_be_empty_cannot_change_the_gate():
+    """The architectural guarantee V78 exists to establish: since the gate reads
+    `essential_missing` and not `missing`, `_MAY_BE_EMPTY` can grow or shrink
+    freely for wording without ever flipping whether a session renders."""
+    for empty_set in (set(), {"overtakes"}, {"overtakes", "race_control", "pit_stops"}):
+        s = _race(classification=[_row("VER", position=1)],
+                  drivers=[Driver(number="1", code="VER", name="Max", team="Red Bull Racing")],
+                  laps=[Lap(driver="VER", lap=1)],
+                  race_control=[], pit_stops=[], overtakes=[])
+        original = dsm._MAY_BE_EMPTY
+        dsm._MAY_BE_EMPTY = empty_set
+        try:
+            dsm._audit_report(s)
+        finally:
+            dsm._MAY_BE_EMPTY = original
+        assert s.source_report.complete is True, f"gate flipped for _MAY_BE_EMPTY={empty_set}"
+
+
+def test_monaco_and_miami_are_both_complete_at_once():
+    """The regression, run for real: two races, two different empty facets,
+    audited in the same test so one cannot be "fixed" at the other's expense.
+
+    Monaco: a clean street race, zero overtakes. Miami: a clean race with a
+    quiet race-control log and, in this shape, only one pit stop recorded.
+    Both hold every essential fact; neither should ever block the other.
+    """
+    monaco = _race(grand_prix="Monaco Grand Prix",
+                   classification=[_row("VER", position=1), _row("HAM", position=2)],
+                   drivers=[Driver(number="1", code="VER", name="Max", team="Red Bull Racing"),
+                            Driver(number="44", code="HAM", name="Lewis", team="Ferrari")],
+                   laps=[Lap(driver="VER", lap=1), Lap(driver="HAM", lap=1)],
+                   overtakes=[])
+    dsm._set_facet(monaco, "overtakes", "inferred", "medium", "none detected.")
+    dsm._audit_report(monaco)
+
+    miami = _race(grand_prix="Miami Grand Prix",
+                  classification=[_row("ANT", position=1), _row("NOR", position=2)],
+                  drivers=[Driver(number="12", code="ANT", name="Kimi", team="Mercedes"),
+                           Driver(number="4", code="NOR", name="Lando", team="McLaren")],
+                  laps=[Lap(driver="ANT", lap=1), Lap(driver="NOR", lap=1)],
+                  race_control=[], pit_stops=[])
+    dsm._audit_report(miami)
+
+    assert monaco.complete is True
+    assert miami.complete is True

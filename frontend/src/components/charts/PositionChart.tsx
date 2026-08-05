@@ -446,7 +446,7 @@ export function PositionChart({
       </div>
 
       <div ref={wrapRef} className="relative">
-        <EventBand markers={markers} lapToX={lapToX} ready={width > 0} simple={simple} total={total} />
+        <EventBand markers={markers} lapToX={lapToX} ready={width > 0} simple={simple} />
         {/* selecting a Key Moment focuses the chart on that beat the same way
             focusing a driver does: the field recedes and the moment, drawn
             crisply on top, dominates */}
@@ -798,27 +798,79 @@ function Segmented({ options, value, onChange }: { options: { id: string; label:
   );
 }
 
-// Editorial event markers above the plot. Same-lap events (e.g. START + SC on
-// lap 1) stack vertically in one column so their labels never collide; columns
-// that fall close together are staggered so those don't collide either.
-function EventBand({ markers, lapToX, ready, simple, total }: {
-  markers: { lap: number; kind: EventKind; cause?: string | null; dur: number }[]; lapToX: (lap: number) => number; ready: boolean; simple: boolean; total: number;
+/* ---------------------------------------------------------------------------
+   EDITORIAL EVENT MARKERS ABOVE THE PLOT.
+
+   Same-lap events (e.g. START + SC on lap 1) stack vertically in one column
+   so their labels never collide — that part was always right and is
+   unchanged. What used to decide whether two DIFFERENT laps' columns
+   collided was a percentage of the total race distance ("near = lap -
+   lastLap < total * 0.06"), alternating between exactly two rows. Both
+   halves of that were wrong the moment three events landed close together,
+   which is an ordinary safety-car-then-red-flag sequence, not an edge case:
+
+     * A LAP-COUNT THRESHOLD ISN'T A PIXEL THRESHOLD. Two events ten laps
+       apart are "far" by a 6%-of-distance rule on a 70-lap race and can still
+       sit closer on screen than one chip is wide, because the rule never
+       looks at lapToX — the very function that turns a lap into where the
+       chip actually renders.
+     * TWO ROWS IS A CONSTANT; HOW MANY EVENTS CAN CLUSTER IS NOT. Alternating
+       0/1/0/1 puts the first and third of three tight events back on the same
+       row, which is exactly the Red Flag sitting on the Safety Car below it
+       in the reported case.
+
+   So this measures instead of guessing: each column's actual pixel footprint
+   (its widest chip, centred on lapToX(lap)), then a classic interval-
+   scheduling greedy — place each column in the first row whose previous
+   occupant it clears, opening a new row only when every row already in use
+   is still occupied at that x. That never opens a row it doesn't need, and it
+   has no ceiling: four events inside ten laps spread across four rows rather
+   than collapsing two of them onto each other.
+   --------------------------------------------------------------------------- */
+const EVENT_ROW_STEP_ADVANCED = 30; // vertical distance between stacked rows, px (px-2 py-0.5 chip)
+const EVENT_ROW_STEP_SIMPLE = 36;   // vertical distance between stacked rows, px (px-2.5 py-1 chip)
+const EVENT_MARKER_GAP = 10;        // minimum clear space between two chips, px
+const EVENT_CHAR_W = 7;             // conservative width of one bold 11px glyph, px
+
+/** Estimated on-screen width of one event chip: padding, icon, gap, code text. */
+function eventChipWidth(kind: EventKind, simple: boolean): number {
+  const pad = simple ? 20 : 16;  // px-2.5 vs px-2, both sides combined
+  const icon = simple ? 13 : 11;
+  return pad + icon + 4 /* gap-1 */ + 2 /* border */ + EVENT[kind].code.length * EVENT_CHAR_W;
+}
+
+function EventBand({ markers, lapToX, ready, simple }: {
+  markers: { lap: number; kind: EventKind; cause?: string | null; dur: number }[]; lapToX: (lap: number) => number; ready: boolean; simple: boolean;
 }) {
   const byLap = new Map<number, typeof markers>();
   for (const m of markers) (byLap.get(m.lap) ?? byLap.set(m.lap, []).get(m.lap)!).push(m);
-  const groups = [...byLap.entries()].sort((a, b) => a[0] - b[0]);
-  let lastLap = -99, lastRow = 1;
-  const withRow = groups.map(([lap, ms]) => {
-    const near = lap - lastLap < total * 0.06;
-    const row = near ? 1 - lastRow : 0;
-    lastLap = lap; lastRow = row;
-    return { lap, ms, row };
+
+  // one column per lap; same-lap events stack vertically, so the column's
+  // footprint is only ever as wide as the single widest chip in it
+  const columns = [...byLap.entries()]
+    .map(([lap, ms]) => {
+      const x = Math.max(30, lapToX(lap));
+      const half = Math.max(...ms.map((m) => eventChipWidth(m.kind, simple))) / 2;
+      return { lap, ms, x, half };
+    })
+    .sort((a, b) => a.x - b.x);
+
+  const rowRight: number[] = [];
+  const placed = columns.map((c) => {
+    let row = rowRight.findIndex((right) => c.x - c.half >= right + EVENT_MARKER_GAP);
+    if (row === -1) { row = rowRight.length; rowRight.push(-Infinity); }
+    rowRight[row] = c.x + c.half;
+    return { ...c, row };
   });
+  const rows = Math.max(1, rowRight.length);
+  const rowStep = simple ? EVENT_ROW_STEP_SIMPLE : EVENT_ROW_STEP_ADVANCED;
+
   return (
-    <div className={cx("relative mb-1 transition-opacity", ready ? "opacity-100" : "opacity-0")} style={{ height: simple ? 62 : 56 }}>
-      {withRow.map(({ lap, ms, row }) => (
+    <div className={cx("relative mb-1 transition-opacity", ready ? "opacity-100" : "opacity-0")}
+      style={{ height: (simple ? 62 : 56) + (rows - 1) * rowStep }}>
+      {placed.map(({ lap, ms, x, row }) => (
         <div key={lap} className="absolute bottom-0 flex -translate-x-1/2 flex-col items-center"
-          style={{ left: Math.max(30, lapToX(lap)), paddingBottom: row === 1 ? 0 : 22 }}>
+          style={{ left: x, paddingBottom: row * rowStep }}>
           <div className="flex flex-col items-center gap-0.5">
             {ms.map((m, i) => {
               const meta = EVENT[m.kind]; const Icon = meta.icon;

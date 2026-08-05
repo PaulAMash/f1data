@@ -706,12 +706,14 @@ def _essential_for(category: str, year: int) -> set[str]:
 #: a gap. Monaco is the sport's own example: a Grand Prix can genuinely finish
 #: with nobody passed on track.
 #:
-#: V76 also listed race_control and pit_stops here, and that was too generous.
-#: A modern race always produces race-control messages, and a race in which
-#: nobody pitted has not happened since refuelling ended — so an empty one of
-#: those is a feed that failed, not a fact about the afternoon, and treating it
-#: as a fact let a session through with panels that had nothing to draw. Their
-#: era boundaries already cover the seasons that never recorded them.
+#: This governs the WORDING of `missing` and the Sources panel only — see
+#: `_audit_report` below for why it stopped governing whether the page renders.
+#: V76 also listed race_control and pit_stops here, and that was too generous
+#: for a list that (at the time) still gated the page: a modern race always
+#: produces race-control messages, a race nobody pitted in has not happened
+#: since refuelling ended, and treating their absence as routine let a session
+#: through with panels that had nothing to draw. Their era boundaries already
+#: cover the seasons that never recorded them.
 _MAY_BE_EMPTY = {"overtakes"}
 
 #: facet -> (attribute holding it, human name for the reader)
@@ -782,33 +784,44 @@ def _audit_report(session: RaceSession) -> None:
     report.facets = facets
     report.missing = missing
     report.partial = bool(missing)
-    # THE ONE VERDICT. Split by what this kind of session cannot be
-    # reconstructed without — see _ESSENTIAL_FACETS — so that "a weather trace
-    # is absent" and "the entry list never arrived" stop being the same answer.
-    # STRICT, and only fair because two other rules run before it.
+    # THE ONE VERDICT, AND WHY IT GATES ON *ESSENTIAL* FACETS ONLY.
     #
-    # V75 gated on the essential facets alone, which left a session missing
-    # something real still rendering with a chip on it. The product rule is
-    # simpler: a page this product is not certain of is a page it does not show.
-    # `missing` is empty or the session is unavailable.
+    # V76 made this strict — `complete = not missing`, every absent facet
+    # blocking the page — reasoning that a page we are not fully certain of is a
+    # page we should not show. V77 then had to narrow `_MAY_BE_EMPTY` to stop
+    # that strictness swallowing whole sessions, and narrowing it broke Miami:
+    # a race with a genuinely empty race-control log (green flag throughout)
+    # started failing the SAME check that Monaco's genuinely-empty overtake list
+    # had just been exempted from.
     #
-    # Both of the rules above exist to stop that being brutal, and both are
-    # about not inventing a gap in the first place:
+    # That was not two bugs. It was one: A FIXED LIST OF "FACETS THAT MAY BE
+    # EMPTY" CANNOT BE RIGHT FOR EVERY RACE, because whether a count of zero is
+    # a fact or a failure depends on the race, not the facet. Race control is
+    # legitimately empty for a clean afternoon and illegitimately empty when the
+    # feed drops out — nothing about the FACET tells you which. Widen the list
+    # to fix one race's false negative and it creates another race's false
+    # positive; narrow it to fix that and the first race breaks again. Every
+    # future circuit was going to take a turn at one side of that seesaw.
     #
-    #   * a feed that had not been invented yet is not missing (the era
-    #     boundaries — a 1975 Grand Prix has no lap times and never will);
-    #   * a question asked and answered "none" is not missing either
-    #     (_MAY_BE_EMPTY — Monaco genuinely has no overtakes to report).
+    # The only board is essential vs. enriching (`_ESSENTIAL_FACETS`), and it
+    # doesn't have the seesaw's problem: results, the entry list, and — for a
+    # race — lap times are the facts every panel is built FROM, and none of
+    # them is ever legitimately empty. A session missing one of those cannot
+    # produce a real page no matter which race it is, so gating on them is safe
+    # for every circuit at once. Everything else is a fact ABOUT the race
+    # rather than a building block, individual panels already show it missing
+    # gracefully (an empty weather widget, a quiet race-control log), and V77's
+    # own audit proved that a page built from complete essentials never renders
+    # half of itself — the failure mode strict was reaching for doesn't occur
+    # once the essentials are actually there.
     #
-    # Without those two, strict would declare most of the sport unavailable.
-    # With them, everything left in `missing` is a real absence.
-    #
-    # `essential_missing` survives as diagnosis rather than as the gate: it is
-    # what the unavailable screen leads with, because "the entry list never
-    # arrived" is a more useful sentence than "something is missing".
+    # `_MAY_BE_EMPTY` still matters for what `missing` SAYS (Monaco's overtake
+    # count reads as a real zero in the Sources panel rather than a gap), but it
+    # no longer decides whether the page exists — nothing derived from a count
+    # does.
     essential = _essential_for(cat, session.year)
     report.essential_missing = [m for m in missing if m in essential]
-    report.complete = not missing
+    report.complete = not report.essential_missing
     if not missing:
         report.missing_reason = None
     session.partial = report.partial
