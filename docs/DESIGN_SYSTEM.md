@@ -3599,3 +3599,66 @@ An all-or-nothing contract is asserted by counting what must be absent.
 
 > If a rule can be enforced by deleting the alternative rather than by every
 > component agreeing to follow it, delete the alternative.
+
+---
+
+## The exemption list and the gate must not be the same list
+
+`_MAY_BE_EMPTY` answers one question: which facets are honestly allowed to
+count zero. `complete` needs to answer a different one: can this page be
+reconstructed at all. V77 let the same three-item list answer both, which
+meant a list wide enough to excuse Monaco's silent overtakes column also
+excused Miami's empty race-control log — even though an empty race-control
+log is never legitimate and an empty overtakes column often is. Widening
+the list to fix one race weakened the gate for every other race that
+depended on that facet actually being checked; narrowing it to fix the
+other broke Monaco again. Two races kept swapping places release over
+release because one list was doing a job that needed two.
+
+The gate now reads only `essential_missing` — the facets a session cannot
+be reconstructed without at all (results, entry list, lap times for a race
+or sprint). `_MAY_BE_EMPTY` still exists, but only to choose the *wording*
+a missing enriching facet gets in the sources panel; it has no vote on
+whether the page renders. Whatever is in it, wide or narrow, `complete`
+cannot move — proved by a test that mutates the list between empty, one
+facet and three and asserts the gate never changes underneath it.
+
+> A list built to forgive specific values is not safe to also use as a list
+> of what may be absent. Forgiveness and admission are different questions;
+> give them different lists, or the list that is right for one race is wrong
+> for the next.
+
+---
+
+## A lap-count threshold is not a pixel threshold
+
+The Position Chart decided two events were "near" each other — and so
+needed separating onto different rows — using a percentage of the race's
+total lap count. That rule has no relationship to the thing it was
+protecting: where a chip actually renders, which is a function of
+`lapToX`, track length and viewport width, not of how many laps apart two
+events are. A 70-lap race's 6%-of-distance rule calls two events "far"
+that can still land closer on screen than one chip is wide, on a narrow
+viewport where every lap is a handful of pixels.
+
+The row count had the same problem in miniature: two rows, alternating,
+is a constant, and how many events can cluster within a few laps of each
+other is not. A third close event always lands back on the first event's
+row, however well the first two were separated — which is a safety car
+sitting directly on a red flag, not an edge case.
+
+The fix in both cases was to stop reasoning about laps and start reasoning
+about the pixels the layout actually produces: measure each column's real
+footprint from `lapToX` and its widest chip, then place columns into rows
+with a classic interval-scheduling greedy that opens a new row only when
+every existing row is still occupied at that x. There is no row ceiling,
+because there is no reason to assume one. A second bug hid inside the fix
+itself: the vertical distance between rows was a constant chosen by eye,
+and it was a fraction of a pixel shorter than a rendered chip's real
+height, so two cleanly-separated rows still touched. A screenshot at
+normal zoom did not show it; comparing `getBoundingClientRect()` on the
+actual chips did.
+
+> If the thing you are protecting against is a pixel collision, the rule
+> deciding when to protect against it has to be measured in pixels — and so
+> does the check that confirms it worked.
