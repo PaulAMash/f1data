@@ -376,3 +376,54 @@ def test_a_missing_trace_no_longer_silently_empties_the_overtakes():
     dsm._finalize_session(s)
     assert s.positions, "the trace should have been rebuilt from the laps"
     assert s.overtakes, "an overtake happened on lap 2 and should be inferred"
+
+
+# --------------------------------------------------------------------------- #
+# 7. the cached read path (V80)
+#
+# Derivations ran on the way IN and were frozen into the cache file. Read back
+# out they never ran again, so a session cached by an older build kept whatever
+# that build failed to derive until the entry expired — a month. Invisible
+# locally, where the cache is minutes old and written by the code you are
+# running; decisive in production, where the cache outlives the deploy.
+# --------------------------------------------------------------------------- #
+def test_a_cached_session_with_no_entry_list_heals_on_read():
+    """THE PRODUCTION SHAPE: results and a trace, but nobody sent an entry
+    list — so every chart series, which comes from `drivers`, had nothing to
+    draw while the classification table rendered perfectly."""
+    s = _race(classification=[_row("VER", "Max Verstappen", "Red Bull Racing", position=1),
+                              _row("HAM", "Lewis Hamilton", "Ferrari", position=2)],
+              laps=[_lap("VER", 1, 1), _lap("HAM", 1, 2)])
+    assert not s.drivers
+    dsm._finalize_session(s)
+    assert [d.code for d in s.drivers] == ["VER", "HAM"]
+    assert [d.name for d in s.drivers] == ["Max Verstappen", "Lewis Hamilton"]
+
+
+def test_the_offline_finalizer_needs_no_provider_and_no_network():
+    """It runs on three paths — fresh fetch, cache read, demo — so it must not
+    depend on which of them called it."""
+    s = _race(classification=[_row("VER", position=1)], laps=[_lap("VER", 1, 1)])
+    dsm._finalize_session(s)          # no `primary`, no network, must not raise
+    assert s.drivers and s.positions
+
+
+def test_finalizing_twice_changes_nothing():
+    """Cache read runs it over sessions it already ran over. It has to be
+    idempotent or every read would compound whatever the last one derived."""
+    s = _race(classification=[_row("VER", position=1), _row("HAM", position=2)],
+              laps=[_lap("VER", 1, 1), _lap("HAM", 1, 2)])
+    dsm._finalize_session(s)
+    first = (len(s.drivers), len(s.positions), len(s.overtakes),
+             list(s.source_report.missing))
+    dsm._finalize_session(s)
+    assert (len(s.drivers), len(s.positions), len(s.overtakes),
+            list(s.source_report.missing)) == first
+
+
+def test_a_real_entry_list_survives_finalizing():
+    s = _race(drivers=[Driver(number="1", code="VER", name="Max Verstappen",
+                              team="Red Bull Racing")],
+              classification=[_row("NOR", "Lando Norris", "McLaren", position=1)])
+    dsm._finalize_session(s)
+    assert [d.code for d in s.drivers] == ["VER"]

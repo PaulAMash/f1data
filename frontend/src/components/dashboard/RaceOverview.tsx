@@ -11,10 +11,11 @@ import { HoverCard } from "@/components/ui/HoverCard";
 import { useHoverTip } from "@/lib/useHoverTip";
 import { IconTile, Meter, PositionShift, type IconAnim, type VisualTone } from "@/components/ui/Visuals";
 import { InsightCard } from "@/components/ui/InsightCard";
-import { cx, fmtGap, fmtLap, fmtSec, netBadge } from "@/lib/format";
+import { cx, fmtGap, fmtLap, fmtSec } from "@/lib/format";
 import { inFinishingOrder, NOT_CLASSIFIED_HINT, positionLabel } from "@/lib/classification";
 import { derivePenalties, finalPenalties, penaltiesByDriver } from "@/lib/penalties";
 import { PenaltyBadges } from "@/components/ui/PenaltyBadge";
+import { GridDelta } from "@/components/ui/GridDelta";
 
 export function RaceOverview({
   bundle, simple = false, maxNet = 1,
@@ -167,7 +168,6 @@ export function RaceOverview({
               </thead>
               <tbody>
                 {rows.map((c) => {
-                  const nb = netBadge(c.grid && c.position ? c.grid - c.position : null);
                   return (
                     /* A retirement recedes rather than shouting. It is still a
                        full row with a real classified position in it — it is
@@ -216,14 +216,7 @@ export function RaceOverview({
                               Historical Explorer. Only a car with no position
                               at all has nothing to put here. */}
                           <td className="py-2 pr-2">
-                            {c.position == null ? <span className="text-ink-faint">—</span> : (
-                              <span className="inline-flex items-center gap-1.5 tabular-nums text-ink-muted">
-                                P{c.grid ?? "—"}→P{c.position}
-                                <span className={nb.tone === "up" ? "text-emerald-300" : nb.tone === "down" ? "text-rose-300" : "text-ink-faint"}>
-                                  {nb.text}
-                                </span>
-                              </span>
-                            )}
+                            <GridDelta grid={c.grid} position={c.position} />
                           </td>
                           <td className="py-2 pr-2 tabular-nums text-ink-muted">{c.pit_stops}</td>
                           <td className="py-2 pr-2 tabular-nums text-ink-muted">{fmtLap(c.best_lap)}</td>
@@ -406,12 +399,17 @@ function MoverList({
                     style={{ width: `${Math.max(6, (Math.abs(r.net) / maxNet) * 100)}%` }} />
                 </div>
               </div>
+              {/* same rule as the results table (see ui/GridDelta): the delta
+                  leads, the two positions are quiet supporting evidence */}
               <div className="shrink-0 text-right">
-                <div className={cx("text-sm font-bold leading-none tabular-nums",
+                <div className={cx("inline-flex items-baseline gap-0.5 text-sm font-bold leading-none tabular-nums",
                   up ? "text-emerald-300" : "text-rose-300")}>
-                  {up ? "▲" : "▼"} {Math.abs(r.net)}
+                  <span aria-hidden className="text-[9px] leading-none">{up ? "▲" : "▼"}</span>
+                  {Math.abs(r.net)}
                 </div>
-                <div className="mt-1 text-[11px] tabular-nums text-ink-faint">P{r.grid}→P{r.finish}</div>
+                <div className="mt-1 text-[11px] tabular-nums text-ink-faint">
+                  P{r.grid}<span className="px-px opacity-50">→</span>P{r.finish}
+                </div>
               </div>
             </div>
           ))}

@@ -22,7 +22,14 @@ export interface Penalty {
 
 /* Steward penalties read violet across the app; only an ENDED race (DSQ, and
    the DNF badge elsewhere) uses rose. Sharing rose made a time penalty and a
-   retirement look like the same kind of event at a glance. */
+   retirement look like the same kind of event at a glance.
+ *
+ * `title` is the full name, shown on the hover card. The badge itself carries
+ * the SHORT form (see `label` below), because a results table is a timing
+ * screen and timing screens have had conventions for this for fifty years —
+ * "DT", "SG", "DSQ". "DRIVE-THRU" was neither the full name nor the
+ * convention: a hyphenated truncation invented for the badge, which is exactly
+ * what makes it read as raw data rather than as a designed component. */
 export const PENALTY_META: Record<PenaltyKind, { tone: "penalty" | "ended" | "amber" | "neutral"; title: string }> = {
   grid:          { tone: "penalty", title: "Grid penalty" },
   time:          { tone: "penalty", title: "Time penalty" },
@@ -71,13 +78,13 @@ export function derivePenalties(raceControl: RaceControlEvent[]): Penalty[] {
         const seconds = parseInt(time[1], 10);
         out.push({ ...base, driver, kind: "time", seconds, label: `+${seconds}s` });
       } else if (up.includes("DRIVE THROUGH")) {
-        out.push({ ...base, driver, kind: "drive_through", label: "DRIVE-THRU" });
+        out.push({ ...base, driver, kind: "drive_through", label: "DT" });
       } else if (/STOP\s*(?:AND|\/|&)?\s*GO/.test(up)) {
-        out.push({ ...base, driver, kind: "stop_go", label: "STOP-GO" });
+        out.push({ ...base, driver, kind: "stop_go", label: "SG" });
       } else if (up.includes("LAP DELETED") || up.includes("TIME DELETED")) {
-        out.push({ ...base, driver, kind: "deleted_lap", label: "LAP DELETED" });
+        out.push({ ...base, driver, kind: "deleted_lap", label: "DELETED" });
       } else if (up.includes("UNDER INVESTIGATION") || up.includes("WILL BE INVESTIGATED")) {
-        out.push({ ...base, driver, kind: "investigation", label: "INVESTIGATION" });
+        out.push({ ...base, driver, kind: "investigation", label: "NOTED" });
       } else if (up.includes("REPRIMAND")) {
         out.push({ ...base, driver, kind: "reprimand", label: "REPRIMAND" });
       }

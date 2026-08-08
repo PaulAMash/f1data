@@ -844,10 +844,37 @@ function Segmented({ options, value, onChange }: { options: { id: string; label:
    has no ceiling: four events inside ten laps spread across four rows rather
    than collapsing two of them onto each other.
    --------------------------------------------------------------------------- */
-const EVENT_ROW_STEP_ADVANCED = 30; // vertical distance between stacked rows, px (px-2 py-0.5 chip)
-const EVENT_ROW_STEP_SIMPLE = 36;   // vertical distance between stacked rows, px (px-2.5 py-1 chip)
-const EVENT_MARKER_GAP = 10;        // minimum clear space between two chips, px
-const EVENT_CHAR_W = 7;             // conservative width of one bold 11px glyph, px
+const EVENT_MARKER_GAP = 10;     // minimum clear space between two chips, px
+const EVENT_CHAR_W = 7;          // conservative width of one bold 11px glyph, px
+const EVENT_CHIP_H_ADVANCED = 23;   // rendered chip height, px-2 py-0.5
+const EVENT_CHIP_H_SIMPLE = 27;     // rendered chip height, px-2.5 py-1
+const EVENT_CHIP_STACK_GAP = 2;     // gap-0.5 between same-lap chips
+const EVENT_CAPTION_H = 17;         // the "L57" line under the chips, incl. mt-0.5
+const EVENT_ROW_CLEARANCE = 8;      // air between one row's caption and the next row's chip
+
+/**
+ * Vertical distance between packed rows.
+ *
+ * V78 SIZED THIS TO THE CHIP AND V79 KEPT DOING SO, WHICH IS WHY THE MARKERS
+ * STILL TOUCHED. A column is not a chip: it is the chips for that lap, stacked,
+ * plus the "L57" caption underneath naming the lap. That caption is the bottom
+ * of the column, and a fixed 30px step is shorter than chip-plus-caption — so a
+ * column lifted onto row 1 hung its caption straight down into row 0's chip,
+ * which is the Red Flag sitting on the Safety Car's lap number in the reported
+ * screenshot. Chip-to-chip was provably clear the whole time; nothing had ever
+ * measured the caption, because the packer only ever thought about chips.
+ *
+ * Derived from the tallest column actually being drawn rather than typed as a
+ * constant, so it also survives the case a constant cannot: several events on
+ * the SAME lap stack inside one column, making that column taller than any
+ * fixed number chosen in advance.
+ */
+function eventRowStep(maxChipsInColumn: number, simple: boolean): number {
+  const chipH = simple ? EVENT_CHIP_H_SIMPLE : EVENT_CHIP_H_ADVANCED;
+  const n = Math.max(1, maxChipsInColumn);
+  const stack = n * chipH + (n - 1) * EVENT_CHIP_STACK_GAP;
+  return stack + EVENT_CAPTION_H + EVENT_ROW_CLEARANCE;
+}
 
 const EVENT_TIP_W = 208;     // the hover card is w-52; it has to be measured too
 const EVENT_TIP_GAP = 8;     // clear air between the card and the tallest chip
@@ -915,7 +942,8 @@ function EventBand({ markers, lapToX, ready, simple, width }: {
     return { ...c, row };
   });
   const rows = Math.max(1, rowRight.length);
-  const rowStep = simple ? EVENT_ROW_STEP_SIMPLE : EVENT_ROW_STEP_ADVANCED;
+  // the step has to clear the TALLEST column, caption included — see eventRowStep
+  const rowStep = eventRowStep(Math.max(...columns.map((c) => c.ms.length), 1), simple);
 
   return (
     <div className={cx("relative mb-1 transition-opacity", ready ? "opacity-100" : "opacity-0")}

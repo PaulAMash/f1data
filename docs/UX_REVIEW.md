@@ -3,9 +3,81 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V79**, the first release read against a hosted deployment rather than a laptop.
-Three things that were free on loopback and expensive in production: a facet nothing
-guaranteed, a payload nothing compressed, and a hover layer nothing measured.
+Last pass: **V80**. The derivations finally run on every path a session can arrive by, the
+event band measures the whole column rather than the chip in it, and the results table
+stops printing "P14→P14 —" to say that nothing happened.
+
+---
+
+## Fixed in V80
+
+### 1. The charts were blank because the entry list was — *the root cause*
+
+Localhost worked and production did not, and the screenshot said why before any code was
+read: the event markers were there, the legend was there, and the plot between them was
+empty. That combination is only reachable one way. `session.positions` must be **non-empty**
+(or the chart would have taken its early return and shown a message instead), while
+`session.drivers` must be **empty** — because every series in that chart is built by walking
+`drivers`. An empty entry list produces zero `<Line>` elements and collapses the Y axis to a
+domain of `[1, 0]`, which is a full set of chart chrome around nothing at all. The
+classification table beside it was unaffected for the same reason it was in V79: those rows
+carry their own names and colours and never consult the entry list.
+
+So the question was never "why does recharts fail in production". It was "why does a session
+reach the browser with no entry list", and the answer is the one V79 half-fixed. There are
+three ways a session can arrive — a fresh fetch, the demo simulator, and the **cache** — and
+the derivations only ever ran on the first. V79 fixed the demo path and did not look at the
+cache. A cached session is a session that skipped the pipeline: the entry list, the position
+trace, FIA order and the audit verdict are all computed on the way *in* and frozen into the
+file, and on the way back out none of them run again. Locally that is invisible, because a
+laptop's cache is minutes old and was written by the code you are running. In production the
+cache long outlives the deploy that filled it, so an entry written before a fix keeps that
+bug for as long as the entry lives — a month here.
+
+Re-deriving on read costs nothing (no network, no provider knowledge) and makes every fix
+retroactive: the next read of a stale entry heals it. The frontend now carries the same
+guarantee independently (`lib/sessionShape`), rebuilding the entry list from the
+classification, then from the trace, before any panel sees the session — because the browser
+is served a payload it did not compute, by a deployment it does not control, possibly from a
+cache older than either, and a facet fifteen call sites depend on should not be assumed at
+each of them. Verified by stripping `drivers` at the API boundary and confirming all 16
+position lines still render in their correct team colours.
+
+### 2. The event band measured the chip and the column is not the chip
+
+V78 packed the chips, V79 lifted the hover cards clear, and the markers still touched —
+because a column is the chips for that lap **plus the "L57" caption underneath naming it**.
+The caption is the bottom of the column and nothing had ever measured it, so a column lifted
+onto row 1 hung its caption straight down into row 0's chip. That is precisely the Red Flag
+sitting on the Safety Car's lap number in the report, and chip-to-chip was provably clear the
+whole time, which is why two releases of chip measurements never found it.
+
+The row step is now derived from the tallest column actually being drawn — chips, stack gaps,
+caption and clearance — rather than typed as a constant. That also fixes a case no constant
+could: several events on the *same* lap stack inside one column, making it taller than any
+number chosen in advance. The check was widened to match: it now measures every element in
+the band, captions included, instead of only the chips.
+
+### 3. The classification printed data where it should have made a point
+
+`P14→P14 —` spends three tokens and an arrow to say that nothing happened, and the arrow is
+the loudest glyph in the cell while pointing at a number identical to the one it came from. A
+row where nothing happened should be the quietest row in the column. Meanwhile, where
+something *did* happen, "up eight" — the only interesting figure — was the smallest and
+faintest part of the cell, ranked below the two positions it was derived from.
+
+One rule now, in one shared component: **the delta is the story, the two positions are the
+evidence.** A change leads with the signed number in the colour of its direction and keeps
+`P17→P9` behind it as quiet support. No change prints the position once with a neutral hold
+mark and nothing else. The gainers/losers cards already worked this way and now match it
+exactly.
+
+`DRIVE-THRU` was neither the penalty's name nor the sport's abbreviation for it — a
+hyphenated truncation invented for the badge, which is what made it read as raw data. Timing
+screens have had conventions for this for fifty years, so the badges use them: `DT`, `SG`,
+`DSQ`, `+5s`. Each kind also gets its own mark rather than one gavel on all eight, so a badge
+can be recognised before it is read, which is the entire point of a badge in a dense table.
+The full official wording still lives one hover away, unchanged.
 
 ---
 
