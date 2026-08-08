@@ -178,14 +178,52 @@ def compute_pace(session: RaceSession) -> list[DriverPaceSummary]:
             representative_laps=len(clean_air),
         ))
 
+    # who can be ranked, then the ranking, then the words — in that order, so
+    # the numbered set and the displayed set are the same set
+    _mark_unevaluable(summaries, class_by_driver)
     _rank_and_score(summaries)
     _write_verdicts(summaries, class_by_driver)
     return summaries
 
 
+def _mark_unevaluable(summaries: list[DriverPaceSummary], class_by_driver: dict) -> None:
+    """Decide who can be pace-ranked at all, BEFORE anyone is ranked.
+
+    THIS ORDERING IS THE WHOLE FIX FOR THE SKIPPED RANKS. It used to happen
+    the other way round: `_rank_and_score` numbered everyone holding a
+    clean-air pace 1..N, and `_write_verdicts` then decided that the retired,
+    the disqualified and the barely-sampled could not be evaluated after all.
+    Both steps were individually right and they contradicted each other. A
+    retirement with a valid clean-air pace took a number out of the sequence
+    and then rendered as "—", so the number was spent and shown nowhere: the
+    leaderboard read 1, 2, 4, 5 … and the missing 3 existed only inside the
+    sort. Every race with a retirement produced a gap, which is most of them.
+
+    Deciding first makes the two steps agree. The ranked set is exactly the set
+    that displays a rank, so the sequence is contiguous by construction rather
+    than by a counter papered over the top of it — and the methodology is
+    untouched for everyone in it, because the survivors are still ordered by
+    corrected clean-air pace and genuine ties still sort together.
+    """
+    for s in summaries:
+        row = class_by_driver.get(s.driver)
+        status = ((row.status if row else "") or "").lower()
+        if (row and row.retired) \
+                or any(k in status for k in _DSQ_KEYS) \
+                or any(k in status for k in _DNS_KEYS) \
+                or s.representative_laps < MIN_REPRESENTATIVE_LAPS:
+            s.pace_evaluated = False
+
+
 def _rank_and_score(summaries: list[DriverPaceSummary]) -> None:
-    """Pace rank by normalized clean-air pace; consistency score across the field."""
-    ranked = sorted([s for s in summaries if s.clean_air_pace], key=lambda s: s.clean_air_pace)
+    """Pace rank by normalized clean-air pace; consistency score across the field.
+
+    Only drivers the field can actually be compared on are numbered — see
+    `_mark_unevaluable`, which runs first. Everyone else keeps `pace_rank`
+    None, which is what the table renders as "—".
+    """
+    ranked = sorted([s for s in summaries if s.clean_air_pace and s.pace_evaluated],
+                    key=lambda s: s.clean_air_pace)
     for i, s in enumerate(ranked, start=1):
         s.pace_rank = i
 

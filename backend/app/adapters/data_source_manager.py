@@ -299,6 +299,39 @@ def _derive_positions(session: RaceSession) -> None:
                "position feed answered for this session.")
 
 
+def _derive_total_laps(session: RaceSession) -> None:
+    """The race distance, recomputed after the merges rather than before them.
+
+    THIS IS THE OTHER WAY TO GET A BLANK CHART, AND IT BLANKS THE AXES TOO.
+    Every adapter sets `total_laps` from `max(lap for lap in laps, default=0)`
+    at the moment it builds the session — which is BEFORE `_merge_missing_facets`
+    fills in the laps and positions that another source had. A source that
+    answered with results but no lap table therefore froze the distance at zero,
+    and nothing ever revisited it once the real lap data arrived.
+    Zero is not a harmless default here. The Position chart builds one row per
+    lap with `for (let l = 1; l <= total; l++)`, so a zero distance produces an
+    empty data array; it then discards every position point, because each one
+    fails `p.lap > total`. The session still carries a full trace, so the chart
+    does not take its "no trace" early return — it renders the event band, the
+    legend and an axis pair with nothing between them. Every line chart in the
+    product goes blank while the classification table beside it is perfect.
+    Four sources for the answer, cheapest and most trustworthy first. All of
+    them are things the session already holds, so like the other derivations
+    this costs nothing and cannot fail.
+    """
+    if session.total_laps and session.total_laps > 0:
+        return
+    candidates = [
+        max((lp.lap for lp in session.laps if lp.lap), default=0),
+        max((p.lap for p in session.positions if p.lap), default=0),
+        max((c.laps_completed or 0 for c in session.classification), default=0),
+        (session.circuit.laps or 0) if session.circuit else 0,
+    ]
+    best = max(candidates)
+    if best > 0:
+        session.total_laps = best
+
+
 def _derive_drivers_from_classification(session: RaceSession) -> bool:
     """The cheap half of the entry-list backfill: no network, always available.
 
@@ -928,6 +961,11 @@ def _finalize_session(session: RaceSession) -> None:
     provider-specific merges stay in `_post_process`, above this.
     """
     session.category = session.category or session_category(session.session_type)
+
+    # the race distance, first: it is the x-axis every lap-indexed panel is
+    # drawn against, and the adapters fixed it before the merges that complete
+    # the lap data — see _derive_total_laps.
+    _derive_total_laps(session)
 
     # the entry list, before anything that resolves a name — or draws a line —
     # from a code. Every series in the Position chart comes from `drivers`, so

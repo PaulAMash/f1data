@@ -60,9 +60,41 @@ export function withEntryList(session: RaceSession): RaceSession {
   return drivers.length ? { ...session, drivers } : session;
 }
 
-/** The same guarantee, applied to a bundle as it arrives from the API. */
+/* THE RACE DISTANCE IS THE X AXIS, AND ZERO IS NOT A HARMLESS DEFAULT.
+ *
+ * Every adapter sets `total_laps` from its own lap table at the moment it
+ * builds the session — before the merge step that fills in laps and positions
+ * from another source. A source answering with results but no lap table
+ * therefore freezes the distance at zero, and nothing revisits it.
+ *
+ * The Position chart builds one row per lap (`for l = 1; l <= total`), so zero
+ * produces an empty data array, and then discards every position point because
+ * each fails `p.lap > total`. The session still holds a full trace, so the
+ * chart does not take its "no trace" early return: it draws the event band, the
+ * legend, and an empty axis pair between them. That is the blank-chart
+ * screenshot, and unlike a missing entry list it takes the axes with it.
+ *
+ * Recovered from the largest lap the session can actually evidence. */
+function deriveTotalLaps(session: RaceSession): number {
+  const maxOf = (ns: (number | null | undefined)[]) =>
+    ns.reduce<number>((m, n) => (typeof n === "number" && n > m ? n : m), 0);
+  return Math.max(
+    maxOf((session.laps ?? []).map((l) => l.lap)),
+    maxOf((session.positions ?? []).map((p) => p.lap)),
+    maxOf((session.classification ?? []).map((c) => c.laps_completed)),
+    maxOf([session.circuit?.laps]),
+  );
+}
+
+export function withRaceDistance(session: RaceSession): RaceSession {
+  if (session.total_laps && session.total_laps > 0) return session;
+  const total_laps = deriveTotalLaps(session);
+  return total_laps > 0 ? { ...session, total_laps } : session;
+}
+
+/** The same guarantees, applied to a bundle as it arrives from the API. */
 export function normalizeBundle(bundle: RaceBundle): RaceBundle {
   if (!bundle?.session) return bundle;
-  const session = withEntryList(bundle.session);
+  const session = withRaceDistance(withEntryList(bundle.session));
   return session === bundle.session ? bundle : { ...bundle, session };
 }
