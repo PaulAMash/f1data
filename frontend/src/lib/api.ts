@@ -1,6 +1,7 @@
 // Thin typed client for the Pitwall IQ backend.
 // The backend base URL is configurable so the app works whether the API runs
 // locally (default) or elsewhere. Never contains secrets.
+import { normalizeBundle } from "./sessionShape";
 import type {
   ArchiveScale, Featured,
   GrandPrix, Meta, QuestionAnswer, RaceBundle, Season, SimulationResult,
@@ -109,8 +110,10 @@ export const api = {
   seasons: () => get<{ source: string; seasons: Season[] }>("/api/seasons"),
   races: (year: number) =>
     get<{ source: string; year: number; races: GrandPrix[] }>(`/api/seasons/${year}/races`),
+  // normalized on arrival, so no panel has to defend itself against a session
+  // that reached it without an entry list — see lib/sessionShape
   session: (year: number, gp: string, session: string, refresh = false) =>
-    get<RaceBundle>("/api/session", { year, gp, session, refresh }),
+    get<RaceBundle>("/api/session", { year, gp, session, refresh }).then(normalizeBundle),
   compare: (year: number, gp: string, session: string, a: string, b: string) =>
     get<any>("/api/compare", { year, gp, session, a, b }),
   ask: (body: {

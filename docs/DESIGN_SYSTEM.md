@@ -3777,3 +3777,81 @@ back.
 > A hover state is part of the layout, not a decoration on top of it.
 > Anything that can appear has to be measured, and the assertion has to
 > exercise the state the reader is actually in.
+
+---
+
+## Count the doors into your pipeline, then check every one
+
+A session reaches the app three ways: a fresh fetch, the demo simulator, and
+the cache. The derivations — entry list, position trace, FIA order, the audit
+verdict — ran on exactly one of them. V79 found the demo door and fixed it,
+declared the class closed, and shipped. The cache door was still open, and it
+is the one production actually uses most.
+
+The cache is the worst of the three to leave open, because of how its staleness
+behaves. A laptop's cache is minutes old and was written by the code currently
+running, so locally it is indistinguishable from a fresh fetch. In production it
+long outlives the deploy that filled it — so an entry written before a fix keeps
+that bug for the entry's whole lifetime, and the fix appears not to have worked.
+**A cache is a copy of your pipeline's output frozen at the version that wrote
+it.** Any derivation that runs only on the way in is silently versioned by the
+cache entry rather than by the code.
+
+Two rules came out of it. Derivations that need no network should run on the way
+OUT as well as the way in, which costs nothing and makes every future fix
+retroactive instead of waiting for expiry. And when you fix "the path that
+skipped the pipeline", enumerate the paths first — the plural is the whole
+finding, and stopping at the first one is how the same bug ships twice.
+
+> When something is computed on entry, ask how many entrances there are. Then
+> ask which of them your development environment never uses.
+
+---
+
+## The evidence should not outrank the finding
+
+The results table printed `P17→P9 ▲8`. Everything needed is there and the
+emphasis is backwards: two positions and an arrow are rendered at full weight,
+and the one figure a reader actually wants — up eight — is the smallest, faintest
+token in the cell, placed last. The cell leads with the inputs and buries the
+conclusion.
+
+Worse is what the same construction does when there is no conclusion. `P14→P14 —`
+spends three tokens and the loudest glyph available to say that nothing happened,
+pointing an arrow at a number identical to the one it came from. A row where
+nothing happened should be the quietest row in its column; this made it one of
+the busiest, and multiplied by fifteen mid-field finishers it is most of the
+column.
+
+The rule that replaced it is worth reusing anywhere a derived figure sits beside
+its inputs: **lead with the derived value, keep the inputs as quiet support, and
+when the derived value is nil, print the inputs once and stop.** A cell should be
+loud in proportion to how much it has to say.
+
+> If a row where nothing happened is as visually busy as a row where something
+> did, the design is showing you its data model rather than its meaning.
+
+---
+
+## Use the domain's abbreviation, not one you invented
+
+`DRIVE-THRU` was neither the penalty's name ("drive-through penalty") nor the
+abbreviation the sport has used on timing screens for decades ("DT"). It was a
+truncation invented at the point of rendering to make a long string fit a small
+pill — and that is exactly why it read as raw data escaping into the interface.
+An invented shortening looks like a string that was cut off. A conventional one
+looks like domain fluency.
+
+Every field has these, and they are almost always shorter, more precise and more
+credible than anything invented under space pressure: DT, SG, DSQ, NC, +5s. The
+full wording still has to be one hover away, because the abbreviation is for
+recognition and the sentence is for understanding — but the badge should speak
+the language of the thing it describes.
+
+The same logic applies to iconography. One gavel on all eight penalty kinds meant
+the icon carried no information: it said "steward" on a row whose colour already
+said steward. A distinct mark per kind lets a badge be recognised before it is
+read, which is the only reason to put a badge in a dense table at all.
+
+> Before shortening a label yourself, find out what the people who do this for a
+> living already call it.

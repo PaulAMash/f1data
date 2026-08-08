@@ -145,6 +145,22 @@ def load_session(year: int, gp: str, session_type: str,
         if cached is not None:
             if cached.source_report:
                 cached.source_report.data_source = DataSource.CACHE
+            # A CACHED SESSION IS A SESSION THAT SKIPPED THE PIPELINE.
+            #
+            # Everything derived — the entry list, the position trace, FIA
+            # order, the audit verdict — was computed in `_post_process` on the
+            # way IN and then frozen into the file. Read back out, none of it
+            # ran again, so a session cached by an older build keeps whatever
+            # that build failed to derive for as long as the entry lives. That
+            # is a month here, and it is invisible in development because a
+            # laptop's cache is minutes old and written by the code you are
+            # running. In production the cache long outlives the deploy that
+            # filled it, which is how a fixed derivation still shipped broken.
+            #
+            # Re-deriving on the way out costs nothing (no network, no provider
+            # knowledge) and makes the fix retroactive: the next read of a stale
+            # entry heals it, rather than waiting thirty days for it to expire.
+            _finalize_session(cached)
             # Fill portraits that were missing when this session was cached —
             # and persist, so it's a one-time cost per session.
             if settings.enable_live_fetch:
@@ -283,6 +299,35 @@ def _derive_positions(session: RaceSession) -> None:
                "position feed answered for this session.")
 
 
+def _derive_drivers_from_classification(session: RaceSession) -> bool:
+    """The cheap half of the entry-list backfill: no network, always available.
+
+    Split out of `_backfill_drivers` so it can run on EVERY path that hands a
+    session to the app, not only on a fresh fetch. Every classification row
+    already carries a code, a name, a team and a colour, which is an entry list;
+    rebuilding from it cannot fail and costs nothing. Returns whether it filled
+    anything, so the caller can decide whether the network branch is still worth
+    trying.
+    """
+    if session.drivers or not session.classification:
+        return False
+    seen: dict[str, Driver] = {}
+    for row in session.classification:
+        if not row.driver or row.driver in seen:
+            continue
+        seen[row.driver] = Driver(
+            number="", code=row.driver, name=row.name or row.driver,
+            team=row.team or "", team_color=row.team_color or "#888888",
+            grid=row.grid)
+    if not seen:
+        return False
+    session.drivers = list(seen.values())
+    _set_facet(session, "drivers", "derived", "medium",
+               "Entry list rebuilt from the classification — no separate "
+               "driver feed answered for this session.")
+    return True
+
+
 def _backfill_drivers(session: RaceSession, primary: str) -> None:
     """The entry list, which used to be a by-product and is a facet.
 
@@ -307,21 +352,8 @@ def _backfill_drivers(session: RaceSession, primary: str) -> None:
     """
     if session.drivers:
         return
-    if session.classification:
-        seen: dict[str, Driver] = {}
-        for row in session.classification:
-            if not row.driver or row.driver in seen:
-                continue
-            seen[row.driver] = Driver(
-                number="", code=row.driver, name=row.name or row.driver,
-                team=row.team or "", team_color=row.team_color or "#888888",
-                grid=row.grid)
-        if seen:
-            session.drivers = list(seen.values())
-            _set_facet(session, "drivers", "derived", "medium",
-                       "Entry list rebuilt from the classification — no separate "
-                       "driver feed answered for this session.")
-            return
+    if _derive_drivers_from_classification(session):
+        return
     if primary == "jolpica" or session.category not in ("race", "sprint"):
         return
     try:
@@ -896,6 +928,12 @@ def _finalize_session(session: RaceSession) -> None:
     provider-specific merges stay in `_post_process`, above this.
     """
     session.category = session.category or session_category(session.session_type)
+
+    # the entry list, before anything that resolves a name — or draws a line —
+    # from a code. Every series in the Position chart comes from `drivers`, so
+    # an empty entry list is a chart with nothing to plot even when the trace
+    # underneath it is complete.
+    _derive_drivers_from_classification(session)
 
     # the position trace, before anything that reads one. Every line chart in
     # the product plots it, and the overtake inference below needs it to work
