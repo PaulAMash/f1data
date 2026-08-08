@@ -3949,3 +3949,75 @@ and tabular figures were enough; nothing needed a border.
 
 > Any rule that adds emphasis is asserting a fact. Give it a stoplist, and let
 > it fall back to plain text whenever it is not sure.
+
+---
+
+## Check what the categories in a bug report actually are
+
+The report was "bar charts work, line charts don't", and it was repeated for four
+releases, including by me. It sent every investigation into the data pipeline,
+because if one chart type works and another doesn't, the difference must be in
+what they are being fed.
+
+There is no bar chart in this product. Every recharts chart is a Line, an Area or
+a Radar; the bars are `<span>` elements with a background colour and a percentage
+width. The real division was **recharts / not recharts**, which points at the
+library, not the data — a completely different half of the system.
+
+Nobody was wrong to describe it that way: on screen, one is a line and one is a
+bar. But a user's categories describe appearances, and appearances are not
+implementation. Before trusting a distinction in a report, confirm the two groups
+really are the two groups — one `grep` for `<Bar` would have redirected this
+investigation four releases earlier.
+
+> When a bug splits neatly along a category, verify the category exists in the
+> code before you reason from it. The most expensive assumption is the one
+> inherited from the report.
+
+---
+
+## A boolean that is silently false is worse than an exception
+
+`isElement(child)` returned false, so `cloneElement` was skipped, so the chart
+received no width, so it rendered `null`. Nothing threw. No warning, no error,
+no console output. The container sat in the DOM at its correct size containing
+nothing, and every diagnostic said the application was healthy.
+
+This is the worst failure shape there is. An exception names its own location; a
+false boolean in a ternary produces a perfectly valid render of nothing, and the
+absence has to be traced backwards through every layer that *could* have caused
+it. Three earlier releases each found a genuine bug capable of producing the same
+blank panel, fixed it, and shipped — because the symptom was identical no matter
+which layer failed.
+
+What eventually worked was refusing to reason about *causes* and instead
+measuring *the contract between two layers*: what exactly did `ResponsiveContainer`
+hand to `LineChart`. `widthProp: undefined` located the bug in one reading, after
+four releases of plausible theories.
+
+> When something renders nothing, stop asking why it failed and start asking what
+> it received. Inspect the boundary between layers, not the layers.
+
+---
+
+## A version pin is a promise; removing the dependency is a fact
+
+The honest fix for React 19 breaking `react-is@16` is to pin React. We did not
+rely on that, and the reason generalises.
+
+A pin is a statement about an environment you do not control at the moment it
+matters. This project pins `react` to an exact version and commits a lockfile,
+and production still ran React 19 — so the promise was already being broken by
+something in the build, and adding a stronger promise would not have found it.
+Meanwhile the *code* had a genuine weakness: it depended on a third-party copy of
+`react-is` recognising elements created by whatever React happened to be present.
+
+Replacing `ResponsiveContainer` with fifteen lines that measure a box and call
+`cloneElement` from the application's own React removes the coupling entirely.
+The symbol can be renamed again, `react-is` can be duplicated by a bundler, a
+future React can change element internals — none of it can reach this path,
+because the path no longer asks anyone else what a React element is.
+
+> Prefer deleting a dependency on someone else's assumption over asserting the
+> assumption harder. A pin fails silently in an environment you cannot see; code
+> that never needed the pin cannot.

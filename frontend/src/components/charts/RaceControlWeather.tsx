@@ -1,9 +1,9 @@
 "use client";
 import { useMemo } from "react";
 import {
-  Area, AreaChart, CartesianGrid, ReferenceArea, ReferenceLine, ResponsiveContainer,
-  Tooltip, XAxis, YAxis,
+  Area, AreaChart, CartesianGrid, ReferenceArea, ReferenceLine, Tooltip, XAxis, YAxis,
 } from "recharts";
+import { ChartBox } from "./ChartBox";
 import { Thermometer } from "@/components/ui/MotionIcon";
 import type { RaceSession } from "@/lib/types";
 import { StatStrip, VisualLabel } from "@/components/ui/Visuals";
@@ -88,7 +88,7 @@ export function RaceControlWeather({ session }: { session: RaceSession }) {
             ]} />
 
             <div className="h-[230px] w-full">
-              <ResponsiveContainer>
+              <ChartBox>
                 <AreaChart data={weatherData} margin={CHART_MARGIN}>
                   <defs>
                     <linearGradient id="track" x1="0" y1="0" x2="0" y2="1">
@@ -126,7 +126,7 @@ export function RaceControlWeather({ session }: { session: RaceSession }) {
                   <Area name="Track" dataKey="track" stroke="rgb(var(--accent-soft))" fill="url(#track)" strokeWidth={2} isAnimationActive={false} />
                   <Area name="Air" dataKey="air" stroke="rgb(var(--speed))" fill="url(#air)" strokeWidth={2} isAnimationActive={false} />
                 </AreaChart>
-              </ResponsiveContainer>
+              </ChartBox>
             </div>
 
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11.5px] text-ink-muted">

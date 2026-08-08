@@ -2,13 +2,14 @@
   "name": "pitwall-iq-frontend",
   "version": "1.0.0",
   "private": true,
-  "description": "Pitwall IQ — F1 race intelligence UI",
+  "description": "Pitwall IQ \u2014 F1 race intelligence UI",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "doctor": "node scripts/chart-runtime-doctor.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

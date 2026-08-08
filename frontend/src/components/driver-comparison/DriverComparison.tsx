@@ -2,8 +2,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Area, AreaChart, CartesianGrid, Line, LineChart, ReferenceArea, ReferenceDot,
-  ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  ReferenceLine, Tooltip, XAxis, YAxis,
 } from "recharts";
+import { ChartBox } from "@/components/charts/ChartBox";
 import { ArrowLeftRight, Gauge, Repeat, Target, Timer, TrendingUp, Trophy, Zap } from "lucide-react";
 import { Crown, Flag } from "@/components/ui/MotionIcon";
 import { api } from "@/lib/api";
@@ -151,7 +152,7 @@ export function DriverComparison({
               ) : (
                 <>
                   <div className="h-[268px]">
-                    <ResponsiveContainer>
+                    <ChartBox>
                       <LineChart data={positionData} margin={CHART_MARGIN}>
                         <CartesianGrid strokeDasharray="2 4" stroke={GRID_COLOR} vertical={false} />
                         {/* neutralisations, so a swing under SC reads as one */}
@@ -191,7 +192,7 @@ export function DriverComparison({
                           );
                         })).filter(Boolean)}
                       </LineChart>
-                    </ResponsiveContainer>
+                    </ChartBox>
                   </div>
                   <ChartLegend items={[
                     { swatch: colorOf(a), label: a },
@@ -307,7 +308,7 @@ function GapChart({ data, a, b, colorOf, total, windows, sameLivery }: any) {
   return (
     <>
       <div className="h-[268px]">
-        <ResponsiveContainer>
+        <ChartBox>
           <AreaChart data={rows} margin={CHART_MARGIN} stackOffset="none">
             <defs>
               <linearGradient id="gapA" x1="0" y1="0" x2="0" y2="1">
@@ -341,7 +342,7 @@ function GapChart({ data, a, b, colorOf, total, windows, sameLivery }: any) {
             <Area dataKey="behind" stroke={colorOf(b)} fill="url(#gapB)" strokeWidth={2}
               strokeDasharray={sameLivery ? "6 4" : undefined} isAnimationActive={false} />
           </AreaChart>
-        </ResponsiveContainer>
+        </ChartBox>
       </div>
       <ChartLegend items={[
         { swatch: colorOf(a), label: `${a} quicker` },
