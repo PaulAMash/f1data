@@ -8,6 +8,7 @@ import type { ClassificationRow, DriverPaceSummary, RaceSession } from "@/lib/ty
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { InfoTip } from "@/components/ui/InfoTip";
+import { FacetGap } from "@/components/ui/misc";
 import { Term } from "@/components/ui/Term";
 import { DriverBadge } from "@/components/ui/DriverBadge";
 import { ConstructorBadge } from "@/components/ui/ConstructorBadge";
@@ -246,6 +247,13 @@ export function PaceAnalysis({
               <InfoTip label="Reading pace" text="Lower is faster. Rising lines within a stint show tyre degradation; a step down marks fresh tyres after a stop. Pit and safety-car laps are removed so only representative green-flag pace is shown." />
             </div>
             <div className="h-[300px] w-full">
+              {!data.length ? (
+                /* an empty plot reads as a broken plot — name the hole instead */
+                <div className="grid h-full place-items-center px-4">
+                  <FacetGap what="Lap times for the selected drivers"
+                    why="weren’t published for this session, so there is no trend to draw." />
+                </div>
+              ) : (
               <ResponsiveContainer>
                 <LineChart data={data} margin={CHART_MARGIN}>
                   <CartesianGrid strokeDasharray="2 4" stroke={GRID_COLOR} />
@@ -266,6 +274,7 @@ export function PaceAnalysis({
                   ))}
                 </LineChart>
               </ResponsiveContainer>
+              )}
             </div>
           </div>
 

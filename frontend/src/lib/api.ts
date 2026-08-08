@@ -47,7 +47,7 @@ async function handle<T>(res: Response, path: string): Promise<T> {
  * fails in a knowable time and can say something useful.
  */
 async function get<T>(path: string, params?: Record<string, any>,
-                      opts?: { timeoutMs?: number }): Promise<T> {
+                      opts?: { timeoutMs?: number; noStore?: boolean }): Promise<T> {
   const url = new URL(API_BASE + path);
   if (params) {
     for (const [k, v] of Object.entries(params)) {
@@ -58,7 +58,22 @@ async function get<T>(path: string, params?: Record<string, any>,
   const timer = ctl ? setTimeout(() => ctl.abort(), opts!.timeoutMs) : null;
   let res: Response;
   try {
-    res = await fetch(url.toString(), { cache: "no-store", signal: ctl?.signal });
+    /* `no-store` USED TO BE ON EVERY CALL, WHICH MADE THE SERVER'S OPINION
+       IRRELEVANT. It is the strongest possible instruction — do not cache this,
+       do not even keep it for a back-navigation — and it was being applied to a
+       quarter of a megabyte of finished, immutable race data. Every tab change
+       and every Back re-fetched a Grand Prix from 2024 that had not changed
+       since 2024, which costs nothing over loopback and is the whole page load
+       again over a real connection.
+       The server now says how long each answer stays good for (see
+       Cache-Control on /api/session), so the default mode is right: revalidate
+       when the server says to, reuse when it says it may. Explicit refresh
+       still bypasses it, because Re-run carries `refresh=true` and that is a
+       different URL. Only genuinely live probes opt back into `no-store`. */
+    res = await fetch(url.toString(), {
+      cache: opts?.noStore ? "no-store" : "default",
+      signal: ctl?.signal,
+    });
   } catch {
     // An abort and a dead server are different problems with different fixes,
     // so they must not share one message.
@@ -107,13 +122,16 @@ export const api = {
     get<{ source: string; sessions: string[] }>("/api/sessions/available", { year, gp }),
   // The backend caps every probe and runs them together, so this answers in
   // seconds or not at all — 20s is generous headroom, not a target.
+  // a liveness probe answers "right now" or it answers nothing useful
   dataSourceHealth: () =>
     get<{ probes: { name: string; reachable: boolean | null; detail?: string }[] }>(
-      "/api/health/data-sources", undefined, { timeoutMs: 20_000 }),
+      "/api/health/data-sources", undefined, { timeoutMs: 20_000, noStore: true }),
   sourceReport: (year: number, gp: string, session: string) =>
     get<any>("/api/session/source-report", { year, gp, session }),
+  // a cache-clear that could itself be served from cache is not a cache-clear
   clearCache: (year?: number, gp?: string, session?: string) =>
-    get<{ cleared: number }>("/api/session/cache/clear", { year, gp, session }),
+    get<{ cleared: number }>("/api/session/cache/clear", { year, gp, session },
+                             { noStore: true }),
   simulate: (body: {
     year: number; gp: string; session: string; driver: string;
     new_pit_lap?: number | null; num_stops?: number | null; compounds?: string[] | null;

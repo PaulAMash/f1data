@@ -3,8 +3,97 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V78**. The gate stopped using a fixed facet list to decide what a race is
-allowed to be missing, and the Position Chart stopped guessing where its own markers land.
+Last pass: **V79**, the first release read against a hosted deployment rather than a laptop.
+Three things that were free on loopback and expensive in production: a facet nothing
+guaranteed, a payload nothing compressed, and a hover layer nothing measured.
+
+---
+
+## Fixed in V79
+
+### 1. Every line chart in the product drew nothing — *the root cause*
+
+The Position Chart plots `session.positions`, and so does everything derived from it. That
+facet was only ever set by whichever adapter happened to supply it, plus one opportunistic
+top-up from Jolpica. Nothing guaranteed it, and — the part that made it invisible — it is
+not one of the essential facets the V78 gate checks. So a session with no position feed
+passed as **complete**, rendered in full, and drew axes, gridlines and neutralisation bands
+over an empty plot. Bar charts and tables were fine throughout, because they come from the
+classification, which is essential and therefore guaranteed. A chart with no line looks
+exactly like a chart that broke, and there was nothing on the page to say which it was.
+
+It never needed a source. `Lap.position` already carries where each car was at the end of
+each lap, and the lap table **is** essential — the gate guarantees it for every race and
+sprint. The trace is now rebuilt from data already in hand, at no network cost, marked
+`derived` so the Sources panel says where it came from. Measured on the demo race with the
+position feed removed: 0 points before, 1,106 after. It also fixed a cascade nobody had
+noticed — overtake inference needs a trace to work over, so a missing position feed had
+been quietly reporting races in which nobody passed anybody. Same race: 0 overtakes before,
+58 after.
+
+Two things made this a production-only bug, and both are now closed:
+
+* **The demo path skipped the pipeline it stands in for.** Mock sessions returned straight
+  from the simulator — no derivations, no ordering, no audit. The simulator populates every
+  facet, so demo mode could not exercise the case where one is missing. The offline half of
+  post-processing is now shared by both paths, so a gap in the real pipeline shows up in the
+  demo one too.
+* **The remaining thin case now says so.** When no position exists anywhere, the chart names
+  the hole instead of drawing an empty grid. The guard that used to cover this told every
+  session the same thing — "practice and qualifying have no lap-by-lap running order" —
+  which is true for practice and simply false for a Grand Prix. A wrong reason is worse than
+  no reason: it sends the reader, and anyone debugging it, somewhere else entirely.
+
+### 2. The API shipped 380 KB uncompressed
+
+No compression middleware, on a payload whose lap table is 83% of the bytes and is the most
+compressible thing here — the same driver codes and compounds a thousand times over. Gzip
+takes the demo race from **383,757 bytes to 33,325**, an 11.5x reduction, for one line.
+
+It survived this long because it costs nothing where it was tested. Over loopback a third of
+a megabyte is free; between a browser and a hosted API it is seconds, and the frontend talks
+to the API host directly rather than through the CDN, so nothing upstream was compressing it
+either. Two further round trips went with it:
+
+* **A finished Grand Prix will never change, and was being re-fetched anyway.** Sessions now
+  carry `Cache-Control` — a day for a season that is history, five minutes for the one being
+  raced. The frontend was sending `cache: "no-store"` on *every* call, which made the
+  server's opinion irrelevant and re-downloaded a 2024 race on every tab change and every
+  Back. Explicit refresh still bypasses everything, because Re-run carries a different URL.
+* **A link that names the race no longer asks which race is on.** `current()` gated the
+  session fetch, so every arrival paid two sequential round trips before the expensive one
+  started — one of them to be told what the URL already said.
+
+Worth being straight about the part that is not code: on Render's free tier the instance
+spins down when idle, and the first request after that pays a cold start of 50 seconds or
+more. That will dominate every measurement here until the plan changes, and no amount of
+payload work will hide it. The ephemeral filesystem compounds it — the cache is wiped on
+every deploy, so the first visitor after a release also pays a full uncached fetch of every
+upstream source.
+
+### 3. The event markers were packed; their hover cards were not
+
+V78 packed the chips so they can never overlap, and stopped at the chips. Each one owns a
+208px card — three times the width of anything the packer was measuring — and none of it was
+measured by anything. Hovering the Safety Car put a card straight over the Red Flag you were
+comparing it against, and a marker in the closing laps opened a card that hung off the end
+of the chart with its text cut in half.
+
+A card is not a chip and the fix exploits the difference. A chip's position is data: it has
+to sit at its lap or it is lying, so chips are still never moved. A card is transient
+explanation, so it moves — up past every row in the band rather than just its own, and
+clamped inside the plot instead of centred come what may.
+
+Underneath that was a third bug the eye could not have found. Packing keeps the *chips*
+apart, but each chip sits in a full-height column box as wide as its widest child, and those
+boxes still overlap when two events are close. The box painted last takes the pointer — so
+below about 1100px the Safety Car and the Red Flag stopped responding to hover entirely,
+with nothing on screen to explain why. Their cards were unreachable, which is a worse
+failure than an ugly one. Nothing in a column is interactive except the chip, so the column
+no longer takes the pointer.
+
+Asserted, not eyeballed, across 1440/1100/900/700/560px in both modes: zero chip overlaps,
+zero unreachable chips, zero cards covering a chip, zero cards leaving the plot.
 
 ---
 

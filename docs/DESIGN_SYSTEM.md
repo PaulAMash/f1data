@@ -3662,3 +3662,118 @@ actual chips did.
 > If the thing you are protecting against is a pixel collision, the rule
 > deciding when to protect against it has to be measured in pixels — and so
 > does the check that confirms it worked.
+
+---
+
+## A facet the product cannot be read without must not be left to chance
+
+There were two tiers of facet: essential ones the gate guarantees, and
+enriching ones whose absence is explained and forgiven. `positions` was
+filed as enriching — and every line chart in the product plots it. So the
+gate passed a session as complete, the page rendered in full, and the
+charts drew axes, gridlines and neutralisation bands over an empty plot,
+with nothing anywhere saying the trace had not arrived.
+
+The tiering was not wrong; the classification of that one facet was, and
+the reason is instructive. A facet is enriching if the page still reads
+without it, and "the page still renders" is not the same test. Weather can
+vanish and the race is still legible. The position trace cannot: it is the
+subject of the panel, and a panel whose subject is missing is not degraded,
+it is empty.
+
+The fix was not to promote it to essential, which would have blocked whole
+races over a chart. `Lap.position` already carries the same information and
+the lap table IS essential, so the trace is rebuilt from what we already
+hold, at no network cost, marked as derived. Same shape as the entry-list
+backfill before it, and the same lesson: when a facet is load-bearing and
+some other facet already implies it, derive it rather than hoping a
+provider sends it.
+
+There is a cascade to watch for too. The overtake inference reads the
+trace, so a missing position feed silently reported races in which nobody
+passed anybody — a wrong answer, stated confidently, from an absence two
+steps upstream.
+
+> Ask what a panel is FOR, not whether the page survives without it. If the
+> answer is "this facet", then something has to guarantee that facet — and a
+> derivation you can always run beats a source that might answer.
+
+---
+
+## A demo that skips the pipeline is not standing in for it
+
+Mock sessions were returned straight from the simulator: no derivations, no
+ordering, no audit. Every real session went through all three. The demo
+path was therefore not a stand-in for the product, it was a second product
+that happened to render the same components.
+
+That is what made the blank-charts bug invisible for an entire release
+cycle. The simulator populates every facet, so the case where one is
+missing could not occur locally, and the pipeline step that should have
+covered it did not exist to be missed. Local review looked perfect while
+production was broken, and no amount of care in the review would have
+caught it, because the code under review was not the code being reviewed.
+
+The offline half of post-processing — everything needing no network and no
+knowledge of which provider answered — is now shared by both paths. The
+provider-specific merges stay on the real path, because a demo has no
+providers to merge from.
+
+> Fixture data must travel the same road as real data for as far as that
+> road has nothing to do with where the data came from. Every step you skip
+> for the fixture is a step your tests and your own eyes cannot see.
+
+---
+
+## Free in development is not free in production
+
+Three defects in this release shared one shape: correct code whose cost is
+invisible on the machine it was written on.
+
+* **380 KB of JSON with no compression.** One line of middleware turns it
+  into 33 KB. Over loopback the difference is unmeasurable; over a real
+  connection it is the page load.
+* **`cache: "no-store"` on every call.** The strongest possible instruction
+  — never cache this, not even for a Back — applied to a finished Grand
+  Prix that cannot change. Locally, re-fetching is instant and looks like
+  freshness. Hosted, it is the whole payload again on every tab change.
+* **A round trip to be told what the URL already said.** `current()` gated
+  the session fetch. One extra millisecond locally; one extra network
+  latency in front of every arrival in production.
+
+None of these are bugs in the sense of behaving wrongly. They behave
+exactly as written. The environment changed the price, and nothing in the
+local feedback loop reports a price.
+
+> Latency and payload have to be measured where they are paid. If the only
+> place you have ever run it has no network, you have not tested the part
+> the network charges for.
+
+---
+
+## Pack the thing you can see; measure the thing that opens
+
+Chips were packed so they can never overlap, and that was treated as the
+collision problem solved. Each chip owns a 208px hover card — three times
+the width of anything the packer measured — and a full-height column box
+that neighbours overlap even when the chips do not.
+
+Both were invisible to the check that had been written, because the check
+looked at the resting state. The band at rest was provably correct while
+the state a reader actually uses it in was not: cards covering the marker
+you were comparing against, cards hanging off the end of the plot, and —
+below a certain width — chips that could not be hovered at all, because a
+neighbouring column box was taking the pointer with nothing on screen to
+suggest it.
+
+The layout rule that fixed it is worth keeping. **Position is data for a
+chip and free for a card.** A chip has to sit at its lap or it is lying, so
+it is packed and never moved. A card is transient explanation, so it may be
+lifted clear of every row and clamped inside the plot. And a box that
+exists only to hold something interactive should not itself be
+interactive — the column stopped taking the pointer and the chips took it
+back.
+
+> A hover state is part of the layout, not a decoration on top of it.
+> Anything that can appear has to be measured, and the assertion has to
+> exercise the state the reader is actually in.
