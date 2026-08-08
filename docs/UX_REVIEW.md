@@ -3,9 +3,74 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V81**. A second, independent cause of the blank charts — the one that takes the
-axes with it — plus a pace ranking that spent numbers it never showed, and story text where
-five kinds of information wore one font.
+Last pass: **V82**. The blank charts, finally: React 19 renamed the symbol that identifies an
+element, and the copy of `react-is` recharts depends on still tests for the old one.
+
+---
+
+## Fixed in V82
+
+### The charts were never a data problem, or a chart problem
+
+Four releases went into this and three of them fixed real bugs that were not this one. What
+finally cracked it was a reframing, not a deeper dive: **there is no recharts bar chart
+anywhere in this product.** Every recharts chart is a Line, an Area or a Radar; the "bar
+charts" that kept working are `<span>` elements with a background colour and a percentage
+width. So "bars work, lines don't" never meant what it looked like. It meant *everything
+recharts renders nothing, everything else is fine* — which is a library-level failure, and
+points somewhere completely different from the data pipeline.
+
+From the deployed page, in four steps:
+
+* `.recharts-responsive-container` present at **555×440**, containing **nothing**.
+* React **is** hydrated on that node, `ResizeObserver` **is** available, no failed chunks, no
+  console errors.
+* Instrumenting `ResizeObserver` showed recharts observing the container and firing with a
+  correct **555×440** — so the size gate was never the problem.
+* Reading the React element inside the container:
+
+```
+elementSymbol: "Symbol(react.transitional.element)"
+childName:     "LineChart"
+widthProp:     undefined
+```
+
+That is the whole bug. `ResponsiveContainer` passes a chart its measured size like this:
+
+```js
+import { isElement } from 'react-is';
+return React.Children.map(children, child =>
+  isElement(child) ? cloneElement(child, { width, height }) : child);
+```
+
+recharts depends on `react-is@16`, whose `isElement()` asks whether an element's `$$typeof`
+is `Symbol.for('react.element')`. **React 19 renamed that symbol to
+`react.transitional.element`.** So the check silently returns false, the clone never happens,
+the chart is handed no width, and a recharts chart without a width renders `null`. No error,
+because nothing threw — a boolean was simply false.
+
+Reproduced outside the browser with the real dependency: `isElement()` returns `true` for a
+React 18 element and `false` for a React 19 one.
+
+**Why localhost worked** is the same fact from the other side. Next.js 14 bundles its own
+compiled React 18 and uses it for the App Router, so a local page reports
+`Symbol(react.element)` even with React 19 installed in `node_modules` — verified by
+installing React 19 locally and watching the charts keep working. Which means the deployed
+frontend cannot be running Next 14 at all: no Next 14 build can produce the symbol production
+is producing.
+
+**The fix removes the fragile step rather than restating the promise.** `ChartBox` measures
+its own box with its own `ResizeObserver` and clones the chart with the *application's* React,
+so no third-party copy of `react-is` is ever asked to recognise an element. It cannot be
+broken by a React upgrade, a duplicated `react-is`, or a hoisting decision. Six
+`ResponsiveContainer` call sites across four files now go through it, covering every Line,
+Area and Radar chart in the product. Pinning React would also have worked and is worth doing
+anyway — but a pin is a promise about the build environment, and this product has now been
+burned twice by things that were true locally and false in production.
+
+`npm run doctor` makes the silent incompatibility loud for next time. It is deliberately not
+wired into `build`: a check that can fail a deploy is a new way to break production, and the
+app no longer depends on the thing it checks.
 
 ---
 

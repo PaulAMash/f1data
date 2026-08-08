@@ -1,8 +1,9 @@
 "use client";
 import { useMemo, useState } from "react";
 import {
-  CartesianGrid, Line, LineChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  CartesianGrid, Line, LineChart, ReferenceArea, Tooltip, XAxis, YAxis,
 } from "recharts";
+import { ChartBox } from "./ChartBox";
 import { Building2, User } from "lucide-react";
 import type { ClassificationRow, DriverPaceSummary, RaceSession } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
@@ -254,7 +255,7 @@ export function PaceAnalysis({
                     why="weren’t published for this session, so there is no trend to draw." />
                 </div>
               ) : (
-              <ResponsiveContainer>
+              <ChartBox>
                 <LineChart data={data} margin={CHART_MARGIN}>
                   <CartesianGrid strokeDasharray="2 4" stroke={GRID_COLOR} />
                   {session.track_status_windows.map((w, i) => (
@@ -273,7 +274,7 @@ export function PaceAnalysis({
                       dot={false} connectNulls isAnimationActive={false} />
                   ))}
                 </LineChart>
-              </ResponsiveContainer>
+              </ChartBox>
               )}
             </div>
           </div>
@@ -413,7 +414,7 @@ function TeamTrend({ session, pace, teams }: {
         <InfoTip label="Reading constructor pace" text="Each line averages a constructor's drivers lap by lap. Lower is faster; diverging lines show one constructor's tyres holding on longer than another's." />
       </div>
       <div className="h-[300px] w-full">
-        <ResponsiveContainer>
+        <ChartBox>
           <LineChart data={data} margin={CHART_MARGIN}>
             <CartesianGrid strokeDasharray="2 4" stroke={GRID_COLOR} />
             {session.track_status_windows.map((w, i) => (
@@ -432,7 +433,7 @@ function TeamTrend({ session, pace, teams }: {
                 dot={false} connectNulls isAnimationActive={false} />
             ))}
           </LineChart>
-        </ResponsiveContainer>
+        </ChartBox>
       </div>
     </div>
   );

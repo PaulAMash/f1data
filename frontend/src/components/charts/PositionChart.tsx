@@ -2,8 +2,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CartesianGrid, Line, LineChart, ReferenceArea, ReferenceDot, ReferenceLine,
-  ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Tooltip, XAxis, YAxis,
 } from "recharts";
+import { ChartBox } from "@/components/charts/ChartBox";
 import { Users, X, ArrowUpRight, TrendingUp, TrendingDown, Circle, ChevronDown } from "lucide-react";
 import type { RaceSession, Driver, StrategySummary, Compound, RaceInsight, DriverPaceSummary } from "@/lib/types";
 import { COMPOUND_COLOR, COMPOUND_LABEL, COMPOUND_SHORT } from "@/lib/compounds";
@@ -506,7 +507,7 @@ export function PositionChart({
             recession is per line (see emphasis) so a chosen driver and a chosen
             moment can both be lit at the same time. */}
         <div className={cx("w-full select-none", simple ? "h-[420px]" : "h-[440px]")}>
-          <ResponsiveContainer>
+          <ChartBox>
             <LineChart data={data} margin={M}>
               {!simple && <CartesianGrid stroke="rgb(var(--tint) / 0.06)" strokeDasharray="1 6" vertical={false} />}
               {windows.map((w, i) => (
@@ -575,7 +576,7 @@ export function PositionChart({
                 );
               })}
             </LineChart>
-          </ResponsiveContainer>
+          </ChartBox>
         </div>
       </div>
 
