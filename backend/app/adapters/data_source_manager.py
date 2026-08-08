@@ -25,6 +25,7 @@ from ..models import (
     Driver,
     FacetSource,
     GrandPrix,
+    PositionPoint,
     RaceSession,
     Season,
     SourceProbe,
@@ -132,7 +133,12 @@ def load_session(year: int, gp: str, session_type: str,
     # Explicit, developer-only demo mode (make demo / PITWALL_IQ_MOCK_MODE=true).
     # Never used as a silent fallback for a failed real fetch.
     if force_mock or settings.mock_mode:
-        return mock_adapter.get_mock_session(year, gp, session_type)
+        session = mock_adapter.get_mock_session(year, gp, session_type)
+        # through the same offline finalizer the real path uses: a demo that
+        # skips the pipeline is not standing in for it, and cannot catch a
+        # regression in it (see _finalize_session)
+        _finalize_session(session)
+        return session
 
     if not refresh:
         cached = cache.load(year, gp, session_type)
@@ -234,6 +240,47 @@ def _merge_missing_facets(session: RaceSession, primary: str) -> None:
                 _set_facet(session, "results", "jolpica", "high")
         except Exception as exc:  # noqa: BLE001
             log.info("jolpica classification merge failed: %s", exc)
+
+
+def _derive_positions(session: RaceSession) -> None:
+    """The lap-by-lap position trace, which used to depend on who answered.
+
+    THIS IS WHY EVERY LINE CHART IN THE PRODUCT WENT BLANK IN PRODUCTION. The
+    trace was only ever set by whichever adapter happened to supply it, plus one
+    opportunistic top-up from Jolpica. When neither answered with positions the
+    facet simply stayed empty — and nothing downstream noticed, because
+    `positions` is not one of the essential facets the gate checks. So the
+    session passed as complete, the page rendered in full, and every chart that
+    plots the trace drew axes, grid and neutralisation bands over an empty plot.
+    A chart with no line is indistinguishable from a chart that failed, and the
+    reader was given no reason to doubt any of it.
+
+    It never needed a source. `Lap.position` already carries where each car was
+    at the end of each lap, and the lap table IS essential — the gate guarantees
+    it for every race and sprint. So the trace is reconstructible from data we
+    are already holding, at no network cost, for exactly the sessions that need
+    it. Same shape as the entry-list backfill above, and for the same reason: a
+    facet the product cannot be read without must not be left to chance.
+
+    The order matters. This runs before the overtake inference, which needs a
+    trace to work over — without it, a missing position feed silently produced
+    an empty overtakes list too, and the cascade reported the race as one where
+    nobody passed anybody.
+    """
+    if session.positions or not session.laps:
+        return
+    if session.category not in ("race", "sprint"):
+        return
+    trace = [PositionPoint(driver=lp.driver, lap=lp.lap, position=lp.position)
+             for lp in session.laps
+             if lp.driver and lp.lap is not None and lp.position is not None]
+    if not trace:
+        return
+    trace.sort(key=lambda p: (p.lap, p.position))
+    session.positions = trace
+    _set_facet(session, "positions", "derived", "high",
+               "Rebuilt from the lap table's own per-lap positions — no separate "
+               "position feed answered for this session.")
 
 
 def _backfill_drivers(session: RaceSession, primary: str) -> None:
@@ -833,6 +880,61 @@ def _audit_report(session: RaceSession) -> None:
         session.notes.append(note)
 
 
+def _finalize_session(session: RaceSession) -> None:
+    """The offline half of post-processing: derive what we already hold, then
+    take the one verdict.
+
+    SPLIT OUT SO THE DEMO PATH CANNOT DIVERGE FROM THE REAL ONE. Mock sessions
+    returned straight from the simulator and never went through any of this —
+    no derivations, no ordering, no audit — so demo mode was not exercising the
+    pipeline it was supposed to stand in for. A facet the real path leaves empty
+    was fully populated by the simulator, which is precisely how a blank
+    position trace reached production while every local review looked perfect.
+
+    Nothing in here touches the network or knows which provider answered, so it
+    is safe to run over a simulated session and a fetched one alike. The
+    provider-specific merges stay in `_post_process`, above this.
+    """
+    session.category = session.category or session_category(session.session_type)
+
+    # the position trace, before anything that reads one. Every line chart in
+    # the product plots it, and the overtake inference below needs it to work
+    # over — see _derive_positions for why it must not depend on who answered.
+    _derive_positions(session)
+
+    # overtakes: infer if the source didn't supply them (races/sprints only).
+    #
+    # THE ANSWER "NONE" IS AN ANSWER. A derivation that runs over a complete
+    # position trace and finds nothing has told us something true about the
+    # race — Monaco is the sport's own example of a Grand Prix where barely a
+    # car is passed on track. Recording the facet only when the list came back
+    # non-empty is what made a clean street race indistinguishable from a feed
+    # that never replied, and it is why Monaco wore a partial-data chip while
+    # holding every fact it needed.
+    if not session.overtakes and session.category in ("race", "sprint") and session.positions:
+        session.overtakes = infer_overtakes(session)
+        _set_facet(session, "overtakes", "inferred", "medium",
+                   f"Derived from the lap-by-lap position trace — "
+                   f"{len(session.overtakes)} found."
+                   if session.overtakes else
+                   "Derived from the lap-by-lap position trace: no on-track "
+                   "passes were detected in this session.")
+
+    # FIA order, after every merge — see analysis/normalize.order_classification
+    if session.category in ("race", "sprint"):
+        try:
+            order_classification(session)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("classification ordering failed: %s", exc)
+
+    # a facet a session type cannot have is not a gap in our data
+    _prune_inapplicable_facets(session)
+
+    # and then the one audit that decides whether this session is complete —
+    # from the session, not from whichever adapter happened to answer first
+    _audit_report(session)
+
+
 def _post_process(session: RaceSession, primary: str) -> None:
     """Enrich a freshly-fetched real session and finalize its source report."""
     session.category = session.category or session_category(session.session_type)
@@ -856,24 +958,6 @@ def _post_process(session: RaceSession, primary: str) -> None:
     except Exception as exc:  # noqa: BLE001
         log.info("pitstop enrich failed: %s", exc)
 
-    # overtakes: infer if the source didn't supply them (races/sprints only).
-    #
-    # THE ANSWER "NONE" IS AN ANSWER. A derivation that runs over a complete
-    # position trace and finds nothing has told us something true about the
-    # race — Monaco is the sport's own example of a Grand Prix where barely a
-    # car is passed on track. Recording the facet only when the list came back
-    # non-empty is what made a clean street race indistinguishable from a feed
-    # that never replied, and it is why Monaco wore a partial-data chip while
-    # holding every fact it needed.
-    if not session.overtakes and session.category in ("race", "sprint") and session.positions:
-        session.overtakes = infer_overtakes(session)
-        _set_facet(session, "overtakes", "inferred", "medium",
-                   f"Derived from the lap-by-lap position trace — "
-                   f"{len(session.overtakes)} found."
-                   if session.overtakes else
-                   "Derived from the lap-by-lap position trace: no on-track "
-                   "passes were detected in this session.")
-
     # driver portraits: season-wide map fills what the session record lacked
     try:
         headshots.enrich(session)
@@ -883,19 +967,9 @@ def _post_process(session: RaceSession, primary: str) -> None:
     # the entry list, before anything that resolves a name from a code
     _backfill_drivers(session, primary)
 
-    # FIA order, after every merge — see analysis/normalize.order_classification
-    if session.category in ("race", "sprint"):
-        try:
-            order_classification(session)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("classification ordering failed: %s", exc)
-
-    # a facet a session type cannot have is not a gap in our data
-    _prune_inapplicable_facets(session)
-
-    # and then the one audit that decides whether this session is complete —
-    # from the session, not from whichever adapter happened to answer first
-    _audit_report(session)
+    # everything from here needs no provider and no network — and is shared
+    # with the demo path, so the two cannot drift apart again
+    _finalize_session(session)
 
     if session.source_report:
         session.source_report.cache_key = cache.cache_key(

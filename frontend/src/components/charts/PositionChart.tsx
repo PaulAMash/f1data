@@ -15,6 +15,7 @@ import { AXIS_TICK_COLOR, CURSOR_COLOR, SURFACE_COLOR, axisLine, axisTick } from
 import { useIsSimple } from "@/lib/mode";
 import { cx, fmtSec, fmtLap, ordinal } from "@/lib/format";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
+import { FacetGap } from "@/components/ui/misc";
 import { DriverPalette } from "./DriverPalette";
 import { FocusCardShell, CloseButton, type FocusTile } from "./FocusCardShell";
 import { useLivery, useCompoundColour } from "@/lib/liveryColor";
@@ -159,6 +160,7 @@ export function PositionChart({
   }, [session, drivers, clsByCode, total]);
 
   const posAt = (code: string, lap: number) => posByLap.get(lap)?.get(code) ?? null;
+
 
   const stats = useMemo(() => {
     const sum: Record<string, number> = {}, cnt: Record<string, number> = {}, led: Record<string, number> = {}, best: Record<string, number> = {};
@@ -376,8 +378,23 @@ export function PositionChart({
     return Math.min(drivers.length, Math.max(mx, Math.min(5, drivers.length)));
   }, [posByLap, visible, drivers.length]);
 
+  /* A WRONG REASON IS WORSE THAN NO REASON.
+     This guard fired on any empty trace and always gave the same explanation:
+     that the session type has no running order. For practice and qualifying
+     that is true and worth saying. For a RACE it is simply false — a race has a
+     running order by definition — so a Grand Prix whose position feed never
+     arrived told the reader the sport doesn't record the thing it obviously
+     records, and sent anyone debugging it looking in the wrong place entirely.
+     The two cases have different causes and different answers, so they get
+     different sentences. */
   if (!session.positions.length) {
-    return (
+    const raceLike = session.category === "race" || session.category === "sprint";
+    return raceLike ? (
+      <div className="px-4 py-10">
+        <FacetGap what="The lap-by-lap position trace"
+          why="wasn’t published for this session and couldn’t be rebuilt from the lap times, so there is no running order to chart." />
+      </div>
+    ) : (
       <p className="py-12 text-center text-sm text-ink-faint">
         Position order isn&apos;t tracked in this session — practice and qualifying have no
         lap-by-lap running order to chart.
@@ -446,7 +463,7 @@ export function PositionChart({
       </div>
 
       <div ref={wrapRef} className="relative">
-        <EventBand markers={markers} lapToX={lapToX} ready={width > 0} simple={simple} />
+        <EventBand markers={markers} lapToX={lapToX} ready={width > 0} simple={simple} width={width} />
         {/* selecting a Key Moment focuses the chart on that beat the same way
             focusing a driver does: the field recedes and the moment, drawn
             crisply on top, dominates */}
@@ -832,6 +849,9 @@ const EVENT_ROW_STEP_SIMPLE = 36;   // vertical distance between stacked rows, p
 const EVENT_MARKER_GAP = 10;        // minimum clear space between two chips, px
 const EVENT_CHAR_W = 7;             // conservative width of one bold 11px glyph, px
 
+const EVENT_TIP_W = 208;     // the hover card is w-52; it has to be measured too
+const EVENT_TIP_GAP = 8;     // clear air between the card and the tallest chip
+
 /** Estimated on-screen width of one event chip: padding, icon, gap, code text. */
 function eventChipWidth(kind: EventKind, simple: boolean): number {
   const pad = simple ? 20 : 16;  // px-2.5 vs px-2, both sides combined
@@ -839,19 +859,51 @@ function eventChipWidth(kind: EventKind, simple: boolean): number {
   return pad + icon + 4 /* gap-1 */ + 2 /* border */ + EVENT[kind].code.length * EVENT_CHAR_W;
 }
 
-function EventBand({ markers, lapToX, ready, simple }: {
-  markers: { lap: number; kind: EventKind; cause?: string | null; dur: number }[]; lapToX: (lap: number) => number; ready: boolean; simple: boolean;
+/* ---------------------------------------------------------------------------
+   THE HOVER LAYER HAS TO OBEY THE SAME RULE AS THE CHIPS.
+
+   V78 packed the chips so they can never overlap, and stopped there — which
+   fixed the band at rest and left the state you actually read it in untouched.
+   Each chip owns a 208px card, none of it was measured by anything, and the
+   card is the widest object in the whole band by a factor of three. Two markers
+   a comfortable 60px apart still put a card straight over the neighbouring
+   chip: you hover the Safety Car to find out what happened and the Red Flag
+   you were comparing it against disappears underneath the answer.
+
+   Two things are wrong and they need different fixes, because a card is not a
+   chip. A chip's position is DATA — it has to sit at its lap or it is lying —
+   so chips are packed and never moved horizontally. A card is transient
+   explanation, so it is free to move, and both fixes exploit that:
+
+     * VERTICALLY, every card clears the ENTIRE band rather than just its own
+       chip. `bottom-full` lifted a card one chip's height, which is only
+       enough when the chip is on the top row; from a lower row the card opened
+       straight through the rows stacked above it. Adding the height of those
+       rows puts every card's base at the same line, above every chip in the
+       band, so no card can cover a marker no matter how the packer arranged
+       them.
+     * HORIZONTALLY, a card is clamped to the plot instead of being centred on
+       its chip come what may. A marker in the last few laps sits near the right
+       edge, and a 208px card centred there hung off the end of the chart with
+       its text cut in half. It now slides back inside and keeps its full width,
+       which is what makes it readable — the chip stays exactly where it was.
+   --------------------------------------------------------------------------- */
+function EventBand({ markers, lapToX, ready, simple, width }: {
+  markers: { lap: number; kind: EventKind; cause?: string | null; dur: number }[];
+  lapToX: (lap: number) => number; ready: boolean; simple: boolean; width: number;
 }) {
   const byLap = new Map<number, typeof markers>();
   for (const m of markers) (byLap.get(m.lap) ?? byLap.set(m.lap, []).get(m.lap)!).push(m);
 
   // one column per lap; same-lap events stack vertically, so the column's
-  // footprint is only ever as wide as the single widest chip in it
+  // footprint is only ever as wide as its widest single element — which is the
+  // widest chip, or the "L57" caption underneath when the chip is narrow
   const columns = [...byLap.entries()]
     .map(([lap, ms]) => {
       const x = Math.max(30, lapToX(lap));
-      const half = Math.max(...ms.map((m) => eventChipWidth(m.kind, simple))) / 2;
-      return { lap, ms, x, half };
+      const chip = Math.max(...ms.map((m) => eventChipWidth(m.kind, simple)));
+      const caption = (`L${lap}`).length * (EVENT_CHAR_W - 1);
+      return { lap, ms, x, half: Math.max(chip, caption) / 2 };
     })
     .sort((a, b) => a.x - b.x);
 
@@ -868,19 +920,39 @@ function EventBand({ markers, lapToX, ready, simple }: {
   return (
     <div className={cx("relative mb-1 transition-opacity", ready ? "opacity-100" : "opacity-0")}
       style={{ height: (simple ? 62 : 56) + (rows - 1) * rowStep }}>
-      {placed.map(({ lap, ms, x, row }) => (
-        <div key={lap} className="absolute bottom-0 flex -translate-x-1/2 flex-col items-center"
+      {placed.map(({ lap, ms, x, row }) => {
+        /* how far this card has to rise to clear every row above it, and how
+           far it has to slide to stay inside the plot. Both are computed per
+           column because both depend on where this column ended up. */
+        const lift = (rows - 1 - row) * rowStep + EVENT_TIP_GAP;
+        const half = EVENT_TIP_W / 2;
+        const centre = width > EVENT_TIP_W
+          ? Math.min(Math.max(x, half + 4), width - half - 4)
+          : x;
+        /* THE COLUMN IS SCENERY; ONLY THE CHIP IS A TARGET.
+           A column is a full-height absolutely-positioned box holding the chip,
+           its "L57" caption and the connector line down to the plot. Packing
+           keeps the CHIPS apart, but the boxes around them still overlap when
+           two events are close, and the box painted last wins the pointer — so
+           at narrower widths the Safety Car and the Red Flag simply stopped
+           responding to hover, with nothing on screen to suggest why. Their
+           cards were unreachable, which is a worse failure than an ugly one.
+           Nothing in a column is interactive except the chip, so the box stops
+           taking the pointer and the chips take it back. */
+        return (
+        <div key={lap} className="pointer-events-none absolute bottom-0 flex -translate-x-1/2 flex-col items-center"
           style={{ left: x, paddingBottom: row * rowStep }}>
           <div className="flex flex-col items-center gap-0.5">
             {ms.map((m, i) => {
               const meta = EVENT[m.kind]; const Icon = meta.icon;
               return (
-                <span key={i} className="group/mk relative">
+                <span key={i} className="group/mk pointer-events-auto relative">
                   <span className={cx("flex cursor-default items-center gap-1 rounded-full border font-bold", simple ? "px-2.5 py-1 text-[11px]" : "px-2 py-0.5 text-[11px]")}
                     style={{ borderColor: meta.color, color: meta.color, background: `${meta.color}1a` }}>
                     <Icon size={simple ? 13 : 11} /> {meta.code}
                   </span>
-                  <div className="pointer-events-none absolute bottom-full left-1/2 z-40 mb-1 w-52 -translate-x-1/2 rounded-lg border border-white/10 bg-base-900 p-2.5 text-left opacity-0 shadow-glow transition-opacity group-hover/mk:opacity-100">
+                  <div className="pointer-events-none absolute bottom-full left-1/2 z-40 w-52 rounded-lg border border-white/10 bg-base-900 p-2.5 text-left opacity-0 shadow-glow transition-opacity group-hover/mk:opacity-100"
+                    style={{ marginBottom: lift, transform: `translateX(${centre - x}px) translateX(-50%)` }}>
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-ink"><Icon size={12} style={{ color: meta.color }} /> {meta.label}</div>
                     <div className="mt-0.5 text-[11px] text-ink-faint">Lap {m.lap}{m.dur ? ` · ${m.dur} lap${m.dur === 1 ? "" : "s"}` : ""}</div>
                     {m.cause && <div className="mt-1 text-[11px] text-ink-muted">{m.cause}</div>}
@@ -893,7 +965,8 @@ function EventBand({ markers, lapToX, ready, simple }: {
           <span className="mt-0.5 text-[11px] tabular-nums text-ink-faint">L{lap}</span>
           <span className="mt-0.5 w-px flex-1" style={{ background: ms[0] ? EVENT[ms[0].kind].color : "#888", opacity: 0.55 }} />
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

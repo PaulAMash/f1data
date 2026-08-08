@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -39,6 +40,23 @@ app.add_middleware(
     allow_origins=settings.cors_origin_list + ["http://127.0.0.1:3000"],
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
+
+# A SESSION IS 380 KB OF JSON AND WAS BEING SHIPPED UNCOMPRESSED.
+#
+# The lap table is ~83% of that, and lap tables are the most compressible thing
+# this API returns: the same driver codes, compounds and lap numbers repeating a
+# thousand times over. Measured on the demo race, gzip takes the payload from
+# 383,757 bytes to 33,807 — 11x smaller, for one line of middleware.
+#
+# It cost nothing in development and everything in production, which is exactly
+# why it survived this long: over loopback a third of a megabyte is free, and
+# over a real connection between the browser and a hosted API it is seconds. The
+# frontend talks to the API host directly rather than through the CDN, so
+# nothing upstream was compressing it either.
+#
+# `minimum_size` keeps the small, frequent calls (meta, current, health) out of
+# it — below about a kilobyte, compression costs more than it saves.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 @app.exception_handler(DataUnavailableError)
@@ -258,12 +276,32 @@ def _bundle(year, gp, session_type, mock, refresh):
     return s, strategy, pace, practice, qualifying
 
 
+#: How long a browser may reuse a session bundle without asking again.
+#:
+#: A GRAND PRIX THAT HAS FINISHED WILL NEVER CHANGE. Re-fetching a quarter of a
+#: megabyte to redraw a 2024 race exactly as it was drawn a minute ago is pure
+#: latency, and every tab change, back-navigation and re-visit was paying it.
+#: The season the sport is currently racing is the one thing here that does
+#: move — a session can be re-classified, a penalty applied hours later — so it
+#: gets a short window rather than a long one, and `refresh=true` (the Re-run
+#: control) always bypasses this entirely by carrying a different URL.
+_FINISHED_SEASON_MAX_AGE = 86_400   # a day, for a race that is already history
+_CURRENT_SEASON_MAX_AGE = 300       # five minutes, while the season is live
+
+
 @app.get("/api/session")
 def session_bundle(
+    response: Response,
     year: int = Query(...), gp: str = Query(...), session: str = Query("Race"),
     mock: bool = Query(False), refresh: bool = Query(False),
 ):
     s, strategy, pace, practice, qualifying = _bundle(year, gp, session, mock, refresh)
+    if not refresh:
+        past = year < settings.default_year
+        age = _FINISHED_SEASON_MAX_AGE if past else _CURRENT_SEASON_MAX_AGE
+        # `private`: this is per-reader content in the sense that it may be a
+        # demo session, and nothing here is worth a shared cache guessing at.
+        response.headers["Cache-Control"] = f"private, max-age={age}"
     return {
         "source": s.data_source.value,
         "source_label": service.source_label(s.data_source),

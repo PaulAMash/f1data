@@ -301,3 +301,78 @@ def test_monaco_and_miami_are_both_complete_at_once():
 
     assert monaco.complete is True
     assert miami.complete is True
+
+
+# --------------------------------------------------------------------------- #
+# 6. the position trace (V79)
+#
+# Every line chart in the product plots this trace. It was only ever set by
+# whichever adapter supplied it, and it is not one of the essential facets the
+# gate checks — so a session with no position feed passed as complete, rendered
+# in full, and drew axes and neutralisation bands over an empty plot. The lap
+# table already carries the same information, and the lap table IS essential.
+# --------------------------------------------------------------------------- #
+def _lap(driver, lap, position=None, lap_time=90.0):
+    return Lap(driver=driver, lap=lap, position=position, lap_time=lap_time)
+
+
+def test_the_position_trace_is_rebuilt_from_the_lap_table():
+    """THE PRODUCTION CASE: laps answered, no position feed did."""
+    s = _race(laps=[_lap("VER", 1, 1), _lap("HAM", 1, 2),
+                    _lap("VER", 2, 1), _lap("HAM", 2, 2)])
+    assert not s.positions
+    dsm._derive_positions(s)
+    assert [(p.driver, p.lap, p.position) for p in s.positions] == [
+        ("VER", 1, 1), ("HAM", 1, 2), ("VER", 2, 1), ("HAM", 2, 2)]
+
+
+def test_the_rebuilt_trace_says_where_it_came_from():
+    s = _race(laps=[_lap("VER", 1, 1)])
+    dsm._derive_positions(s)
+    facet = next(f for f in s.source_report.facets if f.facet == "positions")
+    assert facet.source == "derived"
+    assert "lap table" in (facet.detail or "")
+
+
+def test_a_real_position_feed_is_never_overwritten():
+    from app.models import PositionPoint
+    s = _race(positions=[PositionPoint(driver="NOR", lap=1, position=1)],
+              laps=[_lap("VER", 1, 1)])
+    dsm._derive_positions(s)
+    assert [p.driver for p in s.positions] == ["NOR"]
+
+
+def test_laps_without_positions_derive_nothing_rather_than_guessing():
+    """A lap table with no positions in it cannot answer the question. It must
+    not invent an order from row sequence — a wrong trace is worse than none."""
+    s = _race(laps=[_lap("VER", 1, None), _lap("HAM", 1, None)])
+    dsm._derive_positions(s)
+    assert s.positions == []
+
+
+def test_the_trace_is_ordered_by_lap_then_position():
+    s = _race(laps=[_lap("HAM", 2, 2), _lap("VER", 1, 1),
+                    _lap("HAM", 1, 2), _lap("VER", 2, 1)])
+    dsm._derive_positions(s)
+    assert [(p.lap, p.position) for p in s.positions] == [(1, 1), (1, 2), (2, 1), (2, 2)]
+
+
+def test_qualifying_gets_no_derived_race_trace():
+    """A position trace is a race/sprint idea; a qualifying session has none."""
+    s = _race(session_type="Qualifying", category="qualifying",
+              laps=[_lap("VER", 1, 1)])
+    dsm._derive_positions(s)
+    assert s.positions == []
+
+
+def test_a_missing_trace_no_longer_silently_empties_the_overtakes():
+    """The cascade: overtake inference needs a trace, so a missing position
+    feed used to report a race in which nobody passed anybody."""
+    s = _race(classification=[_row("VER", position=1), _row("HAM", position=2)],
+              drivers=[Driver(number="1", code="VER", name="Max", team="Red Bull Racing"),
+                       Driver(number="44", code="HAM", name="Lewis", team="Ferrari")],
+              laps=[_lap("VER", 1, 2), _lap("HAM", 1, 1),
+                    _lap("VER", 2, 1), _lap("HAM", 2, 2)])
+    dsm._finalize_session(s)
+    assert s.positions, "the trace should have been rebuilt from the laps"
+    assert s.overtakes, "an overtake happened on lap 2 and should be inferred"

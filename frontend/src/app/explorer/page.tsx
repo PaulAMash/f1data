@@ -119,12 +119,27 @@ export default function ExplorerPage() {
       url.searchParams.delete("q");
       window.history.replaceState(null, "", url.pathname + url.search + url.hash);
     }
+    /* A LINK THAT ALREADY NAMES THE RACE DOES NOT NEED TO ASK WHICH RACE IS ON.
+       `current()` gated `booted`, and `booted` gates the session fetch, so every
+       arrival paid two sequential round trips before the expensive call even
+       started — one to be told the thing the URL had already said. Over loopback
+       that is a millisecond; between a browser, an edge and a hosted API it is
+       the difference between one wait and two. When the address carries both the
+       season and the Grand Prix there is no question left to ask, so the session
+       starts immediately and `current()` resolves alongside it, only to fill in
+       the season badge. Everything else still waits, because it genuinely has to. */
+    const deepLinked = !!qGp && !!qYear;
+    if (deepLinked) {
+      setSel({ year: Number(qYear), gp: qGp!, session: qSession || "Race" });
+      setBooted(true);
+    }
     api.current().then((cur) => {
       setCurrentSeason(cur.year);
+      if (deepLinked) return;
       if (qGp) setSel({ year: qYear ? Number(qYear) : cur.year, gp: qGp, session: qSession || "Race" });
       else if (cur.gp) setSel({ year: cur.year, gp: cur.gp, session: "Race" });
     }).catch(() => {
-      if (qGp) setSel({ year: qYear ? Number(qYear) : 2025, gp: qGp, session: qSession || "Race" });
+      if (!deepLinked && qGp) setSel({ year: qYear ? Number(qYear) : 2025, gp: qGp, session: qSession || "Race" });
     }).finally(() => setBooted(true));
   }, []);
 
