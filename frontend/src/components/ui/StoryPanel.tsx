@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ChevronDown, Info } from "lucide-react";
 import { IconTile, StatStrip, type IconAnim, type VisualTone } from "./Visuals";
 import { cx } from "@/lib/format";
+import { StoryText } from "@/lib/storyText";
 
 /* -------------------------------------------------------------------------- */
 /* The editorial panel.                                                       */
@@ -72,7 +73,7 @@ export function StoryPanel({
               // the lede carries the session. Big enough to be read first, short
               // enough that it never becomes a paragraph.
               <p className="text-[19px] font-semibold leading-snug tracking-[-0.01em] text-ink sm:text-[21px]">
-                {lede}
+                <StoryText>{lede}</StoryText>
               </p>
             ) : (
               <p className="text-sm text-ink-muted">No summary available for this session.</p>
@@ -84,7 +85,9 @@ export function StoryPanel({
                 control so the reader knows exactly what they're opening. */}
             {rest.length > 0 && (
               <div className="mt-4 border-t border-white/[0.06]">
-                <p className="py-2.5 text-[14.5px] leading-relaxed text-ink-muted">{rest[0]}</p>
+                <p className="py-2.5 text-[14.5px] leading-relaxed text-ink-muted">
+                  <StoryText>{rest[0]}</StoryText>
+                </p>
                 {rest.length > 1 && (
                   <>
                     {/* slides open on its own height rather than appearing —
@@ -95,7 +98,9 @@ export function StoryPanel({
                         <div className={cx("divide-y divide-white/[0.05] border-t border-white/[0.05] transition-opacity duration-200",
                           open ? "opacity-100" : "opacity-0")}>
                           {rest.slice(1).map((s, i) => (
-                            <p key={i} className="py-2.5 text-[14.5px] leading-relaxed text-ink-muted">{s}</p>
+                            <p key={i} className="py-2.5 text-[14.5px] leading-relaxed text-ink-muted">
+                              <StoryText>{s}</StoryText>
+                            </p>
                           ))}
                         </div>
                       </div>

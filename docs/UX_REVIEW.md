@@ -3,9 +3,75 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V80**. The derivations finally run on every path a session can arrive by, the
-event band measures the whole column rather than the chip in it, and the results table
-stops printing "P14→P14 —" to say that nothing happened.
+Last pass: **V81**. A second, independent cause of the blank charts — the one that takes the
+axes with it — plus a pace ranking that spent numbers it never showed, and story text where
+five kinds of information wore one font.
+
+---
+
+## Fixed in V81
+
+### 1. The blank chart had a second cause, and V80 only closed the first
+
+V80's diagnosis was right about a mechanism and wrong to stop there. An empty entry list does
+blank the lines — but it leaves the axes standing, and the report screenshot has **no axes at
+all**: no position numbers, no lap numbers, no gridlines. Something was killing the whole
+plot, not just the series.
+
+`total_laps`. The Position chart builds its rows with `for (let l = 1; l <= total; l++)`, so a
+distance of zero produces an empty data array; it then discards **every** position point,
+because each one fails `p.lap > total`. The session still carries a full trace, so the chart
+does not take its "no trace" early return — it renders the event band, the legend, and an
+empty axis pair between them. Reproduced exactly by forcing `total_laps: 0` at the API with
+positions (1,106) and drivers (16) both intact: **16 curves before, 0 after**, axes gone.
+
+The cause is an ordering bug in the adapters, not a provider problem. Every one of them sets
+`total_laps = max(lap for lap in laps, default=0)` **at construction time** — which is before
+`_merge_missing_facets` fills in the laps and positions another source had. A source that
+answers with results but no lap table therefore freezes the distance at zero, and nothing
+revisits it once the real lap data lands. The distance is now recomputed in the shared
+finalizer, after the merges, from the largest lap the session can evidence: its lap table, its
+trace, its `laps_completed`, or the circuit's own distance. The frontend carries the same
+guarantee for the same reason it carries the entry-list one — it is served a payload it did
+not compute.
+
+Two independent causes of one symptom, both now closed, and both the same shape: **a
+load-bearing value derived once from a partial view and never revisited.**
+
+### 2. The pace leaderboard spent rank numbers it never showed
+
+`1, 2, 4, 5, 6, 7, 9`. Not a display bug and not a broken sort — two correct steps
+contradicting each other. `_rank_and_score` numbered everyone holding a clean-air pace 1..N,
+and `_write_verdicts` then decided that the retired, the disqualified and the barely-sampled
+could not be evaluated after all. A retirement with a valid pace therefore **took a number out
+of the sequence and then rendered as "—"**, so the number was spent and displayed nowhere.
+Rank 3 was Leclerc, retired, listed below and shown as a dash. Every race with a retirement
+produced a gap, which is most of them.
+
+Deciding evaluability *before* ranking makes the two steps agree: the ranked set is exactly the
+set that displays a rank, so the sequence is contiguous by construction rather than by a
+counter painted over the top. The methodology is untouched — survivors are still ordered by
+corrected clean-air pace, ties still sort together, and a driver who genuinely cannot be
+assessed is now honestly unranked rather than holding a hidden number. Verified against the
+live API: `1…15` with no holes, retirement unranked.
+
+### 3. Five kinds of information wearing one font
+
+"Corrected clean-air pace: ANT 1:16.157, HAM 1:16.609 (+0.45s), LEC 1:16.782 (+0.62s)."
+carries who, how fast, how much slower, and why it matters — every one of them set in the same
+size, weight and colour. To find a number the reader has to parse a sentence, so they skim, and
+the analysis the product exists to provide goes unread.
+
+The treatment is deliberately **typographic only**: weight, colour and tabular figures. Nothing
+gains a border, a background or an icon, because boxing every token turns a considered
+paragraph into a scrapyard of chips and reads as less sophisticated, not more — the opposite of
+a timing screen, which is dense, quiet and typographic. Lap times take the speed accent, a
+`+0.45s` reads warm and a `−1.67s` reads cool because direction is information, driver codes
+carry the product's own code voice, and lap references recede. Applied inside `StoryPanel`,
+which is the one component behind the Race, Qualifying, Sprint and Practice stories, so every
+session gets it in both modes with no caller opting in. An unrecognised sentence renders exactly
+as it did before, and a three-letter word that is not a driver ("FIA", "DRS") is left alone —
+emphasising it as a driver would be a claim about the sentence that is false.
 
 ---
 

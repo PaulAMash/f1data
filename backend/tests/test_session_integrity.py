@@ -427,3 +427,71 @@ def test_a_real_entry_list_survives_finalizing():
               classification=[_row("NOR", "Lando Norris", "McLaren", position=1)])
     dsm._finalize_session(s)
     assert [d.code for d in s.drivers] == ["VER"]
+
+
+# --------------------------------------------------------------------------- #
+# 8. the race distance (V81)
+#
+# Adapters set `total_laps` from their OWN lap table, at construction time —
+# before the merge that fills in laps and positions from another source. A
+# source with results but no laps froze it at zero and nothing revisited it.
+# Zero is not harmless: the Position chart builds one row per lap and discards
+# every position point that fails `p.lap > total`, so a complete trace renders
+# as an empty plot with the axes gone too.
+# --------------------------------------------------------------------------- #
+def test_race_distance_is_recovered_from_the_lap_table():
+    s = _race(total_laps=0, laps=[_lap("VER", 1, 1), _lap("VER", 58, 1)])
+    dsm._derive_total_laps(s)
+    assert s.total_laps == 58
+
+
+def test_race_distance_is_recovered_from_the_position_trace():
+    from app.models import PositionPoint
+    s = _race(total_laps=0,
+              positions=[PositionPoint(driver="VER", lap=1, position=1),
+                         PositionPoint(driver="VER", lap=44, position=1)])
+    dsm._derive_total_laps(s)
+    assert s.total_laps == 44
+
+
+def test_race_distance_is_recovered_from_laps_completed():
+    s = _race(total_laps=0,
+              classification=[_row("VER", position=1, laps=70),
+                              _row("HAM", position=2, laps=69)])
+    dsm._derive_total_laps(s)
+    assert s.total_laps == 70
+
+
+def test_a_real_race_distance_is_never_overwritten():
+    s = _race(total_laps=78, laps=[_lap("VER", 1, 1), _lap("VER", 12, 1)])
+    dsm._derive_total_laps(s)
+    assert s.total_laps == 78
+
+
+def test_the_distance_takes_the_largest_evidence_available():
+    """Sources disagree — a lap table truncated mid-race against a
+    classification that knows the full distance. The longest wins, because a
+    distance shorter than the data would clip the chart it draws."""
+    s = _race(total_laps=0, laps=[_lap("VER", 30, 1)],
+              classification=[_row("VER", position=1, laps=71)])
+    dsm._derive_total_laps(s)
+    assert s.total_laps == 71
+
+
+def test_a_session_with_nothing_to_measure_stays_at_zero():
+    s = _race(total_laps=0)
+    dsm._derive_total_laps(s)
+    assert s.total_laps == 0
+
+
+def test_finalizing_recovers_the_distance_end_to_end():
+    """The whole point: it has to happen on the shared path, so the fresh
+    fetch, the cache read and the demo all get it."""
+    s = _race(total_laps=0,
+              classification=[_row("VER", position=1, laps=56),
+                              _row("HAM", position=2, laps=56)],
+              laps=[_lap("VER", 1, 1), _lap("HAM", 1, 2),
+                    _lap("VER", 56, 1), _lap("HAM", 56, 2)])
+    dsm._finalize_session(s)
+    assert s.total_laps == 56
+    assert s.positions, "the trace should still be derived alongside it"

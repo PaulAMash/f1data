@@ -3855,3 +3855,97 @@ read, which is the only reason to put a badge in a dense table at all.
 
 > Before shortening a label yourself, find out what the people who do this for a
 > living already call it.
+
+---
+
+## One symptom can have more than one cause, and a good explanation is not proof
+
+V80 found that an empty entry list blanks every line chart. That was true,
+reproducible, and fixed. It was also not the whole answer, and the report that
+came back said so in a detail the diagnosis had walked past: the screenshot had
+**no axes**. An empty entry list removes the series and leaves the axes
+standing. Something else was removing the plot.
+
+`total_laps` at zero does exactly that, by a completely different route — the
+chart builds one row per lap, so zero rows, and then discards every position
+point for failing `p.lap > total`. Same blank panel, different mechanism.
+
+The lesson is about when to stop investigating. A hypothesis that explains the
+failure is not the same as a hypothesis that explains **every detail of the
+evidence**, and the leftover detail is where the second cause hides. "The
+markers render but the axes don't" was in the first screenshot the whole time
+and it did not fit, and the fix shipped anyway because the rest of the story was
+so tidy.
+
+> When your explanation accounts for the bug but not for one odd detail in the
+> report, you have found *a* cause. Keep going until nothing in the evidence is
+> left over.
+
+---
+
+## Derive a value where the data is complete, not where it is first available
+
+Both blank-chart causes were the same shape. `total_laps` is computed by every
+adapter as `max(lap for lap in laps)` at the moment it constructs the session —
+which is before the merge step that fills in laps and positions from other
+sources. A source with results but no lap table freezes the distance at zero
+and nothing ever revisits it. The entry list had the identical problem.
+
+The value is not wrong when it is written; it is written too early. Anything
+derived from a collection has to be derived **after** every step that can add to
+that collection, and the honest place for that is a single finalizer that runs
+once the picture is complete — which also happens to be the place every entry
+path can share.
+
+There is a tell for this class: a field whose value is correct in development
+and zero in production is usually a field computed from whichever source
+answered first, on a machine where the same source always answers first.
+
+> If a value summarises a collection, compute it downstream of everything that
+> can change the collection. Anywhere else is a snapshot of a partial view.
+
+---
+
+## Two correct steps can still contradict each other
+
+The pace leaderboard read 1, 2, 4, 5. Nothing in it was broken: the ranking
+sorted correctly and assigned 1..N with no gaps, and the evaluability rule
+correctly refused to assess a driver who retired. They ran in the wrong order,
+so the ranker numbered people the next step then declared unrankable — and each
+of those drivers **took a number out of the sequence and rendered as a dash**.
+The number was spent and shown nowhere.
+
+Neither function had a bug you could find by reading it. The bug was the
+sequence, which lives in the caller and is invisible from inside either one. A
+filter that runs after a ranking silently punches holes in it; a filter that
+runs before it produces a dense ranking for free.
+
+The tempting fix — renumber the visible rows in the component — would have
+produced identical pixels and been wrong, because the rank is a field-wide claim
+about car speed, not a row counter, and a counter would quietly redefine it.
+
+> When you filter and rank the same collection, the filter goes first. If the
+> displayed set and the ranked set are not the same set, the numbers are fiction.
+
+---
+
+## Emphasis is information, so unrecognised text must be left alone
+
+Marking up analytical prose — driver codes, lap times, deltas — makes it
+scannable, and every rule that adds emphasis is also a claim: *this token is a
+driver*, *this number is a lap time*. A three-letter uppercase word is usually
+a driver code and sometimes "FIA" or "DRS", and emphasising those as drivers
+states something false about the sentence in the product's own visual language.
+
+So the highlighter classifies conservatively and renders anything it does not
+recognise exactly as it arrived. Being wrong is strictly worse than doing
+nothing here: unstyled prose is merely plain, while confidently mis-styled prose
+is misleading, and the reader has no way to tell which rule fired.
+
+The restraint applies to the treatment too. It would have been easy to box every
+token, and it would have looked like a scrapyard — a timing screen is dense,
+quiet and typographic, and its authority comes from restraint. Weight, colour
+and tabular figures were enough; nothing needed a border.
+
+> Any rule that adds emphasis is asserting a fact. Give it a stoplist, and let
+> it fall back to plain text whenever it is not sure.
