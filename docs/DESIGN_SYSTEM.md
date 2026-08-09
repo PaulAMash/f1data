@@ -4080,3 +4080,62 @@ relying on it.
 > Prefer the version bump that makes a combination supported over the shim that
 > makes one symptom of an unsupported combination go away. The first has a
 > maintainer behind it; the second has only you.
+
+---
+
+## Measure the shape when you cannot measure the numbers
+
+V84 opened with a question that could not be answered from where the work was
+happening: a production page took 30–60 seconds, production could not be reached
+from the development container, and the four plausible explanations — cold start,
+slow upstream, heavy processing, oversized payload — all produce the same
+observation from a browser. *The page took a minute* is compatible with every
+theory, which makes it evidence for none of them.
+
+The instinct is to reason from the most suspicious component. In this case that
+was the free hosting tier, and reasoning from it would have produced a confident,
+plausible and wrong answer: the pipeline was making forty upstream round trips,
+twenty-eight of them in strict sequence, and twenty-six of those were fetching
+driver photographs one meeting at a time.
+
+Two instruments found that without any access to production:
+
+* **A synthetic upstream behind the real adapters**, with one known latency per
+  round trip. This does not predict production's timings and should not be
+  presented as if it does. What it exposes is *shape* — how many round trips a
+  request costs, in what order, how many overlap — and shape is invariant to the
+  latency you cannot measure. Wall time then follows from arithmetic the reader
+  can check, at whatever latency they think is realistic.
+* **`Server-Timing`**, so the server states where its own time went in a header
+  the browser already renders. A diagnostic nobody can read is not a diagnostic,
+  and the cheapest way to be readable is to speak a format the tools already
+  know.
+
+> When you cannot measure the environment, measure the structure. Round-trip
+> count and their ordering are properties of the code, observable anywhere, and
+> they bound the wall clock no matter whose hardware it runs on.
+
+---
+
+## A performance change has to prove it changed nothing else
+
+Every optimisation here is an invitation to lose data quietly: skip a source and
+the page is faster and slightly wrong; shorten a timeout and the slow facet
+becomes the missing facet; parallelise two writers and one of them loses.
+
+So the acceptance test was not "is it faster". It was to dump the whole
+normalized session to JSON before and after and compare digests. They matched
+exactly — same facets, same row counts, same portraits resolved — which converts
+"I believe this is equivalent" into a fact, and turns the speed number into
+something worth reporting.
+
+The same principle decided the smaller calls. `_together` re-raises for steps
+that could previously fail a fetch, because swallowing them would silently turn
+*this source did not work, try the next one* into *this source worked and
+returned less*. `_set_facet` takes a lock now that several writers can reach it
+concurrently. The lazy portrait map is still built for exactly the drivers that
+reach the fallback — the test that proves the speedup also proves the fallback
+still fires.
+
+> Deleting work is only an optimisation if you can show the output is unchanged.
+> Otherwise it is a feature removal with a benchmark attached.

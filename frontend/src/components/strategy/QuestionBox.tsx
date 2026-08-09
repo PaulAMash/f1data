@@ -5,6 +5,7 @@ import { Sparkles } from "@/components/ui/MotionIcon";
 import { api } from "@/lib/api";
 import type { QuestionAnswer, SessionCategory } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
+import { BetaTag } from "@/components/ui/BetaTag";
 import { cx } from "@/lib/format";
 import { AnalysisProgress } from "./AnalysisProgress";
 
@@ -115,6 +116,7 @@ export function QuestionBox({
 
   return (
     <div>
+      <BetaNotice />
       <div ref={boxEl} data-tour="ask-box" className="flex items-center gap-2 rounded-xl border border-white/10 bg-base-850/80 p-2 focus-within:border-accent/40">
         <MessageSquareText size={16} className="ml-1.5 shrink-0 text-ink-faint" />
         <input
@@ -156,6 +158,41 @@ export function QuestionBox({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* THE ONE THING WORTH SAYING BEFORE SOMEONE ASKS.                            */
+/*                                                                            */
+/* This sits above the input rather than under it, because it is context for   */
+/* the question you are about to type, not a footnote to the answer. It is one */
+/* strip and three clauses — what Ask is, what is getting better, and what we  */
+/* want back — because a disclaimer long enough to need reading is a           */
+/* disclaimer nobody reads.                                                    */
+/*                                                                            */
+/* It leads with the same BETA pill that marks the tab, so arriving here       */
+/* explains the mark you just pressed. Accent, not amber: the product uses     */
+/* amber for demo data and for things that are wrong, and Ask is neither. The  */
+/* register is "this is good and getting sharper", never "this may not work" — */
+/* a reader who leaves this box trusting the answers less than they should has */
+/* been badly served by a notice that was meant to be honest.                  */
+/*                                                                            */
+/* Mode-independent by construction: QuestionBox is the one Ask surface, so    */
+/* Simple and Advanced both get it without either being asked to remember.     */
+/* -------------------------------------------------------------------------- */
+function BetaNotice() {
+  return (
+    <div className="mb-3 flex items-start gap-2.5 rounded-xl border border-accent/[0.18] bg-accent/[0.05] px-3 py-2.5">
+      <BetaTag tone="on" className="mt-[3px] shrink-0" />
+      {/* the panel is as wide as the page; a line of prose should not be. */}
+      <p className="max-w-[86ch] text-[12.5px] leading-relaxed text-ink-muted">
+        <span className="font-medium text-ink">Ask is new, and getting sharper.</span>{" "}
+        It already reasons over this session&apos;s real timing, strategy and race-control
+        data — and we&apos;re actively deepening how much context it brings to an answer.
+        If there&apos;s something you wish it could tell you, ask it anyway: what people
+        reach for is what we build next.
+      </p>
     </div>
   );
 }

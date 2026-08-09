@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import math
+from threading import Lock
 from datetime import datetime, timezone
 
 from ..config import get_settings
@@ -63,36 +64,73 @@ class FetchError(RuntimeError):
 # perfectly healthy — indistinguishable from an outage unless the probe reports
 # the status code (it now does).
 #
-# Patching the session at import is deliberate: `pitwall._http` is a module-level
+# Patching the session is deliberate: `pitwall._http` is a module-level
 # singleton every one of its helpers uses, so this is the only place that reaches
 # all of them, and it keeps the workaround in one documented spot instead of at
 # every call site.
+#
+# ON FIRST USE, NOT AT IMPORT — AND THAT WAS WORTH 1.4 SECONDS OF EVERY BOOT.
+#
+# This ran as a module-level statement, so merely importing this adapter forced
+# `load_pitwall()`, and `pitwall` is a single-file MCP *server script*: importing
+# it pulls in the MCP SDK, fastf1, pandas and matplotlib. Measured with
+# `python -X importtime`, `from app.main import app` cost 1.9 s and 1.4 s of that
+# was this line — a scientific stack loaded, on the startup path, to set a
+# User-Agent header on a source that is only a FALLBACK and may never be asked
+# anything at all. On a free-tier instance that spins down when idle, every cold
+# start paid it before the server could accept its first connection.
+#
+# Deferring it changes nothing about the header: no request can reach the archive
+# except through `_pitwall()`, and `_pitwall()` brands before it returns. What it
+# changes is when the cost lands — on the first request that genuinely needs the
+# archive, instead of on everybody.
 # --------------------------------------------------------------------------- #
-def _brand_http_session() -> None:
-    try:
-        pitwall = load_pitwall()
-        ua = get_settings().archive_user_agent
-        if ua:
-            pitwall._http.headers.update({
-                "User-Agent": ua,
-                # the archive is a plain JSON/static host; asking for what we can
-                # actually parse keeps us out of "compressed stream" surprises
-                "Accept": "application/json, text/plain, */*",
-                "Accept-Language": "en-GB,en;q=0.9",
-            })
-    except ArchiveClientUnavailable as exc:
-        # Never block startup — but never start silently either. A server that
-        # boots cleanly while a whole data source is dead is how "partial data"
-        # became the normal state of the app for days.
-        logging.getLogger("pitwall_iq.archive").warning(
-            "F1 archive client unavailable — tyre, weather and race-control data "
-            "will be missing from every session. %s", exc)
-    except Exception:  # noqa: BLE001
-        # never let branding stop the app from starting
-        pass
+_brand_lock = Lock()
+_branded = False
 
 
-_brand_http_session()
+def _pitwall():
+    """The archive client, branded on first use.
+
+    Every call site in this module goes through here rather than calling
+    `load_pitwall()` directly, which is what makes "branded before any request"
+    a property of the code rather than a thing each caller has to remember.
+    """
+    global _branded
+    client = load_pitwall()           # raises ArchiveClientUnavailable, as before
+    if not _branded:
+        with _brand_lock:
+            if not _branded:
+                _branded = True       # set first: a failed brand must not retry forever
+                try:
+                    ua = get_settings().archive_user_agent
+                    if ua:
+                        client._http.headers.update({
+                            "User-Agent": ua,
+                            # the archive is a plain JSON/static host; asking for what we
+                            # can actually parse keeps us out of "compressed stream"
+                            # surprises
+                            "Accept": "application/json, text/plain, */*",
+                            "Accept-Language": "en-GB,en;q=0.9",
+                        })
+                except Exception:  # noqa: BLE001
+                    # never let branding stop a fetch that would otherwise work
+                    pass
+    return client
+
+
+def _warn_archive_unavailable(exc: Exception) -> None:
+    """Say it out loud when the archive client cannot load.
+
+    The boot-time version of this warning is gone with the boot-time import, but
+    the reason for it is not: a server that runs cleanly while a whole data
+    source is dead is how "partial data" became the app's normal state for days.
+    It now fires at the moment the archive is first genuinely needed, which is
+    the moment the statement becomes true.
+    """
+    logging.getLogger("pitwall_iq.archive").warning(
+        "F1 archive client unavailable — tyre, weather and race-control data "
+        "will be missing from every session. %s", exc)
 
 
 # --------------------------------------------------------------------------- #
@@ -151,7 +189,7 @@ def _sec(td) -> float | None:
 # Calendar / browsing (pitwall static + Jolpica)
 # --------------------------------------------------------------------------- #
 def list_seasons() -> list[Season]:
-    pitwall = load_pitwall()
+    pitwall = _pitwall()
     seasons: list[Season] = []
     errors: list[str] = []
     for year in range(2018, datetime.now().year + 1):
@@ -189,7 +227,7 @@ def probe() -> tuple[bool | None, str]:
     the reader to F1's status page for a problem that lives in this virtualenv.
     """
     try:
-        pitwall = load_pitwall()
+        pitwall = _pitwall()
     except ArchiveClientUnavailable as exc:
         return None, str(exc)
     url = f"{pitwall.STATIC_BASE}/{_probe_year()}/Index.json"
@@ -227,7 +265,7 @@ def _transport_detail(exc: Exception) -> str:
 
 
 def list_grands_prix(year: int) -> list[GrandPrix]:
-    pitwall = load_pitwall()
+    pitwall = _pitwall()
     try:
         meetings = pitwall._get_json(f"{year}/Index.json").get("Meetings", [])
     except Exception as exc:  # noqa: BLE001
@@ -250,7 +288,7 @@ def list_grands_prix(year: int) -> list[GrandPrix]:
 # --------------------------------------------------------------------------- #
 def _jolpica_grid(year: int, gp_name: str) -> dict[str, int]:
     """Return {driver_code: grid_position} from Jolpica qualifying/grid, best-effort."""
-    pitwall = load_pitwall()
+    pitwall = _pitwall()
     try:
         circuit = pitwall._resolve_circuit_id(gp_name) if gp_name else None
         url = (f"{pitwall.JOLPICA}/{year}/circuits/{circuit}/results.json?limit=40"
@@ -511,7 +549,7 @@ def _weather_from_fastf1(session) -> list[WeatherPoint]:
 # pitwall static-API path (fallback when FastF1 unavailable)
 # --------------------------------------------------------------------------- #
 def _fetch_via_static(year: int, gp: str, session_type: str) -> RaceSession:
-    pitwall = load_pitwall()
+    pitwall = _pitwall()
     path, race_name = pitwall._find_session(year, gp, session_type)
     if not path:
         raise FetchError(f"No '{session_type}' session found for '{gp}' in {year}.")
@@ -864,6 +902,7 @@ def fetch_session(year: int, gp: str, session_type: str) -> RaceSession:
         # Neither route to the archive could even be loaded. That is a complete,
         # actionable diagnosis — an incomplete install — and it must not be
         # flattened into a generic fetch failure that reads like an F1 outage.
+        _warn_archive_unavailable(exc)
         if fastf1_missing:
             raise
         errors.append(f"static-API: {exc}")

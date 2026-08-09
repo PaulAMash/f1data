@@ -1,7 +1,14 @@
 "use client";
 import { cx } from "@/lib/format";
+import { BetaTag } from "./BetaTag";
 
-export interface TabItem { id: string; label: string; icon?: React.ReactNode; }
+export interface TabItem {
+  id: string; label: string; icon?: React.ReactNode;
+  /* A standing mark on the tab itself — not a badge that comes and goes with
+     state. "beta" says the section is live and still being sharpened; the
+     screen-reader label carries the same word so it isn't a sighted-only fact. */
+  tag?: "beta";
+}
 
 export function Tabs({
   items, active, onChange, className, ...rest
@@ -23,6 +30,7 @@ export function Tabs({
           key={t.id}
           role="tab"
           aria-selected={active === t.id}
+          aria-label={t.tag ? `${t.label} (${t.tag})` : undefined}
           onClick={() => onChange(t.id)}
           className={cx(
             "group/tab inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium",
@@ -39,6 +47,9 @@ export function Tabs({
             {t.icon}
           </span>
           {t.label}
+          {/* after the label, never before it: the tab is still called "Ask",
+              and a mark that arrives first renames it */}
+          {t.tag && <BetaTag tone={active === t.id ? "on" : "off"} />}
         </button>
       ))}
     </div>

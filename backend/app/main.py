@@ -16,7 +16,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from . import cache, service
+from . import cache, service, timing
 from .adapters import data_source_manager, headshots, history_adapter, historical, pitstop_service
 from .adapters.data_source_manager import DataUnavailableError
 from .adapters.pitwall_runtime import load_pitwall
@@ -262,11 +262,13 @@ def sessions_available(year: int = Query(...), gp: str = Query(...)):
 # session bundle (Race Explorer)
 # --------------------------------------------------------------------------- #
 def _bundle(year, gp, session_type, mock, refresh):
-    s = service.get_session(year, gp, session_type, force_mock=mock, refresh=refresh)
-    strategy, pace = analyze(s)
-    practice = compute_practice(s) if s.category == "practice" else None
-    qualifying = (compute_qualifying(s)
-                  if s.category in ("qualifying", "sprint_qualifying") else None)
+    with timing.phase("load"):
+        s = service.get_session(year, gp, session_type, force_mock=mock, refresh=refresh)
+    with timing.phase("analyze"):
+        strategy, pace = analyze(s)
+        practice = compute_practice(s) if s.category == "practice" else None
+        qualifying = (compute_qualifying(s)
+                      if s.category in ("qualifying", "sprint_qualifying") else None)
     if qualifying is not None and s.data_source != DataSource.MOCK:
         # post-session grid penalties can only be verified against the official
         # starting grid — a lookup, so it stays out of the pure analysis pass
@@ -295,6 +297,7 @@ def session_bundle(
     year: int = Query(...), gp: str = Query(...), session: str = Query("Race"),
     mock: bool = Query(False), refresh: bool = Query(False),
 ):
+    timing.start()
     s, strategy, pace, practice, qualifying = _bundle(year, gp, session, mock, refresh)
     if not refresh:
         past = year < settings.default_year
@@ -302,16 +305,25 @@ def session_bundle(
         # `private`: this is per-reader content in the sense that it may be a
         # demo session, and nothing here is worth a shared cache guessing at.
         response.headers["Cache-Control"] = f"private, max-age={age}"
-    return {
-        "source": s.data_source.value,
-        "source_label": service.source_label(s.data_source),
-        "category": s.category,
-        "session": s.model_dump(),
-        "strategy": strategy.model_dump(),
-        "pace": [p.model_dump() for p in pace],
-        "practice": practice.model_dump() if practice else None,
-        "qualifying": qualifying.model_dump() if qualifying else None,
-    }
+    # WHERE THE TIME WENT, IN THE ONE PLACE A BROWSER ALREADY LOOKS.
+    # Chrome renders this under Network -> Timing -> Server Timing, so reading a
+    # production request needs no tooling: open the tab and look. Serialization
+    # is timed by the middleware, since it happens after this function returns.
+    with timing.phase("serialize"):
+        payload = {
+            "source": s.data_source.value,
+            "source_label": service.source_label(s.data_source),
+            "category": s.category,
+            "session": s.model_dump(),
+            "strategy": strategy.model_dump(),
+            "pace": [p.model_dump() for p in pace],
+            "practice": practice.model_dump() if practice else None,
+            "qualifying": qualifying.model_dump() if qualifying else None,
+        }
+    hdr = timing.header()
+    if hdr:
+        response.headers["Server-Timing"] = hdr
+    return payload
 
 
 @app.get("/api/session/load")
