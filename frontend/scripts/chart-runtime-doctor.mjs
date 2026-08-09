@@ -69,7 +69,34 @@ try {
   console.log(warn(`  ! could not run the element check: ${e.message}`));
 }
 
-// 3. Next 14 expects React 18; Next 15 ships React 19. A mismatch between the
+// 3. THE CHECK THAT WOULD HAVE ENDED V82 IN ONE STEP. recharts declares which
+//    React majors it supports, and 2.12.7 did not include 19. Running it under
+//    React 19 is not a bug to be found, it is an unsupported pairing — and it
+//    fails silently, chart by chart, in ways that each look like a fresh bug.
+//    Ask the library what it supports before debugging what it does.
+try {
+  const peers = require("recharts/package.json").peerDependencies ?? {};
+  const range = peers.react ?? "";
+  const reactMajor = react ? react.split(".")[0] : null;
+  if (range && reactMajor) {
+    const supported = range.split("||").some((r) => r.trim().startsWith(`^${reactMajor}.`));
+    console.log(`  recharts supports react ${range}`);
+    if (!supported) {
+      problems++;
+      console.log(bad(
+        `\n  ✗ recharts ${recharts} does not support React ${reactMajor}.\n` +
+        "    Charts will fail in ways that look unrelated to each other:\n" +
+        "    empty containers, missing series, axes with no ticks. Upgrade\n" +
+        "    recharts or hold React at a supported major."));
+    } else {
+      console.log(`  react ${reactMajor} is ${ok("supported")}`);
+    }
+  }
+} catch {
+  /* recharts not installed — nothing to check */
+}
+
+// 4. Next 14 expects React 18; Next 15 ships React 19. A mismatch between the
 //    repo's pin and what actually resolved is how the wrong React reaches a
 //    deployment while the lockfile still says otherwise.
 if (next && react) {

@@ -3,8 +3,54 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V82**. The blank charts, finally: React 19 renamed the symbol that identifies an
-element, and the copy of `react-is` recharts depends on still tests for the old one.
+Last pass: **V83**. The charts were never one bug. Production runs React 19 against a recharts
+that declared it did not support React 19, and an unsupported pairing fails in a new place
+every time you fix the last one.
+
+---
+
+## Fixed in V83
+
+### Stop debugging the symptoms of an unsupported pairing
+
+V82 fixed a real thing — recharts' `ResponsiveContainer` asking `react-is@16` whether a React
+19 element is an element, getting `false`, and handing the chart no size. Charts went from
+absent to present. They were also wrong: 22 line elements with **empty `d` attributes**, an
+x-axis with **no ticks**, a y-axis with two. The series existed and had no geometry.
+
+That is what an unsupported dependency looks like from the inside. The check that should have
+been run first is one line:
+
+```
+recharts 2.12.7 peers: react "^16.0.0 || ^17.0.0 || ^18.0.0"    ← no 19
+```
+
+recharts 2.12.7 does not support React 19 and never claimed to. Every failure we chased —
+the container that rendered nothing, then the series with no points, then the axes with no
+ticks — was a different internal consequence of the same unsupported combination, and each
+one looked like a fresh bug with its own plausible cause. Four releases went into treating
+them as four bugs.
+
+**The fix is to make the pairing supported.** recharts is now pinned to **2.15.4**, the first
+2.x line that declares `react "^16 || ^17 || ^18 || ^19"` — and, not coincidentally, the
+release where `ResponsiveContainer` stopped calling `react-is` at all. Verified by rendering
+a real chart under both Reacts outside the browser: React 18 and React 19 both produce a
+proper path, where 2.12.7 + React 19 is the combination production was running.
+
+V82's `ChartBox` stays. With 2.15.4 it is no longer load-bearing, but it removes the app's
+dependence on recharts' internal element handling entirely, it costs fifteen lines, and this
+exact class of failure has now cost four releases. `react-is@16` still answers `false` for a
+React 19 element — that hazard has not gone anywhere, it simply no longer sits in our path.
+
+`npm run doctor` now asks the question that would have ended this in one step: does the
+installed recharts declare support for the installed React? It prints the peer range and says
+so plainly.
+
+**The deployment is still worth reconciling.** Your repo pins Next 14.2.15 and React 18.3.1,
+and Next 14 bundles its own React 18 for the App Router — a Next 14 build *cannot* produce
+the `react.transitional.element` symbol production is producing. Whatever builds the
+Cloudflare frontend is not building what this repo describes. The charts no longer care, but
+anything else relying on that pin still does.
 
 ---
 

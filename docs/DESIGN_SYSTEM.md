@@ -4021,3 +4021,62 @@ because the path no longer asks anyone else what a React element is.
 > Prefer deleting a dependency on someone else's assumption over asserting the
 > assumption harder. A pin fails silently in an environment you cannot see; code
 > that never needed the pin cannot.
+
+---
+
+## Ask the library what it supports before debugging what it does
+
+Four releases went into the blank charts. Each one found a real mechanism, fixed
+it, and shipped: a facet nothing derived, a scalar frozen before the merges, a
+`react-is` check that could not recognise a React 19 element. Each fix was
+correct. None of them was the answer, because there was no single answer to find.
+
+The answer was one line in a file nobody had opened:
+
+```
+recharts 2.12.7 peers: react "^16.0.0 || ^17.0.0 || ^18.0.0"
+```
+
+Production ran React 19. The library said, in writing, that it did not support
+that. Every symptom we chased was a different internal consequence of the same
+unsupported pairing — and the reason it was so expensive is that an unsupported
+pairing does not fail once. It fails in a new place each time you fix the last
+one, and every one of those places has a plausible local explanation that
+survives scrutiny right up until the next release proves it incomplete.
+
+The tell, in hindsight, was the *shape* of the debugging: three consecutive
+diagnoses that each explained the symptom, were each verified, and were each
+followed by the symptom returning in a slightly different form. One wrong theory
+is a wrong theory. Three correct-but-insufficient theories in a row means the
+thing being debugged is not a bug.
+
+> When a fix keeps almost working, stop looking for the next mechanism and check
+> the compatibility contract. Peer dependency ranges are the cheapest diagnostic
+> in the ecosystem and the last one anybody reads.
+
+---
+
+## Fix the pairing, not the interaction
+
+Once the mismatch was clear there were two candidate fixes: patch around each
+incompatibility as it surfaced, or make the combination a supported one.
+
+Patching around them is unbounded work. We had already written a shim for
+`ResponsiveContainer`; the next symptom would have needed a shim for how the
+chart resolves its graphical children, and the one after that something else,
+each verified against a production we cannot reproduce locally. That is a
+maintenance surface with no natural end, built on the internals of a library
+that has no obligation to keep them stable.
+
+Upgrading recharts to the first version that declares React 19 support closed
+all of them at once — including ones we had not found yet — because the
+maintainers had already done that work deliberately, in one place, with tests.
+
+The shim stayed anyway, and the reason is worth separating from the fix: it is
+cheap, it is already verified, and it removes a dependency on someone else's
+internals rather than adding one. Keeping a good defence is not the same as
+relying on it.
+
+> Prefer the version bump that makes a combination supported over the shim that
+> makes one symptom of an unsupported combination go away. The first has a
+> maintainer behind it; the second has only you.
