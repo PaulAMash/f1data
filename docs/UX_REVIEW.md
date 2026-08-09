@@ -3,9 +3,108 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V83**. The charts were never one bug. Production runs React 19 against a recharts
-that declared it did not support React 19, and an unsupported pairing fails in a new place
-every time you fix the last one.
+Last pass: **V84**. The slow production page was not the free hosting tier. It was twenty-four
+sequential requests for driver photographs, and a scientific stack imported on every boot to
+set one HTTP header.
+
+---
+
+## Fixed in V84
+
+### The page was slow because it asked for the same season, twenty-four times, one at a time
+
+The complaint was that a race page could take 30–60 seconds in production and a second on a
+laptop, and the obvious suspect was Render's free instance. The obvious suspect was wrong, and
+the way to know that was to stop reasoning about hosting tiers and measure the request.
+
+Production cannot be reached from the development container, and a stopwatch on the browser
+cannot separate "slow host" from "slow pipeline" — every candidate explanation produces the
+same observation, *the page took a minute*. So two things were built instead of guessed at:
+
+* **`backend/app/timing.py`** — phase timings emitted as a `Server-Timing` response header,
+  which Chrome renders natively under Network → Timing. Reading a production request is now
+  "open the tab, click the request, look". No tooling, no build flag, no deploy of a profiler.
+* **A synthetic upstream behind the real adapters**, with one known latency per round trip.
+  That does not predict production's numbers; it exposes production's *shape* — how many
+  round trips a session costs, in what order, and how many overlap. Wall time then follows
+  from arithmetic anyone can check.
+
+The shape was damning. One cold session load made **40 upstream round trips, 28 of them
+strictly sequential**, and at a synthetic 200 ms per request the breakdown was:
+
+```
+fetch.openf1          669 ms   12 requests, already parallel
+enrich.retirements    401 ms    2 requests
+enrich.headshots     5224 ms   26 requests, ALL SEQUENTIAL   ← 83% of the request
+everything else        ~1 ms
+```
+
+**Driver portraits were the product's dominant cost.** `season_media_map()` walked up to
+twenty-four OpenF1 meetings one after another, and `resolve()` called it *unconditionally* —
+including on the ordinary run where the official F1 driver listing had already named every
+driver and the map was built, never read, and thrown away. It also ran on the cache-hit path,
+so a cached session paid it too.
+
+Three changes, none of them architectural:
+
+1. **The season media map is built only when the earlier sources left somebody unresolved**,
+   and its meetings are fetched concurrently. It is a last resort; it was being treated as a
+   peer.
+2. **The independent enrichment steps run at the same time** (`_together`). Their order was
+   never a dependency — it was the order they were added. Stage one introduces facets, stage
+   two decorates them, and within each stage nothing reads another's output.
+3. **`pitwall`/`fastf1` is no longer imported at module load.** `_brand_http_session()` ran as
+   a module-level statement, so importing the adapter pulled in the MCP SDK, fastf1, pandas
+   and matplotlib — 1.4 s of a 1.9 s boot — in order to set a `User-Agent` on a *fallback*
+   source that many requests never touch. It now brands on first use, through `_pitwall()`,
+   so no request can reach the archive unbranded.
+
+Measured on the same harness, before and after:
+
+| at 500 ms/request | before | after |
+| --- | --- | --- |
+| cold load | 15,544 ms (40 trips) | **2,532 ms** (15 trips) |
+| warm / cached load | 508 ms (1 trip) | **19 ms** (0 trips) |
+| process boot | ~2,400 ms | **~460 ms** |
+
+And the part that makes it a performance fix rather than a data regression: the whole
+normalized session was dumped to JSON before and after and digested. **Identical —
+`e10fc681abe62ffe`.** Same facets, same counts, same portraits resolved, same `total_laps`.
+No source removed, no timeout shortened, no accuracy traded.
+
+### Would paying for a bigger instance have fixed it?
+
+No — and this is worth stating precisely, because it was the actual question behind the task.
+With network latency set to zero the entire pipeline costs **~71 ms** of CPU: 43 ms to load
+and merge, 10 ms to analyse, 18 ms to serialise, and a 494 KiB payload that gzips to 11 KiB.
+A faster CPU would have improved 71 ms of a 30-second page.
+
+Where an upgrade *does* help is cold start — an instance that never sleeps never spins up. But
+1.4 s of that cold start was ours, and is now gone. Two related facts about the free tier are
+real and worth knowing: its disk is **ephemeral**, so both the session cache and the portrait
+maps are wiped on every spin-down, which is why the 30-day cache almost never survives in
+production.
+
+### A failed lookup was being retried on every request, forever
+
+Both season maps only wrote themselves to disk when they came back with something. That reads
+like caution and behaves like a leak: a listing endpoint that answered with nothing, or did
+not answer at all, was re-asked on **every** session request — including ones served entirely
+from cache. One unreachable host added its own latency to every page in the product for as
+long as it stayed down. An empty answer is now cached too, for an hour: long enough that a
+burst of page loads pays once, short enough to repair itself when the source returns.
+
+### Ask says what it is
+
+Ask is genuinely good and genuinely unfinished, and the product was saying neither. It now
+carries a `BETA` pill on its tab — the same geometry as the `SOON` marks in the nav bar, so a
+reader who has seen one reads the other without being taught a second convention, and the
+accent colour rather than the amber this product reserves for warnings and demo data.
+
+Above the input, one strip and three clauses: what Ask is, what is getting better, and that
+what people reach for is what gets built next. The register is "this is good and getting
+sharper", never "this may not work" — a reader who leaves that box trusting the answers *less*
+than they should has been badly served by a notice meant to be honest.
 
 ---
 

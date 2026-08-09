@@ -14,12 +14,15 @@ which facet came from where. Mock is used only on total failure or when forced.
 from __future__ import annotations
 
 import logging
+import threading
 import time
+from typing import Callable
 
 from .. import cache
 from ..analysis.events import infer_overtakes
 from ..analysis.normalize import order_classification
 from ..config import get_settings
+from .. import timing
 from ..models import (
     DataSource,
     Driver,
@@ -185,7 +188,8 @@ def load_session(year: int, gp: str, session_type: str,
     if settings.enable_live_fetch:
         for name, fetch in _chain(year):
             try:
-                session = fetch(year, gp, session_type)
+                with timing.phase(f"fetch.{name}"):
+                    session = fetch(year, gp, session_type)
                 _post_process(session, primary=name)
                 try:
                     cache.save(session)
@@ -206,6 +210,15 @@ def load_session(year: int, gp: str, session_type: str,
     raise DataUnavailableError(year, gp, session_type, attempts)
 
 
+# The source report is the one thing several enrichment steps write to, and
+# since V84 those steps run at the same time (see `_together`). Both statements
+# below are read-modify-write of a whole list, so two steps landing together
+# could rebuild from the same starting point and lose one of the two facets —
+# which would show up as a phantom "Partial data" chip that no source explains.
+# The lock is uncontended in every realistic case and costs nothing.
+_report_lock = threading.Lock()
+
+
 def _set_facet(session: RaceSession, name: str, source: str,
                confidence: str = "high", detail: str | None = None) -> None:
     """Record where a facet came from — REPLACING any existing row for that
@@ -213,10 +226,11 @@ def _set_facet(session: RaceSession, name: str, source: str,
     from the missing list."""
     if not session.source_report:
         return
-    session.source_report.facets = (
-        [f for f in session.source_report.facets if f.facet != name]
-        + [FacetSource(facet=name, source=source, confidence=confidence, detail=detail)])
-    session.source_report.missing = [m for m in session.source_report.missing if m != name]
+    with _report_lock:
+        session.source_report.facets = (
+            [f for f in session.source_report.facets if f.facet != name]
+            + [FacetSource(facet=name, source=source, confidence=confidence, detail=detail)])
+        session.source_report.missing = [m for m in session.source_report.missing if m != name]
 
 
 def _merge_missing_facets(session: RaceSession, primary: str) -> None:
@@ -1011,41 +1025,110 @@ def _finalize_session(session: RaceSession) -> None:
     _audit_report(session)
 
 
+def _together(steps: list[tuple[str, bool, Callable[[], None]]]) -> None:
+    """Run independent enrichment steps at the same time instead of in turn.
+
+    Each step is (phase name, whether a failure is survivable, callable).
+
+    The order they were WRITTEN in was never a dependency — it was just the
+    order they were added. Every step here reads and writes a different facet,
+    so the only thing the sequence bought was a wall clock equal to the sum of
+    every upstream's latency, paid by whoever opened the page. Concurrently, it
+    is roughly the slowest one.
+
+    Two details this has to get right, and both are about not changing anything
+    except the waiting:
+
+    * `contextvars` do not cross a thread boundary, so a worker would record its
+      timing into nothing and the phase would vanish from Server-Timing exactly
+      when it mattered. Each step therefore runs inside its own copy of the
+      request context — which shares the same buffer object, so the appends land
+      where the header will look for them. A separate copy per step because one
+      Context cannot be entered by two threads at once.
+    * A step that could previously fail the whole fetch still can. Swallowing
+      those here would silently convert "this source did not work, try the next
+      one" into "this source worked and returned less", which is a data-quality
+      regression wearing a performance fix's clothes.
+    """
+    def run(name: str, fn) -> None:
+        with timing.phase(name):
+            fn()
+
+    if len(steps) < 2:
+        for name, survivable, fn in steps:
+            try:
+                run(name, fn)
+            except Exception as exc:  # noqa: BLE001
+                if not survivable:
+                    raise
+                log.info("%s failed: %s", name, exc)
+        return
+
+    from concurrent.futures import ThreadPoolExecutor
+    import contextvars
+
+    with ThreadPoolExecutor(max_workers=len(steps)) as pool:
+        futures = [(name, survivable,
+                    pool.submit(contextvars.copy_context().run, run, name, fn))
+                   for name, survivable, fn in steps]
+    fatal: Exception | None = None
+    for name, survivable, fut in futures:
+        try:
+            fut.result()
+        except Exception as exc:  # noqa: BLE001
+            if survivable:
+                log.info("%s failed: %s", name, exc)
+            elif fatal is None:
+                fatal = exc
+    if fatal is not None:
+        raise fatal
+
+
 def _post_process(session: RaceSession, primary: str) -> None:
     """Enrich a freshly-fetched real session and finalize its source report."""
     session.category = session.category or session_category(session.session_type)
 
-    # fill hollow facets from other sources before any analysis-dependent steps
-    _merge_missing_facets(session, primary)
-    # …including the stints / race control / weather that only the F1 archive
-    # has. Skipping this step is why every session reported partial data.
-    _merge_from_archive(session, primary)
+    # STAGE ONE — the two steps that can INTRODUCE a facet.
+    #
+    # They fill disjoint sets (this one laps / results / pit stops / drivers,
+    # the archive one stints / race control / weather), so they do not contend;
+    # but everything downstream reads what they produced, so nothing else may
+    # start until both have finished. `_set_facet` is the one place they both
+    # write, and it takes a lock for exactly that reason.
+    _together([
+        # fill hollow facets from other sources before any analysis-dependent steps
+        ("merge.facets", False, lambda: _merge_missing_facets(session, primary)),
+        # …including the stints / race control / weather that only the F1 archive
+        # has. Skipping this step is why every session reported partial data.
+        ("merge.archive", False, lambda: _merge_from_archive(session, primary)),
+    ])
 
-    # retirement reasons for the DNF badge (jolpica has them, live timing doesn't)
-    _enrich_retirements(session, primary)
-
-    # qualifying: per-segment Q1/Q2/Q3 bests from the archive (live timing
-    # exposes laps but not which knockout segment they belonged to)
-    _enrich_quali_segments(session, primary)
-
-    # pit-stop timing (may pull durations from Jolpica)
-    try:
-        pitstop_service.enrich(session, allow_network=True)
-    except Exception as exc:  # noqa: BLE001
-        log.info("pitstop enrich failed: %s", exc)
-
-    # driver portraits: season-wide map fills what the session record lacked
-    try:
-        headshots.enrich(session)
-    except Exception as exc:  # noqa: BLE001
-        log.info("headshot enrich failed: %s", exc)
+    # STAGE TWO — four decorations of what stage one settled.
+    #
+    # Retirements and qualifying segments both touch classification rows but can
+    # never both run (one is races-only, the other qualifying-only, and a
+    # session is one or the other). Pit stops touch pit stops; portraits touch
+    # drivers. Nothing here reads another's output.
+    _together([
+        # retirement reasons for the DNF badge (jolpica has them, live timing doesn't)
+        ("enrich.retirements", False, lambda: _enrich_retirements(session, primary)),
+        # qualifying: per-segment Q1/Q2/Q3 bests from the archive (live timing
+        # exposes laps but not which knockout segment they belonged to)
+        ("enrich.quali", False, lambda: _enrich_quali_segments(session, primary)),
+        # pit-stop timing (may pull durations from Jolpica)
+        ("enrich.pitstops", True, lambda: pitstop_service.enrich(session, allow_network=True)),
+        # driver portraits: season-wide map fills what the session record lacked
+        ("enrich.headshots", True, lambda: headshots.enrich(session)),
+    ])
 
     # the entry list, before anything that resolves a name from a code
-    _backfill_drivers(session, primary)
+    with timing.phase("derive.drivers"):
+        _backfill_drivers(session, primary)
 
     # everything from here needs no provider and no network — and is shared
     # with the demo path, so the two cannot drift apart again
-    _finalize_session(session)
+    with timing.phase("finalize"):
+        _finalize_session(session)
 
     if session.source_report:
         session.source_report.cache_key = cache.cache_key(

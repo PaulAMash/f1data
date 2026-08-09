@@ -37,7 +37,7 @@ const RACE_TABS = [
   { id: "strategy", label: "Strategy", icon: <Braces size={14} /> },
   { id: "pace", label: "Pace", icon: <Gauge size={14} /> },
   { id: "compare", label: "Compare", icon: <GitCompareArrows size={14} /> },
-  { id: "ask", label: "Ask", icon: <MessageSquareText size={14} /> },
+  { id: "ask", label: "Ask", icon: <MessageSquareText size={14} />, tag: "beta" as const },
   /* NO STANDINGS TAB, AND THE REASON IS THE WHOLE TAB ROW.
 
      Every tab here is a reading of ONE SESSION: the same ninety minutes, told
@@ -56,14 +56,14 @@ const QUALI_TABS = [
   { id: "laps", label: "Lap Analysis", icon: <LineChart size={14} /> },
   { id: "pace", label: "Pace", icon: <Gauge size={14} /> },
   { id: "compare", label: "Compare", icon: <GitCompareArrows size={14} /> },
-  { id: "ask", label: "Ask", icon: <MessageSquareText size={14} /> },
+  { id: "ask", label: "Ask", icon: <MessageSquareText size={14} />, tag: "beta" as const },
 ];
 const PRACTICE_TABS = [
   { id: "story", label: "Session Story", icon: <BookOpen size={14} /> },
   { id: "pace", label: "Pace", icon: <Gauge size={14} /> },
   { id: "runs", label: "Runs & Tyres", icon: <Layers size={14} /> },
   { id: "compare", label: "Compare", icon: <GitCompareArrows size={14} /> },
-  { id: "ask", label: "Ask", icon: <MessageSquareText size={14} /> },
+  { id: "ask", label: "Ask", icon: <MessageSquareText size={14} />, tag: "beta" as const },
 ];
 // Tabs where Simple/Advanced actually changes the content — the toggle hides
 // elsewhere. Race Story switches between the plain recap (top-10, podium
