@@ -122,3 +122,101 @@ def test_custom_date_ranges_also_produce_postgres_safe_queries(captured):
     now = datetime.now(timezone.utc).date().isoformat()
     result = queries.dashboard("custom", start="2020-01-01", end=now)
     assert result["available"] is True
+
+
+# =========================================================================== #
+# V89 verification pass — two holes the V86.1 coverage left open.
+#
+# The tests above prove the READ queries are placeholder-safe. Two things they
+# cannot see, both of which are the same trap that took the dashboard down:
+#
+#   1. They check the eras query's TEXT, never its RESULT. Changing the pattern
+#      to something wrong (or dropping the CASE) keeps every assertion above
+#      green while the dashboard silently misreports historical vs current use.
+#   2. They only spy `store.query`, which the WRITE path and the DDL never go
+#      through — so a literal `%` added to an INSERT, an UPDATE or the prune
+#      rollup would be exactly as invisible as `LIKE '/history%'` was.
+# =========================================================================== #
+def _capture_postgres_sql(monkeypatch, emit) -> list[str]:
+    """The exact SQL a callable emits with the Postgres dialect forced.
+
+    Records rather than executes, so the real Postgres strings can be captured
+    on a machine with no Postgres — which is every machine this suite runs on.
+    """
+    sink: list[str] = []
+
+    class _CaptureOnly:
+        def cursor(self):
+            return self
+
+        def execute(self, sql, *_a):
+            sink.append(sql)
+
+        def executemany(self, sql, *_a):
+            sink.append(sql)
+
+        def commit(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(store, "_DIALECT", store._Dialect("postgres"))
+    monkeypatch.setattr(store, "_ENABLED", True)
+    emit(_CaptureOnly())
+    return sink
+
+
+def test_the_write_path_and_ddl_are_postgres_safe(monkeypatch):
+    """Every statement that is not a dashboard read, checked the same way."""
+    statements = _capture_postgres_sql(monkeypatch, lambda conn: None)
+
+    pg = store._Dialect("postgres")
+    # DDL: executed without params, so psycopg does not scan it — but a stray
+    # placeholder there would still be a hard failure at first boot.
+    statements += [pg.sql(s) for s in store._schema()]
+    # The insert/update statements the app actually submits, referenced rather
+    # than copied so this cannot drift away from the code it guards.
+    statements.append(pg.sql(store._EVENT_SQL))
+    statements.append(pg.sql(store._ASK_SQL))
+
+    # The queued write statements, captured from the real call sites.
+    queued: list[str] = []
+    monkeypatch.setattr(store, "_submit", lambda sql, params: queued.append(pg.sql(sql)))
+    analytics.record("page_view", visitor="v", visit="s", path="/explorer")
+    analytics.record_ask(question="q", outcome="answered", topic="results")
+    analytics.feedback("some-ref", True)
+    assert len(queued) == 3, "expected an event insert, an ask insert and a feedback update"
+    statements += queued
+
+    assert len(statements) >= 10, "the capture is stale — statements went missing"
+    for sql in statements:
+        _validate_for_postgres(sql, (1,))
+
+
+def test_the_prune_statements_are_postgres_safe(monkeypatch):
+    """The rollup is the most intricate SQL in the package and runs unattended
+    in a background thread, where a failure is a log line nobody reads."""
+    statements = _capture_postgres_sql(monkeypatch, store._prune)
+    assert len(statements) == 3, f"expected rollup + two deletes, got {len(statements)}"
+    assert any("ON CONFLICT" in s for s in statements), "the rollup upsert went missing"
+    for sql in statements:
+        _validate_for_postgres(sql, (1,))
+
+
+def test_history_pages_are_still_counted_as_historical(captured):
+    """The behaviour the `%%` edit had to preserve, asserted rather than assumed.
+
+    `%%` is one literal `%` to psycopg and a redundant second wildcard to
+    SQLite's LIKE, so both engines match the same paths. Nothing in the suite
+    checked that, which meant the fix for a 500 could have quietly become a
+    wrong number on the dashboard instead.
+    """
+    now = datetime.now(timezone.utc)
+    for path in ("/history", "/history/1998", "/explorer", "/explorer", "/"):
+        analytics.record("page_view", visitor="v1", visit="s1", path=path, at=now)
+    store.flush(5)
+
+    eras = {row["era"]: row["n"] for row in queries.dashboard("7d")["usage"]["eras"]}
+    assert eras.get("historical") == 2, f"/history pages miscounted: {eras}"
+    assert eras.get("current") == 3, f"non-history pages miscounted: {eras}"
