@@ -1167,9 +1167,21 @@ def test_standings_endpoint_stays_offline_in_demo_mode(monkeypatch):
     assert r.json()["standings"], "the table itself still comes back"
     assert called == [], "no portrait lookup while the app is offline"
 
-    # and with the network allowed, the join is attempted exactly once
+    # And with the network allowed, the join is attempted exactly once.
+    #
+    # The rows are stubbed rather than left to fall out of a failed fetch: V85
+    # stopped the archive's failure path from returning the demo grid (a 429
+    # used to produce the 2025 top ten under whatever season was on screen), so
+    # "live enabled but unreachable" now correctly yields no rows — and no rows
+    # is nobody to look a portrait up for. What this test is about is that ONE
+    # lookup covers a whole table, which needs a table.
+    from app.adapters import history_adapter
+    from app.models import DataSource
     monkeypatch.setattr(settings, "mock_mode", False)
     monkeypatch.setattr(settings, "enable_live_fetch", True)
+    monkeypatch.setattr(history_adapter, "get_standings", lambda year, kind: (
+        [{"position": 1, "name": "Max Verstappen", "code": "VER",
+          "team": "Red Bull Racing", "points": 100.0, "wins": 5}], DataSource.LIVE))
     r = client.get("/api/history/standings", params={"year": 2026, "type": "driver"})
     assert r.status_code == 200
     assert len(called) == 1 and called[0], "one lookup, for the whole table"

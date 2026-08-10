@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { CheckCircle2, Database, RefreshCw, Trash2, XCircle } from "lucide-react";
 import { AlertTriangle } from "@/components/ui/MotionIcon";
 import { api } from "@/lib/api";
+import { useFreshEffect } from "@/lib/fresh";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/misc";
@@ -38,10 +39,16 @@ export function DataSourcesPanel({
   const [probeError, setProbeError] = useState<string | null>(null);
   const [cleared, setCleared] = useState<number | null>(null);
 
-  useEffect(() => {
+  // Keyed on the selection, so it has the same hazard every other
+  // selection-keyed fetch has: change race twice quickly and the slower answer
+  // describes the race you left. On the panel whose entire job is saying where
+  // the data came from, that is the worst possible thing to be wrong about.
+  useFreshEffect((fresh) => {
     setLoading(true);
     api.sourceReport(year, gp, session)
-      .then(setReport).catch(() => setReport(null)).finally(() => setLoading(false));
+      .then((r) => { if (fresh()) setReport(r); })
+      .catch(() => { if (fresh()) setReport(null); })
+      .finally(() => { if (fresh()) setLoading(false); });
   }, [year, gp, session]);
 
   // A source check that fails is itself a finding, and the panel whose entire

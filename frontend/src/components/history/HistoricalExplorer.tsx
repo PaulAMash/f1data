@@ -1,8 +1,9 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { AlertTriangle } from "@/components/ui/MotionIcon";
 import { api } from "@/lib/api";
+import { useFreshEffect } from "@/lib/fresh";
 import { useIsSimple } from "@/lib/mode";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { InfoTip } from "@/components/ui/InfoTip";
@@ -34,12 +35,28 @@ export function HistoricalExplorer() {
     seeded.current = true;
     setYear(prefs.season);
   }, [ready, prefs.season]);
-  const [events, setEvents] = useState<{ name: string }[]>([]);
+  /* THE CALENDAR CARRIES THE SEASON IT IS THE CALENDAR OF.
+     `events` was a bare list, so between "the year changed" and "the new
+     calendar arrived" the component held the OLD season's Grand Prix under the
+     NEW season's year — and the two effects downstream, which key on
+     (year, event), fired immediately on that pair. Measured: two requests for
+     sessions and two for results per season change, the first of each for a
+     combination that had never existed. Pairing the list with its year makes
+     that combination unrepresentable rather than merely unlikely. */
+  const [calendar, setCalendar] = useState<{ year: number; events: { name: string }[] }>(
+    { year: 0, events: [] });
   /* Whether the CALENDAR could be read, which is a different failure from
      whether a RESULT could be. Both used to land on "No results found for this
      selection" — a sentence about a selection the reader was never able to
      make, under a picker showing an em dash. */
   const [calendarFailed, setCalendarFailed] = useState(false);
+  /* And whether it is still being read, which is a third state and used to be
+     nobody's. While a new season's calendar was in flight there was no Grand
+     Prix to fetch results for, so the results effect returned early and left
+     `loading` exactly as the previous season had left it — true. On a season
+     whose calendar then failed, that is a spinner that never stops, over a
+     retry card the reader never gets to see. Three questions, three states. */
+  const [calendarLoading, setCalendarLoading] = useState(true);
   const [event, setEvent] = useState("");
   const [sessions, setSessions] = useState<{ available: string[]; unavailable: string[]; note?: string }>({
     available: ["Qualifying", "Race"], unavailable: [],
@@ -49,11 +66,31 @@ export function HistoricalExplorer() {
   const [loading, setLoading] = useState(false);
   const [nonce, setNonce] = useState(0);
 
+  /* -----------------------------------------------------------------------
+     THREE FETCHES IN A CHAIN, AND NONE OF THEM USED TO CHECK WHETHER IT WAS
+     STILL WANTED.
+
+     Season → calendar → sessions → results. Change the season three times
+     inside a second and three chains are running at once, writing into the
+     same state in whatever order the network finishes them. What that produced
+     is exactly what it sounds like: 2019's calendar under a picker reading
+     2023, a Grand Prix picked out of the wrong season, and then a perfectly
+     truthful "no results found" about a question nobody asked. An older chain
+     that happened to fail also set `calendarFailed`, so the page could show
+     "the archive did not return a calendar for 2023" while 2023's calendar sat
+     loaded in memory — an error state with a Retry button that could not fix
+     it, because nothing was broken.
+
+     `useFreshEffect` hands each run a `fresh()` that is false the moment a
+     newer run starts, so a retired chain can still finish; it just cannot
+     write. See lib/fresh.
+     ----------------------------------------------------------------------- */
+
   // seasons (1950-present); fall back to a generated range if the source is down
-  useEffect(() => {
+  useFreshEffect((fresh) => {
     api.histSeasons()
-      .then((r) => { if (r.seasons?.length) setYears(r.seasons.map((s: any) => s.year)); })
-      .catch(() => setYears(FALLBACK_YEARS));
+      .then((r) => { if (fresh() && r.seasons?.length) setYears(r.seasons.map((s: any) => s.year)); })
+      .catch(() => { if (fresh()) setYears(FALLBACK_YEARS); });
   }, []);
 
   /* Events for the selected year — the ones that have actually been run.
@@ -66,49 +103,77 @@ export function HistoricalExplorer() {
 
      The most recent race is selected rather than the first, because the thing
      somebody opening a season in progress wants is what just happened. */
-  useEffect(() => {
-    setEvents([]); setEvent(""); setCalendarFailed(false);
+  useFreshEffect((fresh) => {
+    setEvent(""); setCalendarFailed(false); setCalendarLoading(true);
     api.histEvents(year)
       .then((r) => {
+        if (!fresh()) return;
         const evs = (r.events ?? [])
           .filter((e: any) => e.completed !== false)
           .map((e: any) => ({ name: e.name }));
-        setEvents(evs);
+        setCalendar({ year, events: evs });
         setCalendarFailed(evs.length === 0);
-        if (evs.length) setEvent(evs[evs.length - 1].name);
+        setEvent(evs.length ? evs[evs.length - 1].name : "");
       })
-      .catch(() => { setEvents([]); setCalendarFailed(true); });
-  }, [year]);
+      .catch(() => { if (fresh()) { setCalendar({ year, events: [] }); setCalendarFailed(true); } })
+      .finally(() => { if (fresh()) setCalendarLoading(false); });
+  }, [year, nonce]);
 
-  // sessions for the selected event
-  useEffect(() => {
-    if (!event) return;
+  /* The one condition everything downstream waits on: the calendar on screen
+     is this season's calendar. Derived, not stored — two pieces of state that
+     have to agree are two pieces of state that eventually will not. */
+  const dated = calendar.year === year;
+  const events = dated ? calendar.events : [];
+
+  /* Sessions for the selected event.
+
+     `available` IS A LIST, AND IT ARRIVED AS `false`. The historical routes
+     answer a source failure with HTTP 200 and a structured body, which is the
+     right call — but the body's generic failure shape set `available: false`,
+     and on this one route `available` is the array of session names. So
+     `r.available.includes(...)` was called on a boolean, threw a TypeError
+     inside a promise, and left this component wedged: the Session picker never
+     updated and the results never came. The server no longer sends that shape
+     (see main._hist_guard), and this no longer trusts it to: a list is used
+     when it is a list, and the honest fallback is used when it is not. Both
+     ends fixed, because the one that was going to be forgotten is the one that
+     is not deployed yet. */
+  useFreshEffect((fresh) => {
+    if (!dated || !event) return;
     api.histSessions(year, event)
       .then((r) => {
-        setSessions({ available: r.available ?? ["Race"], unavailable: r.unavailable ?? [], note: r.note });
-        setSession((prev) => (r.available?.includes(prev) ? prev : (r.available?.[r.available.length - 1] ?? "Race")));
+        if (!fresh()) return;
+        const list = Array.isArray(r?.available) && r.available.length
+          ? r.available : ["Qualifying", "Race"];
+        setSessions({
+          available: list,
+          unavailable: Array.isArray(r?.unavailable) ? r.unavailable : [],
+          note: r?.note,
+        });
+        setSession((prev) => (list.includes(prev) ? prev : list[list.length - 1]));
       })
-      .catch(() => setSessions({ available: ["Qualifying", "Race"], unavailable: [] }));
-  }, [year, event]);
+      .catch(() => {
+        if (fresh()) setSessions({ available: ["Qualifying", "Race"], unavailable: [] });
+      });
+  }, [year, event, dated, nonce]);
 
-  // auto-fetch results
-  const fetchResults = useCallback(() => {
-    if (!event || !session) return;
+  /* The results themselves. `nonce` is the Retry signal — it is not read in
+     the body, it is there to make this run again. */
+  useFreshEffect((fresh) => {
+    if (!dated || !event || !session) { setResults(null); setLoading(false); return; }
     setLoading(true); setResults(null);
     api.histResults(year, event, session)
-      .then(setResults)
-      .catch((e) => setResults({ available: false, error: "source_unavailable", message: e?.message }))
-      .finally(() => setLoading(false));
-    // `nonce` is not read in here; it is the retry signal. Bumping it has to
-    // produce a new callback so the effect below re-runs and fetches again.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [year, event, session, nonce]);
-
-  useEffect(() => { fetchResults(); }, [fetchResults]);
+      .then((r) => { if (fresh()) setResults(r); })
+      .catch((e) => {
+        if (fresh()) setResults({ available: false, error: "source_unavailable", message: e?.message });
+      })
+      .finally(() => { if (fresh()) setLoading(false); });
+  }, [year, event, session, dated, nonce]);
 
   // Only offer sessions the historical source actually supports — no "(n/a)" options.
   const allSessions = sessions.available;
   const isUnavailableSession = false;
+  const busy = calendarLoading || loading;
 
   return (
     <Card>
@@ -122,25 +187,33 @@ export function HistoricalExplorer() {
           <Sel label="Grand Prix" className="col-span-2 sm:col-span-1" value={event} onChange={setEvent}
             options={events.length
               ? events.map((e) => ({ value: e.name, label: e.name }))
-              : [{ value: "", label: calendarFailed ? "No calendar for this season" : "Loading…" }]} />
+              : [{ value: "", label: calendarLoading ? "Loading…" : "No calendar for this season" }]} />
           <Sel label="Session" value={session} onChange={setSession}
             options={allSessions.map((s) => ({ value: s, label: s }))} />
-          <button onClick={() => setNonce((n) => n + 1)} disabled={loading}
+          {/* Retry has to stay reachable while something is in flight: a
+              request that never lands is precisely when a reader wants it. */}
+          <button onClick={() => setNonce((n) => n + 1)}
             className="pill-btn h-[38px] justify-center self-end">
-            <RefreshCw size={14} className={cx(loading && "animate-spin")} /> Refresh
+            <RefreshCw size={14} className={cx(busy && "animate-spin")} /> Refresh
           </button>
         </div>
 
-        {/* body */}
-        {loading ? (
-          <LoadingState title="Fetching results…"
-            hint="Pulling the official classification from the archive — this is usually quick." size={32} />
-        ) : isUnavailableSession ? (
-          <Unavailable note={sessions.note ?? `${session} isn't available from the historical source for this event.`} />
+        {/* Body. The order is the order the questions are answered in: is there
+            a calendar, did it fail, is there a result, did that fail. Results
+            used to be asked first, which is how a stale spinner outranked a
+            calendar that had already given up. */}
+        {calendarLoading ? (
+          <LoadingState title={`Loading the ${year} season…`}
+            hint="Reading the calendar from the official archive." size={32} />
         ) : calendarFailed ? (
           <ErrorRetry
             message={`The archive did not return a calendar for ${year}. That is the source being unreachable rather than a season with no races in it.`}
             onRetry={() => setNonce((n) => n + 1)} />
+        ) : loading ? (
+          <LoadingState title="Fetching results…"
+            hint="Pulling the official classification from the archive — this is usually quick." size={32} />
+        ) : isUnavailableSession ? (
+          <Unavailable note={sessions.note ?? `${session} isn't available from the historical source for this event.`} />
         ) : results?.error ? (
           <ErrorRetry message={results.message ?? "The historical source was unreachable."} onRetry={() => setNonce((n) => n + 1)} />
         ) : results && results.available && results.rows?.length ? (

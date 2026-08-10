@@ -1,12 +1,14 @@
 
 "use client";
-import { useEffect, useMemo, useState } from "react";
-import { Trophy, Users } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { RefreshCw, Trophy, Users } from "lucide-react";
+import { AlertTriangle } from "@/components/ui/MotionIcon";
 import { Tabs } from "@/components/ui/Tabs";
 import { Skeleton, EmptyState } from "@/components/ui/misc";
 import { ConstructorBadge } from "@/components/ui/ConstructorBadge";
 import { DriverAvatar } from "@/components/ui/DriverBadge";
 import { api } from "@/lib/api";
+import { useFreshEffect } from "@/lib/fresh";
 import { teamColour, teamName } from "@/lib/constructors";
 import { useLivery } from "@/lib/liveryColor";
 import { useLocale } from "@/lib/locale";
@@ -89,13 +91,21 @@ interface Row {
 /* one path, with a second only where the first cannot reach.                  */
 /* -------------------------------------------------------------------------- */
 
-export function Standings({ year, compact, roster, portraits = false }: {
+export function Standings({ year, compact, roster, portraits = false, onSource }: {
   year: number;
   compact?: boolean;
   /** The session's own enriched drivers, when a session is on screen. */
   roster?: Driver[];
   /** Faces and constructor marks. True only where the assets all exist. */
   portraits?: boolean;
+  /* WHERE THE ROWS CAME FROM, REPORTED RATHER THAN RE-DISCOVERED.
+     The Seasons page wanted the source label for its "Sample data" badge and
+     had no way to ask, so it ran the SAME standings request a second time just
+     to read one field off it. Two identical calls per page load and per season
+     change, against a source that allows four requests a second — and two
+     answers that could disagree, so the badge could describe a fetch the table
+     was not showing. It is one fetch now, and this is how the answer gets out. */
+  onSource?: (source: DataSource) => void;
 }) {
   const [type, setType] = useState<"driver" | "constructor">("driver");
   /* THE ROWS CARRY THE TYPE THEY ARE.
@@ -111,20 +121,31 @@ export function Standings({ year, compact, roster, portraits = false }: {
   const [loaded, setLoaded] = useState<{ type: "driver" | "constructor"; rows: Row[] } | null>(null);
   const [source, setSource] = useState<DataSource>("mock");
   const [loading, setLoading] = useState(true);
+  /* An archive that would not answer is a different empty table from a season
+     with nothing in it, and only one of the two has a Retry that helps. */
+  const [failed, setFailed] = useState(false);
+  const [nonce, setNonce] = useState(0);
 
-  useEffect(() => {
-    let alive = true;
-    setLoading(true);
+  const report = useRef(onSource);
+  report.current = onSource;
+  useFreshEffect((fresh) => {
+    setLoading(true); setFailed(false);
     api.historyStandings(year, type)
-      .then((r) => {
-        if (!alive) return;
-        setLoaded({ type, rows: r.standings as Row[] });
+      .then((r: any) => {
+        if (!fresh()) return;
+        setLoaded({ type, rows: (r.standings ?? []) as Row[] });
         setSource(r.source as DataSource);
+        setFailed(!!r.error);
+        report.current?.(r.source as DataSource);
       })
-      .catch(() => { if (alive) setLoaded({ type, rows: [] }); })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, [year, type]);
+      .catch(() => {
+        if (!fresh()) return;
+        setLoaded({ type, rows: [] });
+        setFailed(true);
+        report.current?.("mock");
+      })
+      .finally(() => { if (fresh()) setLoading(false); });
+  }, [year, type, nonce]);
 
   const rows = loaded?.type === type ? loaded.rows : [];
 
@@ -169,6 +190,21 @@ export function Standings({ year, compact, roster, portraits = false }: {
               driver={r.code ? byCode.get(r.code) : undefined} />
           ))}
         </ol>
+      ) : failed ? (
+        /* THE ARCHIVE DID NOT ANSWER, and this used to be the one place that
+           covered that up: the adapter fell through to the demo grid, so a
+           throttled request produced the 2025 top ten under whichever season
+           was on screen. Plausible, confident, wrong. Now it says so. */
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-amber/15 bg-amber/[0.03] px-4 py-8 text-center">
+          <AlertTriangle size={20} className="text-amber" />
+          <p className="max-w-md text-sm text-ink-muted">
+            The {year} championship table couldn&rsquo;t be read from the archive just
+            now. That is the source being unreachable, not a season without one.
+          </p>
+          <button onClick={() => setNonce((n) => n + 1)} className="pill-btn">
+            <RefreshCw size={14} /> Retry
+          </button>
+        </div>
       ) : (
         <EmptyState title="No standings available"
           hint={source === "mock" ? "Demo mode has no championship table for this season." : undefined} />

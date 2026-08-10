@@ -4139,3 +4139,82 @@ still fires.
 
 > Deleting work is only an optimisation if you can show the output is unchanged.
 > Otherwise it is a feature removal with a benchmark attached.
+
+---
+
+## An error payload is a type, and 200 is a promise about it
+
+The Seasons page died in production on `_r_available.includes is not a function`. The API had
+answered HTTP 200. The body said `available: false` where that route's contract says
+`string[]` — because the generic "this lookup failed" shape was applied to four routes, and on
+one of them `available` means something else entirely.
+
+A structured 200 for an upstream failure is the right design: it lets the page distinguish "the
+archive is quiet" from "this season had no races", and it keeps the retry affordance inside the
+panel instead of throwing the reader at a status code. But it only works if the failure body is
+the *same shape* as the success body. A response that changes type when it fails has moved the
+failure from a branch the caller wrote into a crash the caller cannot see coming, and it has
+done it with the one status code that tells everybody not to look.
+
+So the failure shape is per-route, and each route states its own: `available: []` where a list
+belongs, `available: false` where a boolean does. The client checks anyway — `Array.isArray`
+before `.includes` — because two ends of a contract deploy at different times and the one that
+is not deployed yet is the one that was wrong.
+
+> If you answer 200, the body has to be the shape the caller was compiled against.
+> Otherwise you have shipped an exception with a success code on it.
+
+---
+
+## Find the duplicate requests before adding the retry
+
+The Seasons page was hitting a rate limit, and the obvious fixes are retries with backoff and a
+cache. Applied in that order they are a trap: a retry layered on top of nine redundant requests
+turns one throttled reader into four, and a cache added afterwards hides how many of the
+requests were never needed.
+
+The order that works is the order the requests actually have a cause:
+
+1. **Count them.** One season change cost nine upstream requests. Three were the same calendar
+   URL, fetched by three different handlers that each needed it. Two were literally the same
+   results URL, back to back, in one function. Two were the same standings call, because a page
+   re-ran a component's fetch to read one field off it.
+2. **Remove the duplicates.** One door for outbound requests, keyed by URL, and six of the nine
+   stop existing. Not "get answered faster" — stop existing.
+3. **Coalesce the concurrent ones.** A TTL cache is cold for everybody when a burst arrives at
+   once, which is exactly the case a rate limit punishes. Requests for a URL already in flight
+   wait for it.
+4. **Then pace, and only then retry.** A token bucket under the published limit, and a 429
+   honoured as the instruction it is rather than logged as an outage.
+
+Steps 1–3 are the fix. Step 4 is what survives the day the source tightens its limits, and it is
+worth almost nothing on its own.
+
+> A retry makes a rate limit worse until you know why you are asking twice.
+
+---
+
+## The loading state and the empty state are not the same state, and neither is the failure
+
+Three of this version's bugs were one omission wearing three hats. The Historical Explorer had
+`loading` and `calendarFailed` and nothing for "the calendar is still being read", so a season
+change left the previous season's spinner running over a retry card nobody could see. The
+standings had rows and no-rows and nothing for "the archive refused", so it filled the gap with
+demo data under a real season's heading. The Explorer, once it waited for `/api/current`, had a
+skeleton and no ending for that wait.
+
+Every fetch a reader is looking at has four outcomes, and each one needs its own answer on the
+screen:
+
+| | what it means | what it must render |
+| --- | --- | --- |
+| **asking** | in flight | a skeleton of the thing, named |
+| **answered, full** | data | the data |
+| **answered, empty** | genuinely nothing here | an empty state that says why |
+| **did not answer** | the source refused or never replied | the failure, whose fault it is, and Retry |
+
+Collapsing the last two is the expensive one, in both directions. An empty state over a failure
+tells the reader their question was wrong when the source was quiet. Substituted data over a
+failure is worse than either: it is confidently incorrect, and nothing on the screen disagrees.
+
+> A spinner with no ending is a bug. A blank slate over a refusal is a lie.

@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 import requests
 
 from ..config import get_settings
+from .. import upstream
 from . import probe_detail
 from ..models import (
     Circuit,
@@ -54,12 +55,33 @@ class OpenF1Error(RuntimeError):
     pass
 
 
-def _get(path: str, *, _timeout: float | None = None, **params) -> list[dict]:
+def _calendar_ttl(path: str, params: dict) -> int:
+    """Only the CALENDAR is worth remembering here, and only by season.
+
+    `meetings` and `sessions` for a given year are asked on every page load —
+    `/api/current` is the first thing the Race Explorer does, and it is now on
+    the critical path of the first paint. They are small, they repeat, and for
+    a finished season they can never change. Everything else this adapter
+    fetches is a session's own lap/telemetry data: large, asked once, and
+    already persisted by app/cache.py as part of the normalized session. Caching
+    those twice would double the memory for no second reader.
+    """
+    if path not in ("meetings", "sessions") or "year" not in params:
+        return 0
+    if any(k in params for k in ("session_key", "meeting_key")):
+        return 0
+    try:
+        return upstream.ttl_for_year(int(params["year"]))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _get(path: str, *, _timeout: float | None = None, _ttl: int | None = None,
+         **params) -> list[dict]:
     url = f"{BASE}/{path}"
-    resp = requests.get(url, params=params,
-                        timeout=_timeout or get_settings().fetch_timeout)
-    resp.raise_for_status()
-    data = resp.json()
+    ttl = _ttl if _ttl is not None else _calendar_ttl(path, params)
+    data = upstream.fetch_json(url, params=params, ttl=ttl,
+                               timeout=_timeout or get_settings().fetch_timeout)
     if isinstance(data, dict):  # error payloads come back as objects
         raise OpenF1Error(str(data)[:200])
     return data
@@ -70,7 +92,8 @@ def probe() -> tuple[bool, str]:
     import time as _time
     started = _time.monotonic()
     try:
-        rows = _get("sessions", _timeout=get_settings().probe_timeout,
+        # a probe served from cache has probed nothing
+        rows = _get("sessions", _timeout=get_settings().probe_timeout, _ttl=0,
                     year=2024, session_name="Race", country_name="Bahrain")
     except requests.HTTPError as exc:  # answered, just not with data
         code = exc.response.status_code if exc.response is not None else 0

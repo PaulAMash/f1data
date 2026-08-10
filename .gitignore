@@ -12,6 +12,9 @@ venv/
 # --- backend data ---
 backend/data/cache/*.json
 !backend/data/cache/.gitkeep
+# remembered upstream documents (calendars, standings, historical results) —
+# see app/upstream.py; regenerated on demand, never part of the source tree
+backend/data/cache/upstream/
 # FastF1's own on-disk cache, if created next to the package
 fastf1_cache/
 

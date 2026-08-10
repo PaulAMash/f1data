@@ -12,9 +12,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import re
+
 import requests
 
 from ..config import get_settings
+from .. import upstream
 from . import probe_detail
 from ..models import (
     Circuit,
@@ -57,11 +60,33 @@ class JolpicaError(RuntimeError):
     pass
 
 
-def _get(path: str, *, _timeout: float | None = None, **params) -> dict:
-    resp = requests.get(f"{BASE}/{path}", params=params,
-                        timeout=_timeout or get_settings().fetch_timeout)
-    resp.raise_for_status()
-    return resp.json()
+#: Every Jolpica path starts with the season it is about, except the season list
+#: itself — which is how one regex decides how long an answer is worth keeping.
+#: See app/upstream.py: a finished season is a historical record and is cached
+#: for a week; the season being raced is cached for five minutes.
+_YEAR_IN_PATH = re.compile(r"^(\d{4})(?:/|\.)")
+
+
+def _ttl_for(path: str) -> int:
+    if path.startswith("seasons"):
+        return upstream.TTL_SEASON_LIST
+    m = _YEAR_IN_PATH.match(path)
+    return upstream.ttl_for_year(int(m.group(1)) if m else None)
+
+
+def _get(path: str, *, _timeout: float | None = None, _ttl: int | None = None,
+         **params) -> dict:
+    """One Jolpica document.
+
+    Goes through app/upstream so identical requests are answered once: the
+    calendar alone used to be fetched three times per season change, and the
+    round's results twice inside a single one. `_ttl=0` opts out, which is what
+    the liveness probe wants — a probe served from cache has probed nothing.
+    """
+    return upstream.fetch_json(
+        f"{BASE}/{path}", params=params,
+        timeout=_timeout or get_settings().fetch_timeout,
+        ttl=_ttl if _ttl is not None else _ttl_for(path))
 
 
 def probe() -> tuple[bool, str]:
@@ -69,7 +94,8 @@ def probe() -> tuple[bool, str]:
     import time as _time
     started = _time.monotonic()
     try:
-        _get("2024/1/results.json", _timeout=get_settings().probe_timeout, limit=1)
+        _get("2024/1/results.json", _timeout=get_settings().probe_timeout,
+             _ttl=0, limit=1)
     except requests.HTTPError as exc:  # answered, just not with data
         code = exc.response.status_code if exc.response is not None else 0
         return False, probe_detail.http_detail(code, _HOST)
