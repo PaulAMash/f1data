@@ -193,6 +193,11 @@ export interface QuestionAnswer {
   related_drivers: string[];
   related_laps: number[];
   analysis_steps: string[];
+  /** Whether a real handler recognised the question, or Ask fell back to a
+   *  session overview. Read by the private analytics dashboard, not the UI. */
+  matched_handler?: boolean;
+  /** Opaque handle for this interaction, so the thumbs can refer to it. */
+  ask_ref?: string | null;
 }
 export interface SimulationResult {
   source?: DataSource; driver: string; summary: string;

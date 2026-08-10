@@ -74,6 +74,20 @@ treats **HTTP 429** as the instruction to wait that it is rather than as an outa
 Nothing above the adapters knows either cache exists. Adapters keep their own shapes, their own
 fallbacks and their own error types; they simply stopped talking to the network directly.
 
+## Private product analytics
+
+`app/analytics` is a self-contained subsystem that the rest of the backend only
+ever calls *into*, never depends on. It records a short list of meaningful events
+and one rich row per Ask interaction, and it is designed so that a failure in it
+is invisible: recording is a bounded queue drained by a background thread, every
+entry point swallows its own exceptions, and with no database configured every
+call is a no-op.
+
+Ask outcomes are classified from signals the QA pipeline already produces —
+`kind`, `confidence`, `missing_data`, plus one added boolean `matched_handler` —
+so there is no second model call, no added latency and no untestable judgement.
+See `docs/ANALYTICS.md`.
+
 ## Client state: which answer is allowed to win
 
 Every picker in the frontend fires a fetch on change, and a fetch is not ordered — three rapid

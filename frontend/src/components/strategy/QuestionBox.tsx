@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, CornerDownLeft, MessageSquareText, Wand2 } from "lucide-react";
+import { ChevronDown, CornerDownLeft, MessageSquareText, ThumbsDown, ThumbsUp, Wand2 } from "lucide-react";
 import { Sparkles } from "@/components/ui/MotionIcon";
 import { api } from "@/lib/api";
+import { sendAskFeedback, visitorId } from "@/lib/analytics";
 import type { QuestionAnswer, SessionCategory } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { BetaTag } from "@/components/ui/BetaTag";
@@ -44,7 +45,8 @@ export function QuestionBox({
     setQ("");
     const started = Date.now();
     try {
-      const res = await api.ask({ year, gp, session, question: text });
+      const res = await api.ask({ year, gp, session, question: text,
+                                  visitor: visitorId() });
       const elapsed = Date.now() - started;
       if (elapsed < MIN_THINK_MS) await new Promise((r) => setTimeout(r, MIN_THINK_MS - elapsed));
       setHistory((h) => [res, ...h]);
@@ -159,6 +161,49 @@ export function QuestionBox({
         )}
       </div>
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* WAS THAT ANY USE?                                                          */
+/*                                                                            */
+/* The analytics behind Ask can already tell, deterministically, when it could */
+/* not answer or had to leave something out — that comes free from the         */
+/* pipeline's own `kind`, `confidence` and `missing_data` (see                 */
+/* backend/app/analytics/classify.py). What it can NEVER see is the case that  */
+/* matters most: an answer that was complete, confident, and wrong. Only the   */
+/* reader knows that, so this is the one thing worth asking them.              */
+/*                                                                            */
+/* Two icons on the end of a row that already exists. No new row, no modal, no */
+/* "tell us more" box, and it disappears once pressed — a control that keeps   */
+/* asking after it has been answered is nagging, and a reader who has to think */
+/* about the instrument is not thinking about the race.                        */
+/* -------------------------------------------------------------------------- */
+function Rate({ refId }: { refId?: string | null }) {
+  const [sent, setSent] = useState<null | boolean>(null);
+  // No handle means analytics is off on this deployment; then there is nothing
+  // to attach an opinion to and the control has no business being on screen.
+  if (!refId) return null;
+  if (sent !== null) {
+    return (
+      <span className="text-[11px] text-ink-faint">
+        {sent ? "Thanks — noted." : "Thanks — we'll look at this one."}
+      </span>
+    );
+  }
+  const rate = (helpful: boolean) => { setSent(helpful); sendAskFeedback(refId, helpful); };
+  return (
+    <span className="ml-auto inline-flex items-center gap-1">
+      <span className="mr-0.5 text-[11px] text-ink-faint">Helpful?</span>
+      <button onClick={() => rate(true)} aria-label="This answer was helpful"
+        className="rounded-md p-1 text-ink-faint transition-colors hover:bg-white/[0.06] hover:text-speed">
+        <ThumbsUp size={13} />
+      </button>
+      <button onClick={() => rate(false)} aria-label="This answer was not helpful"
+        className="rounded-md p-1 text-ink-faint transition-colors hover:bg-white/[0.06] hover:text-amber">
+        <ThumbsDown size={13} />
+      </button>
+    </span>
   );
 }
 
@@ -302,6 +347,9 @@ function AnswerCard({ a, onAsk }: { a: QuestionAnswer; onAsk?: (q: string) => vo
               <Wand2 size={11} /> Simplify
             </button>
           )}
+          {/* Into the row that already exists rather than a row of its own —
+              the ask was for a signal, not for furniture. */}
+          <Rate refId={a.ask_ref} />
         </div>
       )}
 

@@ -14,3 +14,9 @@ requests>=2.28
 
 # Optional: enables the LLM *polish* layer for Q&A answers (never required).
 # anthropic>=0.39
+
+# Private product analytics (app/analytics). Only imported when DATABASE_URL
+# points at Postgres — the store falls back to SQLite locally and disables
+# itself entirely when no database is configured, so this is required for
+# production and inert everywhere else.
+psycopg[binary]>=3.1

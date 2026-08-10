@@ -15,6 +15,10 @@ backend/data/cache/*.json
 # remembered upstream documents (calendars, standings, historical results) —
 # see app/upstream.py; regenerated on demand, never part of the source tree
 backend/data/cache/upstream/
+# local analytics store (production uses Render Postgres) — see docs/ANALYTICS.md
+*.db
+*.db-wal
+*.db-shm
 # FastF1's own on-disk cache, if created next to the package
 fastf1_cache/
 

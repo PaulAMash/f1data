@@ -77,6 +77,24 @@ class Settings(BaseSettings):
     cors_origins: str = os.getenv("PITWALL_IQ_CORS", "http://localhost:3000")
     default_year: int = int(os.getenv("PITWALL_IQ_DEFAULT_YEAR", "2026"))
 
+    # --- private product analytics ---------------------------------------- #
+    # Where analytics events are stored. Render injects DATABASE_URL when a
+    # Postgres instance is attached, which is read first; the override exists so
+    # a developer can point at a local file without inventing a DATABASE_URL.
+    # EMPTY IS A SUPPORTED STATE: analytics simply does not run, and every part
+    # of the site behaves exactly as it did before. See app/analytics.
+    analytics_db_url: str = os.getenv("PITWALL_IQ_ANALYTICS_DB", "")
+    # The single secret that guards the analytics dashboard. Never sent to the
+    # browser by the server and never baked into the frontend build — it is
+    # typed in once at /admin and kept in that browser's localStorage.
+    # UNSET MEANS THE ADMIN API IS OFF ENTIRELY, which is the only safe default:
+    # a deployment that forgot to configure it exposes nothing rather than
+    # everything.
+    admin_token: str = os.getenv("PITWALL_IQ_ADMIN_TOKEN", "")
+    # Local-visitor analytics can be turned off without removing the database.
+    analytics_enabled: bool = os.getenv(
+        "PITWALL_IQ_ANALYTICS", "true").lower() in ("1", "true", "yes")
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

@@ -2,6 +2,7 @@
 import { useEffect } from "react";
 import { RefreshCw } from "lucide-react";
 import { AlertTriangle } from "@/components/ui/MotionIcon";
+import { trackClientError } from "@/lib/analytics";
 
 /* -------------------------------------------------------------------------- */
 /* WHEN THE PRODUCT ITSELF FAILS.                                             */
@@ -29,6 +30,11 @@ export default function ExplorerError({
     // The console is where this is diagnosable; the page is where it is
     // survivable. Both, not one.
     console.error("Pitwall IQ hit an unexpected error:", error);
+    // And the dashboard is where it is COUNTABLE. Without this, "are users
+    // hitting errors" is answerable only by the users who report them, and the
+    // V85 crash proved that a page can be dead for everybody and silent to us.
+    // The message only — no stack, no URL, nothing about who hit it.
+    trackClientError(error?.message || "unknown client error");
   }, [error]);
 
   return (

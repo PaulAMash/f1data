@@ -439,6 +439,13 @@ class QuestionAnswer(BaseModel):
     kind: str = "generic"
     used_llm: bool = False
     confidence: str = "medium"
+    #: Whether a real handler recognised this question, or the chain fell through
+    #: to the best-effort fallback. The fallback returns a session overview, which
+    #: after the fact is indistinguishable from an overview somebody asked for —
+    #: so without this flag "Ask did not understand the question" is invisible,
+    #: and that is the single most useful thing to know about a beta feature.
+    #: Read by app/analytics/classify.py; changes no behaviour and no wording.
+    matched_handler: bool = True
     supporting: dict = Field(default_factory=dict)   # structured evidence for the UI
     missing_data: list[str] = Field(default_factory=list)
     entities: dict = Field(default_factory=dict)     # {drivers: [...], teams: [...], ...}
