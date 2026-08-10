@@ -48,6 +48,37 @@ token** (`F1TV_TOKEN`). This is:
 - **Optional** — every completed-session and open-data feature works without it.
 - **Server-side only** — read by the backend, never sent to the browser.
 
+## Rate limits, and the one cache that keeps us under them
+
+Jolpica publishes hard limits for unauthenticated clients: **4 requests per second, 500 per
+hour, HTTP 429 `Request was throttled.` when either is exceeded.** They are enforced per source
+IP, so on Render that is **per deployment, shared by every reader at once** — not per visitor.
+The documentation also says the limits will decrease.
+
+Before V85 nothing remembered an upstream answer at all (`app/cache.py` persists finished
+*session bundles* only), so one season change on the Seasons page cost nine Jolpica requests —
+enough for a single reader to trip the burst limit alone, and a sustained ceiling of roughly
+fifty-five season changes an hour across everybody.
+
+Every outbound archive request now goes through **`app/upstream.py`**, which does three things
+before anything reaches the network:
+
+- **Remembers.** A finished season is a historical record: cached seven days, in memory and on
+  disk under `cache_dir/upstream/`. The season being raced gets five minutes, because a
+  re-classification or a penalty can still change it. The season list gets a day.
+- **Coalesces.** Concurrent requests for the same URL share one upstream call. This is the case
+  a plain TTL cache cannot help with — a burst arrives with the cache cold for all of it.
+- **Paces, then retries.** A token bucket at 3 req/s for `api.jolpi.ca` and 4 req/s for
+  `api.openf1.org`, both under the published limits. A 429 or transient 5xx is retried up to
+  three times, honouring `Retry-After` when the server sends one and using jittered exponential
+  backoff when it does not.
+
+Liveness probes opt out (`_ttl=0`): a probe answered from cache has probed nothing. Session lap
+and telemetry payloads also opt out — they are large, asked once, and already persisted as part
+of the normalized session.
+
+`GET /api/session/cache/clear` (with no key) clears this alongside the session cache.
+
 ## Network policy note
 
 If the environment's egress policy blocks the F1 hosts above (403 on

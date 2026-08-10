@@ -8,8 +8,9 @@ import { HistoricalExplorer } from "@/components/history/HistoricalExplorer";
 import { useIsAdvanced } from "@/lib/mode";
 import { usePrefs } from "@/lib/prefs";
 import { api } from "@/lib/api";
+import { useFreshEffect } from "@/lib/fresh";
 import type { DataSource } from "@/lib/types";
-import { cx } from "@/lib/format";
+import { Skeleton } from "@/components/ui/misc";
 import { Select } from "@/components/ui/Select";
 import { Standings } from "@/components/history/Standings";
 
@@ -34,10 +35,19 @@ const yearsTo = (latest: number) =>
 
 export default function History() {
   const { prefs, ready } = usePrefs();
-  const [year, setYear] = useState(2025);
+  /* NULL UNTIL THE REAL ANSWER LANDS, not a year picked in advance.
+     This was `useState(2025)`, and 2025 is not a fact about anything — it is
+     the year somebody was working in. So the card headed itself "2025
+     championship", the table below it fetched 2025's standings, and both were
+     replaced a moment later when `/api/current` said what the season actually
+     is. A guess rendered confidently and then corrected is the same defect as
+     the Grand Prix picker opening on Austria: a wrong answer shown as if it
+     were the right one. Nothing renders a season until there is a season. */
+  const [year, setYear] = useState<number | null>(null);
   const [touched, setTouched] = useState(false);
   /** The season in progress — the one this page has to open on by default. */
   const [current, setCurrent] = useState<number | null>(null);
+  const [resolved, setResolved] = useState(false);
 
   /* THIS PAGE IS THE HISTORY, AND EXPLORE IS THE PRESENT.
      V67 put the current championship here, which fixed one problem and created
@@ -49,10 +59,16 @@ export default function History() {
 
      It still opens on the most recent COMPLETED season rather than on a
      hard-coded year, and a link may name one. */
-  useEffect(() => {
-    let live = true;
-    api.current().then((c) => { if (live) setCurrent(c.year); }).catch(() => {});
-    return () => { live = false; };
+  /* A `?year=` in the address is an answer the page already has, so it is taken
+     before anything is asked. Everything else waits for `/api/current`. */
+  useFreshEffect((fresh) => {
+    const asked = typeof window !== "undefined"
+      ? Number(new URLSearchParams(window.location.search).get("year")) : 0;
+    if (asked) { setYear(asked); setResolved(true); }
+    api.current()
+      .then((c) => { if (fresh()) setCurrent(c.year); })
+      .catch(() => {})
+      .finally(() => { if (fresh()) setResolved(true); });
   }, []);
   useEffect(() => {
     if (!ready || touched) return;
@@ -61,17 +77,15 @@ export default function History() {
     const latest = current ? current - 1 : null;
     const want = asked || prefs.season || latest;
     if (want) setYear(want);
-  }, [ready, touched, prefs.season, current]);
-  /* The table fetches its own rows — see components/history/Standings. What is
-     left here is the one thing this page knows and the component does not:
-     whether the archive answered at all, which is what the source badge is
-     about. One probe rather than a duplicate of the component's fetch. */
+    // `/api/current` can fail; the page still has to open on something rather
+    // than sit empty, and the most recent finished season is the honest guess.
+    else if (resolved) setYear(new Date().getFullYear() - 1);
+  }, [ready, touched, prefs.season, current, resolved]);
+  /* The table fetches its own rows and now REPORTS where they came from — see
+     components/history/Standings. This used to run the identical request a
+     second time purely to read `source` off it, which doubled the standings
+     cost of every page load and every season change. */
   const [source, setSource] = useState<DataSource>("mock");
-  useEffect(() => {
-    api.historyStandings(year, "driver")
-      .then((r) => setSource(r.source as DataSource))
-      .catch(() => setSource("mock"));
-  }, [year]);
 
   return (
     <div className="min-h-screen">
@@ -105,14 +119,15 @@ export default function History() {
           {/* standings */}
           <Card>
             <CardHeader
-              title={`${year} championship`}
+              title={year ? `${year} championship` : "Championship"}
               subtitle={undefined}
               info={<InfoTip text="Points and wins for the selected season. The bar is the gap to the leader, not the points total." />}
               right={
                 <div className="flex items-center gap-2">
                   <SourceTag source={source} />
-                  <Select value={year} ariaLabel="Season"
+                  <Select value={year ?? 0} ariaLabel="Season"
                     onChange={(y) => { setTouched(true); setYear(y); }}
+                    placeholder="—"
                     /* The season in progress is deliberately absent: it is not
                        history yet, and it has its own home in Explore. Offering
                        it here as well would be the same table in two places
@@ -125,8 +140,18 @@ export default function History() {
               }
             />
             <CardBody>
-              {/* Faces only where every face exists — see components/history/Standings */}
-              <Standings year={year} portraits={year === current} />
+              {/* Faces only where every face exists — see components/history/Standings.
+                  Nothing is fetched until the season is known: a table that
+                  loads one year and then immediately loads another is two
+                  requests against a four-per-second budget, and the first one
+                  was for a year nobody asked about. */}
+              {year ? (
+                <Standings year={year} portraits={year === current} onSource={setSource} />
+              ) : (
+                <div className="space-y-1.5">
+                  {Array.from({ length: 10 }).map((_, i) => <Skeleton key={i} className="h-11" />)}
+                </div>
+              )}
             </CardBody>
           </Card>
         </div>

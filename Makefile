@@ -41,5 +41,9 @@ test: test-backend test-frontend
 test-backend:
 	cd backend && python -m pytest
 
+# `doctor:fetches` is a static check for two failures a type checker cannot see:
+# a selection-keyed fetch with no staleness guard, and a picker seeded with a
+# race nobody chose. Part of `test`, deliberately not part of `build` — a check
+# that can fail a deploy is a new way to break production.
 test-frontend:
-	cd frontend && npm run typecheck && npm run build
+	cd frontend && npm run typecheck && npm run doctor:fetches && npm run build

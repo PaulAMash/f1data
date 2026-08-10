@@ -58,6 +58,31 @@ analysis.engine.analyze(session) → (StrategySummary, [DriverPaceSummary])
 The bundle is computed fresh per request (analysis is milliseconds); real *session data*
 is what gets cached, because a completed session never changes.
 
+## Two caches, and they cache different things
+
+`app/cache.py` persists **normalized session bundles** keyed by `(year, gp, session)` — the
+expensive thing on the Race Explorer's path.
+
+`app/upstream.py` (V85) sits under every adapter and caches **individual upstream HTTP
+documents** — calendars, season lists, standings, historical results. It is a different layer
+solving a different problem: those calls are small, they repeat constantly, and several of them
+used to be issued two or three times inside a single request. It also **coalesces** concurrent
+requests for the same URL into one, **paces** each host below its published rate limit, and
+treats **HTTP 429** as the instruction to wait that it is rather than as an outage. See
+`docs/DATA_SOURCES.md` for the limits it is written against.
+
+Nothing above the adapters knows either cache exists. Adapters keep their own shapes, their own
+fallbacks and their own error types; they simply stopped talking to the network directly.
+
+## Client state: which answer is allowed to win
+
+Every picker in the frontend fires a fetch on change, and a fetch is not ordered — three rapid
+season changes put three requests in the air and the last one to *finish* writes the state, not
+the last one asked for. `lib/fresh.ts` exports `useFreshEffect`, which hands each run a
+`fresh()` predicate that goes false the moment a newer run starts; a retired request can still
+finish, it just cannot write. Every season- and selection-keyed fetch uses it, and
+`npm run doctor:fetches` fails if a new one does not.
+
 ## The analysis engine
 
 | Module | Responsibility |

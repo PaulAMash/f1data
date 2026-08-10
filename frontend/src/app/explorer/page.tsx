@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity, BookOpen, Database, GitCompareArrows, MessageSquareText, Trophy,
   Gauge, Layers, LineChart, Timer, Wind, Braces, RefreshCw, AlertTriangle, CloudOff,
@@ -25,6 +25,7 @@ import { QuestionBox } from "@/components/strategy/QuestionBox";
 import { DriverComparison } from "@/components/driver-comparison/DriverComparison";
 import { useMode } from "@/lib/mode";
 import { api, ApiError } from "@/lib/api";
+import { useFreshEffect } from "@/lib/fresh";
 import { cx } from "@/lib/format";
 import type { Meta, RaceBundle, RaceSession } from "@/lib/types";
 import { Standings } from "@/components/history/Standings";
@@ -76,7 +77,26 @@ export default function ExplorerPage() {
   const { mode } = useMode();
   const isAdvanced = mode === "advanced";
   const [meta, setMeta] = useState<Meta | null>(null);
-  const [sel, setSel] = useState<Selection>({ year: 2026, gp: "Austrian Grand Prix", session: "Race" });
+  /* -----------------------------------------------------------------------
+     NO RACE UNTIL THERE IS A RACE.
+
+     This was seeded with `{ 2026, "Austrian Grand Prix", "Race" }` — the demo
+     simulator's fixture, not a fact about the world — and the page rendered
+     with it while `/api/current` was still in the air. So every arrival showed
+     the Austrian Grand Prix in the Grand Prix picker for as long as that round
+     trip took, then silently swapped to the real latest race. On loopback that
+     is a frame and nobody ever saw it; between a browser, Cloudflare and a
+     hosted API it is long enough to read.
+
+     `booted` already existed and already gated the expensive session fetch —
+     but it did not gate the PICKER, which is the thing with the wrong race
+     written in it, and it did not stop RaceSelector mounting and fetching a
+     calendar for a season that was about to change. A guess that is rendered
+     is a guess the reader has to un-learn, so there is no guess: the selection
+     is null until the address bar or `/api/current` says what it is, and the
+     page shows the shape it is about to fill.
+     ----------------------------------------------------------------------- */
+  const [sel, setSel] = useState<Selection | null>(null);
   const [bundle, setBundle] = useState<RaceBundle | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
@@ -89,17 +109,23 @@ export default function ExplorerPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [currentSeason, setCurrentSeason] = useState<number | null>(null);
-  // No session is fetched until /api/current resolves the real default — this
-  // prevents the season label flashing and prevents fetching a race that hasn't
-  // happened yet (the backend now picks the latest *completed* Grand Prix).
+  // Nothing is fetched and nothing that names a race is rendered until
+  // /api/current resolves the real default — this is what stops the season
+  // label flashing, stops the Grand Prix picker showing a race the reader did
+  // not ask for, and stops us fetching a race that hasn't happened yet (the
+  // backend picks the latest *completed* Grand Prix).
   const [booted, setBooted] = useState(false);
+  /** Bumped by the retry on the "which race is on?" failure, below. */
+  const [bootKey, setBootKey] = useState(0);
 
   /* A guided tour can open any tab. The Explorer answers on the tour's channel
      rather than lifting this state into a global store — see lib/tour.tsx. */
   useTourDrive(setTab);
 
-  useEffect(() => {
-    api.meta().then(setMeta).catch(() => setMeta(null));
+  useFreshEffect((fresh) => {
+    api.meta()
+      .then((m) => { if (fresh()) setMeta(m); })
+      .catch(() => { if (fresh()) setMeta(null); });
     const q = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
     const qYear = q?.get("year"); const qGp = q?.get("gp"); const qSession = q?.get("session");
     const qTab = q?.get("tab");
@@ -134,28 +160,40 @@ export default function ExplorerPage() {
       setBooted(true);
     }
     api.current().then((cur) => {
+      if (!fresh()) return;
       setCurrentSeason(cur.year);
       if (deepLinked) return;
       if (qGp) setSel({ year: qYear ? Number(qYear) : cur.year, gp: qGp, session: qSession || "Race" });
       else if (cur.gp) setSel({ year: cur.year, gp: cur.gp, session: "Race" });
     }).catch(() => {
-      if (!deepLinked && qGp) setSel({ year: qYear ? Number(qYear) : 2025, gp: qGp, session: qSession || "Race" });
-    }).finally(() => setBooted(true));
-  }, []);
+      if (!fresh()) return;
+      /* `/api/current` FAILING MUST NOT MEAN A PAGE THAT NEVER OPENS.
+         Nothing renders until `sel` exists now, so a dead resolver used to be
+         an eternal skeleton where it used to be a wrong race. The address bar
+         is consulted first; failing that the page opens on the most recent
+         finished season and lets the pickers and the unavailable screen — both
+         of which are designed for exactly this — take it from there. */
+      if (qGp) setSel({ year: qYear ? Number(qYear) : new Date().getFullYear() - 1,
+                        gp: qGp, session: qSession || "Race" });
+      else if (!deepLinked) setSel(null);
+    }).finally(() => { if (fresh()) setBooted(true); });
+  }, [bootKey]);
 
-  const load = useCallback((refresh: boolean) => {
+  /* Guarded like every other selection-keyed fetch — a session bundle that
+     arrives after the reader has moved to another Grand Prix must not be the
+     one that renders. See lib/fresh. */
+  useFreshEffect((fresh) => {
+    if (!booted || !sel) return;
     setLoading(true); setError(null);
-    api.session(sel.year, sel.gp, sel.session, refresh)
-      .then((b) => { setBundle(b); setSelected([]); })
-      .catch((e) => { setBundle(null); setError(e instanceof ApiError ? e : new ApiError(String(e?.message ?? e))); })
-      .finally(() => setLoading(false));
-  }, [sel.year, sel.gp, sel.session]);
-
-  useEffect(() => {
-    if (!booted) return;
-    load(refreshKey > 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [booted, sel.year, sel.gp, sel.session, refreshKey]);
+    api.session(sel.year, sel.gp, sel.session, refreshKey > 0)
+      .then((b) => { if (fresh()) { setBundle(b); setSelected([]); } })
+      .catch((e) => {
+        if (!fresh()) return;
+        setBundle(null);
+        setError(e instanceof ApiError ? e : new ApiError(String(e?.message ?? e)));
+      })
+      .finally(() => { if (fresh()) setLoading(false); });
+  }, [booted, sel?.year, sel?.gp, sel?.session, refreshKey]);
 
   const session = bundle?.session;
   const category = bundle?.category ?? "race";
@@ -185,14 +223,17 @@ export default function ExplorerPage() {
   useEffect(() => {
     // arm only once the real default has resolved, so resolving it doesn't
     // itself count as a change and throw away a ?tab= deep link
-    if (!booted) return;
+    if (!booted || !sel) return;
     const key = `${sel.year}|${sel.gp}|${sel.session}`;
     if (lastSel.current !== null && lastSel.current !== key) {
       setTab("story");
       setChartTab("position");
     }
     lastSel.current = key;
-  }, [booted, sel.year, sel.gp, sel.session]);
+    // the three fields ARE the selection; depending on the object would fire
+    // this on every re-render that happens to rebuild it
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [booted, sel?.year, sel?.gp, sel?.session]);
 
   const subtitle = useMemo(() => {
     if (!session) return "";
@@ -216,6 +257,66 @@ export default function ExplorerPage() {
      The championship scope is deliberately outside it: those standings are a
      property of the season, not of the session, and they are still true when a
      session is not. */
+  /* THE OTHER GATE, AND IT IS ABOVE EVEN THAT ONE.
+     Until the selection is known there is no session, no season and no Grand
+     Prix to name, so the page renders its own shape rather than a placeholder
+     race. This is one round trip to `/api/current` — cached both by the browser
+     and by the backend (see app/upstream), so it is the fast one — and it is
+     the difference between arriving at the right race and arriving at the wrong
+     one and watching it correct itself. */
+  if (!booted) {
+    return (
+      <div className="min-h-screen">
+        <NavBar active="explorer" />
+        <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-6">
+          <div className="mb-5 space-y-3">
+            <Skeleton className="h-10 w-80 max-w-full" />
+            <Skeleton className="h-4 w-56 max-w-full" />
+          </div>
+          <div className="mb-4 rounded-xl border border-white/[0.05] bg-base-850/40 p-3">
+            <Skeleton className="h-[38px]" />
+          </div>
+          <LoadingDashboard />
+        </div>
+      </div>
+    );
+  }
+
+  /* AND WAITING HAS TO BE ABLE TO END BADLY.
+     Gating the page on "which race is on?" turns a failure to answer that into
+     a page that never opens — the skeleton above would simply stay. Which is
+     the unrecoverable loading state this version exists to remove, reinvented
+     one level up. So the two outcomes are separated: still asking is a
+     skeleton; asked and got nothing is a designed panel with a way out. */
+  if (!sel) {
+    return (
+      <div className="min-h-screen">
+        <NavBar active="explorer" />
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
+          <div className="mx-auto max-w-md rounded-2xl border border-amber/15 bg-amber/[0.03] px-6 py-8 text-center">
+            <CloudOff size={22} className="mx-auto text-amber" />
+            <h1 className="mt-3 text-lg font-semibold tracking-tight text-ink">
+              Couldn&apos;t work out which race is on
+            </h1>
+            <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-ink-muted">
+              The calendar is what tells this page where to open, and no source
+              answered for it just now. That is upstream of us and usually brief.
+            </p>
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+              <button onClick={() => { setBooted(false); setBootKey((k) => k + 1); }}
+                className="pill-btn border-accent/30 text-accent-soft hover:bg-accent/10">
+                <RefreshCw size={14} /> Try again
+              </button>
+              <a href="/history" className="pill-btn text-ink-muted hover:text-ink">
+                Browse finished seasons
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const blocked = !loading && view === "session"
     && (Boolean(error) || (Boolean(session) && session!.complete === false));
 

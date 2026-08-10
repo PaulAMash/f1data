@@ -3,9 +3,149 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V84**. The slow production page was not the free hosting tier. It was twenty-four
-sequential requests for driver photographs, and a scientific stack imported on every boot to
-set one HTTP header.
+Last pass: **V85**. The Seasons page was not flaky. It asked one external source the same
+question nine times per season change, that source's published limit is four requests a
+second, and the refusal came back as HTTP 200 with a boolean where a list belonged.
+
+---
+
+## Fixed in V85
+
+### Switching seasons quickly broke the page, and the reason was arithmetic
+
+The report was intermittent, which is the shape of a race condition and also the shape of a
+rate limit — so the first job was to find out which, and the second was to stop guessing that
+it was one thing.
+
+**What one season change actually cost.** Instrumenting the real adapters against a synthetic
+upstream, a single season change on Seasons fired **nine** requests at Jolpica:
+
+| requests | URL | who asked |
+| --- | --- | --- |
+| ×3 | `{year}.json` | the events route, the sessions route, and the round resolver inside results — each fetched the calendar for itself |
+| ×2 | `{year}/{round}/results.json` | the driver-id map, then the classification. The same URL, back to back, in one handler |
+| ×2 | `{year}/driverStandings.json` | the standings table fetched it, and the page fetched it again purely to read `source` off it for a badge |
+| ×1 | `seasons.json` | the season list |
+| ×1 | next season's calendar | `/api/current` |
+
+Nothing anywhere remembered an upstream answer. `app/cache.py` persists finished *session
+bundles* and nothing else, so every calendar, standings table and historical result was
+re-fetched from Jolpica on every request, several of them twice inside one request.
+
+**Why that number is the bug.** Jolpica documents its limits: **four requests per second, five
+hundred per hour, HTTP 429 when you exceed either** — per IP, which on Render means per
+*deployment*, shared by every reader at once. Nine requests per season change puts one reader
+over the burst limit on their own; the hourly budget works out at roughly fifty-five season
+changes an hour across everybody. And `_get` called `raise_for_status()`, so a 429 — an
+instruction to wait — was indistinguishable from an outage and surfaced as "the historical
+source was unreachable". The source was not unreachable. We were asking it the same question
+nine times.
+
+**Why the page went blank rather than showing the retry card.** The historical routes answer a
+source failure with HTTP 200 and a structured body, which is right. But the generic failure
+shape set `available: false`, and on `/api/historical/sessions` `available` is the *list* of
+session names. So the browser called `.includes()` on a boolean, threw inside a promise, and
+Next.js — with no error boundary anywhere in the app — replaced the route with *"Application
+error: a client-side exception has occurred."* Reproduced in a production build: one cold load
+of Seasons against a source enforcing the real limit produced seven requests, three of them
+refused, and a dead page. **Two hundred with a lie in it is worse than a five hundred.**
+
+**And the stale answers were real too, separately.** Season → calendar → sessions → results is
+a chain of four fetches, and four of the five season-keyed fetches in the app had no staleness
+guard. Change season three times inside a second and three chains write into the same state in
+whatever order the network finishes them: 2019's calendar under a picker reading 2023, a Grand
+Prix picked out of the wrong season, and then a truthful "no results found" for a question
+nobody asked. An older chain that happened to fail set `calendarFailed`, so the page could show
+*"the archive did not return a calendar for 2023"* with 2023's calendar sitting loaded in
+memory — an error state whose Retry button could not fix anything, because nothing was broken.
+
+**What was done, at the layer each thing belongs to.**
+
+*One door for every outbound request* (`app/upstream.py`). It **remembers** — a finished season
+is a historical record and is kept for a week and written to disk; the season being raced gets
+five minutes. It **coalesces** — two requests for the same URL that arrive while the first is in
+flight wait for that one, which is what the duplicated standings fetch and a burst of readers on
+the same page both look like from here. It **paces** — a token bucket just under the published
+burst limit, and a 429 is treated as the instruction it is: wait the interval the server names,
+then ask again, three attempts, jittered. Retries were added *last*, after the duplicate
+requests were gone, because a retry on top of nine redundant requests is a way to make a rate
+limit worse.
+
+*No Postgres.* Gemini's first suggestion was to cache historical responses in the Render
+database. There is no database layer in this backend at all, and on a single Render instance a
+process-local TTL cache with a disk tier is the same hit rate for none of the schema, migration
+and connection-pool surface. The cheap thing that works is the right thing.
+
+*The type contract is enforced at both ends.* `_hist_guard` applies each route's own fallback
+fields last, so the sessions route can say `available: []` and keep the contract its caller was
+written against; the caller checks `Array.isArray` anyway, because the end that gets forgotten
+is the one that is not deployed yet.
+
+*One primitive for staleness* (`lib/fresh.ts`). `useFreshEffect` hands each run a `fresh()` that
+goes false the moment a newer run starts. A retired chain can still finish; it just cannot
+write. Every season- and selection-keyed fetch in the app now uses it — including two the
+original report never mentioned, in the Sources panel and the Explorer's own boot. Cancellation
+via `AbortController` was considered and rejected: it does not answer the actual question —
+which of several answers is allowed to win — and it throws away responses the HTTP cache could
+reuse.
+
+*A calendar carries the season it is the calendar of.* Between "the year changed" and "the new
+calendar arrived" the component held the old season's Grand Prix under the new season's year,
+and the effects keyed on `(year, event)` fired on that pair — two more speculative requests per
+change, for a combination that had never existed. Pairing the list with its year makes that
+unrepresentable.
+
+*A refused archive stops being a confident wrong answer.* `get_standings` fell through to the
+demo grid on any failure, so a throttled request filled the card with the 2025 top ten under
+whatever season was on screen — plausible, confident, and false, with nothing marking it. Demo
+data belongs to demo mode now; an unreachable source produces no rows and says so.
+
+**Measured, same rig, production build:**
+
+| | before | after |
+| --- | --- | --- |
+| cold load of Seasons | 7 upstream requests, **3 refused (429)** | 4 requests, 0 refused |
+| five rapid season changes | never got there — the page was dead | 10 requests, 0 refused, 2 per change |
+| duplicate URLs per season view | `{year}.json` ×3, results ×2, standings ×2 | every URL exactly once |
+| what the reader saw | *"Application error: a client-side exception has occurred"* | correct season, real rows, no error state |
+| every source refusing | blank page | designed retry card on both pages, nothing stuck |
+
+### The Explorer opened on a race nobody asked for
+
+The Race Explorer's initial state was `{ 2026, "Austrian Grand Prix", "Race" }` — the demo
+simulator's fixture, not a fact about the world — and the page rendered with it while
+`/api/current` was in flight. `booted` already gated the expensive session fetch, but it did not
+gate the *picker*, which is the thing with the wrong race written in it.
+
+Measured with `/api/current` held for 1.5 seconds, which is not a pathological network, it is a
+cold Render instance answering a browser in another country: **"Austrian Grand Prix" was on
+screen at t+80ms, 1.42 seconds before the app knew which race it was** — and then a *second*
+wrong race, because `RaceSelector` had meanwhile fetched the 2026 calendar for a season that was
+about to change and snapped to its last event. Three races shown before the right one.
+
+There is no guess now. The selection is `null` until the address bar or `/api/current` says what
+it is, and the page renders its own shape — a skeleton of the header, the picker and the
+dashboard — until then. Nothing that names a race mounts, so `RaceSelector` no longer fetches a
+calendar for a season it is about to leave either. Same measurement after: nothing named a Grand
+Prix at any sample while the answer was in flight.
+
+Gating a page on a request means the request failing has to have an ending, or the fix is the
+unrecoverable loading state it was meant to remove, reinvented one level up. So the two outcomes
+are separate: still asking is the skeleton, asked and got nothing is a designed panel with Try
+again and a way through to Seasons. The same reasoning removed a genuine stuck spinner in the
+Historical Explorer, where a new season's calendar being in flight left `loading` exactly as the
+previous season had left it — true, forever, over a retry card the reader never got to see.
+
+### Two things that make the next one of these visible
+
+`app/error.tsx` — every *data* failure in this product has a designed answer; a failure in the
+*code* had none, which is why a TypeError became the browser's own blank page. Now it is the
+product's voice: what happened, that it is ours and not the data's, and two ways out.
+
+`npm run doctor:fetches` — a static check, in `make test` and deliberately not in `build`, for
+the two mistakes a type checker cannot see: a selection-keyed fetch with no staleness guard, and
+a picker seeded with a Grand Prix. It found two unguarded fetches beyond the ones this version
+set out to fix.
 
 ---
 

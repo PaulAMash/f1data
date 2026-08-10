@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Calendar, History, RefreshCw } from "lucide-react";
 import { Select } from "@/components/ui/Select";
 import { api } from "@/lib/api";
+import { useFreshEffect } from "@/lib/fresh";
 import type { GrandPrix } from "@/lib/types";
 import { cx } from "@/lib/format";
 
@@ -18,16 +19,20 @@ export function RaceSelector({
 }) {
   const [races, setRaces] = useState<GrandPrix[]>([]);
   const [thisYear, setThisYear] = useState<number | null>(null);
-  useEffect(() => {
-    let live = true;
-    api.current().then((c) => { if (live) setThisYear(c.year); }).catch(() => {});
-    return () => { live = false; };
+  useFreshEffect((fresh) => {
+    api.current().then((c) => { if (fresh()) setThisYear(c.year); }).catch(() => {});
   }, []);
 
   // Race Explorer is scoped to whatever season is loaded (the current season by
   // default) — there is no season dropdown here; finished seasons live in Seasons.
-  useEffect(() => {
-    api.races(value.year).then((r) => setRaces(r.races)).catch(() => setRaces([]));
+  //
+  // Guarded like every other season-keyed fetch: a calendar that arrives after
+  // the season has moved on would repopulate the Grand Prix list with the wrong
+  // season's races, and the snap-to-latest effect below would then act on it.
+  useFreshEffect((fresh) => {
+    api.races(value.year)
+      .then((r) => { if (fresh()) setRaces(r.races); })
+      .catch(() => { if (fresh()) setRaces([]); });
   }, [value.year]);
 
   // A session is offered only once it has actually started — so an in-progress

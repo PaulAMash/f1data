@@ -16,7 +16,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from . import cache, service, timing
+from . import cache, service, timing, upstream
 from .adapters import data_source_manager, headshots, history_adapter, historical, pitstop_service
 from .adapters.data_source_manager import DataUnavailableError
 from .adapters.pitwall_runtime import load_pitwall
@@ -243,8 +243,18 @@ def races(year: int):
 
 
 @app.get("/api/current")
-def current_default():
-    """Current season + latest Grand Prix for Race Explorer to open by default."""
+def current_default(response: Response):
+    """Current season + latest Grand Prix for Race Explorer to open by default.
+
+    THIS IS NOW THE FIRST THING ON THE CRITICAL PATH. The Explorer used to seed
+    its picker with a hard-coded demo race and correct itself when this
+    answered, which is why a reader saw the Austrian Grand Prix for a moment on
+    every arrival. It waits for the real answer instead — so this call has to be
+    cheap, and it is: the calendar behind it is cached upstream-side (see
+    app/upstream) and the browser is told it may reuse the answer for a few
+    minutes rather than asking again on every navigation.
+    """
+    response.headers["Cache-Control"] = f"public, max-age={_CURRENT_SEASON_MAX_AGE}"
     return service.get_current()
 
 
@@ -372,6 +382,9 @@ def session_cache_clear(year: int | None = None, gp: str | None = None, session:
         for f in get_settings().cache_dir.glob("*.json"):
             f.unlink()
             cleared += 1
+        # the remembered upstream documents too — a cache clear that leaves the
+        # calendar and standings behind has not cleared the cache
+        cleared += upstream.cache_clear()
     return {"cleared": cleared}
 
 
@@ -447,7 +460,16 @@ def history_standings(year: int = Query(...), type: str = Query("driver")):
                     r["headshot_url"] = url
         except Exception:  # noqa: BLE001
             pass
-    return {"source": src.value, "year": year, "type": type, "standings": rows}
+    # "Nothing came back" and "this season has no championship" look identical
+    # in an empty list, and only one of them has a Retry that helps. Every
+    # season since 1950 has a championship, so an empty table outside demo mode
+    # is the archive not answering — said plainly, in the shape the historical
+    # routes already use.
+    unavailable = not rows and src != DataSource.MOCK
+    return {"source": src.value, "year": year, "type": type, "standings": rows,
+            **({"error": "source_unavailable", "retryable": True,
+                "message": "The championship table couldn't be read from the archive "
+                           "(Jolpica/Ergast) just now."} if unavailable else {})}
 
 
 @app.get("/api/history/circuit-winners")
@@ -460,7 +482,24 @@ def history_circuit(circuit: str = Query(...)):
 # Historical Data Explorer (year / event / session → real results)
 # --------------------------------------------------------------------------- #
 def _hist_guard(fn, **fields):
-    """Run a historical lookup; turn source failures into honest, structured info."""
+    """Run a historical lookup; turn source failures into honest, structured info.
+
+    `**fields` IS NOT DECORATION — IT IS THE TYPE CONTRACT, and getting it wrong
+    took the Seasons page down.
+
+    Three of these four routes use `available` as a boolean ("is there a result
+    here"). `/api/historical/sessions` uses the same key for a LIST of session
+    names. The failure shape below sets `available: False` unconditionally, so
+    when Jolpica answered a sessions lookup with 429 the reader's browser got
+    HTTP 200 carrying `{"available": false}` where a `string[]` belongs, called
+    `.includes()` on a boolean, and threw — a TypeError with no boundary above
+    it, which is a blank page rather than the retry card this function exists to
+    produce. Two hundred with a lie in it is worse than a five hundred.
+
+    So the fallback fields are passed in by each route and they are applied
+    LAST, after the generic shape, which is what makes the sessions route able
+    to say `available=[]` and keep the contract its caller was written against.
+    """
     try:
         return fn()
     except Exception as exc:  # noqa: BLE001
@@ -482,7 +521,10 @@ def historical_events(year: int = Query(...)):
 
 @app.get("/api/historical/sessions")
 def historical_sessions(year: int = Query(...), event: str = Query(...)):
-    return _hist_guard(lambda: historical.sessions_for(year, event))
+    # `available` here is a list of session names, never a boolean — see the
+    # note on _hist_guard for what happened the one time it was one.
+    return _hist_guard(lambda: historical.sessions_for(year, event),
+                       year=year, event=event, available=[], unavailable=[])
 
 
 @app.get("/api/historical/results")

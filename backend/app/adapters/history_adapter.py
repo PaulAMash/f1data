@@ -7,27 +7,56 @@ sample so the Historical section still renders.
 """
 from __future__ import annotations
 
-import requests
-
 from ..config import get_settings
 from ..models import DataSource
+from .. import upstream
+from . import jolpica_adapter
 from .pitwall_runtime import load_pitwall
 
 
 def _jolpica(path: str) -> dict:
-    pitwall = load_pitwall()
-    url = f"{pitwall.JOLPICA}/{path}"
-    resp = requests.get(url, timeout=get_settings().fetch_timeout)
-    resp.raise_for_status()
-    return resp.json()
+    """One Jolpica document, cached and paced — see app/upstream.
+
+    THIS USED TO IMPORT PANDAS TO READ A STRING. It asked `load_pitwall()` for
+    `pitwall.JOLPICA`, which is the constant `jolpica_adapter.BASE` already
+    holds — and `load_pitwall()` pulls in fastf1, pandas and matplotlib, three
+    seconds of import on a warm machine and more on a cold Render instance. So
+    the Seasons page was the one surface left that paid V84's cold-start cost,
+    and it paid it for a base URL. Same source, same URL, no import.
+
+    The module is referenced rather than the name imported from it, so there is
+    exactly one Jolpica base URL at runtime instead of a second copy frozen at
+    import time — which is the difference between "these two agree" and "these
+    two agreed once".
+    """
+    return upstream.fetch_json(f"{jolpica_adapter.BASE}/{path}",
+                               timeout=get_settings().fetch_timeout,
+                               ttl=jolpica_adapter._ttl_for(path))  # noqa: SLF001
 
 
 # --------------------------------------------------------------------------- #
 # standings
 # --------------------------------------------------------------------------- #
 def get_standings(year: int, standings_type: str = "driver") -> tuple[list[dict], DataSource]:
+    """The championship table for a season, or nothing — never a stand-in.
+
+    A FAILED FETCH USED TO RETURN THE DEMO GRID. `except: pass` fell through to
+    `_mock_standings`, which is the 2025 top ten with real names on it, and the
+    caller had no way to tell that apart from an answer. So whenever Jolpica
+    throttled us — which rapid season switching did reliably, nine requests a
+    change against a four-per-second limit — the card headed "1998 championship"
+    filled with Verstappen, Norris and Leclerc. Plausible, confident and
+    completely false, which is worse than the blank page it was protecting
+    against, and the exact opposite of the rule the rest of this backend follows
+    (see test_no_silent_mock_when_live_disabled).
+
+    Demo data now belongs to demo mode and to nothing else. A source that will
+    not answer produces no rows, and the UI says so and offers Retry.
+    """
     settings = get_settings()
-    if not settings.mock_mode and settings.enable_live_fetch:
+    if settings.mock_mode:
+        return _mock_standings(year, standings_type), DataSource.MOCK
+    if settings.enable_live_fetch:
         try:
             season = str(year)
             key = "constructorStandings" if standings_type == "constructor" else "driverStandings"
@@ -39,7 +68,7 @@ def get_standings(year: int, standings_type: str = "driver") -> tuple[list[dict]
                     return rows, DataSource.LIVE
         except Exception:  # noqa: BLE001
             pass
-    return _mock_standings(year, standings_type), DataSource.MOCK
+    return [], DataSource.LIVE
 
 
 def _parse_standings(block: dict, standings_type: str) -> list[dict]:
