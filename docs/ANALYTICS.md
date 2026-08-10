@@ -189,6 +189,23 @@ live in `store._Dialect` (placeholder style, three DDL type names, and the
 day-truncation expression). Without this the aggregation queries would have had
 no test coverage at all, since there is no Postgres in the build environment.
 
+> **If a query has a literal `%` anywhere in it — a `LIKE` wildcard, a `strftime`
+> token, anything — write it as `%%`.** psycopg scans every query string for its
+> own placeholders (`%s`/`%b`/`%t`) whenever parameters are passed, and treats
+> any other bare `%` as a malformed one. sqlite3's `?`-style driver never does
+> this scanning, so a bare `%` passes every local test and every CI run and then
+> 500s the moment it reaches Postgres — with no CORS headers on the response,
+> since an unhandled exception skips the CORS middleware entirely, which is what
+> made this look like a CORS bug in production rather than a SQL one the first
+> time it happened (`LIKE '/history%'` in the "eras" query, V86). `%%` is correct
+> on both engines: psycopg collapses it to one literal `%`, and SQLite's `LIKE`
+> treats two adjacent wildcards the same as one.
+>
+> `tests/test_analytics_sql.py` runs every query the dashboard issues through
+> psycopg's own placeholder parser (`psycopg._queries._query2pg` — pure text
+> parsing, no live database needed) so this class of bug fails in CI, not in
+> production. Adding a query with a bare `%` fails that test immediately.
+
 **Connections:** the writer holds exactly one; dashboard reads open a short-lived
 connection. Render's free Postgres tier has a small connection ceiling and this
 process is also serving the site.
