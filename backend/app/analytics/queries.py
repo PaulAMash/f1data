@@ -176,8 +176,21 @@ def _usage(window: dict) -> dict:
                       "WHERE {where} AND mode IS NOT NULL "
                       "GROUP BY mode ORDER BY n DESC LIMIT {limit}", ("mode", "n"), limit=4),
         # current season vs archive, which is a different question from "which race"
+        #
+        # `%%` HERE IS NOT A TYPO. psycopg scans every query string for its own
+        # placeholders (%s, %b, %t) whenever parameters are also being passed,
+        # and it treats ANY other bare `%` in the text — including this LIKE
+        # wildcard — as a malformed placeholder rather than a literal character.
+        # sqlite3's `?`-style driver never does this scanning, which is exactly
+        # why this reached production before it was caught: every local and CI
+        # test runs against SQLite (see store.py for why), and this line is
+        # invisible there. `%%` collapses to one literal `%` for psycopg's
+        # parser and is a harmless redundant wildcard for SQLite's LIKE engine,
+        # so it is correct on both. See test_analytics_sql.py, which parses
+        # every query here with psycopg's own (connection-free) query
+        # preparation so this class of bug fails fast, in CI, forever.
         "eras": _top(window,
-                     "SELECT CASE WHEN path LIKE '/history%' THEN 'historical' "
+                     "SELECT CASE WHEN path LIKE '/history%%' THEN 'historical' "
                      "            ELSE 'current' END era, COUNT(*) n "
                      "FROM analytics_event WHERE {where} AND name = 'page_view' "
                      "GROUP BY era ORDER BY n DESC LIMIT {limit}", ("era", "n"), limit=4),
