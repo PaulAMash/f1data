@@ -9,6 +9,7 @@ import { useIsAdvanced } from "@/lib/mode";
 import { usePrefs } from "@/lib/prefs";
 import { api } from "@/lib/api";
 import { useFreshEffect } from "@/lib/fresh";
+import { trackPageView } from "@/lib/analytics";
 import type { DataSource } from "@/lib/types";
 import { Skeleton } from "@/components/ui/misc";
 import { Select } from "@/components/ui/Select";
@@ -58,9 +59,12 @@ export default function History() {
      now — and this page is what it says it is: every season that has finished.
 
      It still opens on the most recent COMPLETED season rather than on a
-     hard-coded year, and a link may name one. */
-  /* A `?year=` in the address is an answer the page already has, so it is taken
+     hard-coded year, and a link may name one.
+
+     A `?year=` in the address is an answer the page already has, so it is taken
      before anything is asked. Everything else waits for `/api/current`. */
+  useEffect(() => { trackPageView("/history"); }, []);
+
   useFreshEffect((fresh) => {
     const asked = typeof window !== "undefined"
       ? Number(new URLSearchParams(window.location.search).get("year")) : 0;

@@ -26,6 +26,7 @@ import { DriverComparison } from "@/components/driver-comparison/DriverCompariso
 import { useMode } from "@/lib/mode";
 import { api, ApiError } from "@/lib/api";
 import { useFreshEffect } from "@/lib/fresh";
+import { trackFeature, trackPageView, trackSessionOpen } from "@/lib/analytics";
 import { cx } from "@/lib/format";
 import type { Meta, RaceBundle, RaceSession } from "@/lib/types";
 import { Standings } from "@/components/history/Standings";
@@ -122,6 +123,12 @@ export default function ExplorerPage() {
      rather than lifting this state into a global store — see lib/tour.tsx. */
   useTourDrive(setTab);
 
+  /* ---- analytics: three events, and no more ------------------------------
+     A page view, which race was opened, and which tab was read. That is enough
+     to answer "what do people look at" without turning every click into a row.
+     All of it is fire-and-forget — see lib/analytics. */
+  useEffect(() => { trackPageView("/explorer"); }, []);
+
   useFreshEffect((fresh) => {
     api.meta()
       .then((m) => { if (fresh()) setMeta(m); })
@@ -194,6 +201,32 @@ export default function ExplorerPage() {
       })
       .finally(() => { if (fresh()) setLoading(false); });
   }, [booted, sel?.year, sel?.gp, sel?.session, refreshKey]);
+
+  /* Which F1 data people actually care about. Keyed on the SELECTION rather
+     than the bundle so a session that fails to load still counts as "someone
+     wanted this race" — that gap is exactly what the dashboard's session
+     failures list is for. */
+  useEffect(() => {
+    if (!booted || !sel) return;
+    trackSessionOpen(sel.year, sel.gp, sel.session);
+  }, [booted, sel?.year, sel?.gp, sel?.session]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* WHICH FEATURE WAS READ, recorded from the state rather than from the
+     click handlers. Tabs are opened by the tab bar, by the Sources button, by
+     the guided tour, by a ?tab= link and by Race Story's jump links — wiring
+     five callbacks would have meant five chances to miss one, and a feature
+     that looks unused because nobody instrumented its entrance is worse than
+     no number at all. `mode` rides along so Simple vs Advanced is answerable
+     without a second event. */
+  useEffect(() => {
+    if (!booted || !sel || view !== "session") return;
+    trackFeature(tab, { year: sel.year, gp: sel.gp, session: sel.session, mode });
+  }, [booted, tab, view, mode]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!booted || view !== "season") return;
+    trackFeature("championship", { mode });
+  }, [booted, view, mode]);
 
   const session = bundle?.session;
   const category = bundle?.category ?? "race";

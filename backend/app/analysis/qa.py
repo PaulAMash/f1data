@@ -981,8 +981,17 @@ def answer_question(question: str, ctx: QAContext, simple: bool = False) -> Ques
             result = None
         if result is not None:
             break
+    # WHETHER ANYBODY ACTUALLY RECOGNISED THE QUESTION.
+    # `_best_effort` never dead-ends — which is right for the reader and, until
+    # now, invisible to us: it answers with a session overview, and an overview
+    # served because nothing matched reads exactly like an overview somebody
+    # asked for. This one boolean is the difference, and it is the whole basis
+    # for "Ask could not answer this" on the analytics dashboard. See
+    # app/analytics/classify.py. Nothing about the answer itself changes.
+    matched = result is not None
     if result is None:
         result = _best_effort(q, ctx, ents)
+    result.matched_handler = matched
 
     result.entities = {"drivers": ents["drivers"], "teams": ents["teams"]}
     _enrich_structure(result, ctx, ents, simple)

@@ -35,6 +35,22 @@ Health check: `curl http://localhost:8000/api/health` → `{"ok":true,...}`.
 
 ---
 
+## Private analytics (optional)
+
+Pitwall IQ has a private product-analytics dashboard at `/admin`. It is **off
+until you configure it**, and the site runs exactly as it does today with it off.
+
+1. Attach a **PostgreSQL** instance to the backend service on Render — this sets
+   `DATABASE_URL` automatically.
+2. Set `PITWALL_IQ_ADMIN_TOKEN` to a random secret of 24+ characters
+   (`python -c "import secrets; print(secrets.token_urlsafe(32))"`).
+3. Redeploy. Tables are created on first boot; there is no migration step.
+
+Without `DATABASE_URL` nothing is recorded. Without `PITWALL_IQ_ADMIN_TOKEN`
+every analytics endpoint answers 503 rather than serving data — an unconfigured
+deployment exposes nothing. Full details, including exactly what is and is not
+collected: **docs/ANALYTICS.md**.
+
 ## Deploy the backend (FastAPI)
 
 Any Python host works (Fly.io, Render, Railway, a VM, a container platform).

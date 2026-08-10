@@ -116,8 +116,12 @@ export const api = {
     get<RaceBundle>("/api/session", { year, gp, session, refresh }).then(normalizeBundle),
   compare: (year: number, gp: string, session: string, a: string, b: string) =>
     get<any>("/api/compare", { year, gp, session, a, b }),
+  // `visitor` is the browser's own anonymous id (see lib/analytics) — it is
+  // what lets the private dashboard tell one person asking eight questions from
+  // eight people asking one. It carries nothing identifying.
   ask: (body: {
     year: number; gp: string; session: string; question: string; simple?: boolean;
+    visitor?: string;
   }) => post<QuestionAnswer>("/api/ask", body),
   current: () =>
     get<{ year: number; gp: string | null; session: string; seasons: number[] }>("/api/current"),

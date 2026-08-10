@@ -4,6 +4,7 @@ import { RefreshCw } from "lucide-react";
 import { AlertTriangle } from "@/components/ui/MotionIcon";
 import { api } from "@/lib/api";
 import { useFreshEffect } from "@/lib/fresh";
+import { trackFeature } from "@/lib/analytics";
 import { useIsSimple } from "@/lib/mode";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { InfoTip } from "@/components/ui/InfoTip";
@@ -162,6 +163,9 @@ export function HistoricalExplorer() {
   useFreshEffect((fresh) => {
     if (!dated || !event || !session) { setResults(null); setLoading(false); return; }
     setLoading(true); setResults(null);
+    /* "Historical usage", recorded where it actually happens: a reader who
+       looked up a 1998 race is the event, not a page view of /history. */
+    trackFeature("historical", { year, gp: event, session });
     api.histResults(year, event, session)
       .then((r) => { if (fresh()) setResults(r); })
       .catch((e) => {
