@@ -473,7 +473,7 @@ def _performance(window: dict) -> dict:
 
     endpoints = _top(window,
                      "SELECT path, COUNT(*) n, AVG(ms) avg_ms, MAX(ms) max_ms, "
-                     "       SUM(CASE WHEN ok = 0 OR ok IS FALSE THEN 1 ELSE 0 END) errs "
+                     "       SUM(CASE WHEN NOT ok THEN 1 ELSE 0 END) errs "
                      "FROM analytics_event WHERE {where} AND name = 'api_request' "
                      "AND path LIKE '/api/%%' AND ms IS NOT NULL GROUP BY path "
                      "HAVING COUNT(*) >= 2 ORDER BY avg_ms DESC LIMIT {limit}",
