@@ -143,11 +143,13 @@ def _schema() -> list[str]:
             mode      TEXT,
             ok        {d.bool_type},
             ms        INTEGER,
-            detail    TEXT
+            detail    TEXT,
+            status    INTEGER
         )""",
         "CREATE INDEX IF NOT EXISTS analytics_event_ts ON analytics_event (ts)",
         "CREATE INDEX IF NOT EXISTS analytics_event_name_ts ON analytics_event (name, ts)",
         "CREATE INDEX IF NOT EXISTS analytics_event_visitor ON analytics_event (visitor)",
+        "CREATE INDEX IF NOT EXISTS analytics_event_visit ON analytics_event (visit)",
 
         # ---- one row per Ask interaction, the point of the exercise ------ #
         f"""CREATE TABLE IF NOT EXISTS analytics_ask (
@@ -155,6 +157,7 @@ def _schema() -> list[str]:
             ref       TEXT NOT NULL UNIQUE,
             ts        {d.ts_type} NOT NULL,
             visitor   TEXT,
+            visit     TEXT,
             year      INTEGER,
             gp        TEXT,
             session_type TEXT,
@@ -162,6 +165,8 @@ def _schema() -> list[str]:
             answer    TEXT,
             outcome   TEXT NOT NULL,
             topic     TEXT NOT NULL,
+            topic_hint TEXT,
+            question_norm TEXT,
             kind      TEXT,
             confidence TEXT,
             missing   TEXT,
@@ -173,6 +178,7 @@ def _schema() -> list[str]:
         )""",
         "CREATE INDEX IF NOT EXISTS analytics_ask_ts ON analytics_ask (ts)",
         "CREATE INDEX IF NOT EXISTS analytics_ask_outcome_ts ON analytics_ask (outcome, ts)",
+        "CREATE INDEX IF NOT EXISTS analytics_ask_topic_ts ON analytics_ask (topic, ts)",
 
         # ---- the shape of history, kept after the raw rows are pruned ---- #
         f"""CREATE TABLE IF NOT EXISTS analytics_daily (
@@ -183,6 +189,70 @@ def _schema() -> list[str]:
             PRIMARY KEY (day, name, feature)
         )""",
     ]
+
+
+# --------------------------------------------------------------------------- #
+# Migration
+#
+# `CREATE TABLE IF NOT EXISTS` does exactly nothing to a table that already
+# exists, so every column added in V91 would be missing on the one database that
+# matters — the one in production with the real data in it. There is no
+# migration framework here and adding one for four columns would be its own
+# maintenance burden, so this reads the columns that ARE there and adds only
+# what is absent. Idempotent, safe on every boot, and it never drops or rewrites
+# a column: the worst case is that it finds nothing to do.
+#
+# SQLite has no `ADD COLUMN IF NOT EXISTS`, which is why the column list is read
+# first rather than the statement simply being attempted.
+# --------------------------------------------------------------------------- #
+_ADDED_COLUMNS = {
+    "analytics_event": [("status", "INTEGER")],
+    "analytics_ask": [("visit", "TEXT"), ("topic_hint", "TEXT"),
+                      ("question_norm", "TEXT")],
+}
+
+
+def _columns(conn, table: str) -> set[str]:
+    cur = conn.cursor()
+    assert _DIALECT
+    if _DIALECT.name == "postgres":
+        cur.execute("SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = %s", (table,))
+        return {row[0] for row in cur.fetchall()}
+    cur.execute(f"PRAGMA table_info({table})")
+    return {row[1] for row in cur.fetchall()}
+
+
+def _migrate(conn) -> list[str]:
+    """Bring an existing database up to the current shape. Returns what it did."""
+    assert _DIALECT
+    done: list[str] = []
+    for table, columns in _ADDED_COLUMNS.items():
+        try:
+            present = _columns(conn, table)
+        except Exception:  # noqa: BLE001 — a table not yet created is fine
+            continue
+        if not present:
+            continue
+        for name, coltype in columns:
+            if name in present:
+                continue
+            conn.cursor().execute(f"ALTER TABLE {table} ADD COLUMN {name} {coltype}")
+            done.append(f"{table}.{name}")
+
+    # The old outcome spellings, rewritten once. See classify.LEGACY_OUTCOMES for
+    # why this is a migration rather than a translation on every read.
+    from .classify import LEGACY_OUTCOMES
+    for old, new in LEGACY_OUTCOMES.items():
+        cur = conn.cursor()
+        cur.execute(_DIALECT.sql("UPDATE analytics_ask SET outcome = ? WHERE outcome = ?"),
+                    (new, old))
+        if cur.rowcount and cur.rowcount > 0:
+            done.append(f"outcome {old}->{new} ({cur.rowcount})")
+
+    if _DIALECT.name == "sqlite":
+        conn.commit()
+    return done
 
 
 # --------------------------------------------------------------------------- #
@@ -228,6 +298,9 @@ def setup(url: str | None = None) -> bool:
                     conn.execute(_DIALECT.sql(statement))
                 if _DIALECT.name == "sqlite":
                     conn.commit()
+                applied = _migrate(conn)
+                if applied:
+                    log.info("analytics: migrated %s", ", ".join(applied))
             finally:
                 conn.close()
         except Exception as exc:  # noqa: BLE001
@@ -393,8 +466,9 @@ def _clip(value: Any, limit: int) -> Any:
 
 _EVENT_SQL = (
     "INSERT INTO analytics_event "
-    "(ts, name, visitor, visit, path, year, gp, session_type, feature, mode, ok, ms, detail) "
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "(ts, name, visitor, visit, path, year, gp, session_type, feature, mode, ok, ms, "
+    " detail, status) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
 
@@ -402,8 +476,16 @@ def record(name: str, *, visitor: str | None = None, visit: str | None = None,
            path: str | None = None, year: int | None = None, gp: str | None = None,
            session_type: str | None = None, feature: str | None = None,
            mode: str | None = None, ok: bool | None = None, ms: int | None = None,
-           detail: str | None = None, at: datetime | None = None) -> None:
-    """Record one product event. Fire-and-forget; failures are invisible."""
+           detail: str | None = None, status: int | None = None,
+           at: datetime | None = None) -> None:
+    """Record one product event. Fire-and-forget; failures are invisible.
+
+    `status` is the HTTP status as a NUMBER rather than buried in `detail`.
+    The dashboard could not previously tell a 404 for /favicon.ico from a 500
+    on a session load — both were 'an error' — so the error count on a healthy
+    deployment was mostly browsers asking for a favicon. A column, not a LIKE
+    over free text, because this gets grouped on every dashboard load.
+    """
     if not _ENABLED or not name:
         return
     try:
@@ -414,6 +496,7 @@ def record(name: str, *, visitor: str | None = None, visit: str | None = None,
             int(year) if year is not None else None, _clip(gp, 100),
             _clip(session_type, 40), _clip(feature, 64), _clip(mode, 16),
             _as_bool(ok), int(ms) if ms is not None else None, _clip(detail, MAX_DETAIL),
+            int(status) if status is not None else None,
         ))
     except Exception:  # noqa: BLE001 — analytics may never raise into a request
         _stats["errors"] += 1
@@ -421,19 +504,23 @@ def record(name: str, *, visitor: str | None = None, visit: str | None = None,
 
 _ASK_SQL = (
     "INSERT INTO analytics_ask "
-    "(ref, ts, visitor, year, gp, session_type, question, answer, outcome, topic, "
-    " kind, confidence, missing, matched, used_llm, ms, error, helpful) "
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "(ref, ts, visitor, visit, year, gp, session_type, question, answer, outcome, topic, "
+    " topic_hint, question_norm, kind, confidence, missing, matched, used_llm, ms, "
+    " error, helpful) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
 
 def record_ask(*, question: str, outcome: str, topic: str,
-               visitor: str | None = None, year: int | None = None,
+               visitor: str | None = None, visit: str | None = None,
+               year: int | None = None,
                gp: str | None = None, session_type: str | None = None,
                answer: str | None = None, kind: str | None = None,
                confidence: str | None = None, missing: list[str] | None = None,
                matched: bool | None = None, used_llm: bool | None = None,
-               ms: int | None = None, error: str | None = None) -> str | None:
+               ms: int | None = None, error: str | None = None,
+               topic_hint: str | None = None,
+               question_norm: str | None = None) -> str | None:
     """Record one Ask interaction. Returns the opaque `ref` the thumbs use.
 
     The ref is a random UUID rather than the row id: it travels to the browser,
@@ -447,9 +534,11 @@ def record_ask(*, question: str, outcome: str, topic: str,
         ref = uuid.uuid4().hex
         _submit(_ASK_SQL, (
             ref, _DIALECT.ts(datetime.now(timezone.utc)), _clip(visitor, 64),
+            _clip(visit, 64),
             int(year) if year is not None else None, _clip(gp, 100),
             _clip(session_type, 40), _clip(question, MAX_QUESTION),
             _clip(answer, MAX_ANSWER), _clip(outcome, 32), _clip(topic, 32),
+            _clip(topic_hint, 64), _clip(question_norm, 200),
             _clip(kind, 40), _clip(confidence, 16),
             json.dumps(missing or [])[:MAX_DETAIL],
             _as_bool(matched), _as_bool(used_llm),
@@ -523,3 +612,111 @@ def query(sql: str, params: tuple = ()) -> list[tuple]:
 
 def dialect() -> _Dialect | None:
     return _DIALECT
+
+
+# --------------------------------------------------------------------------- #
+# Deleting analytics data — and NOTHING else.
+#
+# THE ONLY TABLES THIS MODULE MAY EVER DELETE FROM. Written as a frozen literal
+# rather than assembled from a schema walk or accepted from a caller, because the
+# failure mode of a "clear my data" button is not that it fails — it is that it
+# succeeds against the wrong thing. A table name not in this tuple cannot be
+# reached by any function below, whatever an argument says.
+#
+# In production this database is Render Postgres, which holds the analytics and
+# nothing else — the F1 session cache is JSON on disk (app/cache.py) and is
+# cleared by a separate operation that never opens this connection. Even so, the
+# tuple is the guarantee, not the deployment topology.
+# --------------------------------------------------------------------------- #
+ANALYTICS_TABLES = ("analytics_event", "analytics_ask", "analytics_daily")
+
+#: What each holds, in the words the confirmation dialog shows. A table added
+#: above without a line here makes `inventory()` say so rather than describe it
+#: vaguely — you cannot consent to deleting something nobody can name.
+TABLE_PURPOSE = {
+    "analytics_event": "Page views, session opens, feature use, errors and API timings",
+    "analytics_ask": "Every Ask question, its answer, outcome, topic and thumbs rating",
+    "analytics_daily": "The daily rollup that survives raw-event pruning",
+}
+
+
+def inventory() -> dict:
+    """Exactly what is stored, per table, so a destructive action can be READ
+    before it is confirmed rather than described in the abstract."""
+    if not _ENABLED:
+        return {"available": False, "tables": [], "total": 0}
+    tables = []
+    total = 0
+    for table in ANALYTICS_TABLES:
+        try:
+            rows = query(f"SELECT COUNT(*) FROM {table}")
+            n = int(rows[0][0]) if rows else 0
+        except Exception:  # noqa: BLE001
+            n = 0
+        oldest = newest = None
+        if table != "analytics_daily":
+            try:
+                span = query(f"SELECT MIN(ts), MAX(ts) FROM {table}")
+                if span and span[0][0] is not None:
+                    oldest, newest = str(span[0][0]), str(span[0][1])
+            except Exception:  # noqa: BLE001
+                pass
+        total += n
+        tables.append({
+            "table": table, "rows": n,
+            "purpose": TABLE_PURPOSE.get(table, "(undocumented — see store.py)"),
+            "oldest": oldest, "newest": newest,
+        })
+    return {"available": True, "tables": tables, "total": total,
+            "engine": _DIALECT.name if _DIALECT else None}
+
+
+def purge(scope: str = "all", before: datetime | None = None) -> dict:
+    """Delete analytics rows. Returns how many, per table.
+
+    `scope` is "all", "events" or "ask". `before` restricts to rows older than a
+    moment, which is what makes "start a clean measurement period after my
+    spam-testing" possible without losing the history in front of it.
+
+    DELETE, not TRUNCATE and not DROP: the tables and indexes survive, so the
+    next event lands in a store that is already the right shape and there is no
+    window in which analytics is broken because a table went missing.
+    """
+    if not _ENABLED:
+        return {"available": False, "deleted": {}, "total": 0}
+    assert _DIALECT
+    targets = {
+        "all": ANALYTICS_TABLES,
+        "events": ("analytics_event", "analytics_daily"),
+        "ask": ("analytics_ask",),
+    }.get(scope)
+    if targets is None:
+        raise ValueError(f"unknown scope {scope!r}")
+
+    deleted: dict[str, int] = {}
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        for table in targets:
+            # Belt and braces: the loop can only see names from the frozen tuple
+            # above, and this asserts it again at the point of the DELETE.
+            assert table in ANALYTICS_TABLES, table
+            if before is not None and table != "analytics_daily":
+                cur.execute(_DIALECT.sql(f"DELETE FROM {table} WHERE ts < ?"),
+                            (_DIALECT.ts(before),))
+            elif before is not None:
+                # the rollup is keyed by a day string, not a timestamp
+                cur.execute(_DIALECT.sql("DELETE FROM analytics_daily WHERE day < ?"),
+                            (before.date().isoformat(),))
+            else:
+                cur.execute(f"DELETE FROM {table}")
+            deleted[table] = max(0, cur.rowcount or 0)
+        if _DIALECT.name == "sqlite":
+            conn.commit()
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+    log.info("analytics: purged %s (scope=%s, before=%s)", deleted, scope, before)
+    return {"available": True, "deleted": deleted, "total": sum(deleted.values())}

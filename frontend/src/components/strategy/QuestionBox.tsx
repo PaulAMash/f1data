@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, CornerDownLeft, MessageSquareText, ThumbsDown, ThumbsUp, Wand2 } from "lucide-react";
 import { Sparkles } from "@/components/ui/MotionIcon";
 import { api } from "@/lib/api";
-import { sendAskFeedback, visitorId } from "@/lib/analytics";
+import { recallFeedback, sendAskFeedback, visitorId, visitSessionId } from "@/lib/analytics";
 import type { QuestionAnswer, SessionCategory } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { BetaTag } from "@/components/ui/BetaTag";
@@ -15,7 +15,34 @@ const MIN_THINK_MS = 1500; // makes the analysis feel considered, not instant
 // Module-level store: answers survive tab switches (component unmounts) for the
 // life of the page and are wiped on refresh. Keyed per session so each race
 // keeps its own thread.
-const askHistoryStore = new Map<string, QuestionAnswer[]>();
+const askHistoryStore = new Map<string, AskEntry[]>();
+
+/* -------------------------------------------------------------------------- */
+/* EVERY ANSWER NEEDS AN IDENTITY OF ITS OWN, AND THIS IS WHY.                */
+/*                                                                            */
+/* The thread was rendered `history.map((a, i) => <AnswerCard key={i} …>)`     */
+/* over a list that new answers are PREPENDED to. React reconciles by key, so  */
+/* the component instance at key 0 is reused for whatever answer is at index 0 */
+/* — and its state comes with it. The sequence that produced the reported bug: */
+/*                                                                            */
+/*   1. Ask Q1. Press the thumbs-down. The Rate at key 0 sets sent=false and   */
+/*      renders its acknowledgement. Correct so far.                           */
+/*   2. Ask Q2. Q2 becomes index 0. React keeps the same Rate instance, which  */
+/*      still holds sent=false — so Q2 renders as ALREADY RATED, with its      */
+/*      buttons gone, and nobody ever clicked anything.                        */
+/*                                                                            */
+/* One bug, both reported symptoms: controls that vanish, and answers showing  */
+/* a feedback state the reader never chose. `showPlain` leaked the same way,   */
+/* silently.                                                                   */
+/*                                                                            */
+/* A local id rather than `ask_ref`: the ref is absent when analytics is off   */
+/* and on the client-side error card, and a key that is sometimes undefined is */
+/* the same bug with extra steps.                                              */
+/* -------------------------------------------------------------------------- */
+type AskEntry = { id: string; answer: QuestionAnswer };
+
+let askSeq = 0;
+const nextAskId = () => `ask-${Date.now().toString(36)}-${++askSeq}`;
 
 export function QuestionBox({
   year, gp, session, llmAvailable, category, seed,
@@ -28,9 +55,9 @@ export function QuestionBox({
   const [q, setQ] = useState("");
   const boxEl = useRef<HTMLDivElement | null>(null);
   const [thinking, setThinking] = useState(false);
-  const [history, setHistoryState] = useState<QuestionAnswer[]>(
+  const [history, setHistoryState] = useState<AskEntry[]>(
     () => askHistoryStore.get(storeKey) ?? []);
-  const setHistory = (fn: (h: QuestionAnswer[]) => QuestionAnswer[]) => {
+  const setHistory = (fn: (h: AskEntry[]) => AskEntry[]) => {
     setHistoryState((h) => {
       const next = fn(h);
       askHistoryStore.set(storeKey, next);
@@ -46,18 +73,18 @@ export function QuestionBox({
     const started = Date.now();
     try {
       const res = await api.ask({ year, gp, session, question: text,
-                                  visitor: visitorId() });
+                                  visitor: visitorId(), visit: visitSessionId() });
       const elapsed = Date.now() - started;
       if (elapsed < MIN_THINK_MS) await new Promise((r) => setTimeout(r, MIN_THINK_MS - elapsed));
-      setHistory((h) => [res, ...h]);
+      setHistory((h) => [{ id: nextAskId(), answer: res }, ...h]);
     } catch (e: any) {
-      setHistory((h) => [{
+      setHistory((h) => [{ id: nextAskId(), answer: {
         question: text, answer: e?.message ?? "Something went wrong.", kind: "error",
         used_llm: false, confidence: "low", supporting: {}, missing_data: [],
         entities: {}, follow_ups: [], simple: false, answer_title: "Couldn't answer",
         short_answer: e?.message ?? "Something went wrong.", detailed_answer: [], evidence: [],
         beginner_summary: null, advanced_notes: [], related_drivers: [], related_laps: [], analysis_steps: [],
-      } as QuestionAnswer, ...h]);
+      } as QuestionAnswer }, ...h]);
     } finally {
       setThinking(false);
     }
@@ -137,8 +164,8 @@ export function QuestionBox({
 
       <div className="mt-4 space-y-3">
         {thinking && <AnalysisProgress />}
-        {history.map((a, i) => (
-          <AnswerCard key={i} a={a} onAsk={ask} />
+        {history.map((entry) => (
+          <AnswerCard key={entry.id} a={entry.answer} onAsk={ask} />
         ))}
         {!thinking && history.length === 0 && (
           <div className="rounded-xl border border-white/[0.06] bg-base-850/40 p-4">
@@ -180,28 +207,75 @@ export function QuestionBox({
 /* about the instrument is not thinking about the race.                        */
 /* -------------------------------------------------------------------------- */
 function Rate({ refId }: { refId?: string | null }) {
-  const [sent, setSent] = useState<null | boolean>(null);
+  /* THE STATE IS SEEDED FROM THE REF, NOT FROM NOTHING.
+     `useState(initial)` reads its argument only on an instance's first render —
+     exactly right here, because the instance is now per-answer (see the AskEntry
+     note above) and the initial value is looked up by THAT answer's own ref. Two
+     consequences, both required: a rating survives a tab switch that unmounts
+     this card, and a rating can never appear against an answer it was not given
+     for. */
+  const [sent, setSent] = useState<null | boolean>(() => recallFeedback(refId) ?? null);
+
+  /* A ref that changes identity means a different answer, so any inherited
+     opinion is not this answer's. Belt and braces against the exact class of bug
+     this control had: even if React reuses this instance for a different card,
+     the state re-seeds from the new ref rather than persisting. */
+  const seededFor = useRef<string | null | undefined>(refId);
+  useEffect(() => {
+    if (seededFor.current === refId) return;
+    seededFor.current = refId;
+    setSent(recallFeedback(refId) ?? null);
+  }, [refId]);
+
   // No handle means analytics is off on this deployment; then there is nothing
   // to attach an opinion to and the control has no business being on screen.
   if (!refId) return null;
+
+  const rate = (helpful: boolean) => {
+    if (sent !== null) return;          // answered once; not a toggle
+    setSent(helpful);
+    sendAskFeedback(refId, helpful);
+  };
+
+  /* ANSWERED: the state is confirmed IN PLACE rather than replaced by a line of
+     grey text. Keeping the pressed icon visible is what makes it read as "you
+     said this" instead of "something happened here". */
   if (sent !== null) {
     return (
-      <span className="text-[11px] text-ink-faint">
-        {sent ? "Thanks — noted." : "Thanks — we'll look at this one."}
+      <span className={cx(
+        "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11.5px] font-medium",
+        sent ? "border-speed/30 bg-speed/[0.08] text-speed"
+             : "border-amber/30 bg-amber/[0.08] text-amber")}>
+        {sent ? <ThumbsUp size={12} /> : <ThumbsDown size={12} />}
+        {sent ? "Marked helpful" : "Thanks — we'll look at this"}
       </span>
     );
   }
-  const rate = (helpful: boolean) => { setSent(helpful); sendAskFeedback(refId, helpful); };
+
+  /* NOT YET ANSWERED. The old version was two 13px icons in the faintest ink the
+     palette has, at the end of a row of chips — present, and genuinely easy to
+     miss, which is what the ask was about. This is a bordered group with a label
+     and 28px hit targets: it reads as one control, it is obviously pressable,
+     and it still sits inside a row that already existed rather than becoming a
+     banner. Not a "RATE THIS ANSWER" prompt — asked once, quietly, in the place
+     the eye already ends up. */
   return (
-    <span className="ml-auto inline-flex items-center gap-1">
-      <span className="mr-0.5 text-[11px] text-ink-faint">Helpful?</span>
+    <span className="inline-flex items-center gap-0.5 rounded-lg border border-white/[0.12]
+                     bg-base-900/50 py-0.5 pl-2.5 pr-0.5">
+      <span className="mr-1 text-[11.5px] font-medium text-ink-muted">Helpful?</span>
       <button onClick={() => rate(true)} aria-label="This answer was helpful"
-        className="rounded-md p-1 text-ink-faint transition-colors hover:bg-white/[0.06] hover:text-speed">
-        <ThumbsUp size={13} />
+        title="This answer was helpful"
+        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-muted
+                   transition-colors hover:bg-speed/15 hover:text-speed
+                   focus-visible:outline focus-visible:outline-2 focus-visible:outline-speed">
+        <ThumbsUp size={14} />
       </button>
       <button onClick={() => rate(false)} aria-label="This answer was not helpful"
-        className="rounded-md p-1 text-ink-faint transition-colors hover:bg-white/[0.06] hover:text-amber">
-        <ThumbsDown size={13} />
+        title="This answer was not helpful"
+        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-muted
+                   transition-colors hover:bg-amber/15 hover:text-amber
+                   focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber">
+        <ThumbsDown size={14} />
       </button>
     </span>
   );
@@ -334,24 +408,28 @@ function AnswerCard({ a, onAsk }: { a: QuestionAnswer; onAsk?: (q: string) => vo
         <p className="mt-1.5 text-xs text-amber">What&apos;s missing: {a.missing_data.join(", ")}</p>
       )}
 
-      {!!plain && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {showingPlain ? (
-            <button onClick={() => setShowPlain(false)}
-              className="chip border-accent/30 text-accent-soft hover:bg-accent/10">
-              <ChevronDown size={11} /> Show deeper analysis
-            </button>
-          ) : (
-            <button onClick={() => setShowPlain(true)}
-              className="chip border-speed/30 text-speed hover:bg-speed/10">
-              <Wand2 size={11} /> Simplify
-            </button>
-          )}
-          {/* Into the row that already exists rather than a row of its own —
-              the ask was for a signal, not for furniture. */}
-          <Rate refId={a.ask_ref} />
-        </div>
-      )}
+      {/* THE ACTION ROW IS UNCONDITIONAL, AND THAT IS A FIX.
+          It used to be wrapped in `{!!plain && …}`, so an answer with no summary
+          text — no beginner_summary, no short_answer, no answer — lost the
+          rating control along with the toggle that condition was actually for.
+          The toggle needs `plain`; the thumbs never did. `Rate` decides for
+          itself whether it has anything to attach an opinion to. */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {!!plain && (showingPlain ? (
+          <button onClick={() => setShowPlain(false)}
+            className="chip border-accent/30 text-accent-soft hover:bg-accent/10">
+            <ChevronDown size={11} /> Show deeper analysis
+          </button>
+        ) : (
+          <button onClick={() => setShowPlain(true)}
+            className="chip border-speed/30 text-speed hover:bg-speed/10">
+            <Wand2 size={11} /> Simplify
+          </button>
+        ))}
+        {/* Into the row that already exists rather than a row of its own —
+            the ask was for a signal, not for furniture. */}
+        <span className="ml-auto"><Rate refId={a.ask_ref} /></span>
+      </div>
 
       {/* the conversation continues: engine-suggested follow-ups, one tap away */}
       {onAsk && (a.follow_ups?.length ?? 0) > 0 && a.kind !== "error" && (

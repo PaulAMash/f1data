@@ -1,11 +1,14 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import {
-  Activity, BarChart3, KeyRound, LogOut, MessageSquareText, RefreshCw, Timer,
-} from "lucide-react";
+import { KeyRound, LogOut, RefreshCw } from "lucide-react";
 import { AlertTriangle } from "@/components/ui/MotionIcon";
 import { API_BASE } from "@/lib/api";
 import { cx } from "@/lib/format";
+import AdminTools from "@/components/admin/AdminTools";
+import { PALETTE_CSS, Verdict, Stat, Explain, type Tone } from "@/components/admin/kit";
+import {
+  AskPanel, PerformancePanel, PrioritiesPanel, RecentPanel, UsagePanel,
+} from "@/components/admin/panels";
 
 /* -------------------------------------------------------------------------- */
 /* THE PRIVATE DASHBOARD.                                                     */
@@ -20,10 +23,24 @@ import { cx } from "@/lib/format";
 /* never in the build, never in the page source, and never sent anywhere but   */
 /* the Pitwall IQ API as an Authorization header.                              */
 /*                                                                            */
-/* DESIGNED FOR ONE PERSON, WHO ALREADY KNOWS WHAT THE PRODUCT IS. So: the     */
-/* answer first, the explanation only where a number is genuinely ambiguous,   */
-/* and no chart that a list would tell you faster. The whole board is one      */
-/* request; the ranges re-request it.                                          */
+/* WHAT CHANGED IN V91, AND WHY.                                              */
+/*                                                                            */
+/* The old page was a wall of counts. Everything on it was true and almost     */
+/* none of it was legible, because it answered "how many" without ever         */
+/* answering "is that good" or "what do I do". The order is now an argument:   */
+/*                                                                            */
+/*   1. THREE VERDICTS.  Is the product ok, is Ask ok, is the backend ok —     */
+/*      each a judgement with its measurement underneath.                      */
+/*   2. WHAT TO WORK ON.  Derived from the same numbers, ranked by how many    */
+/*      readers each thing affects. The one section that is actionable.        */
+/*   3. ASK.  The point of the product, and the only place readers write down  */
+/*      what they wanted and did not get.                                      */
+/*   4. USAGE, then BACKEND HEALTH.  Context for the two above.                */
+/*   5. TOOLS.  Save it, or clear it.                                          */
+/*   6. RECENT.  The raw stream, last, for when a number needs explaining.     */
+/*                                                                            */
+/* Counts still exist — but underneath the sentence that says whether they     */
+/* matter, which is the difference between a dashboard and a log.              */
 /* -------------------------------------------------------------------------- */
 
 const TOKEN_KEY = "pitwall.admin";
@@ -113,10 +130,15 @@ export default function AdminPage() {
 
   const o = data?.overview;
   const prev = data?.previous;
-  const ask = data?.ask;
+  const v = data?.verdicts;
+  const rangeLabel = RANGES.find((r) => r.key === range)?.label ?? range;
 
   return (
-    <div className="min-h-screen">
+    <div className="adm min-h-screen">
+      {/* The categorical scale lives in one place and is injected once, so the
+          charts, the legends and the log dots cannot drift apart. */}
+      <style>{PALETTE_CSS}</style>
+
       <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
         <header className="mb-5 flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -126,6 +148,13 @@ export default function AdminPage() {
             <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-ink sm:text-3xl">
               Pitwall IQ analytics
             </h1>
+            {data?.range && (
+              <p className="mt-1 text-[12px] text-ink-faint">
+                {data.range.days ? `Last ${data.range.days} day${data.range.days === 1 ? "" : "s"}`
+                                 : "Everything recorded"}
+                {" · to "}{String(data.range.to).replace("T", " ").slice(0, 16)} UTC
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex overflow-hidden rounded-lg border border-white/[0.08]">
@@ -148,7 +177,7 @@ export default function AdminPage() {
         </header>
 
         {error && (
-          <Panel tone="warn">
+          <div className="rounded-xl border border-amber/20 bg-amber/[0.04] px-4 py-3">
             <div className="flex items-start gap-2.5">
               <AlertTriangle size={18} className="mt-px shrink-0 text-amber" />
               <div>
@@ -156,283 +185,82 @@ export default function AdminPage() {
                 <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">{error}</p>
               </div>
             </div>
-          </Panel>
+          </div>
         )}
 
         {data && data.available === false && (
-          <Panel tone="warn">
+          <div className="rounded-xl border border-amber/20 bg-amber/[0.04] px-4 py-3">
             <p className="text-sm font-medium text-ink">Analytics is not recording yet</p>
             <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">{data.reason}</p>
-          </Panel>
+          </div>
         )}
 
         {data?.available && (
           <div className="space-y-5">
-            {/* ---- the five numbers -------------------------------------- */}
-            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
-              <Stat label="Visitors" value={o.visitors} prev={prev?.visitors} />
-              <Stat label="Visits" value={o.visits} prev={prev?.visits} />
-              <Stat label="Page views" value={o.page_views} prev={prev?.page_views} />
-              <Stat label="Ask questions" value={o.ask_questions} prev={prev?.ask_questions} />
-              <Stat label="Returning" value={o.returning_visitors}
-                    hint={`${o.returning_pct}% of visitors`} />
-              <Stat label="Errors" value={o.errors} prev={prev?.errors} bad />
+            {/* ---- 1. THE THREE JUDGEMENTS ------------------------------- */}
+            <div className="grid gap-2.5 sm:grid-cols-3">
+              <Verdict label="Product" state={(v?.product?.state ?? "unknown") as Tone}
+                note={v?.product?.note ?? ""} />
+              <Verdict label="Ask" state={(v?.ask?.state ?? "unknown") as Tone}
+                note={v?.ask?.note ?? ""} />
+              <Verdict label="Backend" state={(v?.backend?.state ?? "unknown") as Tone}
+                note={v?.backend?.note ?? ""} />
             </div>
 
-            {/* ---- ASK, first, because it is the point ------------------- */}
-            <Section title="Ask" icon={<MessageSquareText size={15} />}
-              note={`${ask.total} question${ask.total === 1 ? "" : "s"} · ${ask.answered_pct}% answered outright`}>
-              <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
-                <div>
-                  <Bars items={[
-                    ["Answered", ask.outcomes.answered, "bg-speed"],
-                    ["Partial", ask.outcomes.partial, "bg-amber"],
-                    ["Could not answer", ask.outcomes.unanswered, "bg-rose-400"],
-                    ["Data unavailable", ask.outcomes.data_unavailable, "bg-sky-400"],
-                    ["System error", ask.outcomes.error, "bg-rose-500"],
-                  ]} total={ask.total} />
-                  <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[12px] text-ink-muted">
-                    <span>👍 {ask.helpful}</span>
-                    <span>👎 {ask.unhelpful}</span>
-                    {ask.helpful_pct !== null && ask.rated > 0 && (
-                      <span className="text-ink">{ask.helpful_pct}% of {ask.rated} rated helpful</span>
-                    )}
-                    <span>avg {ask.avg_ms} ms</span>
-                  </div>
-                </div>
-                <div>
-                  <Label>What people ask about</Label>
-                  {ask.topics.length === 0 && <Empty>No questions yet.</Empty>}
-                  <ul className="mt-1.5 space-y-1">
-                    {ask.topics.map((t: any) => (
-                      <li key={t.topic} className="flex items-center gap-2 text-[13px]">
-                        <span className="min-w-0 flex-1 truncate text-ink">{t.label}</span>
-                        <span className="tabular-nums text-ink-muted">{t.n}</span>
-                        {/* the number that tells you what to build next */}
-                        {t.unresolved > 0 && (
-                          <span className="tabular-nums text-[11.5px] text-amber"
-                            title="asked, but Ask could not fully answer">
-                            {t.unresolved} unresolved
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
+            {/* ---- the counts, under the judgements they support --------- */}
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+              <Stat label="Visitors" value={o.visitors} prev={prev?.visitors}
+                help="Distinct anonymous browser ids. Approximate by design — clearing site data or switching device reads as somebody new." />
+              <Stat label="Visits" value={o.visits} prev={prev?.visits}
+                help="A visit is one browsing session: it ends after 30 minutes of inactivity or when the tab is closed." />
+              <Stat label="Page views" value={o.page_views} prev={prev?.page_views} />
+              <Stat label="Questions" value={o.ask_questions} prev={prev?.ask_questions} />
+              <Stat label="Returning" value={o.returning_visitors}
+                hint={`${o.returning_pct}% of visitors`}
+                help="Visitors we had already seen before this window opened — the only honest measure of whether anyone comes back." />
+              <Stat label="Reader-facing errors" value={o.errors} prev={prev?.errors} invert
+                tone={o.errors ? "warn" : "good"}
+                help="Server errors, failed session loads and browser crashes only. A 404 for a favicon is not a reader-facing error and is counted separately." />
+            </div>
 
-              {ask.problems.length > 0 && (
-                <div className="mt-5">
-                  <Label>Where Ask fell short — most recent</Label>
-                  <ul className="mt-2 space-y-1.5">
-                    {ask.problems.map((p: any, i: number) => (
-                      <li key={i} className="rounded-lg border border-white/[0.05] bg-base-800/40 px-3 py-2">
-                        <p className="text-[13.5px] text-ink">&ldquo;{p.question}&rdquo;</p>
-                        <p className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11.5px]">
-                          <span className={cx("font-medium",
-                            p.outcome === "answered" ? "text-speed"
-                              : p.outcome === "partial" ? "text-amber" : "text-rose-400")}>
-                            → {p.outcome_label}
-                          </span>
-                          {p.missing_summary && (
-                            <span className="text-ink-faint">Missing: {p.missing_summary}</span>
-                          )}
-                          <span className="text-ink-faint">{p.topic_label}</span>
-                          {p.gp && <span className="text-ink-faint">{p.year} {p.gp} · {p.session_type}</span>}
-                          {p.helpful === false && <span className="text-rose-400">marked unhelpful</span>}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </Section>
+            {/* ---- 2. WHAT TO DO ABOUT IT -------------------------------- */}
+            <PrioritiesPanel priorities={data.priorities} />
 
-            {/* ---- usage ------------------------------------------------- */}
-            <Section title="Usage" icon={<BarChart3 size={15} />}>
-              <Traffic rows={data.traffic} />
-              <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                <TopList title="Most viewed races" rows={data.usage.races}
-                  render={(r: any) => `${r.year} ${r.gp}`} />
-                <TopList title="Most viewed sessions" rows={data.usage.sessions}
-                  render={(r: any) => r.session_type} />
-                <TopList title="Most used features" rows={data.usage.features}
-                  render={(r: any) => r.feature} />
-                <TopList title="Pages" rows={data.usage.pages} render={(r: any) => r.path} />
-                <TopList title="Simple vs Advanced" rows={data.usage.modes}
-                  render={(r: any) => r.mode} />
-                <TopList title="Last thing before leaving" rows={data.usage.exits}
-                  render={(r: any) => r.what} />
-              </div>
-            </Section>
+            {/* ---- 3. ASK ------------------------------------------------ */}
+            <AskPanel ask={data.ask} />
 
-            {/* ---- performance ------------------------------------------- */}
-            <Section title="Performance" icon={<Timer size={15} />}
-              note={`${data.performance.requests} API requests · median ${data.performance.median_ms ?? "—"} ms · p95 ${data.performance.p95_ms ?? "—"} ms`}>
-              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                <TopList title="Slowest endpoints" rows={data.performance.slowest}
-                  render={(r: any) => r.path} value={(r: any) => `${r.avg_ms} ms`} />
-                <TopList title="Failed requests" rows={data.performance.failed}
-                  render={(r: any) => `${r.path} ${r.detail ?? ""}`} />
-                <TopList title="Session load failures" rows={data.performance.session_failures}
-                  render={(r: any) => `${r.year ?? ""} ${r.gp ?? "?"} · ${r.detail ?? ""}`} />
-                <TopList title="Client errors" rows={data.performance.client_errors}
-                  render={(r: any) => r.detail ?? "unknown"} />
-              </div>
-            </Section>
+            {/* ---- 4. USAGE, THEN BACKEND -------------------------------- */}
+            <UsagePanel usage={data.usage} traffic={data.traffic} overview={o} />
+            <PerformancePanel performance={data.performance} overview={o} />
 
-            {/* ---- recent ------------------------------------------------ */}
-            <Section title="Recent activity" icon={<Activity size={15} />}>
-              {data.recent.length === 0 && <Empty>Nothing recorded in this window.</Empty>}
-              <ul className="space-y-0.5">
-                {data.recent.map((e: any, i: number) => (
-                  <li key={i} className="flex flex-wrap items-baseline gap-x-2 text-[12.5px]">
-                    <span className="w-36 shrink-0 font-mono text-[11px] tabular-nums text-ink-faint">
-                      {String(e.ts).replace("T", " ").slice(0, 19)}
-                    </span>
-                    <span className="font-medium text-ink">{e.name}</span>
-                    <span className="text-ink-muted">
-                      {[e.feature, e.path, e.gp && `${e.year ?? ""} ${e.gp}`, e.session_type,
-                        e.detail].filter(Boolean).join(" · ")}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </Section>
+            {/* ---- 5. TOOLS ---------------------------------------------- */}
+            <AdminTools token={token} range={range} rangeLabel={rangeLabel}
+              onChanged={() => token && load(token, range)} />
 
-            <p className="pb-8 text-[11px] leading-relaxed text-ink-faint">
-              Visitor counts are approximate by design: identity is a random id this
-              browser generated for itself, so clearing site data or switching device
-              counts as a new visitor. No IP addresses, cookies or fingerprints are
-              collected. Analytics store: {data.health?.engine ?? "—"} ·
-              {" "}{data.health?.written ?? 0} written, {data.health?.dropped ?? 0} dropped
-              {data.health?.last_error ? ` · last error: ${data.health.last_error}` : ""}.
+            {/* ---- 6. THE RAW STREAM ------------------------------------- */}
+            <RecentPanel recent={data.recent} />
+
+            <p className="flex flex-wrap items-center gap-x-1.5 pb-8 text-[11px]
+                          leading-relaxed text-ink-faint">
+              <span>
+                No IP addresses, cookies or fingerprints are collected — identity is a
+                random id this browser generated for itself.
+              </span>
+              <Explain>
+                Every figure here comes from events the app records about itself:
+                which page, which feature, which race, how long the API took, and
+                what was asked. Nothing identifies a person, and the store is bounded
+                in memory and written on a background thread, so recording can never
+                slow a reader&rsquo;s request down.
+              </Explain>
+              <span>
+                Store: {data.health?.engine ?? "—"} · {data.health?.written ?? 0} written,
+                {" "}{data.health?.dropped ?? 0} dropped
+                {data.health?.last_error ? ` · last error: ${data.health.last_error}` : ""}.
+              </span>
             </p>
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-function Panel({ children, tone }: { children: React.ReactNode; tone?: "warn" }) {
-  return (
-    <div className={cx("rounded-xl border px-4 py-3",
-      tone === "warn" ? "border-amber/20 bg-amber/[0.04]" : "border-white/[0.06] bg-base-850/40")}>
-      {children}
-    </div>
-  );
-}
-
-function Section({ title, icon, note, children }: {
-  title: string; icon?: React.ReactNode; note?: string; children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-xl border border-white/[0.06] bg-base-850/40 p-4">
-      <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h2 className="flex items-center gap-2 text-[15px] font-semibold text-ink">
-          {icon}{title}
-        </h2>
-        {note && <span className="text-[12px] text-ink-faint">{note}</span>}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function Stat({ label, value, prev, hint, bad }: {
-  label: string; value: number; prev?: number; hint?: string; bad?: boolean;
-}) {
-  const delta = prev === undefined || prev === null ? null : value - prev;
-  return (
-    <div className="rounded-xl border border-white/[0.06] bg-base-850/50 px-3 py-2.5">
-      <p className="text-[11px] uppercase tracking-wide text-ink-faint">{label}</p>
-      <p className={cx("mt-0.5 text-2xl font-bold tabular-nums",
-        bad && value > 0 ? "text-amber" : "text-ink")}>{value}</p>
-      {hint && <p className="text-[11px] text-ink-faint">{hint}</p>}
-      {!hint && delta !== null && (
-        <p className={cx("text-[11px] tabular-nums",
-          delta === 0 ? "text-ink-faint"
-            : (delta > 0) !== !!bad ? "text-speed" : "text-amber")}>
-          {delta > 0 ? "+" : ""}{delta} vs previous
-        </p>
-      )}
-    </div>
-  );
-}
-
-function Label({ children }: { children: React.ReactNode }) {
-  return <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">{children}</p>;
-}
-
-function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="py-3 text-[13px] text-ink-faint">{children}</p>;
-}
-
-function Bars({ items, total }: { items: [string, number, string][]; total: number }) {
-  if (!total) return <Empty>No questions in this window.</Empty>;
-  return (
-    <ul className="space-y-1.5">
-      {items.map(([label, n, tint]) => (
-        <li key={label} className="flex items-center gap-2.5 text-[13px]">
-          <span className="w-36 shrink-0 text-ink-muted">{label}</span>
-          <span className="h-2 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
-            <span className={cx("block h-full rounded-full", tint)}
-              style={{ width: `${total ? (n / total) * 100 : 0}%` }} />
-          </span>
-          <span className="w-8 shrink-0 text-right tabular-nums text-ink">{n}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function TopList({ title, rows, render, value }: {
-  title: string; rows: any[]; render: (r: any) => string; value?: (r: any) => string;
-}) {
-  return (
-    <div>
-      <Label>{title}</Label>
-      {(!rows || rows.length === 0) && <Empty>Nothing yet.</Empty>}
-      <ul className="mt-1.5 space-y-1">
-        {(rows ?? []).map((r, i) => (
-          <li key={i} className="flex items-baseline gap-2 text-[13px]">
-            <span className="min-w-0 flex-1 truncate text-ink" title={render(r)}>{render(r)}</span>
-            <span className="shrink-0 tabular-nums text-ink-muted">
-              {value ? value(r) : r.n}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-/** Traffic over time. A sparkline, not a chart library — this is six numbers a
- *  day and a bar per day says it faster than an axis would. */
-function Traffic({ rows }: { rows: any[] }) {
-  if (!rows?.length) return <Empty>No traffic in this window.</Empty>;
-  const peak = Math.max(1, ...rows.map((r) => r.views || 0));
-  return (
-    <div>
-      <Label>Traffic</Label>
-      {/* `max-w` matters more than it looks: on a range with one day in it a
-          `flex-1` bar spans the entire panel, and a full-width block of accent
-          red reads as an alarm rather than as "one day, some traffic". Bars
-          shrink to fit when there are ninety of them and stay bar-shaped when
-          there is one. */}
-      <div className="mt-2 flex h-24 items-end gap-1">
-        {rows.map((r) => (
-          <div key={r.day} className="group/bar relative w-full max-w-[28px] flex-1"
-            title={`${r.day} — ${r.visitors} visitors, ${r.views} views, ${r.asks} asks`}>
-            <div className="w-full rounded-t bg-accent/60 transition-colors group-hover/bar:bg-accent"
-              style={{ height: `${Math.max(2, ((r.views || 0) / peak) * 96)}px` }} />
-          </div>
-        ))}
-      </div>
-      <div className="mt-1 flex justify-between text-[10.5px] text-ink-faint">
-        <span>{rows[0]?.day}</span><span>{rows[rows.length - 1]?.day}</span>
       </div>
     </div>
   );

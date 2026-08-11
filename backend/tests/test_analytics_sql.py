@@ -219,4 +219,9 @@ def test_history_pages_are_still_counted_as_historical(captured):
 
     eras = {row["era"]: row["n"] for row in queries.dashboard("7d")["usage"]["eras"]}
     assert eras.get("historical") == 2, f"/history pages miscounted: {eras}"
-    assert eras.get("current") == 3, f"non-history pages miscounted: {eras}"
+    # V91: `current` means the current-season surface, so it is `/explorer` and
+    # nothing else. The old catch-all ELSE counted the home page as "current
+    # season", which made a landing-page visit indistinguishable from somebody
+    # actually looking at this year's racing.
+    assert eras.get("current") == 2, f"/explorer miscounted: {eras}"
+    assert eras.get("other pages") == 1, f"the home page is neither: {eras}"

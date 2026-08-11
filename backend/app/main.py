@@ -12,6 +12,7 @@ import json
 import logging
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,6 +23,7 @@ from pydantic import BaseModel
 from . import analytics, cache, service, timing, upstream
 from .analytics import classify as ask_classify
 from .analytics import queries as analytics_queries
+from .analytics import report as analytics_report
 from .analytics.admin import admin_token_configured, require_admin
 from .adapters import data_source_manager, headshots, history_adapter, historical, pitstop_service
 from .adapters.data_source_manager import DataUnavailableError
@@ -119,7 +121,7 @@ async def _measure(request: Request, call_next):
             if not path.startswith(_UNMEASURED):
                 analytics.record("api_error", path=path, ok=False,
                                  ms=int((time.perf_counter() - started) * 1000),
-                                 detail="unhandled exception")
+                                 detail="unhandled exception", status=500)
         except Exception:  # noqa: BLE001
             pass
         raise
@@ -128,10 +130,19 @@ async def _measure(request: Request, call_next):
         if not path.startswith(_UNMEASURED):
             ms = int((time.perf_counter() - started) * 1000)
             analytics.record("api_request", path=path, ok=response.status_code < 400,
-                             ms=ms, detail=str(response.status_code))
-            if response.status_code >= 400:
+                             ms=ms, detail=str(response.status_code),
+                             status=response.status_code)
+            # 503 IS ALREADY RECORDED, ONCE, SOMEWHERE BETTER. The only 503 this
+            # app produces is DataUnavailableError, and its handler below writes
+            # a `session_load_failed` row carrying the year, Grand Prix, session
+            # and reason — everything this branch would record and more. Writing
+            # `api_error` here too made one failed session load into two rows in
+            # every error count, which is why the dashboard reported more errors
+            # than had actually happened.
+            if response.status_code >= 400 and response.status_code != 503:
                 analytics.record("api_error", path=path, ok=False, ms=ms,
-                                 detail=f"HTTP {response.status_code}")
+                                 detail=f"HTTP {response.status_code}",
+                                 status=response.status_code)
             elif ms >= _SLOW_REQUEST_MS:
                 analytics.record("api_slow", path=path, ok=True, ms=ms)
     except Exception:  # noqa: BLE001 — never let measurement change the answer
@@ -507,6 +518,10 @@ class AskBody(BaseModel):
     #: Optional, carries nothing identifying, and is the only way to tell "one
     #: person asked eight questions" from "eight people asked one".
     visitor: str | None = None
+    #: The current visit (a random UUID in sessionStorage, rolled over after 30
+    #: idle minutes). Without it Ask cannot be joined to the rest of a visit, so
+    #: "what share of visits reach Ask" has no answer.
+    visit: str | None = None
 
 
 @app.post("/api/ask")
@@ -524,17 +539,24 @@ def ask(body: AskBody):
     def _record(qa=None, outcome=None, error=None) -> str | None:
         try:
             question = body.question or ""
+            # The topic AND, when nothing in the taxonomy fits, the key phrase
+            # that lets a new topic emerge from repetition instead of every
+            # unrecognised subject collapsing into "Other". See analytics/topics.py.
+            topic, hint = ask_classify.classify_topic_full(
+                question, getattr(qa, "kind", None),
+                getattr(qa, "matched_handler", None),
+                getattr(qa, "entities", None))
             return analytics.record_ask(
                 question=question,
+                question_norm=ask_classify.normalize_question(question),
                 outcome=outcome or ask_classify.classify_outcome(
                     kind=getattr(qa, "kind", None),
                     confidence=getattr(qa, "confidence", None),
                     missing=getattr(qa, "missing_data", None),
                     matched=getattr(qa, "matched_handler", None)),
-                topic=ask_classify.classify_topic(
-                    question, getattr(qa, "kind", None),
-                    getattr(qa, "matched_handler", None)),
-                visitor=body.visitor, year=body.year, gp=body.gp,
+                topic=topic, topic_hint=hint,
+                visitor=body.visitor, visit=body.visit,
+                year=body.year, gp=body.gp,
                 session_type=body.session,
                 answer=getattr(qa, "answer", None),
                 kind=getattr(qa, "kind", None),
@@ -555,10 +577,10 @@ def ask(body: AskBody):
     except DataUnavailableError as exc:
         # Ask never ran: the session itself could not be loaded. That is a real
         # Ask failure from the reader's side and belongs in the same table.
-        _record(outcome=ask_classify.DATA_UNAVAILABLE, error=str(exc)[:200])
+        _record(outcome=ask_classify.NO_DATA, error=str(exc)[:200])
         raise
     except Exception as exc:  # noqa: BLE001
-        _record(outcome=ask_classify.ERROR, error=f"{type(exc).__name__}: {exc}"[:200])
+        _record(outcome=ask_classify.FAILED, error=f"{type(exc).__name__}: {exc}"[:200])
         raise
 
     ref = _record(qa)
@@ -689,7 +711,13 @@ def historical_results(year: int = Query(...), event: str = Query(...), session:
 #: The only event names the browser is allowed to submit. An open ingest is a
 #: table anybody can fill with anything; a fixed vocabulary means the worst a
 #: stranger can do is skew counts that are already approximate.
-_CLIENT_EVENTS = {"page_view", "session_open", "feature_use", "client_error", "visit_start"}
+_CLIENT_EVENTS = {"page_view", "session_open", "feature_use", "client_error",
+                  "visit_start",
+                  # How long a feature held someone, and the moment a reader hit
+                  # the "session unavailable" screen. The first separates
+                  # "opened" from "read"; the second is the only way to see a
+                  # dead end from the reader's side rather than the API's.
+                  "feature_dwell", "session_unavailable"}
 #: And the only features, so `feature` cannot become a free-text column.
 _CLIENT_FEATURES = {
     "story", "charts", "strategy", "pace", "compare", "ask", "data", "laps", "runs",
@@ -730,8 +758,13 @@ async def signal(request: Request) -> Response:
                 feature = "other"
             mode = str(item.get("mode") or "") or None
             year = item.get("year")
+            # Bounded: a duration the browser reports is still user input, and a
+            # fortnight-long "dwell" from a laptop that was asleep would poison
+            # every average it lands in. Over an hour is not a reading.
+            ms = item.get("ms")
+            ms = int(ms) if isinstance(ms, (int, float)) and 0 <= ms <= 3_600_000 else None
             analytics.record(
-                name, visitor=visitor, visit=visit,
+                name, visitor=visitor, visit=visit, ms=ms,
                 path=str(item.get("path") or "") or None,
                 year=int(year) if isinstance(year, (int, float, str)) and str(year).isdigit() else None,
                 gp=str(item.get("gp") or "") or None,
@@ -778,6 +811,137 @@ def admin_analytics_ask(_ok: bool = Depends(require_admin),
                         end: str | None = Query(None)):
     """Browse Ask interactions — the drill-down behind the problems list."""
     return analytics_queries.ask_log(range, outcome, topic, limit, start, end)
+
+
+# --------------------------------------------------------------------------- #
+# Destructive admin operations.
+#
+# TWO OPERATIONS, KEPT APART ON PURPOSE. "Clear my analytics" and "clear the
+# cached F1 data" sound similar and are nothing alike: one throws away a
+# MEASUREMENT that nothing can regenerate, the other throws away a COPY that
+# will be re-fetched on demand. Merging them behind one button would mean a
+# reader wanting a clean measurement period after spam-testing Ask also,
+# silently, made the next twenty session loads take nine seconds each.
+#
+# THREE THINGS GUARD EACH. The admin token; a typed confirmation phrase that is
+# DIFFERENT for each operation, so muscle memory cannot carry you from one to
+# the other; and a preview endpoint reporting exactly what would be removed
+# BEFORE anything is. The analytics purge can additionally only ever touch the
+# three tables named in store.ANALYTICS_TABLES.
+# --------------------------------------------------------------------------- #
+_CONFIRM_ANALYTICS = "DELETE ANALYTICS"
+_CONFIRM_CACHE = "CLEAR CACHE"
+
+
+class AnalyticsResetBody(BaseModel):
+    #: Must equal _CONFIRM_ANALYTICS exactly. Typed, not a checkbox.
+    confirm: str
+    #: "all" | "events" | "ask"
+    scope: str = "all"
+    #: Optional ISO date - delete only rows older than this, which is how you
+    #: keep real history and drop a testing session.
+    before: str | None = None
+
+
+@app.get("/api/admin/analytics/inventory")
+def admin_analytics_inventory(_ok: bool = Depends(require_admin)):
+    """Exactly what is stored and what deleting it would cost, per table."""
+    return {
+        "analytics": analytics.inventory(),
+        "confirm_phrase": _CONFIRM_ANALYTICS,
+        "tables": list(analytics.ANALYTICS_TABLES),
+        "note": ("Only these analytics tables are affected. Cached F1 session data, "
+                 "application configuration and every other table are untouched - "
+                 "see /api/admin/cache/inventory for the cache."),
+    }
+
+
+@app.post("/api/admin/analytics/reset")
+def admin_analytics_reset(body: AnalyticsResetBody, _ok: bool = Depends(require_admin)):
+    """Delete analytics rows. Nothing else, ever."""
+    if body.confirm != _CONFIRM_ANALYTICS:
+        raise HTTPException(status_code=400,
+                            detail='Type "' + _CONFIRM_ANALYTICS + '" exactly to confirm.')
+    before = None
+    if body.before:
+        try:
+            before = datetime.fromisoformat(body.before).replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400,
+                                detail="`before` must be an ISO date.") from None
+    try:
+        result = analytics.purge(body.scope, before)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return {**result, "scope": body.scope, "before": body.before}
+
+
+class CacheClearBody(BaseModel):
+    confirm: str
+
+
+@app.get("/api/admin/cache/inventory")
+def admin_cache_inventory(_ok: bool = Depends(require_admin)):
+    """What the application cache currently holds. Read-only."""
+    settings_now = get_settings()
+    files = sorted(settings_now.cache_dir.glob("*.json"))
+    total_bytes = sum(f.stat().st_size for f in files if f.exists())
+    return {
+        "sessions": len(files),
+        "bytes": total_bytes,
+        "mb": round(total_bytes / (1024 * 1024), 2),
+        "directory": str(settings_now.cache_dir),
+        "confirm_phrase": _CONFIRM_CACHE,
+        "note": ("Cached F1 session JSON plus remembered upstream documents "
+                 "(calendar, standings). Clearing this loses no analytics and no "
+                 "configuration - the data is re-fetched from FastF1/Jolpica on next "
+                 "use, which makes the following session loads slow until it refills."),
+    }
+
+
+@app.post("/api/admin/cache/clear")
+def admin_cache_clear(body: CacheClearBody, _ok: bool = Depends(require_admin)):
+    """Clear cached F1 data. Touches no analytics table.
+
+    The unauthenticated `/api/session/cache/clear` still exists for the Data
+    Sources panel's single-session button; this is the whole-cache form, and it
+    is behind the admin token because emptying the cache on a live deployment
+    makes every subsequent reader pay a cold upstream fetch.
+    """
+    if body.confirm != _CONFIRM_CACHE:
+        raise HTTPException(status_code=400,
+                            detail='Type "' + _CONFIRM_CACHE + '" exactly to confirm.')
+    cleared = 0
+    for f in get_settings().cache_dir.glob("*.json"):
+        try:
+            f.unlink()
+            cleared += 1
+        except OSError:
+            pass
+    cleared += upstream.cache_clear()
+    return {"cleared": cleared, "analytics_affected": False}
+
+
+@app.get("/api/admin/analytics/report")
+def admin_analytics_report(_ok: bool = Depends(require_admin),
+                           range: str = Query("30d"),
+                           format: str = Query("html"),
+                           start: str | None = Query(None),
+                           end: str | None = Query(None)):
+    """A saveable report. `format` is html (printable), md, or json.
+
+    HTML rather than a server-rendered PDF: the browser's print engine already
+    makes one, and adding WeasyPrint to a free-tier instance would cost
+    cold-start weight on every boot to save a keystroke. See analytics/report.py.
+    """
+    built = analytics_report.build(range, start, end)
+    if format == "json":
+        return built
+    if format in ("md", "markdown"):
+        return Response(content=analytics_report.to_markdown(built),
+                        media_type="text/markdown; charset=utf-8")
+    return Response(content=analytics_report.to_html(built),
+                    media_type="text/html; charset=utf-8")
 
 
 @app.get("/api/admin/status")

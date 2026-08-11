@@ -26,7 +26,8 @@ import { DriverComparison } from "@/components/driver-comparison/DriverCompariso
 import { useMode } from "@/lib/mode";
 import { api, ApiError } from "@/lib/api";
 import { useFreshEffect } from "@/lib/fresh";
-import { trackFeature, trackPageView, trackSessionOpen } from "@/lib/analytics";
+import { trackFeature, trackFeatureDwell, trackPageView, trackSessionOpen,
+         trackSessionUnavailable } from "@/lib/analytics";
 import { cx } from "@/lib/format";
 import type { Meta, RaceBundle, RaceSession } from "@/lib/types";
 import { Standings } from "@/components/history/Standings";
@@ -198,6 +199,13 @@ export default function ExplorerPage() {
         if (!fresh()) return;
         setBundle(null);
         setError(e instanceof ApiError ? e : new ApiError(String(e?.message ?? e)));
+        /* A DEAD END, COUNTED FROM THE READER'S SIDE. The API records its own
+           503, but a failed request and a person left staring at an error screen
+           are different facts — retries, cached responses and requests abandoned
+           by a navigation all break the equivalence. This fires only when the
+           error is what actually rendered. */
+        trackSessionUnavailable(sel.year, sel.gp, sel.session,
+                                String(e?.message ?? e).slice(0, 200));
       })
       .finally(() => { if (fresh()) setLoading(false); });
   }, [booted, sel?.year, sel?.gp, sel?.session, refreshKey]);
@@ -221,6 +229,16 @@ export default function ExplorerPage() {
   useEffect(() => {
     if (!booted || !sel || view !== "session") return;
     trackFeature(tab, { year: sel.year, gp: sel.gp, session: sel.session, mode });
+    /* HOW LONG THIS TAB HELD THEM, measured by the same effect that recorded the
+       entrance so the two can never disagree about which tab it was. The cleanup
+       runs on tab change, on leaving the session view and on unmount — between
+       them every way out — and a duration taken from this effect's own closure
+       cannot attribute one tab's time to another. Short stops are discarded
+       inside trackFeatureDwell: a tab you pass through is not one you read. */
+    const openedAt = Date.now();
+    const opened = tab;
+    return () => trackFeatureDwell(opened, Date.now() - openedAt,
+                                   { year: sel.year, gp: sel.gp, session: sel.session });
   }, [booted, tab, view, mode]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

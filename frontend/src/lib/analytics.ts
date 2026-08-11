@@ -31,7 +31,8 @@ const VISIT_AT_KEY = "pitwall.vat";    // last activity, for the rollover
 const VISIT_IDLE_MS = 30 * 60 * 1000;  // 30 minutes ends a visit
 
 type Event = {
-  name: "page_view" | "session_open" | "feature_use" | "client_error" | "visit_start";
+  name: "page_view" | "session_open" | "feature_use" | "client_error" | "visit_start"
+      | "feature_dwell" | "session_unavailable";
   path?: string;
   year?: number;
   gp?: string;
@@ -39,6 +40,8 @@ type Event = {
   feature?: string;
   mode?: "simple" | "advanced";
   detail?: string;
+  /** Milliseconds — only ever a duration this file measured itself. */
+  ms?: number;
 };
 
 let queue: Event[] = [];
@@ -85,6 +88,12 @@ function ids(): { visitor: string; visit: string } | null {
 /** The anonymous id, for the one call that is not a beacon (Ask). */
 export function visitorId(): string | undefined {
   return ids()?.visitor;
+}
+
+/** The current visit id, so an Ask question can be placed inside the visit it
+ *  belongs to. Without it "what share of visits reach Ask" has no answer. */
+export function visitSessionId(): string | undefined {
+  return ids()?.visit;
 }
 
 function send(events: Event[], viaBeacon: boolean) {
@@ -160,11 +169,79 @@ export function trackClientError(detail: string) {
   track({ name: "client_error", detail: String(detail).slice(0, 300) });
 }
 
+/** How long a feature actually held someone.
+ *
+ *  "Opened" and "read" are different facts and only this one distinguishes
+ *  them: a tab everybody clicks and nobody stays on is a naming or content
+ *  problem, and it looks identical to a popular tab in a plain use count.
+ *  Under a second is dropped — those are pass-throughs on the way somewhere
+ *  else, and counting them would drag every average toward zero. */
+export function trackFeatureDwell(feature: string, ms: number, extra?: Partial<Event>) {
+  if (!Number.isFinite(ms) || ms < 1000 || ms > 3_600_000) return;
+  track({ name: "feature_dwell", feature, ms: Math.round(ms), ...extra });
+}
+
+/** The reader hit the "this session isn't available" screen. A dead end seen
+ *  from the reader's side — the API's own 503 says a request failed, not that
+ *  somebody was left with nowhere to go. */
+export function trackSessionUnavailable(year: number, gp: string, session: string,
+                                        detail?: string) {
+  track({ name: "session_unavailable", year, gp, session,
+          detail: detail ? String(detail).slice(0, 300) : undefined });
+}
+
+/* -------------------------------------------------------------------------- */
+/* WHICH ANSWERS THIS READER HAS ALREADY RATED.                               */
+/*                                                                            */
+/* The rating lives on the server, but the server never tells the browser what */
+/* it already knows — an Ask response carries a fresh `ask_ref` and nothing    */
+/* about prior opinions. So without a local record the only thing holding      */
+/* "you already rated this" was React component state, which a tab switch      */
+/* destroys and which, worse, was being inherited by a DIFFERENT answer when   */
+/* the list re-keyed (see QuestionBox.tsx). Keyed by `ask_ref`, which is unique */
+/* per answer, so a remembered rating can only ever be shown against the exact  */
+/* answer it was given for.                                                    */
+/*                                                                            */
+/* Bounded to the most recent 200 so it cannot grow without limit.            */
+/* -------------------------------------------------------------------------- */
+const RATED_KEY = "pitwall.rated";
+const RATED_MAX = 200;
+
+type RatedMap = Record<string, boolean>;
+
+function readRated(): RatedMap {
+  try {
+    const raw = localStorage.getItem(RATED_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? (parsed as RatedMap) : {};
+  } catch { return {}; }
+}
+
+/** What this browser previously said about one answer, or undefined. */
+export function recallFeedback(ref?: string | null): boolean | undefined {
+  if (!ref) return undefined;
+  const value = readRated()[ref];
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function rememberFeedback(ref: string, helpful: boolean) {
+  try {
+    const map = readRated();
+    map[ref] = helpful;
+    const keys = Object.keys(map);
+    if (keys.length > RATED_MAX) {
+      for (const key of keys.slice(0, keys.length - RATED_MAX)) delete map[key];
+    }
+    localStorage.setItem(RATED_KEY, JSON.stringify(map));
+  } catch { /* private mode: the control still works, it just forgets */ }
+}
+
 /** Thumbs on an Ask answer. Direct rather than batched: it is a deliberate act
  *  and it should land even if the reader closes the tab a moment later. */
 export function sendAskFeedback(ref: string, helpful: boolean) {
   try {
     if (!ref) return;
+    rememberFeedback(ref, helpful);
     void fetch(`${API_BASE}/api/ask/feedback`, {
       method: "POST", keepalive: true,
       headers: { "Content-Type": "application/json" },

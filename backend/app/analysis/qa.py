@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from ..config import get_settings
 from ..models import DriverPaceSummary, QuestionAnswer, RaceSession, StrategySummary
 from .events import infer_overtakes, overtakes_between
+from .relevance import REFUSAL, assess
 from .text import plural
 
 TEAM_ALIASES = {
@@ -973,6 +974,26 @@ def answer_question(question: str, ctx: QAContext, simple: bool = False) -> Ques
                               kind="empty", confidence="low")
     simple = simple or bool(re.search(r"\b(explain|eli5|simpl(e|y|ify)|beginner|new to f1|like i'?m new)\b", q, re.I))
     ents = _extract(q, ctx)
+
+    # IS THIS EVEN ABOUT THE RACE?
+    # Before V91 the answer was "assume so", because `_best_effort` cannot say
+    # no — so "write me a poem about Ferrari" got a session overview, and the
+    # analytics logged it as an F1 question Ask had failed to answer, which
+    # pollutes the one bucket that is meant to say what to build next. The gate
+    # refuses only on positive off-domain evidence, and a mention of a driver or
+    # team is deliberately not enough to satisfy it; see analysis/relevance.py
+    # for why that asymmetry is the whole design.
+    verdict = assess(q, entities=ents)
+    if verdict.is_unrelated:
+        return QuestionAnswer(
+            question=q, answer=REFUSAL, kind="off_topic", confidence="high",
+            matched_handler=True,          # understood perfectly — and declined
+            answer_title="Not a Formula 1 question",
+            short_answer=REFUSAL, beginner_summary=REFUSAL,
+            entities={"drivers": ents["drivers"], "teams": ents["teams"]},
+            follow_ups=["Who won and how?", "Which strategy worked best?",
+                        "Who had the best race pace?"])
+
     result = None
     for handler in HANDLERS:
         try:

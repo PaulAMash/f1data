@@ -27,9 +27,12 @@ the reader can erase it by clearing site data. See docs/ANALYTICS.md.
 from __future__ import annotations
 
 from .store import (  # noqa: F401
+    ANALYTICS_TABLES,
     enabled,
     feedback,
     health,
+    inventory,
+    purge,
     record,
     record_ask,
     setup,

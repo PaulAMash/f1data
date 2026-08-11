@@ -10,7 +10,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "doctor": "node scripts/chart-runtime-doctor.mjs",
-    "doctor:fetches": "node scripts/stale-fetch-doctor.mjs"
+    "doctor:fetches": "node scripts/stale-fetch-doctor.mjs",
+    "doctor:feedback": "node scripts/ask-feedback-doctor.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

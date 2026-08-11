@@ -7,48 +7,119 @@ NO SECOND LLM. Both answers are already inside the pipeline.
 produces already carries the evidence needed to grade it:
 
     kind          which handler answered ("tyre_strategy", "best_pace", …).
-                  This is a question taxonomy that already exists and is exactly
-                  as accurate as the feature it names.
     confidence    high / medium / low, set by the handler that knows.
     missing_data  an explicit list of what the answer needed and did not have.
-    kind=="missing"  the handler said outright that it cannot answer.
+    kind=="missing"    the handler said outright that it cannot answer.
+    kind=="off_topic"  the relevance gate declined (analysis/relevance.py).
+    matched_handler    whether ANY handler recognised the question, or the chain
+                       fell through to a best-effort session overview.
 
-One thing was genuinely absent, and it is the most valuable signal of the lot:
-when NO handler recognises the question, `_best_effort()` falls through to
-`_generic()`, which returns a session overview with `kind="overview"` — and a
-generic overview served because nobody understood the question is indis-
-tinguishable, after the fact, from a generic overview somebody asked for. That
-case IS "Ask does not support what this person wanted", which is the whole
-reason to look at this data. So `answer_question` now sets one boolean,
-`matched_handler`, and nothing else about it changed.
+Grading with an LLM was the obvious alternative and is worse in every direction
+that matters: another API call per question (cost), on the request path
+(latency), producing a judgement that cannot be reproduced or tested, about a
+pipeline that already knows the answer.
 
-Grading with an LLM was the obvious alternative and it is worse in every
-direction that matters: another API call per question (cost), on the request
-path (latency), producing a judgement that cannot be reproduced or tested,
-about a pipeline that already knows the answer.
+--------------------------------------------------------------------------- #
+THE NAMES NOW SAY WHAT THEY MEAN, AND WHAT TO DO ABOUT THEM.
+
+The old vocabulary was written from the system's point of view and read from the
+dashboard as five shades of failure. But the useful question is not "how badly
+did this go" — it is "what would I do about it", and those have different
+answers that were being lumped together:
+
+    unanswered      -> unsupported   A real F1 question, understood as one, that
+                                     no handler covers. NOT an error. It is a
+                                     FEATURE REQUEST written by a reader, and
+                                     the single most valuable row in the table.
+    data_unavailable-> no_data       Ask knew exactly what was asked and the
+                                     session did not carry it. Nothing to build.
+    error           -> failed        Something threw. A bug.
+    (new)              off_topic     Not a Formula 1 question at all. These used
+                                     to be `unanswered`, quietly inflating the
+                                     "Ask can't do this" bucket with poems and
+                                     cake recipes.
+
+And one axis that is NOT an outcome: 👎. An answer can be `answered` — matched,
+confident, complete — and still be WRONG, and only the reader can tell us that.
+It is tracked separately, because "Ask produced a bad answer" and "Ask produced
+no answer" need different fixes and merging them hides both.
+
+Rows written under the old spellings are rewritten once by store._migrate(),
+which keeps every query in queries.py free of alias handling.
 """
 from __future__ import annotations
 
 import re
+
+from . import topics
 
 # --------------------------------------------------------------------------- #
 # Outcomes
 # --------------------------------------------------------------------------- #
 ANSWERED = "answered"
 PARTIAL = "partial"
-UNANSWERED = "unanswered"
-DATA_UNAVAILABLE = "data_unavailable"
-ERROR = "error"
+UNSUPPORTED = "unsupported"
+NO_DATA = "no_data"
+OFF_TOPIC = "off_topic"
+FAILED = "failed"
 
-OUTCOMES = (ANSWERED, PARTIAL, UNANSWERED, DATA_UNAVAILABLE, ERROR)
+OUTCOMES = (ANSWERED, PARTIAL, UNSUPPORTED, NO_DATA, OFF_TOPIC, FAILED)
 
 OUTCOME_LABEL = {
-    ANSWERED: "Successfully answered",
-    PARTIAL: "Partially answered",
-    UNANSWERED: "Could not answer",
-    DATA_UNAVAILABLE: "Data unavailable",
-    ERROR: "System error",
+    ANSWERED: "Answered",
+    PARTIAL: "Answered with gaps",
+    UNSUPPORTED: "Not yet supported",
+    NO_DATA: "Data unavailable",
+    OFF_TOPIC: "Not about F1",
+    FAILED: "System error",
 }
+
+#: The definition, shown as the tooltip, so a label and its meaning live in one
+#: place and cannot drift apart.
+OUTCOME_HELP = {
+    ANSWERED: "A handler recognised the question and answered it in full.",
+    PARTIAL: "Answered, but something was missing or the confidence was low.",
+    UNSUPPORTED: "A real F1 question no handler covers yet — build these next.",
+    NO_DATA: "Understood, but this session does not carry the data to answer it.",
+    OFF_TOPIC: "Not a Formula 1 question; Ask declined rather than guessing.",
+    FAILED: "The request raised an exception. A bug, not a gap.",
+}
+
+#: What each one MEANS FOR YOU — the difference between a number and an
+#: instruction. This is what the dashboard groups the outcomes by.
+OUTCOME_ACTION = {
+    ANSWERED: "none",
+    PARTIAL: "improve",
+    UNSUPPORTED: "build",
+    NO_DATA: "none",
+    OFF_TOPIC: "none",
+    FAILED: "fix",
+}
+
+#: Good / warning / problem, for colour. `unsupported` is deliberately NOT a
+#: failure colour — it is an opportunity, and painting it red on a beta whose
+#: job is discovering what to build would be reading the instrument backwards.
+OUTCOME_TONE = {
+    ANSWERED: "good", PARTIAL: "warn", UNSUPPORTED: "opportunity",
+    NO_DATA: "info", OFF_TOPIC: "muted", FAILED: "bad",
+}
+
+#: Old spellings -> new. Applied once, by the migration.
+LEGACY_OUTCOMES = {
+    "unanswered": UNSUPPORTED,
+    "data_unavailable": NO_DATA,
+    "error": FAILED,
+}
+
+#: "Ask did not fully deliver". Named and defined in ONE place, because the old
+#: dashboard showed an "unresolved" count whose definition existed only inside a
+#: SQL string — and a number nobody can define is a number nobody can act on.
+#: Note what is absent: off_topic (working as intended) and failed (a bug, not a
+#: capability gap).
+UNRESOLVED = (UNSUPPORTED, NO_DATA, PARTIAL)
+UNRESOLVED_HELP = ("Questions Ask did not fully deliver on: not yet supported, "
+                   "missing data, or answered with gaps. Excludes off-topic "
+                   "questions (declined on purpose) and system errors (bugs).")
 
 
 def classify_outcome(*, kind: str | None, confidence: str | None,
@@ -60,19 +131,22 @@ def classify_outcome(*, kind: str | None, confidence: str | None,
     answer — an exception, or the session bundle raising DataUnavailableError.
     """
     if failed:
-        return ERROR
+        return FAILED
     kind = (kind or "").strip()
     missing = missing or []
 
+    # The relevance gate declined. Not a gap in Ask's capability.
+    if kind == "off_topic":
+        return OFF_TOPIC
     # The handler said so itself.
     if kind == "missing":
-        return DATA_UNAVAILABLE
+        return NO_DATA
     # Nothing was asked.
     if kind == "empty":
-        return UNANSWERED
+        return UNSUPPORTED
     # No handler recognised the question; what came back is a consolation prize.
     if matched is False:
-        return UNANSWERED
+        return UNSUPPORTED
     # Answered, but it had to leave something out.
     if missing:
         return PARTIAL
@@ -81,92 +155,46 @@ def classify_outcome(*, kind: str | None, confidence: str | None,
     return ANSWERED
 
 
+def normalize_outcome(outcome: str | None) -> str:
+    """Read-side safety net for a row written before the migration ran."""
+    value = (outcome or "").strip()
+    return LEGACY_OUTCOMES.get(value, value)
+
+
 # --------------------------------------------------------------------------- #
-# Topics
+# Topics — the table itself lives in topics.py, where it grew too large to sit
+# beside the outcome logic. These are the names the rest of the package imports.
 # --------------------------------------------------------------------------- #
-STRATEGY = "strategy"
-PACE = "pace"
-TYRES = "tyres"
-OVERTAKES = "overtakes"
-POSITIONS = "positions"
-QUALIFYING = "qualifying"
-WEATHER = "weather"
-RESULTS = "results"
-COMPARISON = "comparison"
-RETIREMENTS = "retirements"
-HISTORY = "history"
-OTHER = "other"
-
-TOPIC_LABEL = {
-    STRATEGY: "Strategy", PACE: "Pace", TYRES: "Tyres", OVERTAKES: "Overtakes",
-    POSITIONS: "Position changes", QUALIFYING: "Qualifying", WEATHER: "Weather",
-    RESULTS: "Results", COMPARISON: "Driver / team comparison",
-    RETIREMENTS: "Retirements", HISTORY: "Historical", OTHER: "Other",
-}
-
-#: A handler's identity IS the topic — it is named after the thing it answers.
-_KIND_TOPIC = {
-    "tyre_strategy": TYRES,
-    "undercut": STRATEGY, "alt_strategy": STRATEGY, "pit_loss": STRATEGY,
-    "vsc": STRATEGY,
-    "best_pace": PACE, "fastest": PACE, "worst_team": PACE,
-    "practice_fastest": PACE, "practice_longrun": PACE, "practice_team": PACE,
-    "practice_laps": PACE,
-    "overtake": OVERTAKES,
-    "why_lost": POSITIONS, "gainer": POSITIONS, "loser": POSITIONS,
-    "what_happened": POSITIONS, "could_better": POSITIONS,
-    "pole": QUALIFYING, "knocked_out": QUALIFYING,
-    "weather": WEATHER,
-    "results": RESULTS, "winner": RESULTS, "explain": RESULTS, "overview": RESULTS,
-    "compare_drivers": COMPARISON, "compare_teams": COMPARISON,
-    "retirement": RETIREMENTS,
-}
-
-#: For questions no handler recognised — which is the set that matters most,
-#: because these are the ones telling you what to build next. Ordered: the first
-#: match wins, so the more specific patterns come first.
-_TOPIC_PATTERNS: list[tuple[str, re.Pattern]] = [
-    (TYRES, re.compile(r"\b(tyre|tire|compound|soft|medium|hard|inter(mediate)?s?|wet|"
-                       r"stint|degrad|graining|blister)\w*", re.I)),
-    (STRATEGY, re.compile(r"\b(strateg|pit ?stop|pitted|pit ?wall|undercut|overcut|"
-                          r"one.?stop|two.?stop|three.?stop|safety ?car|vsc|"
-                          r"virtual safety|red flag|box|call)\w*", re.I)),
-    (QUALIFYING, re.compile(r"\b(qualif|pole|q1|q2|q3|grid|shootout|deleted lap)\w*", re.I)),
-    (OVERTAKES, re.compile(r"\b(overtak|pass(ed|ing)?|drs|slipstream|dive ?bomb|"
-                           r"wheel.to.wheel|defend)\w*", re.I)),
-    (RETIREMENTS, re.compile(r"\b(retir|dnf|crash|collision|accident|blew|failure|"
-                             r"broke down|mechanical|engine failure|puncture)\w*", re.I)),
-    (WEATHER, re.compile(r"\b(weather|rain|wet|dry|temperature|track temp|humid|wind)\w*", re.I)),
-    (PACE, re.compile(r"\b(pace|fast(est)?|quick(est)?|slow(est)?|lap ?time|"
-                      r"long ?run|consisten|sector)\w*", re.I)),
-    (COMPARISON, re.compile(r"\b(compare|versus|vs\.?|against|better than|"
-                            r"team.?mate|head.to.head)\b", re.I)),
-    (POSITIONS, re.compile(r"\b(position|places?|gained|lost|dropped|climbed|fell|"
-                           r"P\d+|move[ds]? up|move[ds]? down)\b", re.I)),
-    (HISTORY, re.compile(r"\b(championship|standings|season|career|all.time|history|"
-                         r"record|ever|title)\w*", re.I)),
-    (RESULTS, re.compile(r"\b(win|won|winner|podium|result|finish|classif|points?)\w*", re.I)),
-]
+OTHER = topics.OTHER
+TOPIC_LABEL = topics.TOPIC_LABEL
+display_topic = topics.display_label
 
 
 def classify_topic(question: str, kind: str | None = None,
-                   matched: bool | None = None) -> str:
-    """What the question was about.
+                   matched: bool | None = None,
+                   entities: dict | None = None) -> str:
+    """Backwards-compatible single-value form. Prefer `classify_topic_full`."""
+    return topics.classify(question, kind, matched, entities)[0]
 
-    A matched handler names its own topic, which is both free and exactly right.
-    Anything else — including a handler added later that this map has not been
-    taught yet — is read from the question text, so a new feature never silently
-    becomes "Other".
+
+def classify_topic_full(question: str, kind: str | None = None,
+                        matched: bool | None = None,
+                        entities: dict | None = None) -> tuple[str, str | None]:
+    """`(topic, hint)` — the hint is what lets new topics emerge."""
+    return topics.classify(question, kind, matched, entities)
+
+
+def normalize_question(question: str) -> str:
+    """A stable key for "this is the same question, asked again".
+
+    Case, punctuation and inner whitespace only. Deliberately NOT stemming or
+    synonym folding: the dashboard shows the grouped question back to a human,
+    and a group whose members are not visibly the same question is a group that
+    cannot be trusted.
     """
-    if matched is not False and kind:
-        topic = _KIND_TOPIC.get(kind)
-        if topic:
-            return topic
-    text = question or ""
-    for topic, pattern in _TOPIC_PATTERNS:
-        if pattern.search(text):
-            return topic
-    return OTHER
+    text = (question or "").lower().strip()
+    text = re.sub(r"[^\w\s]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()[:200]
 
 
 def summarize_missing(missing: list[str] | None) -> str | None:

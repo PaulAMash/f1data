@@ -121,7 +121,7 @@ export const api = {
   // eight people asking one. It carries nothing identifying.
   ask: (body: {
     year: number; gp: string; session: string; question: string; simple?: boolean;
-    visitor?: string;
+    visitor?: string; visit?: string;
   }) => post<QuestionAnswer>("/api/ask", body),
   current: () =>
     get<{ year: number; gp: string | null; session: string; seasons: number[] }>("/api/current"),
