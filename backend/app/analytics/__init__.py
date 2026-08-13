@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from .store import (  # noqa: F401
     ANALYTICS_TABLES,
+    PURGE_SCOPES,
     enabled,
     feedback,
     health,
@@ -35,6 +36,7 @@ from .store import (  # noqa: F401
     purge,
     record,
     record_ask,
+    record_feedback,
     setup,
     shutdown,
 )

@@ -3,9 +3,84 @@
 A standing critique of the product as a whole, kept in one place and updated per release
 rather than forked per version. Findings are ordered by how much they cost the reader.
 
-Last pass: **V85**. The Seasons page was not flaky. It asked one external source the same
-question nine times per season change, that source's published limit is four requests a
-second, and the refusal came back as HTTP 200 with a boolean where a list belonged.
+Last pass: **V92**. The tutorial let you operate the page it was explaining, and the
+"animations don't play on some computers" report was the site's own doing — a wildcard
+that answered an OS accessibility setting by switching everything off, with no control
+anywhere that could answer back.
+
+---
+
+## Fixed in V92
+
+### The tutorial explained a page you could change underneath it
+
+The scrim was `pointer-events: none` from the wrapper down, so the hole in the spotlight
+was a real hole and every click went through — to the highlighted control *and* to
+everything around it. A reader being told "this is the session picker" could open the
+session picker, change the race, and have the beat they were reading start describing a
+page that no longer existed. Worse, targets move when page state changes, so the
+spotlight would then chase a control across a relayout nobody asked for.
+
+Teaching and operating are different modes and cannot share a click. The tour now takes
+exclusive control of input by the two routes into a page:
+
+* **Pointer** — one full-viewport blocker inside the tour layer, painted under the card
+  and over everything else. The page stays fully visible and fully lit; it stops
+  answering.
+* **Keyboard** — `inert` on every sibling of the tour layer, which is what actually
+  removes them from the tab order and the accessibility tree. A pointer blocker alone
+  leaves Tab and Enter working, which is the same bug with a keyboard.
+
+The `inert` sweep re-runs on a `MutationObserver`, because **a tour navigates**: the page
+element present when it opened is unmounted moments later and a fresh one takes its
+place. A single pass marked the page you started on and left the page you were taught
+about fully live — which was the version this shipped as until a browser test caught it.
+
+The scrim is no longer a dismiss target. It was one in the no-target case, and a backdrop
+that exits on click is exactly what a reader hits when they try to press the control being
+explained. Skip, the X and Escape are on screen at every beat.
+
+### Animations were dead on some machines, and it was not their machines' fault
+
+Three Windows PCs with no animation, two with. Same site, same browsers. The variable is
+**Settings → Accessibility → Visual effects → Animation effects**, which a large share of
+Windows machines ship with off, battery saver forces off, and which survives a reinstall.
+Browsers report it as `prefers-reduced-motion: reduce`.
+
+Respecting that is correct. What was not correct was *how*: a wildcard
+`animation-duration: 0.01ms !important` across every element, which overrode the
+twenty-five careful per-component reduce blocks in the same file (the ones that stop the
+loading wheel but keep it drawn) and left the reader no way to ask for motion — the
+preference existed in Settings and the media query outranked it.
+
+Motion is now a three-state preference resolved once in JS and written to `data-motion`
+before first paint: `full`, `calm`, `reduced`. The OS sets the **default**, not the
+verdict. Behaviour for someone who never opens Settings is unchanged; what is new is that
+choosing Full now works. Removing the wildcard also exposed three animations that had
+never had a reduce rule at all — it had been hiding them.
+
+### There was nowhere to say something was broken
+
+A persistent feedback control now sits in the bottom-left of every reading page: follows
+the viewport, rides above the footer at the end of the page, stays reachable over an open
+dialog (a bug found inside one is still a bug), and expands out of its own corner into a
+panel with Bug report and Suggestion. The page, tab, Grand Prix and session travel with
+it, so nobody has to describe where they were.
+
+### Every Ask question was recorded with its race and shown without it
+
+`year`, `gp` and `session_type` were stored from the beginning and never rendered, so a
+log of sixty questions gave no way to tell a question about Miami from one about Monza —
+while Ask answers from exactly one session's data, which makes the session half of what
+the question meant. Now on its own line under each question, in the accent, so a column
+can be scanned for one race without reading a single question.
+
+### Readers were quoted back in the wrong words
+
+The spelling bridge rewrites the whole document, including the admin dashboard — so a
+reader who typed "tyre spinner" was quoted saying "tire spinner". Verbatim user text
+(feedback messages, Ask questions) is now marked `data-verbatim`. A report is evidence,
+and evidence is not localised.
 
 ---
 

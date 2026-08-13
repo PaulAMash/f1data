@@ -249,3 +249,42 @@ export function sendAskFeedback(ref: string, helpful: boolean) {
     }).catch(() => {});
   } catch { /* never */ }
 }
+
+/* -------------------------------------------------------------------------- */
+/* A BUG REPORT OR A SUGGESTION.                                              */
+/*                                                                            */
+/* THE ONE CALL IN THIS FILE THAT IS ALLOWED TO FAIL VISIBLY, and it has to    */
+/* be: everything else here is a beacon nobody asked for, but a person wrote   */
+/* this out and pressed Send. Telling them it worked when it did not would     */
+/* lose the report and leave them believing it was received — the single worst */
+/* outcome a feedback box has. So this one awaits, reads the answer, and lets  */
+/* the caller show what actually happened.                                     */
+/*                                                                            */
+/* Everything except the message is context the browser already had. Nothing   */
+/* new is collected: the same anonymous ids, the same path, the same race and  */
+/* session the analytics beacons already carry. No device, screen or browser   */
+/* characteristics — see the header of this file.                              */
+/* -------------------------------------------------------------------------- */
+export interface FeedbackReport {
+  kind: "bug" | "suggestion";
+  message: string;
+  path?: string;
+  feature?: string;
+  year?: number;
+  gp?: string;
+  session?: string;
+  mode?: "simple" | "advanced";
+}
+
+export async function sendFeedback(report: FeedbackReport): Promise<void> {
+  const id = ids();
+  const res = await fetch(`${API_BASE}/api/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...report, visitor: id?.visitor, visit: id?.visit }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail || `The server answered ${res.status}.`);
+  }
+}

@@ -47,7 +47,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
-from . import classify, store, topics
+from . import classify, store, topics, triage
 
 # --------------------------------------------------------------------------- #
 # Ranges
@@ -776,8 +776,162 @@ def _ask_row(row) -> dict:
         "missing": missing_list,
         "missing_summary": classify.summarize_missing(missing_list),
         "year": year, "gp": gp, "session_type": session_type,
+        # WHICH RACE THIS WAS ASKED ABOUT. The columns were always stored and
+        # never shown, so a log of sixty questions gave no way to tell a
+        # question about Miami from one about Monza — and Ask's answers are
+        # scoped to exactly one session, which makes the session half of the
+        # question. Pre-assembled here so every surface prints it identically.
+        "context": session_context(year, gp, session_type),
         "helpful": None if helpful is None else bool(helpful),
     }
+
+
+# --------------------------------------------------------------------------- #
+# Feedback — what readers wrote down on purpose.
+#
+# Ask tells you where the product FAILED somebody. Feedback tells you what they
+# would have done about it, in their own words, and it is the only signal here
+# that arrives already sorted into "this is broken" and "this should exist".
+# Those two need different panels for the same reason `gaps` and `disliked` do:
+# they are answered by different work.
+# --------------------------------------------------------------------------- #
+def _feedback(window: dict) -> dict:
+    where, params = _bounds(window)
+    yes = store._as_bool(True)                              # noqa: SLF001
+
+    total = _scalar(f"SELECT COUNT(*) FROM analytics_feedback WHERE {where}", params)
+    junk = _scalar(
+        f"SELECT COUNT(*) FROM analytics_feedback WHERE {where} AND junk = ?",
+        params + (yes,))
+
+    counts = {k: 0 for k in triage.KINDS}
+    for kind, n in store.query(
+            f"SELECT kind, COUNT(*) FROM analytics_feedback WHERE {where} "
+            f"GROUP BY kind", params):
+        if kind in counts:
+            counts[kind] = n
+
+    severities = {s: 0 for s in triage.SEVERITY_ORDER}
+    for severity, n in store.query(
+            f"SELECT severity, COUNT(*) FROM analytics_feedback "
+            f"WHERE {where} AND kind = ? AND junk <> ? GROUP BY severity",
+            params + (triage.BUG, yes)):
+        if severity in severities:
+            severities[severity] = n
+
+    return {
+        "total": total,
+        "bugs": counts.get(triage.BUG, 0),
+        "suggestions": counts.get(triage.SUGGESTION, 0),
+        # Counted and shown, never silently dropped: a junk rate that climbs is
+        # itself worth knowing, and hiding the rows would make the total lie.
+        "junk": junk,
+        "real": max(0, total - junk),
+        "people": _scalar(
+            f"SELECT COUNT(DISTINCT visitor) FROM analytics_feedback WHERE {where}",
+            params),
+        "severities": severities,
+        "severity_labels": triage.SEVERITY_LABEL,
+        "kind_labels": triage.KIND_LABEL,
+        "areas": _feedback_areas(window),
+        "emerging": _feedback_emerging(window),
+        "recent": _feedback_rows(window, limit=120),
+    }
+
+
+def _feedback_areas(window: dict) -> list[dict]:
+    """Per product area: how many reports, split by what kind they are.
+
+    The split is the whole value. Twelve reports about Charts that are all
+    suggestions is a popular surface people want more from; twelve that are all
+    bugs is a surface that does not work.
+    """
+    where, params = _bounds(window)
+    yes = store._as_bool(True)                              # noqa: SLF001
+    rows = store.query(
+        f"SELECT area, MIN(area_hint), COUNT(*), "
+        f"       SUM(CASE WHEN kind = '{triage.BUG}' THEN 1 ELSE 0 END), "
+        f"       SUM(CASE WHEN kind = '{triage.SUGGESTION}' THEN 1 ELSE 0 END), "
+        f"       SUM(CASE WHEN severity = '{triage.HIGH}' THEN 1 ELSE 0 END), "
+        f"       MAX(ts) "
+        f"FROM analytics_feedback WHERE {where} AND junk <> ? "
+        f"GROUP BY area ORDER BY COUNT(*) DESC", params + (yes,))
+    return [{"area": r[0], "label": triage.display_area(r[0], r[1]),
+             "n": r[2], "bugs": r[3] or 0, "suggestions": r[4] or 0,
+             "blocking": r[5] or 0, "last_seen": str(r[6])} for r in rows]
+
+
+def _feedback_emerging(window: dict) -> list[dict]:
+    """Subjects the area taxonomy has no row for, discovered from the reports.
+
+    Same mechanism, and the same threshold, as `_emerging_topics`: once is a
+    person, twice is a subject that has earned a row in analytics/triage.py.
+    """
+    where, params = _bounds(window)
+    yes = store._as_bool(True)                              # noqa: SLF001
+    rows = store.query(
+        f"SELECT area_hint, COUNT(*) n, MIN(message), MAX(ts) "
+        f"FROM analytics_feedback WHERE {where} AND junk <> ? "
+        f"AND area_hint IS NOT NULL AND area_hint <> '' "
+        f"GROUP BY area_hint HAVING COUNT(*) >= 2 ORDER BY n DESC LIMIT 15",
+        params + (yes,))
+    return [{"phrase": r[0], "label": str(r[0]).title(), "n": r[1],
+             "example": r[2], "last_seen": str(r[3])} for r in rows]
+
+
+_FEEDBACK_COLUMNS = ("ts, ref, kind, message, area, area_hint, severity, junk, "
+                     "path, feature, year, gp, session_type, mode")
+
+
+def _feedback_rows(window: dict, limit: int = 120) -> list[dict]:
+    where, params = _bounds(window)
+    rows = store.query(
+        f"SELECT {_FEEDBACK_COLUMNS} FROM analytics_feedback WHERE {where} "
+        f"ORDER BY ts DESC LIMIT {limit}", params)
+    return [_feedback_row(r) for r in rows]
+
+
+def _feedback_row(row) -> dict:
+    (ts, ref, kind, message, area, hint, severity, junk,
+     path, feature, year, gp, session_type, mode) = row
+    kind = triage.normalize_kind(kind)
+    return {
+        "ts": str(ts), "ref": ref,
+        "kind": kind, "kind_label": triage.KIND_LABEL.get(kind, kind),
+        "message": message,
+        "area": area, "area_label": triage.display_area(area, hint),
+        "area_hint": hint,
+        "severity": severity,
+        "severity_label": triage.SEVERITY_LABEL.get(severity or "", None),
+        "junk": bool(junk),
+        "path": path, "page": PAGE_LABEL.get(path or "", path),
+        "feature": feature,
+        "feature_label": FEATURE_LABEL.get(feature or "", feature),
+        "year": year, "gp": gp, "session_type": session_type,
+        # One string the dashboard and the report can both print without either
+        # of them re-deciding what "no session was open" looks like.
+        "context": session_context(year, gp, session_type),
+        "mode": mode,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# WHERE SOMEBODY WAS, AS ONE LINE.
+#
+# "2026 Miami Grand Prix · Race" is the whole of the context a question or a
+# report needs, and it was previously assembled — or not — at each call site.
+# The Ask log printed nothing at all, the disliked panel printed a third
+# variant, and the report printed a fourth. One function, so a row is legible
+# the same way wherever it is shown.
+# --------------------------------------------------------------------------- #
+def session_context(year, gp, session_type) -> str | None:
+    """`2026 Miami Grand Prix · Race`, or None when nothing was open."""
+    if not gp and not year:
+        return None
+    race = " ".join(str(p) for p in (year, gp) if p).strip()
+    if not race:
+        return None
+    return f"{race} · {session_type}" if session_type else race
 
 
 def _recent(window: dict, limit: int = 40) -> list[dict]:
@@ -1035,6 +1189,7 @@ def dashboard(range_key: str = "7d", start: str | None = None,
         "usage": _usage(window),
         "performance": performance,
         "ask": ask,
+        "feedback": _feedback(window),
         "recent": _recent(window),
     }
     # Ranked LAST, because it reads the finished payload. The dashboard and the
@@ -1067,6 +1222,41 @@ def ask_log(range_key: str = "7d", outcome: str | None = None,
         f"ORDER BY ts DESC LIMIT {limit}", params)
     return {"available": True, "range": _range_out(window),
             "rows": [_ask_row(r) for r in rows]}
+
+
+def feedback_log(range_key: str = "30d", kind: str | None = None,
+                 area: str | None = None, severity: str | None = None,
+                 include_junk: bool = False, limit: int = 200,
+                 start: str | None = None, end: str | None = None) -> dict:
+    """Browse submitted feedback — the drill-down behind the feedback panel.
+
+    Junk is EXCLUDED by default and included on request rather than deleted, so
+    the default view is signal and the noise is still auditable. Every filter is
+    matched against a known vocabulary before it reaches SQL; an unrecognised
+    value is dropped rather than passed through.
+    """
+    window = resolve_range(range_key, start, end)
+    if not store.enabled():
+        return {"available": False, "rows": [], "range": _range_out(window)}
+    where, params = _bounds(window)
+    if kind in triage.KINDS:
+        where += " AND kind = ?"
+        params = params + (kind,)
+    if area:
+        where += " AND area = ?"
+        params = params + (area,)
+    if severity in triage.SEVERITY_ORDER:
+        where += " AND severity = ?"
+        params = params + (severity,)
+    if not include_junk:
+        where += " AND junk <> ?"
+        params = params + (store._as_bool(True),)           # noqa: SLF001
+    limit = max(1, min(500, int(limit)))
+    rows = store.query(
+        f"SELECT {_FEEDBACK_COLUMNS} FROM analytics_feedback WHERE {where} "
+        f"ORDER BY ts DESC LIMIT {limit}", params)
+    return {"available": True, "range": _range_out(window),
+            "rows": [_feedback_row(r) for r in rows]}
 
 
 def _range_out(window: dict) -> dict:

@@ -69,6 +69,10 @@ BATCH_WAIT_S = 2.0
 EVENT_RETENTION_DAYS = 90
 #: Ask rows are the valuable ones and there are far fewer of them.
 ASK_RETENTION_DAYS = 400
+#: Feedback is rarer still and ages better than anything else here — a bug
+#: nobody has fixed is not less true in six months. Pruned only so the table
+#: cannot grow without bound; in practice nothing reaches this.
+FEEDBACK_RETENTION_DAYS = 800
 PRUNE_EVERY_S = 6 * 3600
 
 
@@ -179,6 +183,40 @@ def _schema() -> list[str]:
         "CREATE INDEX IF NOT EXISTS analytics_ask_ts ON analytics_ask (ts)",
         "CREATE INDEX IF NOT EXISTS analytics_ask_outcome_ts ON analytics_ask (outcome, ts)",
         "CREATE INDEX IF NOT EXISTS analytics_ask_topic_ts ON analytics_ask (topic, ts)",
+
+        # ---- what readers wrote down on purpose ------------------------- #
+        #
+        # A separate table from analytics_event, not a `name='feedback'` row in
+        # it, for three reasons that all point the same way: this is the only
+        # place a reader composes free text about the PRODUCT (an Ask question
+        # is free text about a RACE, and lives in its own table for the same
+        # reason); it carries columns nothing else has (kind, area, severity);
+        # and it must outlive the 90-day event retention, because a bug report
+        # from four months ago is still a bug report.
+        f"""CREATE TABLE IF NOT EXISTS analytics_feedback (
+            id        {d.serial},
+            ref       TEXT NOT NULL UNIQUE,
+            ts        {d.ts_type} NOT NULL,
+            visitor   TEXT,
+            visit     TEXT,
+            kind      TEXT NOT NULL,
+            message   TEXT NOT NULL,
+            area      TEXT NOT NULL,
+            area_hint TEXT,
+            severity  TEXT,
+            junk      {d.bool_type},
+            path      TEXT,
+            feature   TEXT,
+            year      INTEGER,
+            gp        TEXT,
+            session_type TEXT,
+            mode      TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS analytics_feedback_ts ON analytics_feedback (ts)",
+        "CREATE INDEX IF NOT EXISTS analytics_feedback_kind_ts "
+        "ON analytics_feedback (kind, ts)",
+        "CREATE INDEX IF NOT EXISTS analytics_feedback_area_ts "
+        "ON analytics_feedback (area, ts)",
 
         # ---- the shape of history, kept after the raw rows are pruned ---- #
         f"""CREATE TABLE IF NOT EXISTS analytics_daily (
@@ -441,6 +479,8 @@ def _prune(conn) -> None:
     cur.execute(d.sql("DELETE FROM analytics_event WHERE ts < ?"), (d.ts(cutoff),))
     ask_cutoff = datetime.now(timezone.utc) - timedelta(days=ASK_RETENTION_DAYS)
     cur.execute(d.sql("DELETE FROM analytics_ask WHERE ts < ?"), (d.ts(ask_cutoff),))
+    fb_cutoff = datetime.now(timezone.utc) - timedelta(days=FEEDBACK_RETENTION_DAYS)
+    cur.execute(d.sql("DELETE FROM analytics_feedback WHERE ts < ?"), (d.ts(fb_cutoff),))
     if d.name == "sqlite":
         conn.commit()
 
@@ -562,6 +602,57 @@ def feedback(ref: str, helpful: bool) -> None:
         _stats["errors"] += 1
 
 
+_REPORT_SQL = (
+    "INSERT INTO analytics_feedback "
+    "(ref, ts, visitor, visit, kind, message, area, area_hint, severity, junk, "
+    " path, feature, year, gp, session_type, mode) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
+#: A report is composed rather than typed into a search box, so it is allowed
+#: more room than an Ask question — but still bounded, because this is the one
+#: column in the whole schema that a stranger fills in freely.
+MAX_MESSAGE = 2000
+
+
+def record_feedback(*, kind: str, message: str, area: str,
+                    area_hint: str | None = None, severity: str | None = None,
+                    junk: bool = False,
+                    visitor: str | None = None, visit: str | None = None,
+                    path: str | None = None, feature: str | None = None,
+                    year: int | None = None, gp: str | None = None,
+                    session_type: str | None = None,
+                    mode: str | None = None) -> str | None:
+    """Record one bug report or suggestion. Returns its `ref`, or None.
+
+    The ref goes back to the browser so a submission can be acknowledged with
+    something specific — and, as with Ask, it is a random UUID rather than the
+    row id, because a sequential handle travelling to a browser is a handle
+    somebody can enumerate.
+
+    Total, like everything else in this module: a reader who presses Send gets
+    their confirmation whether or not the database was listening.
+    """
+    if not _ENABLED or not (message or "").strip():
+        return None
+    try:
+        assert _DIALECT
+        ref = uuid.uuid4().hex
+        _submit(_REPORT_SQL, (
+            ref, _DIALECT.ts(datetime.now(timezone.utc)),
+            _clip(visitor, 64), _clip(visit, 64),
+            _clip(kind, 16), _clip(message, MAX_MESSAGE),
+            _clip(area, 48), _clip(area_hint, 64), _clip(severity, 16),
+            _as_bool(junk), _clip(path, MAX_SHORT), _clip(feature, 64),
+            int(year) if year is not None else None, _clip(gp, 100),
+            _clip(session_type, 40), _clip(mode, 16),
+        ))
+        return ref
+    except Exception:  # noqa: BLE001
+        _stats["errors"] += 1
+        return None
+
+
 def _as_bool(value: bool | None):
     if value is None:
         return None
@@ -628,7 +719,8 @@ def dialect() -> _Dialect | None:
 # cleared by a separate operation that never opens this connection. Even so, the
 # tuple is the guarantee, not the deployment topology.
 # --------------------------------------------------------------------------- #
-ANALYTICS_TABLES = ("analytics_event", "analytics_ask", "analytics_daily")
+ANALYTICS_TABLES = ("analytics_event", "analytics_ask", "analytics_daily",
+                    "analytics_feedback")
 
 #: What each holds, in the words the confirmation dialog shows. A table added
 #: above without a line here makes `inventory()` say so rather than describe it
@@ -637,6 +729,7 @@ TABLE_PURPOSE = {
     "analytics_event": "Page views, session opens, feature use, errors and API timings",
     "analytics_ask": "Every Ask question, its answer, outcome, topic and thumbs rating",
     "analytics_daily": "The daily rollup that survives raw-event pruning",
+    "analytics_feedback": "Bug reports and suggestions readers submitted, with the page they were on",
 }
 
 
@@ -671,10 +764,31 @@ def inventory() -> dict:
             "engine": _DIALECT.name if _DIALECT else None}
 
 
+#: What each purge scope reaches. Data rather than a chain of ifs, because the
+#: dashboard renders the choices from it and the two would otherwise drift.
+#:
+#: The last two are ROW filters rather than whole tables — "clear the bug
+#: reports and keep the suggestions" is a real thing to want, and it is the one
+#: case here where a scope cannot be expressed as a list of tables. `filter` is
+#: a fixed fragment paired with a fixed parameter; neither is ever built from
+#: anything a caller supplied.
+PURGE_SCOPES: dict[str, dict] = {
+    "all":         {"label": "Everything", "tables": ANALYTICS_TABLES},
+    "events":      {"label": "Page and feature events",
+                    "tables": ("analytics_event", "analytics_daily")},
+    "ask":         {"label": "Ask questions", "tables": ("analytics_ask",)},
+    "feedback":    {"label": "All feedback", "tables": ("analytics_feedback",)},
+    "bugs":        {"label": "Bug reports only", "tables": ("analytics_feedback",),
+                    "filter": ("kind = ?", ("bug",))},
+    "suggestions": {"label": "Suggestions only", "tables": ("analytics_feedback",),
+                    "filter": ("kind = ?", ("suggestion",))},
+}
+
+
 def purge(scope: str = "all", before: datetime | None = None) -> dict:
     """Delete analytics rows. Returns how many, per table.
 
-    `scope` is "all", "events" or "ask". `before` restricts to rows older than a
+    `scope` is a key of PURGE_SCOPES. `before` restricts to rows older than a
     moment, which is what makes "start a clean measurement period after my
     spam-testing" possible without losing the history in front of it.
 
@@ -685,13 +799,11 @@ def purge(scope: str = "all", before: datetime | None = None) -> dict:
     if not _ENABLED:
         return {"available": False, "deleted": {}, "total": 0}
     assert _DIALECT
-    targets = {
-        "all": ANALYTICS_TABLES,
-        "events": ("analytics_event", "analytics_daily"),
-        "ask": ("analytics_ask",),
-    }.get(scope)
-    if targets is None:
+    spec = PURGE_SCOPES.get(scope)
+    if spec is None:
         raise ValueError(f"unknown scope {scope!r}")
+    targets = spec["tables"]
+    where_sql, where_params = spec.get("filter", (None, ()))
 
     deleted: dict[str, int] = {}
     conn = _connect()
@@ -701,7 +813,15 @@ def purge(scope: str = "all", before: datetime | None = None) -> dict:
             # Belt and braces: the loop can only see names from the frozen tuple
             # above, and this asserts it again at the point of the DELETE.
             assert table in ANALYTICS_TABLES, table
-            if before is not None and table != "analytics_daily":
+            if where_sql:
+                # A row filter (bugs / suggestions), optionally also time-bounded.
+                sql = f"DELETE FROM {table} WHERE {where_sql}"
+                params: tuple = tuple(where_params)
+                if before is not None:
+                    sql += " AND ts < ?"
+                    params = params + (_DIALECT.ts(before),)
+                cur.execute(_DIALECT.sql(sql), params)
+            elif before is not None and table != "analytics_daily":
                 cur.execute(_DIALECT.sql(f"DELETE FROM {table} WHERE ts < ?"),
                             (_DIALECT.ts(before),))
             elif before is not None:

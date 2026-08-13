@@ -9,6 +9,7 @@ import { PALETTE_CSS, Verdict, Stat, Explain, type Tone } from "@/components/adm
 import {
   AskPanel, PerformancePanel, PrioritiesPanel, RecentPanel, UsagePanel,
 } from "@/components/admin/panels";
+import { FeedbackPanel } from "@/components/admin/feedback";
 
 /* -------------------------------------------------------------------------- */
 /* THE PRIVATE DASHBOARD.                                                     */
@@ -228,6 +229,14 @@ export default function AdminPage() {
 
             {/* ---- 3. ASK ------------------------------------------------ */}
             <AskPanel ask={data.ask} />
+
+            {/* ---- 3b. WHAT THEY SAID IN THEIR OWN WORDS -----------------
+                Directly under Ask, and above usage, because it is the same
+                kind of signal one step more explicit: Ask records where the
+                product fell short, and this records what somebody wanted done
+                about it. Both belong above the numbers that describe
+                behaviour rather than intent. */}
+            <FeedbackPanel feedback={data.feedback} />
 
             {/* ---- 4. USAGE, THEN BACKEND -------------------------------- */}
             <UsagePanel usage={data.usage} traffic={data.traffic} overview={o} />

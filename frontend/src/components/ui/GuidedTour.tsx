@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, ArrowRight, X } from "lucide-react";
 import { useTour } from "@/lib/tour";
@@ -19,10 +19,39 @@ import { cx } from "@/lib/format";
 /*   IT IS SHORTER THAN THE PATIENCE FOR IT. One line per beat. If a beat      */
 /*   needs a paragraph, the interface underneath it needs the work instead.     */
 /*                                                                            */
-/*   IT IS TRIVIAL TO LEAVE. Escape, the backdrop, and a permanent Skip. A     */
+/*   IT IS TRIVIAL TO LEAVE. Escape, a permanent Skip, and an X on the card. A */
 /*   beat whose target isn't on screen is skipped rather than pointing at      */
-/*   nothing, and the scrim never blocks the page it is teaching — the hole is */
-/*   a real hole, so the control being explained can still be pressed.          */
+/*   nothing.                                                                  */
+/*                                                                            */
+/* AND ONE RULE ADDED IN V92: WHILE THE TOUR IS UP, THE TOUR OWNS THE INPUT.   */
+/*                                                                            */
+/*   The hole used to be a REAL hole. The scrim was pointer-events: none from  */
+/*   the wrapper down, so every click went through to the page — the spotlit    */
+/*   control could be pressed, and so could everything around it. A reader     */
+/*   being told "this is the session picker" could open the session picker,    */
+/*   change the race, and have the beat they were reading start describing a   */
+/*   page that no longer existed. Worse, the targets move when the page state  */
+/*   changes, so the spotlight would then chase a control across a relayout    */
+/*   nobody asked for.                                                          */
+/*                                                                            */
+/*   Teaching and operating are different modes and cannot share the same      */
+/*   click. So the tour now takes exclusive control of input, by two           */
+/*   mechanisms that cover the two ways a page can be reached:                 */
+/*                                                                            */
+/*     POINTER — one full-viewport blocker inside the tour layer, painted      */
+/*     under the card and over everything else. The page stays fully visible   */
+/*     and fully lit; it simply stops answering.                               */
+/*                                                                            */
+/*     KEYBOARD — `inert` on every sibling of the tour layer, which is what    */
+/*     actually removes them from the tab order and the accessibility tree. A  */
+/*     pointer blocker alone leaves Tab and Enter working, which is the same    */
+/*     bug with a keyboard.                                                     */
+/*                                                                            */
+/*   The scrim is NOT a dismiss target any more. It was one only in the        */
+/*   no-target case, and a backdrop that exits on click is exactly the thing   */
+/*   a reader hits when they try to press the control being explained — the    */
+/*   one accident this change exists to prevent. Skip, the X and Escape are    */
+/*   all on screen at every beat, so nothing is trapped.                       */
 /* -------------------------------------------------------------------------- */
 
 interface Box { top: number; left: number; width: number; height: number; }
@@ -137,6 +166,15 @@ function fitTo(el: Element): Fit {
 export function GuidedTour() {
   const { beats, index, running, ready, next, prev, stop } = useTour();
   const { prefs } = usePrefs();
+  /* ONE LAYER, OWNED BY US, FOR THE WHOLE RUN.
+     The portal used to mount straight into document.body, which meant the tour's
+     own node was a body child that appeared and disappeared between beats — and
+     the `inert` sweep below has to be able to tell "the tour" from "the page it
+     is covering". A host created when the tour starts and removed when it ends
+     is stable for the entire run, so the sweep has something constant to skip
+     and the waiting state is covered by the same guarantee as a live beat. */
+  const [host, setHost] = useState<HTMLElement | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState<Box | null>(null);
   const [fit, setFit] = useState<Fit>(FIT_DEFAULT);
   const [el, setEl] = useState<Element | null>(null);
@@ -150,6 +188,56 @@ export function GuidedTour() {
   // has the page stopped moving? the card is not shown until it has
   const [settled, setSettled] = useState(false);
   const beat = running ? beats[index] : undefined;
+
+  useEffect(() => {
+    if (!running || typeof document === "undefined") return;
+    const el = document.createElement("div");
+    el.setAttribute("data-tour-layer", "");
+    document.body.appendChild(el);
+    setHost(el);
+    return () => { el.remove(); setHost(null); };
+  }, [running]);
+
+  /* THE PAGE GOES QUIET WHILE THE TOUR TALKS.
+     `inert` is the only thing that removes a subtree from the tab order, the
+     accessibility tree and hit-testing all at once — a pointer blocker stops the
+     mouse and leaves Tab, Enter and a screen reader walking straight into the
+     page the tour is covering.
+
+     Applied to the tour layer's SIBLINGS rather than to one app wrapper: this
+     component portals into document.body, so its siblings are exactly "the rest
+     of the document", and nothing has to be restructured for the tour's benefit.
+     Anything already inert is left alone and left out of the restore list, so a
+     modal that inerted the page first still owns that decision when we leave.
+
+     AND IT HAS TO KEEP SWEEPING, which is the part a single pass gets wrong.
+     A tour NAVIGATES: the first beat is on the Race Explorer and the reader may
+     have started from the landing page, so the page element present when the
+     tour opened is unmounted moments later and a fresh one takes its place —
+     never marked, fully live, sitting under the scrim. The same is true of
+     anything else that mounts mid-tour: a portal, a route announcer, the
+     feedback dock appearing on a route where it is shown. Observing the body's
+     child list closes all of those at once, because they are all the same
+     event. */
+  useEffect(() => {
+    if (!running || !host) return;
+    const marked = new Set<HTMLElement>();
+    const sweep = () => {
+      for (const node of Array.from(document.body.children)) {
+        const el = node as HTMLElement;
+        if (el === host || el.contains(host) || el.inert) continue;
+        el.inert = true;
+        marked.add(el);
+      }
+    };
+    sweep();
+    const watch = new MutationObserver(sweep);
+    watch.observe(document.body, { childList: true });
+    return () => {
+      watch.disconnect();
+      for (const el of marked) el.inert = false;
+    };
+  }, [running, host]);
 
   /* FIND THE TARGET — AND WAIT FOR IT.
      A beat that arrives before its page has finished fetching does not have a
@@ -347,7 +435,21 @@ export function GuidedTour() {
     return () => window.removeEventListener("keydown", onKey);
   }, [running, next, prev, stop]);
 
-  if (!running || typeof document === "undefined") return null;
+  /* WHERE THE KEYBOARD IS, ONCE THE PAGE HAS GONE INERT.
+     Making the page inert blurs whatever was focused in it and leaves focus on
+     the body, so the first Tab would walk from the top of the document — which
+     is now the tour, but only by accident. Putting focus on the card makes it
+     deliberate: Tab reaches Back / Skip / Next in the order they are read, and
+     a screen reader announces the beat it has landed on.
+
+     `preventScroll` because the beat has just finished deciding what the scroll
+     position should be, and focusing an off-screen card would undo it. */
+  useEffect(() => {
+    if (!running || !settled) return;
+    cardRef.current?.focus({ preventScroll: true });
+  }, [running, settled, index]);
+
+  if (!running || typeof document === "undefined" || !host) return null;
 
   /* THE WAIT BETWEEN BEATS.
      A beat with a target is not shown until that target has been found: a card
@@ -375,7 +477,7 @@ export function GuidedTour() {
           Skip the tour
         </button>
       </div>,
-      document.body,
+      host,
     ) : null;
   }
   if (!beat) return null;
@@ -418,16 +520,25 @@ export function GuidedTour() {
   }
 
   return createPortal(
-    // pointer-events-none on the wrapper, auto on the card: the scrim covers
-    // the whole viewport, and without this it would swallow every click meant
-    // for the control the tour is currently pointing at.
-    <div className="pointer-events-none fixed inset-0 z-[100]" role="dialog" aria-modal="false"
+    // pointer-events-none on the wrapper, auto on the blocker and the card: the
+    // blocker takes every click meant for the page, the card takes its own.
+    <div className="pointer-events-none fixed inset-0 z-[100]" role="dialog" aria-modal="true"
       aria-label={`Guided tour, step ${index + 1} of ${beats.length}`}
       style={{ ["--tour-move" as string]: travelling ? ".52s" : ".16s" }}>
+      {/* THE BLOCKER. Invisible, full-viewport, and the first thing painted in
+          this layer — so it sits over the whole page and under everything the
+          tour draws. It carries no appearance at all: the scrim below it is
+          what the reader sees, and dimming is a separate job from blocking.
+          `preventDefault` on pointerdown stops the click ALSO placing a caret or
+          starting a selection drag on the text underneath. */}
+      <div aria-hidden className="pointer-events-auto absolute inset-0"
+        onPointerDown={(e) => e.preventDefault()} />
+
       {/* The scrim is one element with a hole punched through it by box-shadow,
           rather than four rectangles around the target — so it can animate from
-          one beat to the next as a single moving spotlight, and the target
-          inside the hole stays live. */}
+          one beat to the next as a single moving spotlight. The hole is now
+          only a hole in the LIGHT; the blocker above still covers it, which is
+          what stops the spotlit control being pressed. */}
       {hole ? (
         /* TWO ELEMENTS, NOT ONE, AND THAT IS THE WHOLE FIX.
            The scrim and its outline used to be the same box, so the outline's
@@ -459,14 +570,18 @@ export function GuidedTour() {
             }} />
         </>
       ) : (
-        <div onClick={() => stop()} className="pointer-events-auto absolute inset-0 bg-base-950/84" />
+        /* No target to cut a hole around, so the dim is flat. Not a dismiss
+           target: see the header note — a backdrop that exits on click is the
+           thing a reader presses when they mean to press the control. */
+        <div aria-hidden className="pointer-events-none absolute inset-0 bg-base-950/84" />
       )}
 
       {/* The card is mounted only once the page has stopped, and it fades in
           where it will stay. Nothing about it animates position — a card that
           slides into place while being read is the "choppy" report. */}
       <div
-        className={cx("tour-card modal-scroll pointer-events-auto absolute w-[min(23rem,calc(100vw-2rem))] max-h-[min(24rem,calc(100vh-2rem))] p-4",
+        ref={cardRef} tabIndex={-1}
+        className={cx("tour-card modal-scroll pointer-events-auto absolute w-[min(23rem,calc(100vw-2rem))] max-h-[min(24rem,calc(100vh-2rem))] p-4 outline-none",
           settled ? "opacity-100" : "pointer-events-none opacity-0")}
         style={place}>
         {/* The card's own room: a slow drifting wash and a hairline lattice,
@@ -524,6 +639,6 @@ export function GuidedTour() {
         </div>
       </div>
     </div>,
-    document.body,
+    host,
   );
 }

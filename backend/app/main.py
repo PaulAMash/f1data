@@ -24,6 +24,7 @@ from . import analytics, cache, service, timing, upstream
 from .analytics import classify as ask_classify
 from .analytics import queries as analytics_queries
 from .analytics import report as analytics_report
+from .analytics import triage
 from .analytics.admin import admin_token_configured, require_admin
 from .adapters import data_source_manager, headshots, history_adapter, historical, pitstop_service
 from .adapters.data_source_manager import DataUnavailableError
@@ -792,6 +793,71 @@ def ask_feedback(body: FeedbackBody) -> Response:
     return Response(status_code=204)
 
 
+# --------------------------------------------------------------------------- #
+# The feedback box.
+#
+# THE CONTEXT IS COLLECTED, NOT ASKED FOR. Every report that arrives without a
+# page attached costs a round trip to find out where it happened, and readers
+# are bad witnesses about routes — "the chart page" is four different screens.
+# The browser already knows the path, the tab, the season, the Grand Prix and
+# the session, so it sends them, and nobody has to describe where they were.
+#
+# UNAUTHENTICATED, LIKE /api/signal, AND FOR THE SAME REASON: it only ever
+# writes, and there is nothing here to read back. Unlike /api/signal it answers
+# with a body, because a person pressed Send and is owed an acknowledgement
+# rather than a silent 204.
+# --------------------------------------------------------------------------- #
+class ReportBody(BaseModel):
+    #: "bug" or "suggestion". Anything else is read as a bug — a misspelled
+    #: kind must not lose the report.
+    kind: str = "bug"
+    message: str
+    #: Where the reader was. All optional: a report from a page with no session
+    #: open is still a report.
+    path: str | None = None
+    feature: str | None = None
+    year: int | None = None
+    gp: str | None = None
+    session: str | None = None
+    mode: str | None = None
+    visitor: str | None = None
+    visit: str | None = None
+
+
+@app.post("/api/feedback")
+def submit_feedback(body: ReportBody):
+    """Record one bug report or suggestion, classified on the way in.
+
+    Never fails for a reason the reader can do anything about. An empty message
+    is the one refusal, because there is nothing to store; everything else —
+    analytics disabled, database unreachable, a classifier that somehow threw —
+    still answers `received`, because the alternative is a person who wrote out
+    a paragraph being told to try again with no way to succeed.
+    """
+    message = (body.message or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Write something first.")
+
+    kind = triage.normalize_kind(body.kind)
+    ref = None
+    try:
+        area, hint = triage.classify(message, kind)
+        ref = analytics.record_feedback(
+            kind=kind, message=message,
+            area=area, area_hint=hint,
+            severity=triage.severity_of(message) if kind == triage.BUG else None,
+            junk=triage.is_junk(message),
+            visitor=body.visitor, visit=body.visit,
+            path=body.path, feature=body.feature,
+            year=body.year, gp=body.gp, session_type=body.session,
+            mode=body.mode if body.mode in ("simple", "advanced") else None)
+    except Exception:  # noqa: BLE001 — recording may never cost the reader
+        logging.getLogger("pitwall_iq").warning("feedback record failed", exc_info=True)
+
+    return {"received": True, "ref": ref,
+            "kind": kind, "stored": ref is not None}
+
+
 @app.get("/api/admin/analytics")
 def admin_analytics(_ok: bool = Depends(require_admin),
                     range: str = Query("7d"),
@@ -813,6 +879,21 @@ def admin_analytics_ask(_ok: bool = Depends(require_admin),
     return analytics_queries.ask_log(range, outcome, topic, limit, start, end)
 
 
+@app.get("/api/admin/feedback")
+def admin_feedback_log(_ok: bool = Depends(require_admin),
+                       range: str = Query("30d"),
+                       kind: str | None = Query(None),
+                       area: str | None = Query(None),
+                       severity: str | None = Query(None),
+                       junk: bool = Query(False),
+                       limit: int = Query(200),
+                       start: str | None = Query(None),
+                       end: str | None = Query(None)):
+    """Every submitted report, filtered. The drill-down behind the panel."""
+    return analytics_queries.feedback_log(range, kind, area, severity,
+                                          junk, limit, start, end)
+
+
 # --------------------------------------------------------------------------- #
 # Destructive admin operations.
 #
@@ -827,7 +908,7 @@ def admin_analytics_ask(_ok: bool = Depends(require_admin),
 # DIFFERENT for each operation, so muscle memory cannot carry you from one to
 # the other; and a preview endpoint reporting exactly what would be removed
 # BEFORE anything is. The analytics purge can additionally only ever touch the
-# three tables named in store.ANALYTICS_TABLES.
+# tables named in store.ANALYTICS_TABLES.
 # --------------------------------------------------------------------------- #
 _CONFIRM_ANALYTICS = "DELETE ANALYTICS"
 _CONFIRM_CACHE = "CLEAR CACHE"
@@ -836,7 +917,8 @@ _CONFIRM_CACHE = "CLEAR CACHE"
 class AnalyticsResetBody(BaseModel):
     #: Must equal _CONFIRM_ANALYTICS exactly. Typed, not a checkbox.
     confirm: str
-    #: "all" | "events" | "ask"
+    #: A key of store.PURGE_SCOPES — "all", "events", "ask", "feedback",
+    #: "bugs" or "suggestions". Validated there, never interpolated here.
     scope: str = "all"
     #: Optional ISO date - delete only rows older than this, which is how you
     #: keep real history and drop a testing session.
@@ -850,6 +932,11 @@ def admin_analytics_inventory(_ok: bool = Depends(require_admin)):
         "analytics": analytics.inventory(),
         "confirm_phrase": _CONFIRM_ANALYTICS,
         "tables": list(analytics.ANALYTICS_TABLES),
+        # The dashboard renders its scope menu from this rather than carrying
+        # its own copy of the list, so a scope added in store.py appears in the
+        # UI without a second edit — and one removed cannot linger there.
+        "scopes": [{"key": key, "label": spec["label"]}
+                   for key, spec in analytics.PURGE_SCOPES.items()],
         "note": ("Only these analytics tables are affected. Cached F1 session data, "
                  "application configuration and every other table are untouched - "
                  "see /api/admin/cache/inventory for the cache."),

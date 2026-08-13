@@ -152,7 +152,8 @@ function ReportTool({ token, range, rangeLabel }: {
         {[
           ["The three verdicts", "product, Ask and backend, with the reason for each"],
           ["Product usage", "visitors, visits, races, features, dwell, funnel and exits"],
-          ["Ask intelligence", "outcomes, topics, the capability gaps and the rejected answers"],
+          ["Ask intelligence", "outcomes, topics, gaps, rejected answers, and every question with its Grand Prix and session"],
+          ["Reader feedback", "every bug report and suggestion in full, by area, with the page and race attached"],
           ["Performance", "endpoints against their budgets, failures, session load errors"],
           ["What to work on next", "the same ranked list as the panel above"],
         ].map(([title, detail]) => (
@@ -319,12 +320,19 @@ function AnalyticsReset({ token, onChanged }: { token: string; onChanged: () => 
               <span className="text-[11px] uppercase tracking-[0.06em] text-ink-faint">
                 What to delete
               </span>
+              {/* THE SCOPES COME FROM THE SERVER, not from a copy of the list
+                  kept here. store.PURGE_SCOPES is the only place a scope is
+                  defined, and it is also the only place that decides what a
+                  scope actually deletes — so an option shown here can never
+                  name something the purge does not implement, and a scope
+                  added there appears without a second edit. */}
               <select value={scope} onChange={(e) => setScope(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-white/10 bg-base-900/60 px-2.5
                            py-1.5 text-[12.5px] text-ink outline-none focus:border-accent/40">
-                <option value="all">Everything</option>
-                <option value="events">Page/feature events only</option>
-                <option value="ask">Ask questions only</option>
+                {(inv?.scopes ?? [{ key: "all", label: "Everything" }]).map(
+                  (s: { key: string; label: string }) => (
+                    <option key={s.key} value={s.key}>{s.label}</option>
+                  ))}
               </select>
             </label>
             <label className="block">
@@ -340,6 +348,10 @@ function AnalyticsReset({ token, onChanged }: { token: string; onChanged: () => 
             {before
               ? `Keeps everything recorded on or after ${before}.`
               : "Leave the date empty to delete the whole history for that scope."}
+            {" "}
+            {scope === "bugs" && "Suggestions are left alone."}
+            {scope === "suggestions" && "Bug reports are left alone."}
+            {scope === "feedback" && "Ask questions and page events are left alone."}
           </p>
 
           <label className="block">

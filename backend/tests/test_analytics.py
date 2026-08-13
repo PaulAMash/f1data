@@ -984,3 +984,228 @@ def test_the_report_and_the_dashboard_agree(analytics_db):
     _settled()
     built = report.build("7d")
     assert built["priorities"] == queries.dashboard("7d")["priorities"]
+
+
+# --------------------------------------------------------------------------- #
+# V92: the feedback box.
+#
+# Ordered the same way as everything above it — the guarantees that matter most
+# come first. A reader pressing Send must always be told it worked; only after
+# that does it matter that the row is classified well.
+# --------------------------------------------------------------------------- #
+def _report(message: str, kind: str = "bug", **extra) -> dict:
+    body = {"kind": kind, "message": message, **extra}
+    res = client.post("/api/feedback", json=body)
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def test_feedback_is_acknowledged_even_with_no_analytics_configured(monkeypatch):
+    """The store being off is not the reader's problem and must not look like
+    a failure to them."""
+    analytics.shutdown()
+    monkeypatch.setattr(store, "_ENABLED", False)
+    body = _report("The position chart is blank on every race")
+    assert body["received"] is True
+    assert body["stored"] is False
+
+
+def test_feedback_is_acknowledged_when_the_store_raises(analytics_db, monkeypatch):
+    monkeypatch.setattr(store, "_submit",
+                        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("down")))
+    assert _report("Session never loads on Monaco")["received"] is True
+
+
+def test_an_empty_report_is_refused(analytics_db):
+    for message in ("", "   ", "\n\t "):
+        assert client.post("/api/feedback",
+                           json={"kind": "bug", "message": message}).status_code == 400
+
+
+def test_a_report_stores_its_context_without_being_asked(analytics_db):
+    """The whole point of collecting context: nobody should have to say where
+    they were, and the row must be findable by race afterwards."""
+    _report("The position chart is completely blank and nothing renders",
+            path="/explorer", feature="charts", year=2026, gp="Miami Grand Prix",
+            session="Race", mode="advanced", visitor="v1", visit="s1")
+    _settled()
+    rows = queries.feedback_log("30d")["rows"]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["kind"] == "bug"
+    assert row["area"] == "charts"
+    assert row["path"] == "/explorer" and row["page"] == "Explore"
+    assert (row["year"], row["gp"], row["session_type"]) == (2026, "Miami Grand Prix", "Race")
+    assert row["context"] == "2026 Miami Grand Prix · Race"
+
+
+def test_a_report_with_no_session_open_still_records(analytics_db):
+    _report("Would be nice to have a driver of the day vote", kind="suggestion",
+            path="/")
+    _settled()
+    row = queries.feedback_log("30d")["rows"][0]
+    assert row["kind"] == "suggestion"
+    assert row["context"] is None, "an absent session must not invent one"
+
+
+def test_bugs_and_suggestions_are_counted_apart(analytics_db):
+    _report("The tyre strategy chart will not render at all", kind="bug")
+    _report("Please add a lap time distribution view", kind="suggestion")
+    _report("Add support for the 1960s seasons", kind="suggestion")
+    _settled()
+    fb = queries.dashboard("30d")["feedback"]
+    assert fb["bugs"] == 1
+    assert fb["suggestions"] == 2
+    assert fb["total"] == 3
+
+
+def test_an_unknown_kind_is_read_as_a_bug_rather_than_lost(analytics_db):
+    _report("Something is broken on the standings page", kind="complaint")
+    _settled()
+    assert queries.feedback_log("30d")["rows"][0]["kind"] == "bug"
+
+
+def test_junk_is_separated_rather_than_filed_under_a_real_area(analytics_db):
+    """The requirement, asserted: nonsense must not inflate a product area."""
+    _report("The position chart is blank on the Miami race")
+    for nonsense in ("asdfasdfasdf", "test", "aaaaaaaaaaaaaaaaa", "....."):
+        _report(nonsense)
+    _settled()
+    fb = queries.dashboard("30d")["feedback"]
+    assert fb["junk"] == 4
+    assert fb["real"] == 1
+    areas = {a["area"]: a["n"] for a in fb["areas"]}
+    assert areas == {"charts": 1}, f"junk leaked into a product area: {areas}"
+
+    # …and it is excluded from the log by default, but still auditable.
+    assert len(queries.feedback_log("30d")["rows"]) == 1
+    assert len(queries.feedback_log("30d", include_junk=True)["rows"]) == 5
+
+
+def test_severity_is_only_set_for_bugs(analytics_db):
+    _report("The page is completely broken and nothing loads", kind="bug")
+    _report("It would be nice if the charts were bigger", kind="suggestion")
+    _settled()
+    by_kind = {r["kind"]: r for r in queries.feedback_log("30d")["rows"]}
+    assert by_kind["bug"]["severity"] == "high"
+    assert by_kind["suggestion"]["severity"] is None
+
+
+def test_the_feedback_log_filters_by_kind_area_and_severity(analytics_db):
+    _report("The position chart is completely blank", kind="bug")
+    _report("Session never loads, it is stuck on the spinner", kind="bug")
+    _report("Please add a tyre degradation chart", kind="suggestion")
+    _settled()
+    assert len(queries.feedback_log("30d", kind="bug")["rows"]) == 2
+    assert len(queries.feedback_log("30d", kind="suggestion")["rows"]) == 1
+    # Two of the three are about charts — the blank one and the request for a
+    # new one. An area is the SUBJECT, so a bug and a suggestion about the same
+    # surface belong to the same area and are told apart by `kind`.
+    assert len(queries.feedback_log("30d", area="charts")["rows"]) == 2
+    assert len(queries.feedback_log("30d", area="loading")["rows"]) == 1
+    assert len(queries.feedback_log("30d", severity="high")["rows"]) == 1
+    # an unrecognised filter is dropped, never interpolated
+    assert len(queries.feedback_log("30d", kind="nonsense")["rows"]) == 3
+
+
+def test_feedback_survives_the_admin_endpoint(analytics_db):
+    _report("The compare tab shows nothing for two drivers", path="/explorer")
+    _settled()
+    res = client.get("/api/admin/feedback?range=30d", headers=_auth())
+    assert res.status_code == 200
+    rows = res.json()["rows"]
+    assert len(rows) == 1 and rows[0]["area_label"] == "Compare"
+
+
+@pytest.mark.parametrize("route", ["/api/admin/feedback"])
+def test_the_feedback_log_needs_the_token(analytics_db, route):
+    assert client.get(route).status_code == 401
+
+
+def test_bugs_and_suggestions_can_be_cleared_separately(analytics_db):
+    """The reusability requirement: the same guarded purge, new scopes."""
+    _report("The charts do not render on Monza", kind="bug")
+    _report("Please add sprint race support", kind="suggestion")
+    analytics.record("page_view", visitor="v", path="/")
+    _settled()
+
+    out = client.post("/api/admin/analytics/reset", headers=_auth(),
+                      json={"confirm": "DELETE ANALYTICS", "scope": "bugs"})
+    assert out.status_code == 200, out.text
+    rows = queries.feedback_log("30d", include_junk=True)["rows"]
+    assert [r["kind"] for r in rows] == ["suggestion"], "the wrong kind was deleted"
+    # and the unrelated event survived
+    assert queries.dashboard("30d")["overview"]["page_views"] == 1
+
+    client.post("/api/admin/analytics/reset", headers=_auth(),
+                json={"confirm": "DELETE ANALYTICS", "scope": "suggestions"})
+    assert queries.feedback_log("30d", include_junk=True)["rows"] == []
+    assert queries.dashboard("30d")["overview"]["page_views"] == 1
+
+
+def test_clearing_all_feedback_leaves_ask_and_events_alone(analytics_db):
+    _report("Charts are blank", kind="bug")
+    analytics.record_ask(question="Why did Norris lose second?", outcome=classify.ANSWERED,
+                         topic="positions")
+    analytics.record("page_view", visitor="v", path="/")
+    _settled()
+    client.post("/api/admin/analytics/reset", headers=_auth(),
+                json={"confirm": "DELETE ANALYTICS", "scope": "feedback"})
+    _settled()
+    data = queries.dashboard("30d")
+    assert data["feedback"]["total"] == 0
+    assert data["ask"]["total"] == 1, "clearing feedback deleted Ask rows"
+    assert data["overview"]["page_views"] == 1, "clearing feedback deleted events"
+
+
+def test_the_purge_refuses_a_scope_it_does_not_know(analytics_db):
+    res = client.post("/api/admin/analytics/reset", headers=_auth(),
+                      json={"confirm": "DELETE ANALYTICS", "scope": "everything_else"})
+    assert res.status_code == 400
+
+
+def test_an_emerging_subject_becomes_its_own_area(analytics_db):
+    """The taxonomy is supposed to grow from real reports, not from guesses."""
+    for _ in range(3):
+        _report("brake temperature readings would help me a lot", kind="suggestion")
+    _settled()
+    fb = queries.dashboard("30d")["feedback"]
+    assert any(e["phrase"] == "brake temperature" for e in fb["emerging"])
+    assert any(a["label"] == "Brake Temperature" for a in fb["areas"])
+
+
+def test_the_report_carries_the_feedback_in_every_format(analytics_db):
+    _report("The position chart is completely blank on Miami", kind="bug",
+            year=2026, gp="Miami Grand Prix", session="Race", path="/explorer")
+    _report("Please add a tyre degradation view", kind="suggestion")
+    _report("asdfasdf", kind="bug")
+    analytics.record_ask(question="Why did Norris lose second place?",
+                         outcome=classify.ANSWERED, topic="positions",
+                         year=2026, gp="Miami Grand Prix", session_type="Race")
+    _settled()
+
+    built = report.build("30d")
+    assert built["feedback"]["bugs"] == 2 and built["feedback"]["suggestions"] == 1
+
+    html_doc = report.to_html(built)
+    md_doc = report.to_markdown(built)
+    for doc in (html_doc, md_doc):
+        assert "position chart is completely blank" in doc
+        assert "tyre degradation view" in doc
+        # the Ask GP/session context reaches the report too
+        assert "2026 Miami Grand Prix · Race" in doc
+        # junk is kept out of a planning document
+        assert "asdfasdf" not in doc
+
+
+def test_ask_rows_carry_the_grand_prix_and_session(analytics_db):
+    analytics.record_ask(question="Why did Lando lose second place?",
+                         outcome=classify.ANSWERED, topic="positions",
+                         year=2026, gp="Miami Grand Prix", session_type="Race")
+    analytics.record_ask(question="Who was fastest?", outcome=classify.ANSWERED,
+                         topic="pace")
+    _settled()
+    rows = {r["question"]: r for r in queries.ask_log("30d")["rows"]}
+    assert rows["Why did Lando lose second place?"]["context"] == \
+        "2026 Miami Grand Prix · Race"
+    assert rows["Who was fastest?"]["context"] is None

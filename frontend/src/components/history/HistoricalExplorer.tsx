@@ -5,6 +5,7 @@ import { AlertTriangle } from "@/components/ui/MotionIcon";
 import { api } from "@/lib/api";
 import { useFreshEffect } from "@/lib/fresh";
 import { trackFeature } from "@/lib/analytics";
+import { useReportContext } from "@/lib/pageContext";
 import { useIsSimple } from "@/lib/mode";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { InfoTip } from "@/components/ui/InfoTip";
@@ -66,6 +67,10 @@ export function HistoricalExplorer() {
   const [results, setResults] = useState<Results | null>(null);
   const [loading, setLoading] = useState(false);
   const [nonce, setNonce] = useState(0);
+
+  /* So a report filed from the archive says which season and race it was
+     about, exactly as one filed from the Race Explorer does. */
+  useReportContext({ year, gp: event || undefined, session, feature: "historical" });
 
   /* -----------------------------------------------------------------------
      THREE FETCHES IN A CHAIN, AND NONE OF THEM USED TO CHECK WHETHER IT WAS

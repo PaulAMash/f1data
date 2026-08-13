@@ -107,9 +107,51 @@ Movement earns its place by carrying information:
   spinner is two rings at different speeds and directions; it is honest about
   progress it cannot measure, so it never fakes a progress bar.
 
-Every animation is disabled under `prefers-reduced-motion: reduce`. Nothing loops
-faster than ~1.8s; nothing moves that the reader didn't cause or that isn't
-telling them something.
+Nothing loops faster than ~1.8s; nothing moves that the reader didn't cause or
+that isn't telling them something.
+
+### Motion is a three-state preference, not a media query (V92)
+
+`prefers-reduced-motion` is read **once**, in `lib/prefs.tsx`, where it becomes
+the *default* value of the Motion preference. That value is written to
+`data-motion` on the root element before first paint, and every reduced-motion
+rule in `globals.css` is keyed on the attribute rather than on the media query.
+
+| `data-motion` | What it means | Default when |
+|---|---|---|
+| `full` | The designed tempo. | The OS asks for nothing. |
+| `calm` | Everything still runs — slower, shorter travel, no overshoot. A **pace** preference. | Chosen. |
+| `reduced` | Movement stops; every element stays drawn and stays informative. An **accessibility** answer. | The OS asks for reduced motion. |
+
+**Why this replaced a media query.** The old rule was the canonical
+`*, *::before, *::after { animation-duration: 0.01ms !important }` inside
+`@media (prefers-reduced-motion: reduce)`, and it did three things nobody wanted:
+
+* It **overrode the twenty-five hand-written per-component reduce blocks** in the
+  same file — the ones that stop the loading wheel *but keep it drawn*, hold the
+  level meter at an uneven reading rather than collapsing it, park the cars along
+  their traces. Considered answers, discarded by a wildcard carrying `!important`.
+* It was **unreachable by preference**. Windows ships with Accessibility →
+  Visual effects → **Animation effects** off on a large share of machines (OEM
+  images, battery saver, and it survives a reinstall). Browsers report that as
+  `prefers-reduced-motion: reduce`. Those readers got a product with no motion in
+  it and no control anywhere that could answer.
+* It **contradicted the Calm model** below, which exists precisely because a
+  duration of nearly zero is the right answer to an accessibility need and the
+  wrong answer to a pace preference.
+
+Behaviour for a reader who never opens Settings is unchanged. What is new is
+that Motion is now genuinely a preference: choose Full and you get it.
+
+Under `reduced`, the rule is **stop the movement, keep the meaning** — a loading
+wheel that holds still still says "loading"; one that vanishes says nothing.
+Opacity fades are kept where they carry state (the tour card, the feedback
+panel's arrival, the success tick); translation, scale, parallax and spin stop.
+
+> When adding an animation, add its `:root[data-motion="reduced"]` rule in the
+> same block. There is no longer a wildcard to catch what you forget — which is
+> the point, and which is how V92 found three animations (`.wc-45`, `.tele-move`,
+> `.tele-sig > i`) that had never been covered.
 
 ---
 
