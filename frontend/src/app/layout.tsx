@@ -3,8 +3,10 @@ import "./globals.css";
 import { PrefsProvider, NO_FLASH_SCRIPT } from "@/lib/prefs";
 import { SpellingBridge } from "@/lib/locale";
 import { NavHistoryProvider } from "@/lib/nav";
+import { PageContextProvider } from "@/lib/pageContext";
 import { TourProvider } from "@/lib/tour";
 import { GuidedTour } from "@/components/ui/GuidedTour";
+import { FeedbackDock } from "@/components/feedback/FeedbackDock";
 
 export const metadata: Metadata = {
   title: "Pitwall IQ — F1 Race Intelligence",
@@ -34,10 +36,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               that unmounts halfway through a sentence takes the tour with it.
               See lib/tour.tsx. */}
           <NavHistoryProvider>
-            <TourProvider>
-              {children}
-              <GuidedTour />
-            </TourProvider>
+            {/* Which race the reader has open, published by whichever page
+                knows. The feedback box lives above the router — see
+                lib/pageContext.tsx — so this is how a bug report arrives
+                already knowing where it happened. */}
+            <PageContextProvider>
+              <TourProvider>
+                {children}
+                <GuidedTour />
+                {/* Last, and a sibling of the page rather than a child of it:
+                    `position: fixed` only means "the viewport" while no
+                    ancestor carries a transform, and nearly every panel in
+                    this product finishes an animation holding one. Same
+                    reasoning as Modal's portal — see components/ui/Modal.tsx. */}
+                <FeedbackDock />
+              </TourProvider>
+            </PageContextProvider>
           </NavHistoryProvider>
         </PrefsProvider>
       </body>

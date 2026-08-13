@@ -288,7 +288,7 @@ component-test harness. Re-introducing `key={i}` fails it immediately.
 
 ## Database
 
-Three tables, created idempotently at startup.
+Four tables, created idempotently at startup.
 
 ```sql
 analytics_event (id, ts, name, visitor, visit, path, year, gp, session_type,
@@ -299,6 +299,9 @@ analytics_ask   (id, ref, ts, visitor, year, gp, session_type, question, answer,
                  ms, error, helpful,
                  visit, topic_hint, question_norm) -- V91
 analytics_daily (day, name, feature, n)           -- the rollup
+analytics_feedback (id, ref, ts, visitor, visit, kind, message,   -- V92
+                    area, area_hint, severity, junk,
+                    path, feature, year, gp, session_type, mode)
 ```
 
 **The V91 columns and why each exists.** `status` ends the guessing about what
@@ -324,8 +327,10 @@ else's question.
 **Growth is bounded.** Raw events are pruned after **90 days**, but they are
 rolled up into `analytics_daily` first, so the daily shape of usage survives
 forever at a few rows per day. Ask rows are kept **400 days** — they are the
-valuable data and there are far fewer of them. Pruning runs in the writer thread
-every 6 hours.
+valuable data and there are far fewer of them. Feedback is kept **800 days** —
+a bug nobody has fixed is not less true in six months, and the table is pruned
+only so it cannot grow without bound. Pruning runs in the writer thread every
+6 hours.
 
 **Two engines, one set of queries.** Production is Render PostgreSQL; localhost
 and the test suite use SQLite. Every query is ordinary ANSI; the only differences
@@ -353,6 +358,80 @@ no test coverage at all, since there is no Postgres in the build environment.
 **Connections:** the writer holds exactly one; dashboard reads open a short-lived
 connection. Render's free Postgres tier has a small connection ceiling and this
 process is also serving the site.
+
+---
+
+## Reader feedback (V92)
+
+A persistent control in the bottom-left corner of every reading page opens a
+panel with two things in it: **Bug report** and **Suggestion**. It is absent from
+`/` and `/welcome` (nothing has been seen yet to have a view on) and from
+`/admin` (which is the other end of this pipe).
+
+`POST /api/feedback` is unauthenticated for the same reason `/api/signal` is: it
+only ever writes, and there is nothing to read back. Unlike `/api/signal` it
+answers with a body, because a person pressed Send and is owed an
+acknowledgement. **An empty message is the only refusal.** Analytics being
+disabled, the database being unreachable, or the classifier throwing all still
+answer `{"received": true}` — the alternative is somebody who wrote a paragraph
+being told to try again with no way to succeed.
+
+### The context is collected, not asked for
+
+Readers are bad witnesses about routes — "the chart page" is four different
+screens. The browser already knows the path, the open tab, the season, the Grand
+Prix and the session, so it sends them:
+
+* Pages publish what they have through `useReportContext` (`lib/pageContext.tsx`).
+  The feedback box is mounted in the root layout, three routes above the page
+  that knows which race is open; this is how it finds out without that page's
+  view state being hoisted into a global store.
+* Nothing new is collected. Same anonymous ids, same fields the analytics beacons
+  already carry. **No device, screen, browser or viewport characteristics** — the
+  promise at the top of this document is unchanged.
+
+### Three things are decided on the way in
+
+`analytics/triage.py` — same method as `topics.py` (scored, weighted by
+specificity, emergent when nothing fits), pointed at the product rather than at
+motor racing:
+
+| | |
+|---|---|
+| **Area** | Which part of the product: charts, Ask, wrong data, loading, speed, navigation, choosing a session, compare, historical, appearance, wording, tutorial, settings, animation, or a bare capability request. What turns a list of complaints into a list of places to work. |
+| **Severity** | Bugs only, read from how it was written — **blocking** / **degraded** / **cosmetic**. "Completely broken" and "slightly off" are both bugs and are not the same bug. A first sort, not a verdict. |
+| **Junk** | Whether it is a report at all. **This flag exists to protect the other two.** Keyboard-mashing, one-word tests and bare links land in `other`, marked, so real areas stay honest and the noise is still there to read. |
+
+Junk detection is about the **shape** of the text and never about whether it is
+critical — harsh feedback is feedback. It is deliberately conservative: a false
+positive silently hides something real, which is far worse than a row to skim.
+
+An emergent area needs **two** surviving words, unlike `topics.py`, which accepts
+one. A single word is usually a verdict ("useless", "confusing"), and promoting
+one to a category gives you a scoreboard row called "Suck" next to Charts.
+
+### On the dashboard, and in the report
+
+The Feedback section sits directly under Ask — same kind of signal, one step
+more explicit. Bugs and suggestions never share a list (they are answered by
+different work), the reports themselves are set at reading size because a bug
+report is already a sentence about what to do, and each carries its area, page,
+and the Grand Prix and session when one was open. Filter by kind or by area;
+junk is one click away and excluded by default.
+
+`analytics/report.py` carries all of it into the HTML, Markdown and JSON exports
+— every report in full, grouped by kind, with the area and context attached, and
+junk dropped from the planning document. That is the deliverable: accumulated
+feedback as something you can read end to end and decide from.
+
+### Clearing it
+
+The existing guarded purge, with three new scopes — `feedback`, `bugs`,
+`suggestions` — alongside `all`, `events` and `ask`. Same admin token, same typed
+confirmation phrase, same preview of what would be removed. `store.PURGE_SCOPES`
+is the single place a scope is defined *and* the single place that decides what
+it deletes; the dashboard renders its menu from that, so an option can never name
+something the purge does not implement.
 
 ---
 

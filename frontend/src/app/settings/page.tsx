@@ -106,6 +106,18 @@ export default function SettingsPage() {
     setTimeout(() => setFlash(null), 2400);
   }, []);
 
+  /* Whether the machine itself is asking for reduced motion, so the Motion
+     group can say where its default came from. Read after mount — the server
+     has no media queries, and rendering one answer then correcting it would be
+     a hydration mismatch. */
+  const [motionFollowsSystem, setMotionFollowsSystem] = useState(false);
+  useEffect(() => {
+    try {
+      setMotionFollowsSystem(
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    } catch { /* no matchMedia: the paragraph simply reads the general way */ }
+  }, []);
+
   // search narrows the list; it never hides a section you are looking at
   const matches = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -385,19 +397,34 @@ export default function SettingsPage() {
               </Group>
 
               <Group id="motion" title="Motion" dim={!show("motion")}
-                hint="Control the pace of the interface — not whether it has one."
-                onReset={() => { resetGroup("motion"); say("Motion reset."); }}>
-                <div className="grid gap-3 sm:grid-cols-2">
+                hint="Control the pace of the interface — and whether it has one."
+                onReset={() => { resetGroup("motion"); say("Motion reset to your system setting."); }}>
+                <div className="grid gap-3 sm:grid-cols-3">
                   <Choice on={prefs.motion === "full"} onClick={() => set("motion", "full")}
                     title="Full" tag="Race control"
                     body="Charts draw themselves, panels rise into place, and the hero runs at full tempo." />
                   <Choice on={prefs.motion === "calm"} onClick={() => set("motion", "calm")}
                     title="Calm" tag="Slower, gentler"
                     body="Everything still moves and still updates — about a third of the speed, with shorter travel and no overshoot." />
+                  <Choice on={prefs.motion === "reduced"} onClick={() => set("motion", "reduced")}
+                    title="Reduced" tag="Nothing travels"
+                    body="Movement stops. Nothing disappears with it — the loading wheel holds still, meters hold a reading, the trace stays drawn." />
                 </div>
+                {/* WHY THIS PARAGRAPH EXISTS. Windows turns animation off by
+                    default on a lot of machines (Accessibility → Visual effects
+                    → Animation effects, and battery saver forces it), browsers
+                    report that as prefers-reduced-motion, and the reader has
+                    usually never heard of the setting. Before V92 it silently
+                    won and there was no control here that could answer it — the
+                    product simply had no motion and no explanation. Saying where
+                    the default came from is what makes the choice above real. */}
                 <p className="mt-3 text-[12px] leading-relaxed text-ink-faint">
-                  If your system asks for reduced motion, animation stops entirely — that is an
-                  accessibility setting and it always wins over this one.
+                  {motionFollowsSystem
+                    ? <>Your system asks for reduced motion, so <span className="text-ink-muted">Reduced</span> is
+                        the default here. It is a starting point, not a lock — choose Full or Calm and
+                        Pitwall IQ will keep it.</>
+                    : <>Pitwall IQ starts from your system&rsquo;s reduced-motion setting and remembers
+                        whatever you choose here instead.</>}
                 </p>
               </Group>
 

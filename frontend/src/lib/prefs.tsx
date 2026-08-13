@@ -25,7 +25,25 @@ import { forColourVision, type ColourVision } from "@/lib/palette";
 
 export type Mode = "simple" | "advanced";
 export type Theme = "dark" | "light";
-export type MotionPref = "full" | "calm";
+/**
+ * Three settings, not two, because the OS answer and the taste answer are
+ * different questions and were being given the same one.
+ *
+ *   full     everything runs at the designed tempo.
+ *   calm     everything still runs — slower, shorter travel, no overshoot.
+ *            A PACE preference. See the "Calm is a tempo" block in globals.css.
+ *   reduced  movement stops. Elements stay drawn and stay informative (the
+ *            loading wheel holds still rather than disappearing), but nothing
+ *            travels. An ACCESSIBILITY answer.
+ *
+ * `reduced` is the default when the operating system asks for reduced motion,
+ * and it is what globals.css keys all of its reduced-motion rules on. It is a
+ * DEFAULT rather than a lock: a reader who wants motion can choose Full and
+ * actually get it, which was impossible while those rules were media queries.
+ */
+export type MotionPref = "full" | "calm" | "reduced";
+
+export const MOTION_VALUES: readonly MotionPref[] = ["full", "calm", "reduced"];
 export type Units = "metric" | "imperial";
 export type Spelling = "en-GB" | "en-US";
 export type Clock = "24h" | "12h";
@@ -163,8 +181,11 @@ export const NO_FLASH_SCRIPT = `
     }
     var root = document.documentElement;
     root.dataset.theme = p.theme || "dark";
-    var sysCalm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    root.dataset.motion = p.motion || (sysCalm ? "calm" : "full");
+    // Before first paint, because every reduced-motion rule in globals.css is
+    // keyed on this attribute now. Setting it a frame later would let one frame
+    // of full-tempo animation through on a machine that asked for none.
+    var sysReduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    root.dataset.motion = p.motion || (sysReduce ? "reduced" : "full");
     if (p.accent) root.dataset.accent = p.accent;
     if (p.textScale) root.dataset.text = p.textScale;
     if (p.density) root.dataset.density = p.density;
@@ -192,10 +213,29 @@ function oneOf<T extends string>(v: unknown, allowed: readonly T[], fallback: T)
 }
 
 /**
+ * What Motion would be for somebody who has never chosen.
+ *
+ * Read live from the OS rather than taken from DEFAULT_PREFS, because it is the
+ * one preference whose default is not a constant. "Reset" has to land where a
+ * first visit lands — on a machine asking for reduced motion, resetting Motion
+ * to a hard-coded "full" would hand an accessibility need back to the reader as
+ * a setting they now have to fix by hand.
+ */
+export function systemMotion(): MotionPref {
+  if (typeof window === "undefined") return DEFAULT_PREFS.motion;
+  try {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "reduced" : "full";
+  } catch { return DEFAULT_PREFS.motion; }
+}
+
+/**
  * Stored answer first, then a default per preference.
  *
  * Motion follows the operating system, because reduced motion is an
  * accessibility need and the OS is where people state it once for everything.
+ * It follows it as a DEFAULT, though, not as a verdict — `stored.motion` is
+ * consulted first, so a reader who has opened Settings and asked for motion is
+ * not overruled by a checkbox they may not know is set. See MotionPref.
  *
  * Theme deliberately does NOT. Pitwall IQ is a dark product — the palette, the
  * chart surfaces and the broadcast colours were all built for it — so a first
@@ -211,14 +251,13 @@ function oneOf<T extends string>(v: unknown, allowed: readonly T[], fallback: T)
 function resolveInitial(): Prefs {
   if (typeof window === "undefined") return DEFAULT_PREFS;
   const stored = readStored();
-  const sysCalm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const loc = (navigator.language || "en-GB").toLowerCase();
   // Fahrenheit survives in a handful of places; American English in rather more
   const usish = /^en-(us|ph)|^en$/.test(loc);
   return {
     mode: oneOf(stored.mode, ["simple", "advanced"], DEFAULT_PREFS.mode),
     theme: oneOf(stored.theme, ["dark", "light"], DEFAULT_PREFS.theme),
-    motion: oneOf(stored.motion, ["full", "calm"], sysCalm ? "calm" : "full"),
+    motion: oneOf(stored.motion, MOTION_VALUES, systemMotion()),
     accent: oneOf(stored.accent, Object.keys(ACCENTS) as AccentKey[], DEFAULT_PREFS.accent),
     textScale: oneOf(stored.textScale, ["normal", "large"], DEFAULT_PREFS.textScale),
     colourVision: oneOf(stored.colourVision,
@@ -314,6 +353,8 @@ export function PrefsProvider({ children }: { children: React.ReactNode }) {
     setPrefs((p) => {
       const next = { ...p };
       for (const k of PREF_GROUPS[group]) (next[k] as Prefs[typeof k]) = DEFAULT_PREFS[k];
+      // Motion's default is the machine's answer, not a constant — see systemMotion.
+      if (group === "motion") next.motion = systemMotion();
       return next;
     });
   }, []);
@@ -321,7 +362,10 @@ export function PrefsProvider({ children }: { children: React.ReactNode }) {
   const resetAll = useCallback(() => {
     // the gates are deliberately left alone: "reset my preferences" is not
     // "make me sit through onboarding again", which is its own action
-    setPrefs((p) => ({ ...DEFAULT_PREFS, onboarded: p.onboarded, pickedMode: p.pickedMode }));
+    setPrefs((p) => ({
+      ...DEFAULT_PREFS, motion: systemMotion(),
+      onboarded: p.onboarded, pickedMode: p.pickedMode,
+    }));
   }, []);
 
   const setThemeFrom = useCallback((theme: Theme, origin?: { x: number; y: number }) => {

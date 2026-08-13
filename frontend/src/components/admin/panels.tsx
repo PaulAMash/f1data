@@ -118,7 +118,7 @@ export function AskPanel({ ask }: { ask: any }) {
               {ask.repeats.slice(0, 10).map((r: any, i: number) => (
                 <li key={i} className="flex items-baseline gap-2 text-[12.5px]">
                   <span className="shrink-0 tabular-nums text-ink-faint">×{r.n}</span>
-                  <span className="min-w-0 flex-1 truncate text-ink" title={r.question}>
+                  <span data-verbatim className="min-w-0 flex-1 truncate text-ink" title={r.question}>
                     {r.question}
                   </span>
                   <span className={cx("shrink-0 text-[11px]",
@@ -153,7 +153,7 @@ export function AskPanel({ ask }: { ask: any }) {
                                      text-[11px] font-bold tabular-nums text-accent-soft">
                       ×{g.n}
                     </span>
-                    <p className="min-w-0 flex-1 text-[13px] leading-snug text-ink">
+                    <p data-verbatim className="min-w-0 flex-1 text-[13px] leading-snug text-ink">
                       &ldquo;{g.question}&rdquo;
                     </p>
                   </div>
@@ -178,7 +178,7 @@ export function AskPanel({ ask }: { ask: any }) {
                 <li key={i} className="rounded-lg border border-amber/15 bg-amber/[0.03] px-3 py-2">
                   <div className="flex items-start gap-2">
                     <ThumbsDown size={13} className="mt-0.5 shrink-0 text-amber" />
-                    <p className="min-w-0 flex-1 text-[13px] leading-snug text-ink">
+                    <p data-verbatim className="min-w-0 flex-1 text-[13px] leading-snug text-ink">
                       &ldquo;{d.question}&rdquo;
                     </p>
                   </div>
@@ -187,7 +187,7 @@ export function AskPanel({ ask }: { ask: any }) {
                       {d.outcome_label}
                     </span>
                     <span>{d.topic_label}</span>
-                    {d.gp && <span>{d.year} {d.gp} · {d.session_type}</span>}
+                    {d.context && <span className="text-accent-soft/85">{d.context}</span>}
                   </p>
                 </li>
               ))}
@@ -235,7 +235,7 @@ function AskLog({ rows, topic, onClearTopic }: {
 
   return (
     <Sub title="Every question, most recent first"
-      help="Filter by outcome, or click a topic in the scoreboard above. The colour of each row's dot is its outcome.">
+      help="Filter by outcome, or click a topic in the scoreboard above. The colour of each row's dot is its outcome. The second line is the Grand Prix and session the reader had open — Ask answers from that session's data alone, so it is half of what the question meant.">
       <div className="mb-2 flex flex-wrap items-center gap-1">
         <FilterChip active={filter === "all"} onClick={() => setFilter("all")}
           label={`All ${all.length}`} />
@@ -253,23 +253,36 @@ function AskLog({ rows, topic, onClearTopic }: {
         )}
       </div>
       <Scroll>
-        <ul className="max-h-[26rem] space-y-1 overflow-y-auto pr-1">
+        <ul className="max-h-[30rem] space-y-0.5 overflow-y-auto pr-1">
           {shown.map((r, i) => (
-            <li key={i} className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5
-                                   border-b border-white/[0.04] py-1.5 text-[12.5px]">
-              <span className="w-28 shrink-0 font-mono text-[11px] tabular-nums text-ink-faint">
-                {fmtWhen(r.ts)}
-              </span>
-              <span className="h-2 w-2 shrink-0 rounded-sm"
-                style={{ background: OUTCOME_COLOR[r.outcome] }} title={r.outcome_label} />
-              <span className="min-w-0 flex-1 text-ink">{r.question}</span>
-              <span className="shrink-0 text-[11px] text-ink-faint">{r.topic_label}</span>
-              {r.helpful === true && <span className="shrink-0 text-[11px] text-speed">▲</span>}
-              {r.helpful === false && <span className="shrink-0 text-[11px] text-amber">▼</span>}
-              {r.missing_summary && (
-                <span className="shrink-0 text-[11px] text-ink-faint">
-                  missing: {r.missing_summary}
+            <li key={i} className="border-b border-white/[0.04] py-1.5 text-[12.5px]">
+              <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
+                <span className="w-28 shrink-0 font-mono text-[11px] tabular-nums text-ink-faint">
+                  {fmtWhen(r.ts)}
                 </span>
+                <span className="h-2 w-2 shrink-0 rounded-sm"
+                  style={{ background: OUTCOME_COLOR[r.outcome] }} title={r.outcome_label} />
+                <span data-verbatim className="min-w-0 flex-1 text-ink">{r.question}</span>
+                <span className="shrink-0 text-[11px] text-ink-faint">{r.topic_label}</span>
+                {r.helpful === true && <span className="shrink-0 text-[11px] text-speed">▲</span>}
+                {r.helpful === false && <span className="shrink-0 text-[11px] text-amber">▼</span>}
+                {r.missing_summary && (
+                  <span className="shrink-0 text-[11px] text-ink-faint">
+                    missing: {r.missing_summary}
+                  </span>
+                )}
+              </div>
+              {/* WHERE THE QUESTION WAS ASKED, ON ITS OWN LINE.
+                  Indented to the question above it and set in the accent so a
+                  column of sixty rows can be scanned for one race without
+                  reading a single question — which is how you find "everything
+                  people asked about Miami" by eye. Inline with the question
+                  would have made every row wrap; a table column would have cost
+                  the question the width it needs. */}
+              {r.context && (
+                <p className="ml-[calc(7rem+1.375rem)] text-[11px] text-accent-soft/85">
+                  {r.context}
+                </p>
               )}
             </li>
           ))}

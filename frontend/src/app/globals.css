@@ -309,7 +309,7 @@ body {
     inset 0 0 0 1px rgb(var(--tint) / .12),
     0 28px 70px -30px rgb(15 23 42 / .38);
 }
-@media (prefers-reduced-motion: reduce) { .modal-shell { animation: none; } }
+:root[data-motion="reduced"] .modal-shell { animation: none; }
 
 /* ---------------------------------------------------------------------------
    LIGHT MODE, READ RATHER THAN INVERTED.
@@ -369,14 +369,53 @@ body {
   border-radius: 6px;
 }
 
-/* respect users who prefer less motion */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
+/* ---------------------------------------------------------------------------
+   REDUCED MOTION IS A STATE OF THE DOCUMENT, NOT A MEDIA QUERY.
+
+   WHAT WAS HERE, AND WHY IT WAS WRONG.
+
+   A blanket `*, *::before, *::after { animation-duration: 0.01ms !important }`
+   inside `@media (prefers-reduced-motion: reduce)`. It looks like the canonical
+   snippet and it did three things nobody wanted:
+
+     IT OVERRODE THE WORK BELOW. Twenty-five hand-written blocks in this file
+     answer reduced motion PER COMPONENT, and they are careful: the loading
+     wheel stops but stays drawn, the level meter holds an uneven reading rather
+     than collapsing to a skeleton, the race-control caret stops blinking but
+     stays a caret, the cars park along their traces. Every one of those was
+     then flattened by a wildcard carrying `!important` — including the three
+     that deliberately KEEP a transition, such as `.tour-card`'s opacity fade.
+     The considered answer was written and then discarded a thousand lines
+     earlier in the cascade.
+
+     IT WAS UNREACHABLE BY PREFERENCE. `prefers-reduced-motion` is an operating
+     system setting; a media query reads it and nothing in the product can
+     answer back. On Windows, "Animation effects" (Settings → Accessibility →
+     Visual effects) is off on a large share of machines — some OEM images ship
+     it off, battery saver forces it, and it survives a reinstall — and every
+     one of those readers got a product with no motion in it at all and no way
+     to ask for any. That is the whole of the reported "animations don't play on
+     some computers": same browser, same site, different OS checkbox.
+
+     IT CONTRADICTED THE FILE'S OWN MODEL. Calm was rewritten (see the block
+     further down) precisely because a duration of nearly zero is the right
+     answer to an accessibility need and the wrong answer to a pace preference.
+     The wildcard applied the first answer to everyone the OS flagged.
+
+   WHAT HAPPENS NOW. The OS preference is read once, in lib/prefs.tsx, where it
+   becomes the DEFAULT value of the Motion preference — `reduced` when the
+   system asks for it, `full` otherwise — and is written to `data-motion` on the
+   root element before first paint. Every reduced-motion rule in this file is
+   keyed on that attribute instead of on the media query.
+
+   The behaviour for somebody who never opens Settings is therefore unchanged:
+   their OS says reduce, the attribute says `reduced`, and the twenty-five
+   targeted blocks apply exactly as they were written to. What is new is that
+   the preference is now a preference: a reader who wants the motion can choose
+   Full and get it, and one who wants it quieter can choose Calm, which is a
+   tempo rather than an off switch. Respecting a stated need and obeying a
+   guess about it are not the same thing, and only the OS can make the guess.
+   --------------------------------------------------------------------------- */
 
 @layer components {
   /* ---------------------------------------------------------------------
@@ -682,11 +721,21 @@ a.chip:active,
 
 /* Under reduced motion the wheel stops but stays *drawn* — a loading state that
    vanishes tells the reader less than one that simply holds still. */
-@media (prefers-reduced-motion: reduce) {
-  .rl-roll, .rl-roll-fast, .rl-launch, .rl-smear, .rl-smear-soft, .rl-susp,
-  .rl-patch, .rl-road, .rl-seams, .rl-brake, .rl-speed, .rl-gleam,
-  .rl-puff, .rl-spark, .rl-haze { animation: none; }
-}
+:root[data-motion="reduced"] .rl-roll,
+:root[data-motion="reduced"] .rl-roll-fast,
+:root[data-motion="reduced"] .rl-launch,
+:root[data-motion="reduced"] .rl-smear,
+:root[data-motion="reduced"] .rl-smear-soft,
+:root[data-motion="reduced"] .rl-susp,
+:root[data-motion="reduced"] .rl-patch,
+:root[data-motion="reduced"] .rl-road,
+:root[data-motion="reduced"] .rl-seams,
+:root[data-motion="reduced"] .rl-brake,
+:root[data-motion="reduced"] .rl-speed,
+:root[data-motion="reduced"] .rl-gleam,
+:root[data-motion="reduced"] .rl-puff,
+:root[data-motion="reduced"] .rl-spark,
+:root[data-motion="reduced"] .rl-haze { animation: none; }
 
 /* A stint whose tyre the timing feed never published. Drawn as a hatch rather
    than a solid block: a flat grey bar looks like a compound we chose not to
@@ -816,11 +865,14 @@ a.chip:active,
   box-shadow: 0 0 0 1px rgb(var(--base-900) / .85), 0 0 8px var(--uc);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .neut-chip, .neut-band, .neut-band::before, .tyre-uc-head, .tyre-uc-stem { transition: none; }
-  .neut-chip.is-hot { transform: none; }
-  .tyre-uc:hover .tyre-uc-head, .tyre-uc:focus-visible .tyre-uc-head { transform: none; }
-}
+:root[data-motion="reduced"] .neut-chip,
+:root[data-motion="reduced"] .neut-band,
+:root[data-motion="reduced"] .neut-band::before,
+:root[data-motion="reduced"] .tyre-uc-head,
+:root[data-motion="reduced"] .tyre-uc-stem { transition: none; }
+:root[data-motion="reduced"] .neut-chip.is-hot { transform: none; }
+:root[data-motion="reduced"] .tyre-uc:hover .tyre-uc-head,
+:root[data-motion="reduced"] .tyre-uc:focus-visible .tyre-uc-head { transform: none; }
 
 /* ---------------------------------------------------------------------------
    Race control, as an operations console.
@@ -954,10 +1006,9 @@ a.chip:active,
   animation: rc-blink calc(1.15s * var(--m)) steps(2, jump-none) infinite;
 }
 @keyframes rc-blink { 0%, 100% { opacity: 1; } 50% { opacity: .15; } }
-@media (prefers-reduced-motion: reduce) {
-  .rc-caret { animation: none; opacity: .55; }
-  .rc-chip, .rc-row { transition: none; }
-}
+:root[data-motion="reduced"] .rc-caret { animation: none; opacity: .55; }
+:root[data-motion="reduced"] .rc-chip,
+:root[data-motion="reduced"] .rc-row { transition: none; }
 
 /* ---------------------------------------------------------------------------
    Compare, before anything has been chosen.
@@ -1008,10 +1059,8 @@ a.chip:active,
   border-color: rgb(var(--accent) / .3);
   background: rgb(var(--base-800) / .8);
 }
-@media (prefers-reduced-motion: reduce) {
-  .cmp-duel { transition: none; }
-  .cmp-duel:hover { transform: none; }
-}
+:root[data-motion="reduced"] .cmp-duel { transition: none; }
+:root[data-motion="reduced"] .cmp-duel:hover { transform: none; }
 
 /* Recharts chrome, in whichever room the page is in. These were white-on-white
    in light mode: a grid that is simply absent, and a near-black tooltip card
@@ -1074,16 +1123,42 @@ a.chip:active,
    vanish. Recession is per line now — see emphasis() in PositionChart. */
 .recharts-surface { transition: opacity .3s ease; }
 
-@media (prefers-reduced-motion: reduce) {
-  .moment-line line, .focus-halo path.recharts-curve, .accent-breathing, .pit-dot,
-  .badge-breathing, .tip-breathing, .moment-line-overlay, .moment-band { animation: none; }
-  .ic-shimmer, .ic-pulse, .mi, .mi * { animation: none !important; }
-  .mi-draw { stroke-dasharray: none; }
-  .mi-head, .mi-dot { opacity: 1; }
-  .pressable:hover, .pressable-glow:hover { transform: none; }
-  .pressable .icon-lift, .pressable-glow .icon-lift { transition: none; }
-  .pressable:hover .icon-lift, .pressable-glow:hover .icon-lift { transform: none; }
-}
+:root[data-motion="reduced"] .moment-line line,
+:root[data-motion="reduced"] .focus-halo path.recharts-curve,
+:root[data-motion="reduced"] .accent-breathing,
+:root[data-motion="reduced"] .pit-dot,
+:root[data-motion="reduced"] .badge-breathing,
+:root[data-motion="reduced"] .tip-breathing,
+:root[data-motion="reduced"] .moment-line-overlay,
+:root[data-motion="reduced"] .moment-band { animation: none; }
+:root[data-motion="reduced"] .ic-shimmer,
+:root[data-motion="reduced"] .ic-pulse,
+:root[data-motion="reduced"] .mi,
+:root[data-motion="reduced"] .mi * { animation: none !important; }
+:root[data-motion="reduced"] .mi-draw { stroke-dasharray: none; }
+:root[data-motion="reduced"] .mi-head,
+:root[data-motion="reduced"] .mi-dot { opacity: 1; }
+:root[data-motion="reduced"] .pressable:hover,
+:root[data-motion="reduced"] .pressable-glow:hover { transform: none; }
+:root[data-motion="reduced"] .pressable .icon-lift,
+:root[data-motion="reduced"] .pressable-glow .icon-lift { transition: none; }
+:root[data-motion="reduced"] .pressable:hover .icon-lift,
+:root[data-motion="reduced"] .pressable-glow:hover .icon-lift { transform: none; }
+
+/* EVERY OTHER SURFACE THAT LIFTS UNDER THE POINTER.
+   `.pressable` was the only interaction primitive named here, and it is not the
+   only one that moves: cards, panels, pills and chips each raise themselves a
+   pixel or two on hover. A pointer-driven translate is the textbook reduced-
+   motion case, and these were reaching readers only because the wildcard above
+   used to flatten every transition in the document.
+
+   The hover STATE is untouched — the border, the tint and the shadow all still
+   change, so the surface still answers the pointer. It answers without moving. */
+:root[data-motion="reduced"] .card-hover:hover,
+:root[data-motion="reduced"] .panel-hover:hover,
+:root[data-motion="reduced"] .pill-btn:hover,
+:root[data-motion="reduced"] a.chip:hover,
+:root[data-motion="reduced"] button.chip:hover { transform: none; }
 
 
 /* ---------------------------------------------------------------------------
@@ -1125,17 +1200,27 @@ html.theme-sweep::view-transition-new(root) {
    cards stopped arriving, and the reader who had asked for calm was shown a
    screenshot of a product that had been moving a second earlier.
 
-   Two settings, two different meanings:
+   Three settings, three different meanings — see MotionPref in lib/prefs.tsx:
 
-     prefers-reduced-motion   an accessibility need. Movement is a symptom
-                              trigger, so it stops. Obeyed unconditionally,
-                              in the @media block further down.
+     Reduced                  an accessibility need. Movement is a symptom
+                              trigger, so it stops; every element stays drawn
+                              and stays informative. This is the DEFAULT when
+                              the operating system asks for reduced motion, and
+                              it is what all the `[data-motion="reduced"]` rules
+                              in this file are keyed on.
 
      Calm                     a preference about pace. Everything still runs;
                               it runs slower, travels less far, and settles
                               instead of springing. Bloomberg Terminal against
                               an Apple TV screensaver, which is exactly how the
                               brief put it.
+
+     Full                     the designed tempo.
+
+   The distinction used to be two settings and a media query, and the media
+   query silently applied the FIRST answer to anyone the OS had flagged — so a
+   reader who chose Calm and a reader who chose nothing got the same frozen
+   product. Reduced being a real, choosable value is what separates them.
 
    The whole difference is carried by two numbers. `--m` stretches every
    ambient period (each loop in this file states its own as
@@ -1159,7 +1244,11 @@ html.theme-sweep::view-transition-new(root) {
 /* The one thing that does stop. A full-screen circular wipe is not a quiet
    animation at any speed, and the swap it covers is instantaneous anyway. */
 :root[data-motion="calm"]::view-transition-new(root),
-:root[data-motion="calm"]::view-transition-old(root) { animation: none !important; }
+:root[data-motion="calm"]::view-transition-old(root),
+/* And obviously under Reduced. A circular wipe across the whole viewport is the
+   single largest movement in the product; if anything stops, this does. */
+:root[data-motion="reduced"]::view-transition-new(root),
+:root[data-motion="reduced"]::view-transition-old(root) { animation: none !important; }
 
 
 /* ---------------------------------------------------------------------------
@@ -1688,7 +1777,7 @@ html.theme-sweep::view-transition-new(root) {
 }
 .wc-more-body { animation: wc-more calc(var(--dur-3) * 1.2) var(--ease-out) backwards; }
 @keyframes wc-more { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .wc-more-body { animation: none; } }
+:root[data-motion="reduced"] .wc-more-body { animation: none; }
 
 /* the segmented control these rows answer with — the same vocabulary Settings
    uses, at the size a secondary answer deserves */
@@ -1816,26 +1905,36 @@ html.theme-sweep::view-transition-new(root) {
   filter: blur(3px);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .wc-inst { transition: none; }
-  .wc-led.is-wait, .wc-lap, .wc-run { animation: none; }
-  /* The meter holds a reading rather than collapsing to nothing — and it holds
-     an UNEVEN one, because fourteen bars of identical height is not a level
-     meter at rest, it is a loading skeleton. */
-  .wc-bar { animation: none; transform: scaleY(.42); opacity: .42; }
-  .wc-bar:nth-child(3n + 1) { transform: scaleY(.86); opacity: .62; }
-  .wc-bar:nth-child(4n + 2) { transform: scaleY(.28); opacity: .36; }
-  .wc-bar:nth-child(5n)     { transform: scaleY(1);   opacity: .7; }
-  .wc-act { transition: opacity .2s linear; filter: none; }
-  .wc-act.is-past, .wc-act.is-next { transform: none; filter: none; }
-  .wc-card:hover { transform: none; }
-  .wc-cta:hover { transform: none; }
-}
+:root[data-motion="reduced"] .wc-inst { transition: none; }
+:root[data-motion="reduced"] .wc-led.is-wait,
+:root[data-motion="reduced"] .wc-lap,
+:root[data-motion="reduced"] .wc-run { animation: none; }
+/* The meter holds a reading rather than collapsing to nothing — and it holds
+   an UNEVEN one, because fourteen bars of identical height is not a level
+   meter at rest, it is a loading skeleton. */
+:root[data-motion="reduced"] .wc-bar { animation: none; transform: scaleY(.42); opacity: .42; }
+:root[data-motion="reduced"] .wc-bar:nth-child(3n + 1) { transform: scaleY(.86); opacity: .62; }
+:root[data-motion="reduced"] .wc-bar:nth-child(4n + 2) { transform: scaleY(.28); opacity: .36; }
+:root[data-motion="reduced"] .wc-bar:nth-child(5n) { transform: scaleY(1);   opacity: .7; }
+:root[data-motion="reduced"] .wc-act { transition: opacity .2s linear; filter: none; }
+:root[data-motion="reduced"] .wc-act.is-past,
+:root[data-motion="reduced"] .wc-act.is-next { transform: none; filter: none; }
+:root[data-motion="reduced"] .wc-card:hover { transform: none; }
+:root[data-motion="reduced"] .wc-cta:hover { transform: none; }
 
-@media (prefers-reduced-motion: reduce) {
-  .wc-1, .wc-2, .wc-3, .wc-4, .wc-5, .wc-6,
-  .wc-pillar, .wc-row { animation: none; }
-}
+:root[data-motion="reduced"] .wc-1,
+:root[data-motion="reduced"] .wc-2,
+:root[data-motion="reduced"] .wc-3,
+:root[data-motion="reduced"] .wc-4,
+/* .wc-45 is the half-step added between 4 and 5 and it was never added to this
+   list. Nothing showed, because the blanket wildcard this file used to carry
+   was stopping it anyway — which is exactly the kind of omission a wildcard
+   hides until the day it is removed. */
+:root[data-motion="reduced"] .wc-45,
+:root[data-motion="reduced"] .wc-5,
+:root[data-motion="reduced"] .wc-6,
+:root[data-motion="reduced"] .wc-pillar,
+:root[data-motion="reduced"] .wc-row { animation: none; }
 
 @keyframes hero-trace { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
 .hero-trace {
@@ -1843,10 +1942,11 @@ html.theme-sweep::view-transition-new(root) {
   animation: hero-trace 2.1s cubic-bezier(.35,.6,.25,1) both;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .stagger-1, .stagger-2, .stagger-3, .stagger-4 { animation: none; }
-  .hero-trace { animation: none; stroke-dasharray: none; }
-}
+:root[data-motion="reduced"] .stagger-1,
+:root[data-motion="reduced"] .stagger-2,
+:root[data-motion="reduced"] .stagger-3,
+:root[data-motion="reduced"] .stagger-4 { animation: none; }
+:root[data-motion="reduced"] .hero-trace { animation: none; stroke-dasharray: none; }
 
 
 /* ---------------------------------------------------------------------------
@@ -1886,11 +1986,10 @@ html.theme-sweep::view-transition-new(root) {
   transition: opacity var(--dur-4) var(--ease-out), transform var(--dur-4) var(--ease-out);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .route-in, .rise-in { animation: none; }
-  .reveal { opacity: 1; transform: none; }
-  .reveal-on { transition: none; }
-}
+:root[data-motion="reduced"] .route-in,
+:root[data-motion="reduced"] .rise-in { animation: none; }
+:root[data-motion="reduced"] .reveal { opacity: 1; transform: none; }
+:root[data-motion="reduced"] .reveal-on { transition: none; }
 /* Calm still reveals — it reveals from closer, over longer. A section that
    simply exists when you scroll to it is the frozen product again. */
 :root[data-motion="calm"] .reveal { transform: translateY(calc(18px * var(--amp))); }
@@ -1912,7 +2011,7 @@ html.theme-sweep::view-transition-new(root) {
 .build > *:nth-child(6) { animation-delay: .34s; }
 .build > *:nth-child(n+7) { animation-delay: .38s; }
 
-@media (prefers-reduced-motion: reduce) { .build > * { animation: none; } }
+:root[data-motion="reduced"] .build > * { animation: none; }
 /* The page still assembles itself; it assembles more slowly and from less far
    away, and the stagger between children stays so the order is still readable. */
 :root[data-motion="calm"] .build > * { animation-duration: calc(var(--dur-4) * 1.2); }
@@ -2335,10 +2434,19 @@ html.theme-sweep::view-transition-new(root) {
 }
 :root[data-theme="light"] .ann-anchor { box-shadow: 0 0 0 3px rgb(var(--base-900) / .85); }
 
-@media (prefers-reduced-motion: reduce) {
-  .tele, .ann-card, .tele-flag-on, .ann-gauge, .ann-ring, .ann-scan > i,
-  .tele-line.is-purple::before, .tele-line.is-green::before { animation: none; }
-}
+:root[data-motion="reduced"] .tele,
+:root[data-motion="reduced"] .ann-card,
+:root[data-motion="reduced"] .tele-flag-on,
+:root[data-motion="reduced"] .ann-gauge,
+:root[data-motion="reduced"] .ann-ring,
+:root[data-motion="reduced"] .ann-scan > i,
+:root[data-motion="reduced"] .tele-line.is-purple::before,
+:root[data-motion="reduced"] .tele-line.is-green::before { animation: none; }
+/* The other two moving parts of the hero panel, which this list never named —
+   the wildcard was stopping them. The signal bars hold their tallest reading
+   rather than vanishing, so the panel still reads as connected. */
+:root[data-motion="reduced"] .tele-move { animation: none; }
+:root[data-motion="reduced"] .tele-sig > i { animation: none; opacity: .8; }
 /* The instruments keep running when the room is calm. They run at the calm
    tempo — which they get for free, because every period in this block is
    stated as a multiple of --m — and the two that travel furthest have their
@@ -2370,7 +2478,7 @@ html.theme-sweep::view-transition-new(root) {
   0%, 62%, 100% { transform: translateY(0); }
   80%           { transform: translateY(calc(2.5px * var(--amp))); }
 }
-@media (prefers-reduced-motion: reduce) { .cue-bob { animation: none; } }
+:root[data-motion="reduced"] .cue-bob { animation: none; }
 
 /* ---------------------------------------------------------------------------
    The controls a preferences screen is made of.
@@ -2483,7 +2591,7 @@ html.theme-sweep::view-transition-new(root) {
   from { opacity: 0; transform: translateY(4px) scale(.97); }
   to   { opacity: 1; transform: none; }
 }
-@media (prefers-reduced-motion: reduce) { .sel-menu { animation: none; } }
+:root[data-motion="reduced"] .sel-menu { animation: none; }
 
 .sel-opt {
   display: flex; align-items: center; gap: 8px;
@@ -2596,10 +2704,8 @@ html.theme-sweep::view-transition-new(root) {
   background: rgb(var(--tint) / .22);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .scroll-cue { animation: none; }
-  .scroll-cue-rail > i { animation: none; opacity: .8; top: 30%; }
-}
+:root[data-motion="reduced"] .scroll-cue { animation: none; }
+:root[data-motion="reduced"] .scroll-cue-rail > i { animation: none; opacity: .8; top: 30%; }
 
 /* ---------------------------------------------------------------------------
    The windows in the three doors.
@@ -2767,9 +2873,8 @@ html.theme-sweep::view-transition-new(root) {
                     transparent 52%, rgb(var(--base-900) / .7) 100%);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .door-lamp, .door-bloom { transition: none; }
-}
+:root[data-motion="reduced"] .door-lamp,
+:root[data-motion="reduced"] .door-bloom { transition: none; }
 
 /* one soft pass across the window, so it reads as a display */
 .art-scan {
@@ -2824,17 +2929,27 @@ html.theme-sweep::view-transition-new(root) {
 .art-host:hover .art-step,
 .art-host:hover .art-echo { filter: brightness(1.35); }
 
-@media (prefers-reduced-motion: reduce) {
-  .art-drift, .art-halo, .art-blink, .art-feed, .art-tick, .art-scan,
-  .art-car, .art-out, .art-echo, .art-read, .art-step, .art-wake { animation: none; }
-  .art-feed { stroke-dasharray: none; }
-  .art-scan, .art-wake, .art-echo { opacity: 0; }
-  /* a still window still has to be a picture: the cars park along their traces
-     and the podium shows its result rather than collapsing to a fifth of it */
-  .art-car { stroke-dashoffset: calc(var(--i) * -22); }
-  .art-step { opacity: var(--o, 1); }
-  .art-read { opacity: .3; }
-}
+:root[data-motion="reduced"] .art-drift,
+:root[data-motion="reduced"] .art-halo,
+:root[data-motion="reduced"] .art-blink,
+:root[data-motion="reduced"] .art-feed,
+:root[data-motion="reduced"] .art-tick,
+:root[data-motion="reduced"] .art-scan,
+:root[data-motion="reduced"] .art-car,
+:root[data-motion="reduced"] .art-out,
+:root[data-motion="reduced"] .art-echo,
+:root[data-motion="reduced"] .art-read,
+:root[data-motion="reduced"] .art-step,
+:root[data-motion="reduced"] .art-wake { animation: none; }
+:root[data-motion="reduced"] .art-feed { stroke-dasharray: none; }
+:root[data-motion="reduced"] .art-scan,
+:root[data-motion="reduced"] .art-wake,
+:root[data-motion="reduced"] .art-echo { opacity: 0; }
+/* a still window still has to be a picture: the cars park along their traces
+   and the podium shows its result rather than collapsing to a fifth of it */
+:root[data-motion="reduced"] .art-car { stroke-dashoffset: calc(var(--i) * -22); }
+:root[data-motion="reduced"] .art-step { opacity: var(--o, 1); }
+:root[data-motion="reduced"] .art-read { opacity: .3; }
 
 /* The accent's own light on the primary control, scaled by the reader's
    intensity setting — this used to be an inline box-shadow, which no
@@ -2857,7 +2972,7 @@ html.theme-sweep::view-transition-new(root) {
   animation: tour-wait calc(.9s * var(--m)) linear infinite;
 }
 @keyframes tour-wait { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .tour-wait { animation: none; } }
+:root[data-motion="reduced"] .tour-wait { animation: none; }
 
 /* ---------------------------------------------------------------------------
    THE INVITATION.
@@ -2919,13 +3034,11 @@ html.theme-sweep::view-transition-new(root) {
   to   { opacity: 1; transform: none; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  /* the ring holds still and stays drawn — it is information, not decoration */
-  .cta-invite.is-armed::before { animation: none; opacity: .7; }
-  .cta-invite.is-armed::after { display: none; }
-  .cta-invite.is-armed .cta-glow { animation: none; }
-  .cta-tag { animation: none; }
-}
+/* the ring holds still and stays drawn — it is information, not decoration */
+:root[data-motion="reduced"] .cta-invite.is-armed::before { animation: none; opacity: .7; }
+:root[data-motion="reduced"] .cta-invite.is-armed::after { display: none; }
+:root[data-motion="reduced"] .cta-invite.is-armed .cta-glow { animation: none; }
+:root[data-motion="reduced"] .cta-tag { animation: none; }
 
 /* ---------------------------------------------------------------------------
    THE TUTORIAL, DRAWN.
@@ -3012,9 +3125,7 @@ html.theme-sweep::view-transition-new(root) {
     left var(--tour-move, .52s) cubic-bezier(.22, 1, .36, 1),
     bottom var(--tour-move, .52s) cubic-bezier(.22, 1, .36, 1);
 }
-@media (prefers-reduced-motion: reduce) {
-  .tour-card { transition: opacity .2s linear; }
-}
+:root[data-motion="reduced"] .tour-card { transition: opacity .2s linear; }
 :root[data-theme="light"] .tour-card {
   background: rgb(var(--base-900));
   box-shadow:
@@ -3066,11 +3177,10 @@ html.theme-sweep::view-transition-new(root) {
   box-shadow: inset 0 0 0 1px rgb(var(--accent) / .3);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .tour-ring { animation: none; }
-  .tour-card-field { animation: none; }
-  .tour-scrim, .tour-ring { transition: none; }
-}
+:root[data-motion="reduced"] .tour-ring { animation: none; }
+:root[data-motion="reduced"] .tour-card-field { animation: none; }
+:root[data-motion="reduced"] .tour-scrim,
+:root[data-motion="reduced"] .tour-ring { transition: none; }
 
 /* the timer on an auto-advancing tour beat: it promises how long you have */
 @keyframes tour-hold { from { transform: translateX(-100%); } to { transform: none; } }
@@ -3289,9 +3399,7 @@ html.theme-sweep::view-transition-new(root) {
 }
 @keyframes cbadge-in { from { opacity: 0; } }
 
-@media (prefers-reduced-motion: reduce) {
-  .cbadge-img { animation: none; }
-}
+:root[data-motion="reduced"] .cbadge-img { animation: none; }
 
 /* ---------------------------------------------------------------------------
    THE UNAVAILABLE SESSION, STILL ALIVE.
@@ -3343,6 +3451,209 @@ html.theme-sweep::view-transition-new(root) {
     radial-gradient(60% 40% at 20% 50%, rgb(var(--speed) / .10), transparent 70%),
     radial-gradient(50% 35% at 80% 40%, rgb(var(--accent) / .07), transparent 70%);
 }
-@media (prefers-reduced-motion: reduce) {
-  .unavail::before, .unavail::after { animation: none; }
+:root[data-motion="reduced"] .unavail::before,
+:root[data-motion="reduced"] .unavail::after { animation: none; }
+
+
+/* ---------------------------------------------------------------------------
+   THE FEEDBACK DOCK.
+
+   A button that becomes a panel, in the bottom-left corner of every reading
+   page. See components/feedback/FeedbackDock.tsx for where it may appear and
+   why it stops at the footer; this is only how it looks and how it opens.
+
+   THE OPENING IS ONE ELEMENT GROWING OUT OF ANOTHER'S CORNER.
+
+   `transform-origin: bottom left` is the whole of the "genie" effect and the
+   only honest way to do it: the panel scales and rises out of exactly the
+   point the button occupied, so the eye follows one object changing size
+   rather than two objects swapping places. A fade would be cheaper and would
+   read as a popup appearing somewhere near a button — which is what every
+   support widget on the web looks like, and what this is not.
+
+   The scale is anisotropic on purpose (.86 wide, .72 tall). A uniform scale
+   from a corner travels diagonally and reads as a zoom; growing faster in the
+   axis with more distance to cover reads as unfolding.
+   --------------------------------------------------------------------------- */
+.fb-dock {
+  position: fixed;
+  left: 20px;
+  /* Over the dialog layer (70) and under the tutorial (100). Both deliberate:
+     a bug found inside a dialog is still reportable, and the tour owns the
+     screen outright while it is running. */
+  z-index: 90;
+  display: flex;
+  /* Bottom-left origin for the whole dock, so the panel and the button share
+     the same anchor and the growth starts where the button actually was. */
+  align-items: flex-end;
+  /* `bottom` is written by the component as it rides the footer, and it
+     travels rather than jumping between the two positions. */
+  transition: bottom var(--dur-3) var(--ease-out);
 }
+@media (max-width: 640px) { .fb-dock { left: 12px; } }
+
+/* ---- the resting control ---- */
+.fb-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: rgb(var(--ink));
+  background: rgb(var(--base-850) / .92);
+  backdrop-filter: blur(10px);
+  box-shadow:
+    inset 0 0 0 1px rgb(var(--tint) / .12),
+    inset 0 1px 0 0 rgb(var(--tint) / .10),
+    0 10px 26px -12px rgb(0 0 0 / .8);
+  transition: background-color var(--dur-2) var(--ease-out),
+              box-shadow var(--dur-2) var(--ease-out),
+              transform var(--dur-1) var(--ease-out);
+}
+.fb-button:hover {
+  background: rgb(var(--base-800) / .96);
+  box-shadow:
+    inset 0 0 0 1px rgb(var(--accent) / .35),
+    inset 0 1px 0 0 rgb(var(--tint) / .12),
+    0 14px 30px -12px rgb(0 0 0 / .85);
+}
+.fb-button svg { color: rgb(var(--accent-soft)); flex: none; }
+:root[data-theme="light"] .fb-button {
+  background: rgb(var(--base-900) / .95);
+  box-shadow:
+    inset 0 0 0 1px rgb(var(--tint) / .14),
+    0 10px 26px -14px rgb(15 23 42 / .4);
+}
+/* Narrow screens keep the icon and drop the word: the corner is smaller and a
+   label is not what makes a speech bubble legible. */
+@media (max-width: 420px) {
+  .fb-button { padding: 0; width: 38px; justify-content: center; }
+  .fb-button-text { display: none; }
+}
+
+/* ---- the first time it is ever seen ----
+   Three slow breaths, then it stops for good. Loud enough to say "this is a
+   control", quiet enough that it is never the thing you are looking at: the
+   ring is the only part that moves, the button itself does not budge, and
+   nothing about the page shifts around it. */
+.fb-button.is-new::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 0 0 rgb(var(--accent) / .5);
+  animation: fb-nudge 2.1s var(--ease-out) 3;
+}
+.fb-button { position: relative; }
+@keyframes fb-nudge {
+  0%   { box-shadow: 0 0 0 0 rgb(var(--accent) / .45); }
+  55%  { box-shadow: 0 0 0 9px rgb(var(--accent) / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(var(--accent) / 0); }
+}
+
+/* ---- the panel ---- */
+.fb-panel {
+  width: min(23.5rem, calc(100vw - 2rem));
+  max-height: min(30rem, calc(100vh - 6rem));
+  overflow-y: auto;
+  border-radius: 16px;
+  background: rgb(var(--base-900));
+  box-shadow:
+    inset 0 1px 0 0 rgb(var(--tint) / .14),
+    inset 0 0 0 1px rgb(var(--tint) / .10),
+    0 28px 64px -28px rgb(0 0 0 / .92);
+  transform-origin: bottom left;
+  animation: fb-genie var(--dur-4) cubic-bezier(.2, .9, .28, 1) both;
+}
+:root[data-theme="light"] .fb-panel {
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / .9),
+    inset 0 0 0 1px rgb(var(--tint) / .12),
+    0 26px 58px -26px rgb(15 23 42 / .38);
+}
+@keyframes fb-genie {
+  from { opacity: 0; transform: scale(.86, .72) translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ---- choosing which kind of thing this is ---- */
+.fb-kind {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 8px 9px;
+  border-radius: 11px;
+  background: rgb(var(--tint) / .03);
+  box-shadow: inset 0 0 0 1px rgb(var(--tint) / .07);
+  transition: background-color var(--dur-1) linear,
+              box-shadow var(--dur-1) linear;
+}
+.fb-kind:hover { background: rgb(var(--tint) / .06); }
+.fb-kind.is-on {
+  background: rgb(var(--accent) / .10);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent) / .38);
+}
+.fb-kind-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px; height: 24px;
+  margin-top: 1px;
+  border-radius: 8px;
+  color: rgb(var(--ink-faint));
+  background: rgb(var(--tint) / .05);
+}
+.fb-kind.is-on .fb-kind-icon {
+  color: rgb(var(--accent-soft));
+  background: rgb(var(--accent) / .16);
+}
+
+/* ---- the field ---- */
+.fb-field {
+  width: 100%;
+  resize: none;
+  border-radius: 11px;
+  padding: 9px 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgb(var(--ink));
+  background: rgb(var(--base-950) / .55);
+  box-shadow: inset 0 0 0 1px rgb(var(--tint) / .09);
+  outline: none;
+  transition: box-shadow var(--dur-1) linear;
+}
+.fb-field::placeholder { color: rgb(var(--ink-faint)); }
+.fb-field:focus { box-shadow: inset 0 0 0 1px rgb(var(--accent) / .45); }
+:root[data-theme="light"] .fb-field { background: rgb(var(--tint) / .035); }
+
+/* ---- it worked ----
+   A tick that draws itself once. The one moment in this component where a
+   flourish is the message rather than decoration: the reader has handed
+   something over and is waiting to be told it arrived. */
+.fb-tick {
+  color: rgb(var(--pure));
+  background: rgb(52 211 153);
+  animation: fb-pop var(--dur-3) var(--ease-spring) both;
+}
+@keyframes fb-pop {
+  from { opacity: 0; transform: scale(.5); }
+  to   { opacity: 1; transform: none; }
+}
+.fb-done { animation: fb-fade var(--dur-2) linear both; }
+@keyframes fb-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* Reduced motion: the panel still has to arrive and the tick still has to
+   confirm, so both keep an opacity fade — neither travels, neither scales, and
+   the invitation ring holds a single steady outline instead of breathing. */
+:root[data-motion="reduced"] .fb-dock { transition: none; }
+:root[data-motion="reduced"] .fb-panel { animation: fb-fade var(--dur-2) linear both; }
+:root[data-motion="reduced"] .fb-tick { animation: none; }
+:root[data-motion="reduced"] .fb-button.is-new::after {
+  animation: none;
+  box-shadow: 0 0 0 2px rgb(var(--accent) / .4);
+}
+:root[data-motion="reduced"] .fb-button:hover { transform: none; }

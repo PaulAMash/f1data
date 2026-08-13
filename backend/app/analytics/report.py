@@ -44,10 +44,31 @@ def build(range_key: str = "30d", start: str | None = None,
         "usage": data.get("usage"),
         "performance": data.get("performance"),
         "ask": data.get("ask"),
+        # WHAT READERS ASKED FOR IN THEIR OWN WORDS.
+        #
+        # This is the section the report exists for. Every other number here
+        # describes behaviour and has to be interpreted; a bug report is already
+        # a sentence about what to do, written by the person it happened to. A
+        # report that carried the analytics and left the feedback in a dashboard
+        # nobody exports would be a planning document missing its agenda.
+        "feedback": data.get("feedback"),
         # Already ranked inside the dashboard payload; recomputing here would
         # be a second source of truth for the same list.
         "priorities": data.get("priorities") or priorities(data),
     }
+
+
+def _feedback_split(report: dict) -> tuple[list[dict], list[dict]]:
+    """Real bugs and real suggestions, most recent first.
+
+    Junk is dropped from BOTH — a saved report is a planning document, and the
+    keyboard-mashing is available on the dashboard for anyone who wants to audit
+    it. The counts in the summary still include it, so the total never lies.
+    """
+    rows = (report.get("feedback") or {}).get("recent") or []
+    real = [r for r in rows if not r.get("junk")]
+    return ([r for r in real if r.get("kind") == "bug"],
+            [r for r in real if r.get("kind") == "suggestion"])
 
 
 def _s(n) -> str:
@@ -89,6 +110,8 @@ def to_html(report: dict) -> str:
     ask = report["ask"] or {}
     perf = report["performance"] or {}
     usage = report["usage"] or {}
+    fb = report.get("feedback") or {}
+    fb_bugs, fb_ideas = _feedback_split(report)
     rng = report["range"] or {}
     range_label = f'{(rng.get("from") or "the beginning")[:10]} → {(rng.get("to") or "")[:10]}'
 
@@ -170,14 +193,47 @@ def to_html(report: dict) -> str:
              ("topic_label", "Topic")],
             "F1 questions Ask understood but no handler covers.")}
     {_table("Answers marked unhelpful", ask.get("disliked") or [],
-            [("question", "Question"), ("topic_label", "Topic"),
+            [("question", "Question"), ("context", "Where"), ("topic_label", "Topic"),
              ("outcome_label", "Outcome")],
             "Ask answered these; the reader disagreed.")}
+    {_table("Every question", ask.get("recent") or [],
+            [("question", "Question"), ("context", "Grand Prix / session"),
+             ("topic_label", "Topic"), ("outcome_label", "Outcome")],
+            "Most recent first. The Grand Prix and session are the ones the "
+            "reader had open — Ask answers from that session's data alone.")}
     {_table("Emerging topics", ask.get("emerging") or [],
             [("label", "Phrase"), ("n", "Questions"), ("example", "Example")],
             "Recurring subjects the taxonomy does not cover yet.")}
     {_table("Repeatedly asked", ask.get("repeats") or [],
             [("question", "Question"), ("n", "Times"), ("outcome_label", "Outcome")])}
+
+    <h2 class="page-break">What readers reported</h2>
+    <div class="stats">
+      {stat("Submissions", fb.get("total"))}
+      {stat("Bug reports", fb.get("bugs"))}
+      {stat("Suggestions", fb.get("suggestions"))}
+      {stat("Blocking bugs", (fb.get("severities") or {}).get("high"),
+            "reported as unusable")}
+      {stat("People", fb.get("people"))}
+      {stat("Discarded", fb.get("junk"), "no report in them")}
+    </div>
+    {_table("Bug reports", fb_bugs,
+            [("message", "Report"), ("severity_label", "Severity"),
+             ("area_label", "Area"), ("context", "Grand Prix / session"),
+             ("page", "Page")],
+            "Everything readers said was broken, most recent first.")}
+    {_table("Suggestions", fb_ideas,
+            [("message", "Suggestion"), ("area_label", "Area"),
+             ("context", "Grand Prix / session"), ("page", "Page")],
+            "Feature requests and improvements, in the reader's own words.")}
+    {_table("Where the reports are", fb.get("areas") or [],
+            [("label", "Area"), ("n", "Reports"), ("bugs", "Bugs"),
+             ("suggestions", "Suggestions"), ("blocking", "Blocking")],
+            "An area with many bugs is a surface that does not work; one with "
+            "many suggestions is a surface people want more from.")}
+    {_table("Emerging subjects", fb.get("emerging") or [],
+            [("label", "Phrase"), ("n", "Reports"), ("example", "Example")],
+            "Recurring subjects the area taxonomy does not cover yet.")}
 
     <h2 class="page-break">Performance</h2>
     <div class="stats">
@@ -269,9 +325,61 @@ def to_markdown(report: dict) -> str:
 
     lines += ["", "### Answers marked unhelpful", ""]
     for row in (ask.get("disliked") or [])[:10]:
-        lines.append(f"- \"{row['question']}\" — {row['outcome_label']} ({row['topic_label']})")
+        where = f" — {row['context']}" if row.get("context") else ""
+        lines.append(f"- \"{row['question']}\"{where} — "
+                     f"{row['outcome_label']} ({row['topic_label']})")
     if not ask.get("disliked"):
         lines.append("- None.")
+
+    lines += ["", "### Every question", "",
+              "The Grand Prix and session are the ones the reader had open.", ""]
+    for row in (ask.get("recent") or [])[:60]:
+        where = row.get("context") or "no session open"
+        lines.append(f"- \"{row['question']}\"  \n  {where} · "
+                     f"{row['topic_label']} · {row['outcome_label']}")
+    if not ask.get("recent"):
+        lines.append("- None.")
+
+    # --- feedback ---------------------------------------------------------- #
+    fb = report.get("feedback") or {}
+    fb_bugs, fb_ideas = _feedback_split(report)
+    sev = fb.get("severities") or {}
+    lines += [
+        "", "## What readers reported", "",
+        f"- Submissions: {fb.get('total', 0)} from {fb.get('people', 0)} "
+        f"{'person' if fb.get('people') == 1 else 'people'}",
+        f"- Bug reports: {fb.get('bugs', 0)} "
+        f"({sev.get('high', 0)} blocking, {sev.get('medium', 0)} degraded, "
+        f"{sev.get('low', 0)} cosmetic)",
+        f"- Suggestions: {fb.get('suggestions', 0)}",
+        f"- Discarded as having no report in them: {fb.get('junk', 0)}",
+        "", "### Bug reports", "",
+    ]
+    for row in fb_bugs[:40]:
+        where = " · ".join(p for p in (row.get("page"), row.get("context")) if p)
+        lines.append(f"- **[{row.get('severity_label') or 'Unrated'}] "
+                     f"{row.get('area_label')}** — \"{row['message']}\"")
+        if where:
+            lines.append(f"  - {where}")
+    if not fb_bugs:
+        lines.append("- None.")
+
+    lines += ["", "### Suggestions", ""]
+    for row in fb_ideas[:40]:
+        where = " · ".join(p for p in (row.get("page"), row.get("context")) if p)
+        lines.append(f"- **{row.get('area_label')}** — \"{row['message']}\"")
+        if where:
+            lines.append(f"  - {where}")
+    if not fb_ideas:
+        lines.append("- None.")
+
+    lines += ["", "### Where the reports are", ""]
+    for row in (fb.get("areas") or [])[:15]:
+        lines.append(f"- {row['label']}: {row['n']} report{_s(row['n'])} "
+                     f"({row['bugs']} bug{_s(row['bugs'])}, "
+                     f"{row['suggestions']} suggestion{_s(row['suggestions'])})")
+    if not fb.get("areas"):
+        lines.append("- Nothing reported yet.")
 
     lines += [
         "", "## Performance", "",

@@ -28,6 +28,7 @@ import { api, ApiError } from "@/lib/api";
 import { useFreshEffect } from "@/lib/fresh";
 import { trackFeature, trackFeatureDwell, trackPageView, trackSessionOpen,
          trackSessionUnavailable } from "@/lib/analytics";
+import { useReportContext } from "@/lib/pageContext";
 import { cx } from "@/lib/format";
 import type { Meta, RaceBundle, RaceSession } from "@/lib/types";
 import { Standings } from "@/components/history/Standings";
@@ -218,6 +219,16 @@ export default function ExplorerPage() {
     if (!booted || !sel) return;
     trackSessionOpen(sel.year, sel.gp, sel.session);
   }, [booted, sel?.year, sel?.gp, sel?.session]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* AND THE SAME FACTS, FOR ANYTHING THAT NEEDS THEM RATHER THAN COUNTS THEM.
+     The feedback box is mounted in the root layout and cannot see this page's
+     state, so a report filed from here would otherwise arrive saying only
+     "/explorer" — which is four different screens and any of twelve hundred
+     sessions. See lib/pageContext.tsx. */
+  useReportContext({
+    year: sel?.year, gp: sel?.gp, session: sel?.session,
+    feature: view === "season" ? "standings" : tab,
+  });
 
   /* WHICH FEATURE WAS READ, recorded from the state rather than from the
      click handlers. Tabs are opened by the tab bar, by the Sources button, by

@@ -198,8 +198,14 @@ def test_the_prune_statements_are_postgres_safe(monkeypatch):
     """The rollup is the most intricate SQL in the package and runs unattended
     in a background thread, where a failure is a log line nobody reads."""
     statements = _capture_postgres_sql(monkeypatch, store._prune)
-    assert len(statements) == 3, f"expected rollup + two deletes, got {len(statements)}"
+    # rollup + one DELETE per retained table (event, ask, feedback)
+    assert len(statements) == 4, f"expected rollup + three deletes, got {len(statements)}"
     assert any("ON CONFLICT" in s for s in statements), "the rollup upsert went missing"
+    # Every table with its own retention window must actually be pruned; a table
+    # added to the schema and forgotten here grows without bound.
+    for table in ("analytics_event", "analytics_ask", "analytics_feedback"):
+        assert any(f"DELETE FROM {table} WHERE ts <" in s for s in statements), \
+            f"{table} is never pruned"
     for sql in statements:
         _validate_for_postgres(sql, (1,))
 
