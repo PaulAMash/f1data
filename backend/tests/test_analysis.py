@@ -50,6 +50,23 @@ def test_compare_drivers():
     assert set(cmp["compound_sequence"]) == {"LEC", "NOR"}
 
 
+def test_compare_reports_stops_even_when_the_adapter_left_the_count_blank():
+    """Only live timing carries NumberOfPitStops, so cached/archive sessions
+    arrive with classification.pit_stops = 0 while their stints prove the
+    stops happened. The comparison must normalize before reading the count —
+    the iOS Head-to-Head table showed "0 stops vs 0 stops" under a verdict
+    bullet that correctly said "stopped 3× vs 4×"."""
+    s = simulate()
+    for c in s.classification:
+        c.pit_stops = 0
+    cmp = compare_drivers(s, "LEC", "NOR")
+    assert "error" not in cmp
+    for side in ("a", "b"):
+        stints = len(cmp[side]["stints"])
+        assert stints > 1, "fixture must actually contain multi-stint drivers"
+        assert cmp[side]["pit_stops"] == stints - 1
+
+
 # --------------------------------------------------------------------------- #
 # Pace ranking is contiguous for the drivers who actually show one (V81)
 # --------------------------------------------------------------------------- #

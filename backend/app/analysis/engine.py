@@ -16,6 +16,11 @@ def analyze(session: RaceSession) -> tuple[StrategySummary, list[DriverPaceSumma
 
 def compare_drivers(session: RaceSession, a: str, b: str) -> dict:
     """Head-to-head comparison used by the Driver Comparison view."""
+    # Same pre-pass as analyze(): without it, classification.pit_stops is
+    # whatever the adapter provided (often 0 — only live timing carries
+    # NumberOfPitStops), and the comparison reported "0 stops" for drivers
+    # whose stints proved otherwise.
+    normalize_session(session)
     a, b = a.upper(), b.upper()
     pace = {p.driver: p for p in compute_pace(session)}
     pa, pb = pace.get(a), pace.get(b)
