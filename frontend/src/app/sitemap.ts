@@ -18,5 +18,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE_URL}/welcome`, lastModified, changeFrequency: "monthly", priority: 0.5 },
     // The public support/contact page — the URL app stores link to.
     { url: `${SITE_URL}/support`, lastModified, changeFrequency: "monthly", priority: 0.4 },
+    // The privacy policy — required by App Store Connect, linked from the footer.
+    { url: `${SITE_URL}/privacy`, lastModified, changeFrequency: "yearly", priority: 0.3 },
   ];
 }

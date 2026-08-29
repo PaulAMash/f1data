@@ -81,6 +81,12 @@ export function Footer() {
             with Formula 1, the FIA, or any competing team. F1 and Formula 1 are
             trademarks of Formula One Licensing BV.
           </span>
+          {/* The legal strip is where a reader — or a store reviewer — expects
+              to find these, so they live here rather than in the primary nav. */}
+          <span className="flex items-center gap-4 sm:ml-auto">
+            <Link href="/privacy" className="transition-colors hover:text-ink">Privacy</Link>
+            <Link href="/support" className="transition-colors hover:text-ink">Support</Link>
+          </span>
         </div>
       </div>
     </footer>
