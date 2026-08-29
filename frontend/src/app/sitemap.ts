@@ -16,5 +16,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE_URL}/explorer`, lastModified, changeFrequency: "daily", priority: 0.9 },
     { url: `${SITE_URL}/history`, lastModified, changeFrequency: "weekly", priority: 0.8 },
     { url: `${SITE_URL}/welcome`, lastModified, changeFrequency: "monthly", priority: 0.5 },
+    // The public support/contact page — the URL app stores link to.
+    { url: `${SITE_URL}/support`, lastModified, changeFrequency: "monthly", priority: 0.4 },
   ];
 }
