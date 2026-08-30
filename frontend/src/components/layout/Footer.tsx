@@ -47,6 +47,7 @@ export function Footer() {
               ["Ask a question", "/explorer?tab=ask"],
               ["Seasons & championships", "/history"],
               ["Settings", "/settings"],
+              ["Pitwall IQ for iPhone", "/app"],
             ].map(([label, href]) => (
               <li key={href}>
                 <Link href={href}
@@ -72,7 +73,12 @@ export function Footer() {
       </div>
 
       <div className="border-t border-white/[0.05]">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-5 text-[11.5px] text-ink-faint sm:px-6">
+        {/* pb-20: the feedback control is fixed to the viewport's bottom-left
+            corner and no longer steps out of the footer's way (see
+            FeedbackDock.tsx) — so the footer keeps its own small print clear
+            of that corner instead, which costs a strip of empty dark at the
+            very end of the page and nothing else. */}
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-2 px-4 pb-20 pt-5 text-[11.5px] text-ink-faint sm:px-6">
           <span>© {new Date().getFullYear()} Pitwall IQ</span>
           <span className="hidden sm:inline">·</span>
           {/* The one line that has to be here. */}

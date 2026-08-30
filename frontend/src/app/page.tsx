@@ -6,6 +6,7 @@ import { ArrowRight, MessageSquareText, Sparkles, Timer, Trophy } from "lucide-r
 import { NavBar } from "@/components/layout/NavBar";
 import { Footer } from "@/components/layout/Footer";
 import { HeroField } from "@/components/landing/HeroField";
+import { AppPromoBand } from "@/components/promo/AppPromo";
 import { FeaturedRace } from "@/components/landing/FeaturedRace";
 import { Flag, Gauge, LineChart } from "@/components/ui/MotionIcon";
 import { usePrefs } from "@/lib/prefs";
@@ -55,6 +56,7 @@ export default function Landing() {
   const router = useRouter();
   const featureBand = useReveal<HTMLElement>();
   const doorBand = useReveal<HTMLElement>();
+  const appBand = useReveal<HTMLElement>();
   const { start } = useTour();
 
   /* THE CHOICE HAPPENS BEFORE THIS PAGE, NOT ON IT.
@@ -221,7 +223,7 @@ export default function Landing() {
 
       {/* ---- 4. the way in ---------------------------------------------- */}
       <section ref={doorBand.ref}
-        className={cx("mx-auto max-w-7xl px-4 pb-20 pt-20 sm:px-6 sm:pb-28 sm:pt-24", doorBand.className)}>
+        className={cx("mx-auto max-w-7xl px-4 pt-20 sm:px-6 sm:pt-24", doorBand.className)}>
         <SectionHead n="02" chapter="Enter" title="Three ways in"
           line="Pick the one that matches the question you arrived with." />
         <div className="mt-7 grid gap-4 sm:grid-cols-3">
@@ -234,6 +236,20 @@ export default function Landing() {
           <Door href="/history" icon={<Trophy size={16} />} title="Look something up"
             line="Official results and standings, 1950 to today."
             art={<ArtArchive />} tint="var(--amber)" />
+        </div>
+      </section>
+
+      {/* ---- 5. the phone ------------------------------------------------
+          The app gets a chapter rather than a corner badge, because on the
+          page's own evidence most readers will meet this product on a phone —
+          and the band is a pointer, not the pitch: the whole case lives at
+          /app, one press away. */}
+      <section ref={appBand.ref}
+        className={cx("mx-auto max-w-7xl px-4 pb-20 pt-20 sm:px-6 sm:pb-28 sm:pt-24", appBand.className)}>
+        <SectionHead n="03" chapter="Carry" title="Take the pit wall with you"
+          line="Pitwall IQ is coming to iPhone, built for race day." />
+        <div className="mt-7">
+          <AppPromoBand />
         </div>
       </section>
 

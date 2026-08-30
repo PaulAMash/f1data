@@ -20,12 +20,15 @@ import { cx } from "@/lib/format";
 /* one region of a Pitwall IQ screen that is reliably empty at every width, so  */
 /* a control living there covers nothing and is covered by nothing.             */
 /*                                                                            */
-/* WHY IT STOPS AT THE FOOTER. A control welded to the viewport corner sits on  */
-/* top of the footer at the end of every page, which is the one place a reader  */
-/* is deliberately reading the small print — the sources, the trademark line.   */
-/* So it follows the viewport until the footer arrives and then rides above it, */
-/* which is the behaviour of something docked to the CONTENT rather than glued  */
-/* to the glass. Scrolling back up hands it to the viewport again.              */
+/* WHY IT NO LONGER STEPS OVER THE FOOTER. The first version measured the      */
+/* footer every frame and rode up over it, which protected the small print at  */
+/* the cost of the one property a persistent control owes you: being where you */
+/* left it. At the end of every page it visibly climbed, and on pages whose     */
+/* height changes as data arrives it twitched. So the trade is now made the     */
+/* other way round — the control is welded to the corner and never moves, and   */
+/* the FOOTER keeps its own last line clear of that corner with bottom padding  */
+/* (see Footer.tsx). The reader gets a control that is always in the same       */
+/* place, and the small print gets a corner nothing sits on.                    */
 /*                                                                            */
 /* WHY IT OUTRANKS A MODAL. z-90 puts it over the dialog layer (z-70) and       */
 /* under the tour (z-100). Those two are deliberate and opposite: a reader who  */
@@ -45,10 +48,9 @@ const HIDDEN = new Set([
 const SEEN_KEY = "pitwall.fb.seen";
 /** How long the success state holds before the panel folds itself away. */
 const DONE_MS = 1900;
-/** Clear of the footer's top edge by this much when docked. */
-const FOOTER_GAP = 16;
-/** The resting distance from the bottom of the viewport. */
-const BASE_BOTTOM = 20;
+/** If the collapse animation's end event never arrives (an extension, a
+ *  browser with animations force-disabled), the close completes anyway. */
+const CLOSE_FALLBACK_MS = 420;
 
 type Kind = "bug" | "suggestion";
 type Phase = "idle" | "sending" | "done" | "error";
@@ -60,11 +62,14 @@ export function FeedbackDock() {
   const { prefs } = usePrefs();
 
   const [open, setOpen] = useState(false);
+  /* The collapse is an animation, so "closing" is a real state: the panel
+     stays mounted while it plays the genie in reverse, and only the
+     animation's end (or its fallback timer) actually unmounts it. */
+  const [closing, setClosing] = useState(false);
   const [kind, setKind] = useState<Kind>("bug");
   const [message, setMessage] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [bottom, setBottom] = useState(BASE_BOTTOM);
   const [nudge, setNudge] = useState(false);
 
   const rootRef = useRef<HTMLDivElement>(null);
@@ -90,35 +95,12 @@ export function FeedbackDock() {
     return () => { clearTimeout(start); clearTimeout(stop); };
   }, [hidden]);
 
-  /* RIDING THE FOOTER.
-     Measured from the footer's own rect rather than from a scroll threshold,
-     because page heights differ per route and a magic number would be wrong on
-     all but one of them. Passive listeners and a rAF coalesce, so this costs
-     one rect read per frame only while the reader is actually scrolling. */
-  useEffect(() => {
-    if (hidden) return;
-    let frame = 0;
-    const measure = () => {
-      frame = 0;
-      const footer = document.querySelector("footer");
-      if (!footer) { setBottom(BASE_BOTTOM); return; }
-      const top = footer.getBoundingClientRect().top;
-      const overlap = window.innerHeight - top;
-      setBottom(overlap > BASE_BOTTOM - FOOTER_GAP
-        ? Math.round(overlap + FOOTER_GAP) : BASE_BOTTOM);
-    };
-    const schedule = () => { if (!frame) frame = requestAnimationFrame(measure); };
-    measure();
-    window.addEventListener("scroll", schedule, { passive: true });
-    window.addEventListener("resize", schedule);
-    return () => {
-      if (frame) cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", schedule);
-      window.removeEventListener("resize", schedule);
-    };
-  }, [hidden, path]);
-
-  const close = useCallback(() => {
+  /* THE CLOSE IS TWO STEPS. `close` starts the collapse; `finishClose` is
+     what the collapse animation's end actually performs. Every way out —
+     the X, Escape, and the success state's own timer — goes through the
+     same pair, so they all get the same exit. */
+  const finishClose = useCallback(() => {
+    setClosing(false);
     setOpen(false);
     setPhase("idle");
     setError(null);
@@ -126,6 +108,18 @@ export function FeedbackDock() {
     // reader is not returned to the top of the document.
     requestAnimationFrame(() => buttonRef.current?.focus({ preventScroll: true }));
   }, []);
+
+  const close = useCallback(() => {
+    setClosing((already) => already || true);
+  }, []);
+
+  /* The animation's end is the real signal; the timer is the seatbelt for a
+     browser where animation events never fire at all. */
+  useEffect(() => {
+    if (!closing) return;
+    const t = setTimeout(finishClose, CLOSE_FALLBACK_MS);
+    return () => clearTimeout(t);
+  }, [closing, finishClose]);
 
   /* Escape closes the panel and nothing else. `stopPropagation` because a
      dialog underneath is also listening for Escape, and one key press must
@@ -188,10 +182,17 @@ export function FeedbackDock() {
   ];
 
   return (
-    <div ref={rootRef} className="fb-dock" style={{ bottom }}>
+    <div ref={rootRef} className="fb-dock">
       {open ? (
-        <div className="fb-panel modal-scroll" role="dialog" aria-modal="false"
-          aria-label="Send feedback">
+        <div className={cx("fb-panel modal-scroll", closing && "is-closing")}
+          role="dialog" aria-modal="false" aria-label="Send feedback"
+          /* The exit animation's end is what actually unmounts the panel.
+             animationend BUBBLES — the tick and the success fade would both
+             end the close early — so only the panel's own animation counts,
+             and only while a close is actually in flight. */
+          onAnimationEnd={(e) => {
+            if (closing && e.target === e.currentTarget) finishClose();
+          }}>
           <div className="flex items-start gap-2 border-b border-white/[0.07] px-3.5 py-3">
             <div className="min-w-0 flex-1">
               <p className="text-[13.5px] font-semibold leading-tight text-ink">

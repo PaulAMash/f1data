@@ -25,7 +25,7 @@ import { trackPageView } from "@/lib/analytics";
 /* step sees), and docs/ANALYTICS.md (the whole argument).                     */
 /* -------------------------------------------------------------------------- */
 
-const CONTACT_EMAIL = "paulmash2003@gmail.com";
+const CONTACT_EMAIL = "support@pitwalliq.com";
 const LAST_UPDATED = "29 August 2026";
 
 /** One section of the policy: an anchor-friendly heading over flowing prose. */

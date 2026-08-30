@@ -229,6 +229,21 @@ export default function SettingsPage() {
               Every choice here applies across the whole application instantly and is
               remembered on this device.
             </p>
+
+            {/* The product's other doors, at the quiet end of the rail. Settings
+                is where a reader goes when they want something from the product
+                rather than from a race, which makes it the natural place to
+                find "how do I report this" and "what do you collect" without
+                either earning a spot in the main navigation. */}
+            <nav aria-label="About Pitwall IQ"
+              className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-white/[0.06] px-2 pt-4 text-[11.5px]">
+              {[["iPhone app", "/app"], ["Support", "/support"], ["Privacy", "/privacy"]].map(([label, href]) => (
+                <Link key={href} href={href}
+                  className="text-ink-faint underline decoration-transparent underline-offset-4 transition-colors hover:text-ink hover:decoration-current">
+                  {label}
+                </Link>
+              ))}
+            </nav>
           </aside>
 
           {/* ---- the controls ------------------------------------------ */}

@@ -2,12 +2,13 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import {
-  ArrowRight, BarChart3, Clock3, Flag, GitCompare, LineChart,
-  MessageCircleQuestion, Radar, ShieldCheck, Sparkles, Timer,
+  Apple, ArrowRight, BarChart3, BatteryCharging, Clock3, Flag, GitCompare,
+  Hand, LineChart, MessageCircleQuestion, Radar, ShieldCheck, Smartphone, Timer,
 } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
 import { Footer } from "@/components/layout/Footer";
 import { BetaTag } from "@/components/ui/BetaTag";
+import { PhoneMock, StintRow } from "@/components/promo/PhoneMock";
 import { useReveal } from "@/lib/useReveal";
 import { trackPageView } from "@/lib/analytics";
 import { cx } from "@/lib/format";
@@ -24,20 +25,20 @@ import { cx } from "@/lib/format";
    because they are easy to erode later:
 
    1. THERE IS NO APP STORE LINK YET, so there is no button pretending to be
-      one. The call to action says the iPhone app is in preparation and sends
-      the reader to the thing that does exist today — the web app. A dead
-      "Download" button on the page the App Store links to is the worst
-      possible first impression, and inventing a URL is worse.
+      one. The store lockup below is drawn in this product's own style, says
+      "coming soon", and presses nothing. When Apple approves the app it
+      becomes a real link — in that commit, not before. A dead Download
+      button on the page the App Store links to is the worst possible first
+      impression, and inventing a URL is worse.
 
-   2. THERE ARE NO IOS SCREENSHOTS IN THIS REPOSITORY (checked: no .png
-      outside public/drivers and public/teams, no Swift, no Xcode project).
-      So nothing here is presented as a screen capture. The device below is
-      drawn from this product's own tokens and components, and what it shows
-      is STRUCTURE — a position trace with unlabelled lines, real compound
-      colours, the app's own section names. It asserts no lap time, no
-      driver and no result, because a marketing page that invents a race
-      result is a marketing page that lies about Formula 1. When real
-      captures exist they replace `AppCanvas` and nothing else moves.
+   2. THERE ARE NO iOS SCREENSHOTS IN THIS REPOSITORY, so nothing here is
+      presented as a screen capture. The device (components/promo/PhoneMock)
+      is drawn from this product's own tokens and shows STRUCTURE — no lap
+      time, no driver, no result. When real captures exist they replace the
+      mock's screen and every surface that shows the phone updates together.
+
+   There is no Android version and nothing here implies one: the page names
+   iPhone and the App Store, and names nothing else.
    ========================================================================== */
 
 /** The web product, which is what a reader can actually use today. */
@@ -48,6 +49,7 @@ export default function AppMarketingPage() {
 
   const why = useReveal<HTMLElement>();
   const does = useReveal<HTMLElement>();
+  const hand = useReveal<HTMLElement>();
   const trust = useReveal<HTMLElement>();
   const close = useReveal<HTMLElement>();
 
@@ -63,7 +65,7 @@ export default function AppMarketingPage() {
       <section className="relative isolate overflow-hidden">
         <AmbientField />
 
-        <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-4 pb-16 pt-12 sm:px-6 sm:pb-24 sm:pt-16 lg:grid-cols-[1.05fr_auto] lg:gap-16 lg:pt-20">
+        <div className="relative mx-auto grid max-w-7xl items-center gap-x-16 gap-y-14 px-4 pb-20 pt-14 sm:px-6 sm:pb-28 sm:pt-20 lg:grid-cols-[minmax(0,1.05fr)_auto] lg:pt-24">
           <div className="max-w-xl">
             <p className="stagger-1 flex items-center gap-2.5 text-[11.5px] font-semibold uppercase tracking-[0.26em] text-accent-soft">
               <span className="h-px w-8 bg-accent-soft/60" />
@@ -73,7 +75,7 @@ export default function AppMarketingPage() {
             {/* The product's own sentence, from the footer it has carried for
                 thirty versions. A marketing page is the wrong place to invent
                 a new promise. */}
-            <h1 className="stagger-2 mt-5 text-[2.9rem] font-bold leading-[0.98] tracking-[-0.045em] sm:text-[4.2rem]">
+            <h1 className="stagger-2 mt-5 text-[3rem] font-bold leading-[0.96] tracking-[-0.045em] sm:text-[4.6rem]">
               Know why,
               <br />
               not just{" "}
@@ -85,19 +87,31 @@ export default function AppMarketingPage() {
               .
             </h1>
 
-            <p className="stagger-3 mt-6 max-w-md text-[17px] leading-snug text-ink-muted">
+            <p className="stagger-3 mt-6 max-w-md text-[17px] leading-relaxed text-ink-muted">
               Pitwall IQ reads every lap of a Grand Prix and tells you what
               actually decided it — the strategy, the tyres and the real pace
-              behind the finishing order.
+              behind the finishing order. Now being built for the phone in
+              your hand on race day.
             </p>
 
+            {/* THE STORE LOCKUP. The shape every reader already knows how to
+                read — glyph left, two lines right — drawn in this product's
+                own materials, wearing "coming soon" where a live one says
+                "download". Not a button: no press affordance, nothing that
+                invites a tap it cannot answer. It becomes a real link in the
+                commit that has a real URL to give it. */}
             <div className="stagger-4 mt-9 flex flex-wrap items-center gap-x-5 gap-y-4">
-              {/* NOT A BUTTON, because there is nowhere for it to go yet. It
-                  is a status, and it is styled as one: no press affordance,
-                  no hover lift, nothing that invites a tap it cannot answer. */}
-              <span className="inline-flex items-center gap-2.5 rounded-xl border border-accent/25 bg-accent/[0.08] px-5 py-3.5 text-[14.5px] font-semibold text-ink">
-                <Sparkles size={16} className="shrink-0 text-accent-soft" />
-                Coming to the App Store
+              <span className="inline-flex items-center gap-3 rounded-2xl border border-white/[0.14] bg-base-900/90 py-3 pl-4 pr-6"
+                style={{ boxShadow: "var(--el-2)" }}>
+                <Apple size={26} className="shrink-0 -translate-y-px text-ink" aria-hidden />
+                <span className="leading-none">
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                    Coming soon to the
+                  </span>
+                  <span className="mt-1 block text-[17px] font-bold tracking-[-0.01em] text-ink">
+                    App Store
+                  </span>
+                </span>
               </span>
               <Link href={WEB_HREF}
                 className="group/web inline-flex items-center gap-2 text-[14.5px] font-medium text-ink-muted transition-colors hover:text-ink">
@@ -106,15 +120,20 @@ export default function AppMarketingPage() {
               </Link>
             </div>
 
-            <p className="stagger-4 mt-4 text-[12.5px] leading-relaxed text-ink-faint">
-              The iPhone app is in preparation for review. Everything below it
-              works today at{" "}
-              <Link href="/" className="underline decoration-dotted underline-offset-2 hover:text-ink-muted">pitwalliq.com</Link>.
-            </p>
+            {/* Three facts, each one kept by the product and stated in the
+                privacy policy. Not marketing adjectives — commitments. */}
+            <ul className="stagger-4 mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 text-[12.5px] text-ink-faint">
+              {["Free", "No account", "No ads", "No tracking"].map((t) => (
+                <li key={t} className="flex items-center gap-1.5">
+                  <ShieldCheck size={13} className="text-accent-soft/80" />
+                  {t}
+                </li>
+              ))}
+            </ul>
           </div>
 
-          <div className="stagger-4 justify-self-center lg:justify-self-end">
-            <Phone />
+          <div className="stagger-4 app-float justify-self-center lg:justify-self-end">
+            <PhoneMock />
           </div>
         </div>
 
@@ -196,12 +215,31 @@ export default function AppMarketingPage() {
         </div>
       </section>
 
-      {/* ---- 4. where it comes from --------------------------------------
+      {/* ---- 4. why a phone app ------------------------------------------
+          The app's own reason to exist, separate from the product's. Written
+          in the future tense on purpose: the app is in development, and a
+          page that claims a shipped experience it cannot show is lying. */}
+      <section ref={hand.ref}
+        className={cx("mx-auto max-w-7xl px-4 pt-20 sm:px-6 sm:pt-24", hand.className)}>
+        <SectionHead n="03" chapter="Carry" title="Built for the hand, not the desk"
+          line="Race weekends are watched with a phone in one hand. That is the screen this app is being designed for." />
+
+        <div className="mt-8 grid gap-4 sm:grid-cols-3">
+          <Claim icon={<Hand size={15} />} title="One thumb"
+            line="Every control within reach of the hand that is holding it — built for the sofa, the grandstand and the queue for the gate, not a desk." />
+          <Claim icon={<Smartphone size={15} />} title="The same intelligence"
+            line="The identical analysis behind this website — same data, same methods, same honesty about confidence — presented for a screen you hold." />
+          <Claim icon={<BatteryCharging size={15} />} title="Light by design"
+            line="The heavy lifting runs on our servers, not on your phone. The app fetches finished analysis, which is kind to both battery and data plan." />
+        </div>
+      </section>
+
+      {/* ---- 5. where it comes from --------------------------------------
           A data product's marketing page has to answer "says who". This is
           the same statement the site's Data Sources panel makes, said once. */}
       <section ref={trust.ref}
         className={cx("mx-auto max-w-7xl px-4 pt-20 sm:px-6 sm:pt-24", trust.className)}>
-        <SectionHead n="03" chapter="Trust" title="Real data, named sources"
+        <SectionHead n="04" chapter="Trust" title="Real data, named sources"
           line="Nothing here is generated. Every figure traces back to a published Formula 1 record." />
 
         <div className="mt-8 grid gap-4 lg:grid-cols-[1.35fr_1fr]">
@@ -240,7 +278,7 @@ export default function AppMarketingPage() {
         </div>
       </section>
 
-      {/* ---- 5. the close ------------------------------------------------- */}
+      {/* ---- 6. the close ------------------------------------------------- */}
       <section ref={close.ref}
         className={cx("mx-auto max-w-7xl px-4 pb-24 pt-20 sm:px-6 sm:pb-28 sm:pt-24", close.className)}>
         <div className="panel-hero px-6 py-12 text-center sm:px-10 sm:py-16">
@@ -261,7 +299,8 @@ export default function AppMarketingPage() {
               Read your last race
               <ArrowRight size={17} className="transition-transform duration-[--dur-2] group-hover/cta:translate-x-0.5" />
             </Link>
-            <span className="text-[13px] text-ink-faint">
+            <span className="inline-flex items-center gap-1.5 text-[13px] text-ink-faint">
+              <Apple size={13} aria-hidden className="-translate-y-px" />
               iPhone app coming soon · Free, no account
             </span>
           </div>
@@ -269,164 +308,6 @@ export default function AppMarketingPage() {
       </section>
 
       <Footer />
-    </div>
-  );
-}
-
-/* ========================================================================== */
-/* THE DEVICE.                                                                */
-/*                                                                            */
-/* A frame drawn in CSS rather than an image, so it stays sharp on every       */
-/* display and costs nothing to download. See the header note for why what is  */
-/* inside it is structural rather than a captured screen.                      */
-/* ========================================================================== */
-function Phone() {
-  return (
-    <div className="relative">
-      {/* the light the device throws, in the accent, same as every other
-          elevated surface in the product */}
-      <span aria-hidden className="pointer-events-none absolute -inset-10 -z-10 rounded-full"
-        style={{ background: "radial-gradient(closest-side, rgb(var(--accent) / .16), transparent 70%)" }} />
-
-      <div className="relative w-[268px] rounded-[2.4rem] border border-white/[0.10] bg-base-900 p-2.5 sm:w-[300px]"
-        style={{ boxShadow: "var(--el-3)" }}>
-        {/* the screen */}
-        <div className="relative overflow-hidden rounded-[1.9rem] bg-base-950">
-          {/* the island, drawn rather than notched — a pill is what a current
-              iPhone actually shows and it reads at this size */}
-          <span aria-hidden
-            className="absolute left-1/2 top-2 z-10 h-[18px] w-[74px] -translate-x-1/2 rounded-full bg-black/85" />
-          <AppCanvas />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** What the screen shows. Structure and design language, no asserted result. */
-function AppCanvas() {
-  return (
-    <div className="flex h-[560px] flex-col pt-9 sm:h-[600px]">
-      {/* app header */}
-      <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 pb-3">
-        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-accent/15 ring-1 ring-accent/30">
-          <Radar size={13} className="text-accent-soft" />
-        </span>
-        <span className="text-[12.5px] font-semibold tracking-tight text-ink">
-          Race<span className="text-accent-soft"> Story</span>
-        </span>
-        <span className="ml-auto rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-[0.12em] text-ink-faint">
-          Race
-        </span>
-      </div>
-
-      <div className="min-h-0 flex-1 space-y-2.5 overflow-hidden px-3.5 pt-3.5">
-        {/* the answer-first card the product leads every race with */}
-        <div className="rounded-xl border border-accent/20 bg-accent/[0.05] p-3">
-          <p className="text-[8.5px] font-bold uppercase tracking-[0.16em] text-accent-soft">
-            Turning point
-          </p>
-          <p className="mt-1.5 text-[12.5px] font-semibold leading-snug text-ink">
-            The lap the lead changed hands
-          </p>
-          <p className="mt-1 text-[10.5px] leading-snug text-ink-faint">
-            Why it mattered, and what it cost.
-          </p>
-        </div>
-
-        {/* the position trace: shape only, no driver carries a name */}
-        <div className="rounded-xl border border-white/[0.06] bg-base-850/60 p-3">
-          <div className="flex items-baseline justify-between">
-            <p className="text-[8.5px] font-bold uppercase tracking-[0.16em] text-ink-faint">Position</p>
-            <p className="font-mono text-[8.5px] text-ink-faint">P1 — P10</p>
-          </div>
-          <TraceArt className="mt-2" />
-        </div>
-
-        {/* stints: real broadcast compound colours, no attribution */}
-        <div className="rounded-xl border border-white/[0.06] bg-base-850/60 p-3">
-          <p className="text-[8.5px] font-bold uppercase tracking-[0.16em] text-ink-faint">Tyres</p>
-          <div className="mt-2 space-y-1.5">
-            <StintRow widths={[42, 34, 24]} />
-            <StintRow widths={[30, 46, 24]} order={[1, 0, 2]} />
-            <StintRow widths={[52, 48]} order={[2, 1]} />
-          </div>
-        </div>
-
-        {/* clean-air pace, which is the product's own signature measurement —
-            positions on the left, bars for relative pace, nobody named */}
-        <div className="rounded-xl border border-white/[0.06] bg-base-850/60 p-3">
-          <p className="text-[8.5px] font-bold uppercase tracking-[0.16em] text-ink-faint">
-            Clean-air pace
-          </p>
-          <div className="mt-2 space-y-[5px]">
-            {[["P1", 96], ["P2", 88], ["P3", 79], ["P4", 74]].map(([pos, w], i) => (
-              <div key={String(pos)} className="flex items-center gap-2">
-                <span className="w-4 shrink-0 font-mono text-[8px] text-ink-faint">{pos}</span>
-                <span className="h-[7px] flex-1 overflow-hidden rounded-full bg-white/[0.05]">
-                  <span className="block h-full rounded-full"
-                    style={{
-                      width: `${w}%`,
-                      background: i === 0 ? "rgb(var(--accent))" : "rgb(var(--ink-faint) / .5)",
-                    }} />
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* the tab bar — the app's own section names */}
-      <div className="mt-auto grid grid-cols-4 border-t border-white/[0.06] bg-base-900/80 px-2 pb-4 pt-2.5">
-        {[["Story", true], ["Charts", false], ["Strategy", false], ["Ask", false]].map(([label, on]) => (
-          <span key={String(label)}
-            className={cx("text-center text-[9px] font-medium",
-              on ? "text-accent-soft" : "text-ink-faint")}>
-            {String(label)}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** The position trace. `hero-trace` draws the lines in and is already
- *  reduced-motion aware (globals.css), so this needs no rule of its own. */
-function TraceArt({ className }: { className?: string }) {
-  const lines = [
-    { d: "M2,26 C22,24 34,10 56,9 C78,8 96,6 118,5", c: "rgb(var(--accent))", w: 1.6, delay: ".05s" },
-    { d: "M2,8 C24,10 38,20 58,22 C80,24 98,17 118,14", c: "rgb(var(--speed))", w: 1.3, delay: ".2s" },
-    { d: "M2,16 C24,17 36,26 58,29 C80,32 98,26 118,23", c: "rgb(var(--ink-faint))", w: 1.1, delay: ".35s" },
-    { d: "M2,34 C24,33 40,30 58,33 C80,36 98,33 118,31", c: "rgb(var(--ink-faint) / .55)", w: 1, delay: ".5s" },
-  ];
-  return (
-    <svg viewBox="0 0 120 40" className={cx("h-[62px] w-full", className)} aria-hidden>
-      {/* a neutralisation window, the one band the product always draws */}
-      <rect x="52" y="0" width="17" height="40" fill="rgb(var(--amber) / .10)" />
-      <line x1="52" y1="0" x2="52" y2="40" stroke="rgb(var(--amber) / .35)" strokeWidth=".5" />
-      {lines.map((l) => (
-        <path key={l.d} d={l.d} fill="none" stroke={l.c} strokeWidth={l.w}
-          strokeLinecap="round" className="hero-trace" style={{ animationDelay: l.delay }} />
-      ))}
-    </svg>
-  );
-}
-
-const STINT_COLORS = ["#ff3b3b", "#ffcf3f", "#e7ecf3"];   // soft / medium / hard
-const STINT_LETTERS = ["S", "M", "H"];
-
-function StintRow({ widths, order = [0, 1, 2] }: { widths: number[]; order?: number[] }) {
-  return (
-    <div className="flex h-3.5 gap-[3px]">
-      {widths.map((w, i) => {
-        const c = order[i] ?? i;
-        return (
-          <span key={i} style={{ width: `${w}%`, background: STINT_COLORS[c] }}
-            className="grid place-items-center rounded-[3px] text-[7.5px] font-bold text-black/75">
-            {STINT_LETTERS[c]}
-          </span>
-        );
-      })}
     </div>
   );
 }

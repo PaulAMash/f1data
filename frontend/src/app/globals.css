@@ -3460,9 +3460,10 @@ html.theme-sweep::view-transition-new(root) {
 
    A button that becomes a panel, in the bottom-left corner of every reading
    page. See components/feedback/FeedbackDock.tsx for where it may appear and
-   why it stops at the footer; this is only how it looks and how it opens.
+   why it never leaves that corner; this is only how it looks and how it moves.
 
-   THE OPENING IS ONE ELEMENT GROWING OUT OF ANOTHER'S CORNER.
+   THE OPENING IS ONE ELEMENT GROWING OUT OF ANOTHER'S CORNER — AND THE
+   CLOSING IS THE SAME MOVEMENT PLAYED BACKWARDS.
 
    `transform-origin: bottom left` is the whole of the "genie" effect and the
    only honest way to do it: the panel scales and rises out of exactly the
@@ -3471,6 +3472,12 @@ html.theme-sweep::view-transition-new(root) {
    read as a popup appearing somewhere near a button — which is what every
    support widget on the web looks like, and what this is not.
 
+   The close reuses the identical keyframes with `animation-direction:
+   reverse` rather than a second, hand-tuned exit — one set of keyframes is
+   what makes the two directions provably the same movement. It runs on
+   dur-3 against the opening's dur-4 because exits should be quicker than
+   entrances, the same asymmetry every dialog in this product has.
+
    The scale is anisotropic on purpose (.86 wide, .72 tall). A uniform scale
    from a corner travels diagonally and reads as a zoom; growing faster in the
    axis with more distance to cover reads as unfolding.
@@ -3478,6 +3485,11 @@ html.theme-sweep::view-transition-new(root) {
 .fb-dock {
   position: fixed;
   left: 20px;
+  /* Welded to the corner. It used to ride up over the footer, which kept the
+     small print clear at the cost of a control that visibly climbed at the
+     end of every page; the footer now reserves that corner itself
+     (Footer.tsx), and this never moves at all. */
+  bottom: 20px;
   /* Over the dialog layer (70) and under the tutorial (100). Both deliberate:
      a bug found inside a dialog is still reportable, and the tour owns the
      screen outright while it is running. */
@@ -3486,11 +3498,8 @@ html.theme-sweep::view-transition-new(root) {
   /* Bottom-left origin for the whole dock, so the panel and the button share
      the same anchor and the growth starts where the button actually was. */
   align-items: flex-end;
-  /* `bottom` is written by the component as it rides the footer, and it
-     travels rather than jumping between the two positions. */
-  transition: bottom var(--dur-3) var(--ease-out);
 }
-@media (max-width: 640px) { .fb-dock { left: 12px; } }
+@media (max-width: 640px) { .fb-dock { left: 12px; bottom: 16px; } }
 
 /* ---- the resting control ---- */
 .fb-button {
@@ -3579,6 +3588,15 @@ html.theme-sweep::view-transition-new(root) {
   from { opacity: 0; transform: scale(.86, .72) translateY(10px); }
   to   { opacity: 1; transform: none; }
 }
+/* The collapse: the same keyframes, run backwards, slightly quicker. The
+   component keeps the panel mounted while this plays and unmounts it on
+   animationend — `both` holds the final (invisible) frame so there is no
+   flash between the animation ending and React catching up. Inert while it
+   plays: a panel that is visibly leaving must not still take clicks. */
+.fb-panel.is-closing {
+  animation: fb-genie var(--dur-3) cubic-bezier(.5, 0, .78, .4) reverse both;
+  pointer-events: none;
+}
 
 /* ---- choosing which kind of thing this is ---- */
 .fb-kind {
@@ -3649,11 +3667,33 @@ html.theme-sweep::view-transition-new(root) {
 /* Reduced motion: the panel still has to arrive and the tick still has to
    confirm, so both keep an opacity fade — neither travels, neither scales, and
    the invitation ring holds a single steady outline instead of breathing. */
-:root[data-motion="reduced"] .fb-dock { transition: none; }
 :root[data-motion="reduced"] .fb-panel { animation: fb-fade var(--dur-2) linear both; }
+/* The collapse still ANIMATES under reduced motion — a fade, no movement —
+   because the component unmounts the panel on animationend, and an
+   `animation: none` here would leave only the fallback timer to finish the
+   close. A quick fade is both the calmer exit and the working one. */
+:root[data-motion="reduced"] .fb-panel.is-closing {
+  animation: fb-fade var(--dur-2) linear reverse both;
+}
 :root[data-motion="reduced"] .fb-tick { animation: none; }
 :root[data-motion="reduced"] .fb-button.is-new::after {
   animation: none;
   box-shadow: 0 0 0 2px rgb(var(--accent) / .4);
 }
 :root[data-motion="reduced"] .fb-button:hover { transform: none; }
+
+
+/* ---------------------------------------------------------------------------
+   THE iPHONE ON THE /app MARKETING PAGE.
+
+   A slow vertical drift, nothing else — a device at perfect rest reads as a
+   picture of a phone, and one that breathes reads as the phone. Period and
+   travel ride the product's own tempo dials (`--m`, `--amp`), so Calm slows
+   it and Reduced stops it like every other ambient loop in this file.
+   --------------------------------------------------------------------------- */
+@keyframes app-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(calc(-7px * var(--amp))); }
+}
+.app-float { animation: app-float calc(6.5s * var(--m)) ease-in-out infinite; }
+:root[data-motion="reduced"] .app-float { animation: none; }

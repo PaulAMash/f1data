@@ -21,7 +21,7 @@ import { trackPageView } from "@/lib/analytics";
 /* mailto: can never disagree.                                                 */
 /* -------------------------------------------------------------------------- */
 
-const SUPPORT_EMAIL = "paulmash2003@gmail.com";
+const SUPPORT_EMAIL = "support@pitwalliq.com";
 
 const REASONS = [
   ["App issues", "Something not working the way it should"],

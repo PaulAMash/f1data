@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Radar, Settings } from "lucide-react";
 import { useNavHistory } from "@/lib/nav";
+import { AppPromoStrip } from "@/components/promo/AppPromo";
 import { HoverCard } from "@/components/ui/HoverCard";
 import { useHoverTip } from "@/lib/useHoverTip";
 import { cx } from "@/lib/format";
@@ -52,8 +53,9 @@ export function NavBar({ active }: { active?: "home" | "explorer" | "history" | 
   const { canBack, canForward, back, forward } = useNavHistory();
 
   return (
-    // 90%, not 80%: on a phone the column is narrow and the copy passes
-    // directly under the bar, where 80% let it stay legible through the glass.
+  <>
+    {/* 90%, not 80%: on a phone the column is narrow and the copy passes
+        directly under the bar, where 80% let it stay legible through the glass. */}
     <header className="sticky top-0 z-40 border-b border-white/[0.06] bg-base-950/90 backdrop-blur-lg">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-1.5 px-3 sm:gap-3 sm:px-6">
         {/* THE WORDMARK IS HOME, and it is the only Home.
@@ -137,6 +139,14 @@ export function NavBar({ active }: { active?: "home" | "explorer" | "history" | 
         </div>
       </div>
     </header>
+    {/* THE iPHONE ANNOUNCEMENT RIDES UNDER THE BAR, NOT INSIDE IT. Inside
+        the sticky header it would follow every scroll, which turns an
+        announcement into a nag; in flow below it, it is seen on arrival and
+        then scrolls away like content. The strip gates itself — phones
+        only, the two reading pages only, gone for good once dismissed — so
+        every other page renders exactly what it did before. */}
+    <AppPromoStrip />
+  </>
   );
 }
 
