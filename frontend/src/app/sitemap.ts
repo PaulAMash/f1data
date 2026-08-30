@@ -16,6 +16,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE_URL}/explorer`, lastModified, changeFrequency: "daily", priority: 0.9 },
     { url: `${SITE_URL}/history`, lastModified, changeFrequency: "weekly", priority: 0.8 },
     { url: `${SITE_URL}/welcome`, lastModified, changeFrequency: "monthly", priority: 0.5 },
+    // The iPhone app's marketing page — the URL on the App Store listing.
+    { url: `${SITE_URL}/app`, lastModified, changeFrequency: "monthly", priority: 0.7 },
     // The public support/contact page — the URL app stores link to.
     { url: `${SITE_URL}/support`, lastModified, changeFrequency: "monthly", priority: 0.4 },
     // The privacy policy — required by App Store Connect, linked from the footer.
