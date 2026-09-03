@@ -215,7 +215,12 @@ export function WelcomeField() {
        properties by the same provider and could never have been picked up. */
     let s = readSurface();
 
-    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    /* Still on EITHER signal: the operating system's preference, or Reduced
+       chosen in Settings on a machine whose OS asks for full motion. The
+       media query alone missed the second reader — the one who told US they
+       wanted stillness rather than telling their OS. */
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      || motion === "reduced";
     const tempo = motion === "calm" ? 0.45 : 1;
 
     let w = 0, h = 0, rw = 0, rh = 0, fw = 0, fh = 0;

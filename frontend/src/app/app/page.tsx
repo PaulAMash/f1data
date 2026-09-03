@@ -1,16 +1,18 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight, BarChart3, BatteryCharging, Clock3, Flag, GitCompare, Hand,
   LineChart, MessageCircleQuestion, Radar, ShieldCheck, Timer, Zap,
 } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
+import { WelcomeField } from "@/components/welcome/WelcomeField";
 import { Footer } from "@/components/layout/Footer";
 import { BetaTag } from "@/components/ui/BetaTag";
 import { PhoneMock, type PhoneScreen } from "@/components/promo/PhoneMock";
 import { AppleLogo, AppStoreBadge } from "@/components/promo/AppleMark";
 import { useReveal } from "@/lib/useReveal";
+import { usePrefs } from "@/lib/prefs";
 import { trackPageView } from "@/lib/analytics";
 import { cx } from "@/lib/format";
 
@@ -59,6 +61,17 @@ export default function AppMarketingPage() {
 
       {/* ================= HERO — centred, device-forward ================= */}
       <section className="relative isolate overflow-hidden">
+        {/* THE WELCOME SCREEN'S OWN ROOM, working behind the hero — telemetry
+            streams, a ghosted circuit, a radar sweep. It is the product's
+            established "system running" atmosphere, already still under
+            Reduced and slow under Calm. Run at just over half strength and
+            sunk behind a dark scrim: on the welcome screen the room IS the
+            subject, here the device is — so the field reads as activity in
+            the building, not as a colour wash over the page. */}
+        <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+          <div className="absolute inset-0 opacity-[0.55]"><WelcomeField /></div>
+          <span className="absolute inset-0" style={{ background: "rgb(var(--base-950) / .45)" }} />
+        </div>
         <AmbientField />
 
         <div className="relative mx-auto flex max-w-4xl flex-col items-center px-4 pt-14 text-center sm:px-6 sm:pt-20">
@@ -121,8 +134,15 @@ export default function AppMarketingPage() {
           </div>
 
           <div className="stagger-4 app-float">
-            <PhoneMock />
+            <PhoneMock live />
           </div>
+        </div>
+
+        {/* On screens too narrow for the floating chips, the same findings
+            pass under the device one at a time — the phone keeps its
+            company on mobile without anything overlapping it. */}
+        <div className="relative mx-auto max-w-5xl px-4 pb-2 pt-8 lg:hidden">
+          <FindingTicker />
         </div>
 
         {/* the fade the device rises out of — the fold, drawn */}
@@ -136,15 +156,20 @@ export default function AppMarketingPage() {
         <p className="text-[26px] font-bold leading-tight tracking-[-0.03em] text-ink sm:text-[40px]">
           Formula 1 is watched
           <br />
-          <span className="bg-gradient-to-br from-white to-ink-muted bg-clip-text text-transparent">
-            with a phone in one hand.
-          </span>
+          <span className="app-shimmer-text">with a phone in one hand.</span>
         </p>
         <p className="mx-auto mt-4 max-w-md text-[14.5px] leading-relaxed text-ink-muted">
           This website was built for a desk. The app is the same intelligence,
           rebuilt for the sofa, the grandstand, and the group chat that starts
           arguing before the flag drops.
         </p>
+        <ul className="mx-auto mt-10 flex max-w-2xl flex-wrap items-center justify-center gap-x-4 gap-y-3 text-[12px] text-ink-muted sm:gap-x-5">
+          <Stat text="Every season since 1950" />
+          <span className="app-stat-dot" aria-hidden />
+          <Stat text="Every lap read, never sampled" />
+          <span className="app-stat-dot" aria-hidden style={{ animationDelay: "-1.6s" }} />
+          <Stat text="Every claim carries its source" />
+        </ul>
       </section>
 
       {/* ================= THREE ROOMS OF THE APP ================= */}
@@ -255,7 +280,8 @@ export default function AppMarketingPage() {
       <section ref={close.ref}
         className={cx("mx-auto max-w-7xl px-4 pb-24 pt-24 sm:px-6 sm:pb-28 sm:pt-28", close.className)}>
         <div className="panel-hero px-6 py-14 text-center sm:px-10 sm:py-20">
-          <span className="mx-auto grid h-11 w-11 place-items-center rounded-xl bg-accent/15 ring-1 ring-accent/30">
+          <span className="accent-breathing mx-auto grid h-11 w-11 place-items-center rounded-xl bg-accent/15 ring-1 ring-accent/30"
+            style={{ "--pulse": "rgb(var(--accent) / .25)" } as React.CSSProperties}>
             <Radar size={21} className="text-accent-soft" />
           </span>
           <h2 className="mx-auto mt-6 max-w-2xl text-[28px] font-bold leading-tight tracking-[-0.03em] sm:text-[38px]">
@@ -327,6 +353,49 @@ function Room({ n, chapter, title, line, points, screen, flip, beta }: {
         </div>
       </div>
     </section>
+  );
+}
+
+/** One quiet fact between two breathing dots on the statement's stat strip. */
+function Stat({ text }: { text: string }) {
+  return <li className="whitespace-nowrap">{text}</li>;
+}
+
+/* The floating chips' findings, one at a time, for screens with no room to
+ * float them. Same register — category labels, no numbers, no drivers — and
+ * under Reduced motion it settles on the first and stays there. */
+const FINDINGS: [string, string, "accent" | "speed"][] = [
+  ["Turning point", "The lap the lead changed hands", "accent"],
+  ["Clean-air pace", "Quicker than the finishing order shows", "speed"],
+  ["Strategy", "An undercut, and what it cost", "accent"],
+];
+const FINDING_MS = 4200;
+
+function FindingTicker() {
+  const { prefs } = usePrefs();
+  const [i, setI] = useState(0);
+  const still = prefs.motion === "reduced"
+    || (typeof window !== "undefined"
+        && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+  useEffect(() => {
+    if (still) return;
+    const t = setInterval(() => setI((n) => (n + 1) % FINDINGS.length), FINDING_MS);
+    return () => clearInterval(t);
+  }, [still]);
+
+  const [label, line, tone] = FINDINGS[i];
+  return (
+    <p key={i} aria-hidden
+      className={cx("flex items-center justify-center gap-2.5 text-[12px]",
+        !still && "app-screen-in")}>
+      <span className={cx("text-[9.5px] font-bold uppercase tracking-[0.16em]",
+        tone === "accent" ? "text-accent-soft" : "text-speed")}>
+        {label}
+      </span>
+      <span className="h-px w-4 bg-white/[0.14]" />
+      <span className="text-ink-muted">{line}</span>
+    </p>
   );
 }
 

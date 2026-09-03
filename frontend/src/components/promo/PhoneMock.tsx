@@ -1,5 +1,7 @@
 "use client";
+import { useEffect, useState } from "react";
 import { Radar } from "lucide-react";
+import { usePrefs } from "@/lib/prefs";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
@@ -21,9 +23,38 @@ import { cx } from "@/lib/format";
 
 export type PhoneScreen = "story" | "charts" | "ask";
 
-export function PhoneMock({ compact = false, screen = "story", className }: {
-  compact?: boolean; screen?: PhoneScreen; className?: string;
+const CYCLE: PhoneScreen[] = ["story", "charts", "ask"];
+/** Long enough to read a screen, short enough that a reader who lingers on
+ *  the hero sees the app move at least once. */
+const CYCLE_MS = 5200;
+
+export function PhoneMock({ compact = false, screen = "story", live = false, className }: {
+  compact?: boolean; screen?: PhoneScreen; live?: boolean; className?: string;
 }) {
+  /* THE LIVING PREVIEW. With `live`, the device walks its own rooms — Story,
+     Charts, Ask — the way a hand would, the tab highlight moving with it and
+     each screen arriving on a small fade. It is a state swap on a timer:
+     no video, no canvas, nothing measured per frame.
+
+     Stillness is honoured twice over: the reader's in-app Motion preference
+     and the operating system's, either one parks the cycle on Story. `live`
+     is a hero affordance; the rooms further down each hold their own screen
+     so a reader can actually study them. */
+  const { prefs } = usePrefs();
+  const [step, setStep] = useState(0);
+  const still = prefs.motion === "reduced"
+    || (typeof window !== "undefined"
+        && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const cycling = live && !still;
+
+  useEffect(() => {
+    if (!cycling) return;
+    const t = setInterval(() => setStep((n) => (n + 1) % CYCLE.length), CYCLE_MS);
+    return () => clearInterval(t);
+  }, [cycling]);
+
+  const shown = cycling ? CYCLE[step] : screen;
+
   return (
     <div className={cx("relative", className)}>
       {/* the light the device throws, in the accent, same as every other
@@ -42,7 +73,9 @@ export function PhoneMock({ compact = false, screen = "story", className }: {
           <span aria-hidden
             className={cx("absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-full bg-black/85",
               compact ? "h-[14px] w-[58px]" : "h-[18px] w-[74px]")} />
-          <Screen compact={compact} screen={screen} />
+          <div key={shown} className={cx(cycling && "app-screen-in")}>
+            <Screen compact={compact} screen={shown} live={live} />
+          </div>
         </div>
       </div>
     </div>
@@ -60,7 +93,9 @@ const SCREEN_TAB: Record<PhoneScreen, string> = {
   story: "Story", charts: "Charts", ask: "Ask",
 };
 
-function Screen({ compact, screen }: { compact: boolean; screen: PhoneScreen }) {
+function Screen({ compact, screen, live }: {
+  compact: boolean; screen: PhoneScreen; live?: boolean;
+}) {
   const [t1, t2] = SCREEN_TITLE[screen];
   return (
     <div className={cx("flex flex-col", compact ? "h-[380px] pt-7" : "h-[560px] pt-9 sm:h-[600px]")}>
@@ -75,7 +110,8 @@ function Screen({ compact, screen }: { compact: boolean; screen: PhoneScreen }) 
           compact ? "text-[11px]" : "text-[12.5px]")}>
           {t1}<span className="text-accent-soft"> {t2}</span>
         </span>
-        <span className="ml-auto rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-[0.12em] text-ink-faint">
+        <span className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-[0.12em] text-ink-faint">
+          {live && <span className="app-live-dot" aria-hidden />}
           Race
         </span>
       </div>
@@ -235,6 +271,26 @@ function ChartsBody({ compact }: { compact: boolean }) {
           {!compact && <StintRow widths={[24, 40, 36]} order={[0, 2, 1]} />}
         </div>
       </div>
+      {/* race control, in the event categories the real log uses — so the
+          tall screen is full, and the room reads as the charts tab rather
+          than two cards adrift in space */}
+      {!compact && (
+        <div className="rounded-xl border border-white/[0.06] bg-base-850/60 p-3">
+          <p className="text-[8.5px] font-bold uppercase tracking-[0.16em] text-ink-faint">
+            Race control
+          </p>
+          <ul className="mt-2 space-y-1.5">
+            <li className="flex items-center gap-2 text-[9.5px] text-ink-muted">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: "rgb(var(--amber))" }} />
+              Safety car deployed
+            </li>
+            <li className="flex items-center gap-2 text-[9.5px] text-ink-muted">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: "rgb(var(--good))" }} />
+              Track clear — green flag
+            </li>
+          </ul>
+        </div>
+      )}
     </>
   );
 }

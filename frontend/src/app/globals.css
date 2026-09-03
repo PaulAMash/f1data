@@ -3697,3 +3697,67 @@ html.theme-sweep::view-transition-new(root) {
 }
 .app-float { animation: app-float calc(6.5s * var(--m)) ease-in-out infinite; }
 :root[data-motion="reduced"] .app-float { animation: none; }
+
+/* V99 gave the page a pulse. Every loop below rides the product's own tempo
+   dials (--m, --amp) so Calm slows it, and every one carries its own reduced
+   rule so stillness is a complete state, not a broken animation. */
+
+/* A screen arriving inside the device as the preview cycles rooms — a fade
+   with the faintest rise, small enough to read as the app changing tab
+   rather than the mock being swapped. */
+@keyframes app-screen-in {
+  from { opacity: 0; transform: translateY(calc(5px * var(--amp))); }
+  to   { opacity: 1; transform: none; }
+}
+.app-screen-in { animation: app-screen-in var(--dur-4) var(--ease-out) both; }
+:root[data-motion="reduced"] .app-screen-in {
+  animation: fb-fade var(--dur-2) linear both;
+}
+
+/* The one emphasised phrase in the statement: a slow band of light crossing
+   the words. Reduced motion keeps the gradient and parks it — emphasis
+   without the sweep. */
+@keyframes app-shimmer { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+.app-shimmer-text {
+  background-image: linear-gradient(100deg,
+    rgb(var(--ink-muted)) 42%, rgb(var(--ink)) 50%, rgb(var(--accent-soft)) 54%,
+    rgb(var(--ink)) 58%, rgb(var(--ink-muted)) 66%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: app-shimmer calc(5.5s * var(--m)) var(--ease-in-out) infinite;
+}
+:root[data-motion="reduced"] .app-shimmer-text {
+  animation: none;
+  background-position: 50% 0;
+}
+
+/* The session dot on the preview's header: alive, quietly. The dot holds
+   still and a ring breathes out of it, which is this product's standing
+   vocabulary for "live" (see animate-ping-soft in the classification). */
+.app-live-dot { position: relative; width: 6px; height: 6px; flex: none; }
+.app-live-dot::before {
+  content: ""; position: absolute; inset: 0; border-radius: 999px;
+  background: rgb(var(--accent));
+}
+.app-live-dot::after {
+  content: ""; position: absolute; inset: 0; border-radius: 999px;
+  background: rgb(var(--accent) / .5);
+  animation: ping-soft calc(2.4s * var(--m)) cubic-bezier(0, 0, .2, 1) infinite;
+}
+@keyframes ping-soft {
+  0% { transform: scale(.85); opacity: .55; }
+  70%, 100% { transform: scale(2.1); opacity: 0; }
+}
+:root[data-motion="reduced"] .app-live-dot::after { animation: none; opacity: 0; }
+
+/* The divider dots on the stat strip breathe in sequence — three small
+   signs of life between three still facts. */
+@keyframes app-stat-dot { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+.app-stat-dot {
+  width: 4px; height: 4px; border-radius: 999px; flex: none;
+  background: rgb(var(--accent-soft));
+  animation: app-stat-dot calc(3.2s * var(--m)) ease-in-out infinite;
+}
+:root[data-motion="reduced"] .app-stat-dot { animation: none; opacity: .6; }
