@@ -2,7 +2,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowRight, Smartphone, Sparkles, X } from "lucide-react";
+import { ArrowRight, Smartphone, X } from "lucide-react";
+import { AppleLogo } from "./AppleMark";
 import { PhoneMock } from "./PhoneMock";
 
 /* -------------------------------------------------------------------------- */
@@ -55,8 +56,8 @@ export function AppPromoBand() {
                 className="transition-transform duration-[--dur-2] group-hover/app:translate-x-0.5" />
             </Link>
             <span className="inline-flex items-center gap-1.5 text-[12.5px] text-ink-faint">
-              <Sparkles size={13} className="text-accent-soft" />
-              Coming soon to the App&nbsp;Store
+              <AppleLogo size={11} className="text-ink-muted" />
+              Coming soon to the App&nbsp;Store · iPhone first — no Android yet
             </span>
           </div>
         </div>

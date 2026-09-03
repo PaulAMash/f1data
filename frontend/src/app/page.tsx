@@ -7,6 +7,7 @@ import { NavBar } from "@/components/layout/NavBar";
 import { Footer } from "@/components/layout/Footer";
 import { HeroField } from "@/components/landing/HeroField";
 import { AppPromoBand } from "@/components/promo/AppPromo";
+import { AppleLogo } from "@/components/promo/AppleMark";
 import { FeaturedRace } from "@/components/landing/FeaturedRace";
 import { Flag, Gauge, LineChart } from "@/components/ui/MotionIcon";
 import { usePrefs } from "@/lib/prefs";
@@ -174,6 +175,20 @@ export default function Landing() {
                   </span>
                 )}
               </div>
+              {/* THE APP, SAID ON THE FIRST SCREEN. One quiet line under the
+                  one control — a reader on a phone learns the app exists
+                  before they have scrolled at all, and nothing competes with
+                  Start exploring for the press. The full pitch is chapter 03
+                  and /app; this is only the signpost. */}
+              <Link href="/app"
+                className="group/appq mt-5 inline-flex items-center gap-2 rounded-full border border-white/[0.10]
+                           bg-base-850/70 py-1.5 pl-3 pr-2.5 text-[12.5px] text-ink-muted backdrop-blur-sm
+                           transition-colors duration-[--dur-2] hover:border-accent/30 hover:text-ink">
+                <AppleLogo size={11} className="text-ink" />
+                <span><span className="font-semibold text-ink">Pitwall IQ for iPhone</span> — coming soon</span>
+                <ArrowRight size={13}
+                  className="text-ink-faint transition-transform duration-[--dur-2] group-hover/appq:translate-x-0.5" />
+              </Link>
             </div>
           </div>
         </div>

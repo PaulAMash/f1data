@@ -85,7 +85,8 @@ export function Footer() {
           <span className="max-w-2xl">
             An independent project. Not associated with, endorsed by, or affiliated
             with Formula 1, the FIA, or any competing team. F1 and Formula 1 are
-            trademarks of Formula One Licensing BV.
+            trademarks of Formula One Licensing BV. Apple, the Apple logo and
+            App&nbsp;Store are trademarks of Apple&nbsp;Inc.
           </span>
           {/* The legal strip is where a reader — or a store reviewer — expects
               to find these, so they live here rather than in the primary nav. */}
