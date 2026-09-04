@@ -96,7 +96,7 @@ def anchor(gp: GrandPrix) -> datetime | None:
     return min(starts) if starts else _instant(gp.date)
 
 
-def _same_event(a: GrandPrix, b: GrandPrix) -> bool:
+def same_event(a: GrandPrix, b: GrandPrix) -> bool:
     """Are these two records the same Grand Prix?
 
     Two independent signals, both required, because either alone produces a
@@ -147,7 +147,7 @@ def merge(spine: list[GrandPrix], detail: list[GrandPrix]) -> list[GrandPrix]:
     pool = list(detail)
     merged: list[GrandPrix] = []
     for event in spine:
-        match = next((d for d in pool if _same_event(event, d)), None)
+        match = next((d for d in pool if same_event(event, d)), None)
         if match is not None:
             pool.remove(match)
             merged.append(_enrich(event, match))

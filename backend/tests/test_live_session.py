@@ -258,6 +258,11 @@ def weekend_in_progress(monkeypatch):
         return [gp], DataSource.LIVE
 
     monkeypatch.setattr(dsm, "get_grands_prix", calendar)
+    # The schedule route asks for the calendar WITH its provenance, so both
+    # doors have to lead to the fixture.
+    monkeypatch.setattr(dsm, "get_grands_prix_detailed",
+                        lambda year: (*calendar(year), {"mode": "test", "sources": {},
+                                                        "retained": 0, "rounds": 1}))
     return now.year
 
 
@@ -293,6 +298,9 @@ def test_a_weekend_stays_on_the_schedule_during_its_own_final_session(monkeypatc
                           session_times={"Race": started.isoformat()})], DataSource.LIVE
 
     monkeypatch.setattr(dsm, "get_grands_prix", calendar)
+    monkeypatch.setattr(dsm, "get_grands_prix_detailed",
+                        lambda year: (*calendar(year), {"mode": "test", "sources": {},
+                                                        "retained": 0, "rounds": 1}))
 
     body = client.get("/api/schedule", params={"year": datetime.now(UTC).year}).json()
     assert [e["name"] for e in body["events"]] == ["Finale Grand Prix"]

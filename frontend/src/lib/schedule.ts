@@ -38,23 +38,26 @@ export interface NextUp {
  *  changes minute to minute is the clock, and the clock is local. */
 const SCHEDULE_TTL_MS = 5 * 60 * 1000;
 
-const inflight = new Map<number, { at: number; promise: Promise<Schedule> }>();
+let inflight: { at: number; promise: Promise<Schedule> } | null = null;
 
 /** One request per calendar, however many components want it.
  *
  * The Schedule page mounts three readers of the same endpoint — the live
  * panel, the countdown and the list — and each used to fetch for itself. They
- * ask the same question and are entitled to the same answer. */
-function loadSchedule(limit: number, force = false): Promise<Schedule> {
-  const hit = inflight.get(limit);
-  if (!force && hit && Date.now() - hit.at < SCHEDULE_TTL_MS) return hit.promise;
-  const promise = api.schedule(limit);
-  inflight.set(limit, { at: Date.now(), promise });
+ * ask the same question and are entitled to the same answer. It used to be
+ * keyed by `limit`, which meant three readers asking for three different
+ * lengths of the same season and getting three different answers about which
+ * Grands Prix exist. There is one season, so there is one request. */
+function loadSchedule(force = false): Promise<Schedule> {
+  if (!force && inflight && Date.now() - inflight.at < SCHEDULE_TTL_MS) {
+    return inflight.promise;
+  }
+  const promise = api.schedule();
+  const entry = { at: Date.now(), promise };
+  inflight = entry;
   // A failure must not be cached, or one bad moment costs the page five
   // minutes of nothing.
-  promise.catch(() => {
-    if (inflight.get(limit)?.promise === promise) inflight.delete(limit);
-  });
+  promise.catch(() => { if (inflight === entry) inflight = null; });
   return promise;
 }
 
@@ -65,14 +68,14 @@ function loadSchedule(limit: number, force = false): Promise<Schedule> {
  *  eventually sees the new calendar. It does not need to for the *states* to
  *  move — every instant that decides them is already in the payload, and
  *  `stateAt` reads them against the local clock every tick. */
-export function useSchedule(limit = 6) {
+export function useSchedule() {
   const [data, setData] = useState<Schedule | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let live = true;
     const ask = (force = false) => {
-      loadSchedule(limit, force)
+      loadSchedule(force)
         .then((d) => { if (live) { setData(d); setFailed(false); } })
         .catch(() => { if (live && !data) setFailed(true); });
     };
@@ -80,7 +83,7 @@ export function useSchedule(limit = 6) {
     const id = setInterval(() => ask(true), SCHEDULE_TTL_MS);
     return () => { live = false; clearInterval(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [limit]);
+  }, []);
 
   return { schedule: data, failed, loading: !data && !failed };
 }
@@ -226,8 +229,8 @@ export function runningFor(ms: number): string {
 /** The live session, fetched and derived in one call — for callers that only
  *  need to know whether anything is on track, such as a section heading that
  *  must not say "hasn't happened yet" above a session that is happening. */
-export function useLiveSession(limit = 6): LiveSession | null {
-  const { schedule } = useSchedule(limit);
+export function useLiveSession(): LiveSession | null {
+  const { schedule } = useSchedule();
   const now = useNow(true);
   return useLiveNow(schedule, now);
 }

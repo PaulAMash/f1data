@@ -37,7 +37,7 @@ from ..models import (
 )
 from . import (
     calendar_merge, headshots, jolpica_adapter, mock_adapter, openf1_adapter,
-    pitstop_service,
+    pitstop_service, season_memory,
 )
 from . import pitwall_adapter as fastf1
 from .pitwall_runtime import ArchiveClientUnavailable, explain_import
@@ -1181,7 +1181,23 @@ def get_grands_prix(year: int) -> tuple[list[GrandPrix], DataSource]:
     precise as the sources allow. Either source failing costs detail or
     ordering, never an event.
     """
+    gps, src, _report = get_grands_prix_detailed(year)
+    return gps, src
+
+
+def get_grands_prix_detailed(year: int) -> tuple[list[GrandPrix], DataSource, dict]:
+    """The calendar, plus how many rounds each source actually contributed.
+
+    THE THIRD RETURN VALUE IS A DEBUGGING TOOL WITH A HISTORY. "The schedule
+    is missing the last three races" is a sentence that cost two releases to
+    answer, because from the outside a short season and a filtered season look
+    identical. The counts say which it is in one request: if Jolpica reported
+    23 and the page shows 6, the calendar is fine and something downstream is
+    trimming; if Jolpica reported 20, the season really did arrive short and
+    the question is why.
+    """
     settings = get_settings()
+    report: dict = {"mode": "mock", "sources": {}, "rounds": 0}
     if not settings.mock_mode and settings.enable_live_fetch:
         def ask(fn) -> list[GrandPrix]:
             try:
@@ -1204,10 +1220,23 @@ def get_grands_prix(year: int) -> tuple[list[GrandPrix], DataSource]:
         else:
             spine, detail = ask(jolpica_adapter.list_grands_prix), []
 
-        merged = calendar_merge.merge(spine, detail)
+        fetched = calendar_merge.merge(spine, detail)
+        merged = season_memory.widest(year, fetched)
         if merged:
-            return merged, DataSource.LIVE
-    return mock_adapter.mock_grands_prix(year), DataSource.MOCK
+            report = {
+                "mode": "live",
+                "sources": {"jolpica": len(spine), "openf1": len(detail)},
+                # Rounds this answer owes to the remembered calendar rather
+                # than to what the sources just said — non-zero means a source
+                # is degraded right now and the season survived it.
+                "retained": len(merged) - len(fetched),
+                "rounds": len(merged),
+            }
+            return merged, DataSource.LIVE, report
+
+    gps = mock_adapter.mock_grands_prix(year)
+    report["rounds"] = len(gps)
+    return gps, DataSource.MOCK, report
 
 
 # --------------------------------------------------------------------------- #

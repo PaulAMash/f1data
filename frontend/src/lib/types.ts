@@ -269,9 +269,23 @@ export interface LiveSession {
   next_session: SessionRef | null;
   sessions: ScheduledSession[];
 }
+/** Where the season came from, and how long it actually is. Diagnostics: it
+ *  makes "the schedule is missing the last three races" answerable from one
+ *  response instead of a release — `rounds` is the season's true length,
+ *  `returned` is how many of them this payload carries. */
+export interface CalendarReport {
+  mode?: string;
+  sources?: Record<string, number>;
+  retained?: number;
+  rounds?: number;
+  returned?: number;
+}
 export interface Schedule {
   source: string; year: number; now: string; mock: boolean;
+  calendar?: CalendarReport;
   live?: LiveSession | null;
+  /** THE WHOLE SEASON, in order — every round, run or not. What each session
+   *  is doing right now is `state`, per session; it never decides membership. */
   events: ScheduleEvent[];
 }
 export interface Meta {

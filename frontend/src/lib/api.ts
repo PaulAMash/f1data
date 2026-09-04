@@ -130,10 +130,13 @@ export const api = {
     get<{ source: string; sessions: string[]; scheduled: string[];
           live: string[]; states: Record<string, SessionState>; known: boolean }>(
       "/api/sessions/available", { year, gp }),
-  /* The upcoming calendar. Small, cacheable, and the single source both the
-     countdown and the schedule read — see backend app/schedule.py. */
-  schedule: (limit = 6) =>
-    get<Schedule>("/api/schedule", { limit }),
+  /* THE WHOLE SEASON, and deliberately without a `limit`.
+     It used to pass one — six by default — and that number decided which
+     Grands Prix existed as far as every page was concerned: on a Friday in
+     September a twenty-three round season arrived as six events ending at
+     São Paulo. A count is a view, never a calendar. What each session is
+     doing right now travels per session as `state`. */
+  schedule: () => get<Schedule>("/api/schedule"),
   // The backend caps every probe and runs them together, so this answers in
   // seconds or not at all — 20s is generous headroom, not a target.
   // a liveness probe answers "right now" or it answers nothing useful

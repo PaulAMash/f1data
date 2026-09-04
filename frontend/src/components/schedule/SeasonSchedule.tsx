@@ -1,5 +1,5 @@
 "use client";
-import { CalendarDays, MapPin } from "lucide-react";
+import { CalendarDays, Check, MapPin } from "lucide-react";
 import { useLocale } from "@/lib/locale";
 import {
   sessionAbbr, sessionDay, stateAt, useNextUp, useNow, useSchedule, weekendSpan,
@@ -8,34 +8,40 @@ import type { ScheduleEvent, ScheduledSession } from "@/lib/types";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
-/* WHAT IS COMING.                                                            */
+/* THE SEASON.                                                                */
+/*                                                                            */
+/* Every round of it, in order — not the next few.                            */
+/*                                                                            */
+/* THE BUG THIS SHAPE EXISTS TO CLOSE. This was `UpcomingSchedule`, and it     */
+/* asked the API for eight events; the countdown beside it asked for six. Two  */
+/* numbers, neither of them a fact about Formula 1, deciding between them      */
+/* which Grands Prix existed as far as this page was concerned. On a Friday in */
+/* September a twenty-three round season came back as six weekends ending at   */
+/* São Paulo, and Las Vegas, Qatar and Abu Dhabi were missing from the page    */
+/* whose entire job is to say what is coming. Twice.                           */
+/*                                                                            */
+/* A RACE IS ON THE CALENDAR OR IT IS NOT. Whether it has been run, is being   */
+/* run, or is three months away is a different question, answered per session  */
+/* by `state`, and the two are kept apart: nothing here removes a round for    */
+/* being in the past or for being far ahead. What the clock changes is how a   */
+/* round is DRAWN — run weekends recede, the next one is marked, one on track  */
+/* says so — never whether it is drawn at all.                                 */
 /*                                                                            */
 /* An event schedule, not a table. Each Grand Prix is a card with its own      */
 /* sessions laid out as a row of times, because the unit a reader thinks in    */
 /* is the weekend — "when is Monza" — and a grid of one-session-per-row makes  */
-/* them assemble that themselves.                                             */
-/*                                                                            */
-/* ON A PHONE the session row becomes a two-column grid rather than a          */
-/* horizontal scroller: five sessions at four columns is one cramped line and  */
-/* a hidden Race, which is the session most people opened the page for.        */
+/* them assemble that themselves. On a phone the session row becomes a         */
+/* two-column grid rather than a horizontal scroller: five sessions at four    */
+/* columns is one cramped line and a hidden Race, which is the session most    */
+/* people opened the page for.                                                 */
 /*                                                                            */
 /* IT SAYS WHICH WEEKEND, NOT HOW LONG. Each card used to carry an "in 7       */
-/* hours" badge, directly beneath a countdown giving the same number to the    */
-/* second — the same fact told twice, and the smaller telling drew the eye     */
-/* away from the better one. A card's job here is identity and order: which    */
-/* Grand Prix, where, when in the calendar, and which session is next or on    */
-/* track. The time remaining belongs to the countdown, once.                   */
-/*                                                                            */
-/* All dates come from /api/schedule — the same source the countdown reads and */
-/* the same session times that decide availability, so this list can never     */
-/* disagree with either. Times print in the reader's own zone and clock        */
-/* preference (lib/locale).                                                    */
+/* hours" badge directly beneath a countdown giving the same number to the     */
+/* second. The time remaining belongs to the countdown, once.                  */
 /* -------------------------------------------------------------------------- */
 
-export function UpcomingSchedule({ limit = 6, className }: {
-  limit?: number; className?: string;
-}) {
-  const { schedule, loading, failed } = useSchedule(limit);
+export function SeasonSchedule({ className }: { className?: string }) {
+  const { schedule, loading, failed } = useSchedule();
   const now = useNow(!!schedule);
   const next = useNextUp(schedule ?? null, now);
 
@@ -49,22 +55,42 @@ export function UpcomingSchedule({ limit = 6, className }: {
   if (failed || !schedule?.events?.length) {
     return (
       <div className={cx("panel px-6 py-10 text-center", className)}>
-        <p className="text-[14px] font-medium text-ink">No upcoming sessions</p>
+        <p className="text-[14px] font-medium text-ink">No calendar to show</p>
         <p className="mx-auto mt-1.5 max-w-sm text-[13px] leading-relaxed text-ink-muted">
           {failed
             ? "The calendar could not be read just now. It is upstream of us and usually brief."
-            : "The season has finished. The next one will appear here as soon as its calendar is published."}
+            : "The season's calendar has not been published yet. It will appear here as soon as it is."}
         </p>
       </div>
     );
   }
 
+  const events = schedule.events;
+  const run = events.filter((e) => e.completed).length;
+
   return (
-    <div className={cx("grid gap-4", className)}>
-      {schedule.events.map((event) => (
-        <EventCard key={`${event.year}-${event.name}`} event={event} now={now}
-          nextSessionName={next?.event.name === event.name ? next.session.name : null} />
-      ))}
+    <div className={className}>
+      {/* THE COUNT IS THE POINT, and it is stated rather than left to be
+          scrolled for: a season that has quietly lost its last three rounds
+          looks exactly like a complete one until you count. */}
+      <p className="mb-3.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-ink-faint">
+        <span className="font-semibold tabular-nums text-ink-muted">
+          {events.length} rounds
+        </span>
+        <span aria-hidden>·</span>
+        <span className="tabular-nums">{run} run</span>
+        <span aria-hidden>·</span>
+        <span className="tabular-nums">{events.length - run} to come</span>
+      </p>
+
+      <ol className="grid gap-4">
+        {events.map((event) => (
+          <li key={`${event.year}-${event.round}-${event.name}`}>
+            <EventCard event={event} now={now}
+              nextSessionName={next?.event.name === event.name ? next.session.name : null} />
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
@@ -74,21 +100,33 @@ function EventCard({ event, now, nextSessionName }: {
 }) {
   const liveName = event.sessions.find((s) => stateAt(s, now) === "live")?.name ?? null;
   const isNextEvent = nextSessionName !== null;
+  /* Run, and nothing left to run. `completed` is the server's answer about the
+     race; a weekend is finished when every session of it has been read. */
+  const finished = !liveName && event.sessions.length > 0
+    && event.sessions.every((s) => stateAt(s, now) === "available");
+
   return (
     <article className={cx("panel overflow-hidden transition-colors",
-      liveName ? "border-accent/30" : isNextEvent && "border-accent/20")}>
+      liveName ? "border-accent/30" : isNextEvent ? "border-accent/20" : undefined,
+      // A weekend already read steps back rather than disappearing: it is still
+      // part of the season, and a reader looking for "when was Monza" needs it.
+      finished && "opacity-[0.62] hover:opacity-100")}>
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 px-5 py-4 sm:px-6 sm:py-5">
         <div className="min-w-0">
-          {/* One line of status, and only when there is one to give. A weekend
-              on track says so; the one after it is simply next. */}
+          {/* One line of status, and only when there is one to give. */}
           {liveName ? (
             <p className="mb-1.5 flex items-center gap-2 text-[10.5px] font-bold uppercase tracking-[0.18em] text-accent-soft">
               <span aria-hidden className="live-dot" />
               Live now · {sessionAbbr(liveName)}
             </p>
-          ) : isNextEvent && (
+          ) : isNextEvent ? (
             <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-[0.18em] text-accent-soft">
               Next Grand Prix
+            </p>
+          ) : finished && (
+            <p className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.18em] text-ink-faint">
+              <Check size={11} className="shrink-0" />
+              Completed
             </p>
           )}
           <h3 className="truncate text-[18px] font-semibold tracking-[-0.02em] text-ink sm:text-[20px]">
@@ -105,8 +143,6 @@ function EventCard({ event, now, nextSessionName }: {
               <CalendarDays size={12} className="shrink-0 text-ink-faint" />
               {weekendSpan(event)}
             </span>
-            {/* The round, where the calendar knows it — the number people use
-                to say where in a season they are. */}
             {typeof event.round === "number" && event.round > 0 && (
               <span className="text-ink-faint">Round {event.round}</span>
             )}
@@ -150,9 +186,8 @@ function SessionCell({ session, now, isNext }: {
           </>
         ) : <span className="text-ink-faint">TBC</span>}
       </span>
-      {/* Where this session is in its life, in one word — because on a
-          schedule of upcoming events an in-progress weekend still shows its
-          Friday, and "already read" and "on track now" are not the same thing. */}
+      {/* Where this session is in its life, in one word — "already read" and
+          "on track now" are not the same thing, and neither is "months away". */}
       {isLive ? (
         <span className="text-[10px] font-semibold uppercase tracking-wide text-accent-soft">
           On track

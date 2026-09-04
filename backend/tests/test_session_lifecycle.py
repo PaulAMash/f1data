@@ -258,14 +258,35 @@ def test_current_opens_on_a_session_that_has_actually_been_run():
         "the Explorer's default session must be one that exists"
 
 
-def test_schedule_route_lists_only_sessions_still_to_come():
+def test_schedule_route_marks_what_has_run_without_hiding_what_has_not():
+    """WHAT THIS TEST NOW GUARANTEES, AND WHY IT CHANGED.
+
+    It used to assert that every event on the schedule had something still to
+    come — which was true of the old endpoint and was the bug: the schedule
+    was a window onto the future, so a season arrived missing both its past
+    and, once a `limit` was applied, its last few rounds. V103 made it the
+    season, so membership is no longer the assertion. The guarantee that
+    actually mattered survives intact, and is what is checked here: nothing on
+    the calendar is offered as readable before it has been run.
+    """
     r = client.get("/api/schedule")
     assert r.status_code == 200
     body = r.json()
+    assert body["events"], "a season in progress has rounds"
+    assert body["calendar"]["rounds"] == len(body["events"]), \
+        "the whole season is returned, and it says so"
+    for ev in body["events"]:
+        for s in ev["sessions"]:
+            assert (s["state"] == "available") is s["available"]
+            if s["state"] == "upcoming":
+                assert not s["available"], f"{ev['name']} {s['name']}"
+
+
+def test_the_window_view_still_lists_only_what_is_still_to_come():
+    """`limit` is kept for callers written against the old shape, and it still
+    means exactly what it meant."""
+    body = client.get("/api/schedule", params={"limit": 6}).json()
     assert body["events"], "there should be upcoming events in a season in progress"
-    # Every event on an upcoming schedule has something left to run — a
-    # session still to start, or one on track right now. Testing only for the
-    # former dropped a Grand Prix off the list during its own final session.
     for ev in body["events"]:
         assert ev["next_session"] or ev["live_session"]
         assert any(not s["available"] for s in ev["sessions"])

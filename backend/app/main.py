@@ -406,16 +406,38 @@ def sessions_available(year: int = Query(...), gp: str = Query(...)):
 
 
 @app.get("/api/schedule")
-def schedule_route(year: int | None = Query(None), limit: int = Query(6)):
-    """The upcoming calendar: what is next, and what follows it.
+def schedule_route(year: int | None = Query(None), limit: int | None = Query(None)):
+    """The season's calendar — all of it — with the state of every session.
 
-    ONE SOURCE OF TRUTH WITH THE AVAILABILITY RULES. The countdown and the
-    schedule read this, and this reads the same `session_times` that decide
-    whether a session may be loaded — so nothing can be counted down to and
-    simultaneously offered as readable, and no date is maintained by hand.
+    THE BUG THIS SHAPE EXISTS TO CLOSE. This used to answer with a WINDOW:
+    only events with a session still to come, and at most `limit` of them,
+    six by default. Both filters decide *membership of the calendar* from
+    facts that have nothing to do with it — what time it is, and an arbitrary
+    count — so on a Friday in September a twenty-three round season came back
+    as six events ending at São Paulo, and Las Vegas, Qatar and Abu Dhabi were
+    missing from the page whose entire job is to say what is coming. V102
+    stopped the *sources* from truncating the season (adapters/calendar_merge);
+    this is the truncation that sat downstream of them and did it anyway.
+
+    A RACE BELONGS TO A SEASON BECAUSE IT IS ON THE CALENDAR. Whether it has
+    been run, is running, or is months away is a different question with a
+    different answer — `state`, per session — and the two are kept apart here
+    so that neither can quietly become the other. The whole season is returned
+    and the caller decides what to show.
+
+    `limit` is kept for callers written against the old shape: it trims to the
+    next N events that still have something to come, exactly as before. It is
+    a VIEW of the calendar, never the calendar — no caller should have to pass
+    a number to be told the truth about a season.
+
+    ONE SOURCE OF TRUTH WITH THE AVAILABILITY RULES. The countdown, the
+    schedule and the live state read this, and this reads the same
+    `session_times` that decide whether a session may be loaded — so nothing
+    can be counted down to and simultaneously offered as readable, and no date
+    is maintained by hand.
 
     Cheap by construction: it is the season calendar the Explorer already
-    fetches, filtered and sorted. No session payloads are touched.
+    fetches, sorted and stamped. No session payloads are touched.
     """
     from datetime import date as _date
 
@@ -425,12 +447,11 @@ def schedule_route(year: int | None = Query(None), limit: int = Query(6)):
 
     def season(y: int):
         try:
-            gps, src = service.get_grands_prix(y)
-            return gps, src
+            return service.get_grands_prix_detailed(y)
         except Exception:  # noqa: BLE001
-            return [], DataSource.MOCK
+            return [], DataSource.MOCK, {"mode": "error", "sources": {}, "rounds": 0}
 
-    gps, src = season(year)
+    gps, src, report = season(year)
     # A season that has finished rolls into the next one rather than showing
     # an empty schedule through the winter. A season whose LAST session is
     # running has not finished — rolling over then would have thrown away the
@@ -438,9 +459,9 @@ def schedule_route(year: int | None = Query(None), limit: int = Query(6)):
     spent = (not app_schedule.next_session_across(gps, now)
              and not app_schedule.live_now(gps, now))
     if gps and spent:
-        nxt_gps, nxt_src = season(year + 1)
+        nxt_gps, nxt_src, nxt_report = season(year + 1)
         if nxt_gps and app_schedule.next_session_across(nxt_gps, now):
-            gps, src, year = nxt_gps, nxt_src, year + 1
+            gps, src, report, year = nxt_gps, nxt_src, nxt_report, year + 1
 
     def describe(g, s: str) -> dict:
         start = app_schedule.session_start(g, s)
@@ -468,16 +489,14 @@ def schedule_route(year: int | None = Query(None), limit: int = Query(6)):
                 "circuit": g.circuit.name if g.circuit else None,
                 "date": g.date}
 
+    # EVERY ROUND OF THE SEASON, IN ORDER. No event is dropped for being in
+    # the past and none for being too far ahead: a Grand Prix is on the
+    # calendar or it is not, and the clock has no vote. What the clock decides
+    # is `state`, per session, which travels alongside.
     events = []
     for g in gps:
-        # An event belongs on an upcoming schedule while anything about it is
-        # still to come — a session yet to start, OR one running right now.
-        # Testing only for the former dropped a Grand Prix off the schedule
-        # during its own final session, which is the moment it matters most.
         nxt = app_schedule.next_session(g, now)
         running = app_schedule.live_sessions(g, now)
-        if not nxt and not running:
-            continue
         events.append({
             **place(g),
             "sessions": [describe(g, s) for s in (g.sessions or [])],
@@ -485,8 +504,12 @@ def schedule_route(year: int | None = Query(None), limit: int = Query(6)):
             "live_session": running[0] if running else None,
             "completed": g.completed,
         })
-        if len(events) >= max(1, min(limit, 30)):
-            break
+
+    # The old window, for callers written against it. Only when explicitly
+    # asked for — the default is the truth about the season.
+    if limit is not None:
+        ahead = [e for e in events if e["next_session"] or e["live_session"]]
+        events = ahead[:max(1, min(limit, 30))]
 
     # WHAT IS HAPPENING RIGHT NOW, asked once, of the whole season rather than
     # of the trimmed list above — so a live session is never lost to a `limit`.
@@ -511,7 +534,13 @@ def schedule_route(year: int | None = Query(None), limit: int = Query(6)):
         }
 
     return {"source": src.value, "year": year, "now": now.isoformat(),
-            "mock": settings.mock_mode, "live": live, "events": events}
+            "mock": settings.mock_mode,
+            # WHERE THE SEASON CAME FROM, so a short calendar can be diagnosed
+            # from one request instead of a release. `rounds` is the season's
+            # true length; `returned` is how many of them this response carries
+            # — they differ only when a caller asked for the `limit` view.
+            "calendar": {**report, "returned": len(events)},
+            "live": live, "events": events}
 
 
 # --------------------------------------------------------------------------- #

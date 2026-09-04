@@ -34,7 +34,7 @@ import { cx } from "@/lib/format";
 /* -------------------------------------------------------------------------- */
 
 export function NextSession({ className }: { className?: string }) {
-  const { schedule, loading, failed } = useSchedule(6);
+  const { schedule, loading, failed } = useSchedule();
   const { prefs } = usePrefs();
 
   /* The clock ticks only when there is something to count. Under Reduced the
@@ -214,7 +214,7 @@ function Skeleton({ className }: { className?: string }) {
 /* rather than the headline.                                                   */
 /* -------------------------------------------------------------------------- */
 export function NextSessionStrip({ className }: { className?: string }) {
-  const { schedule, failed } = useSchedule(4);
+  const { schedule, failed } = useSchedule();
   const { prefs } = usePrefs();
   const now = useNow(!!schedule);
   const next = useNextUp(schedule ?? null, now);

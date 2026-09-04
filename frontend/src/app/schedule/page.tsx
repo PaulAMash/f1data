@@ -5,7 +5,7 @@ import { ArrowRight } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
 import { Footer } from "@/components/layout/Footer";
 import { SessionHero } from "@/components/schedule/LiveSession";
-import { UpcomingSchedule } from "@/components/schedule/UpcomingSchedule";
+import { SeasonSchedule } from "@/components/schedule/SeasonSchedule";
 import { trackPageView } from "@/lib/analytics";
 
 /* -------------------------------------------------------------------------- */
@@ -42,9 +42,9 @@ export default function SchedulePage() {
             What happens next
           </h1>
           <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-ink-muted">
-            Every session of the weekend ahead, and the Grands Prix after it —
-            in your own time zone. While a session is on track this page says
-            so. Once it has run,{" "}
+            The whole season — every round and every session of it, in your own
+            time zone. While a session is on track this page says so. Once it
+            has run,{" "}
             <Link href="/explorer" className="underline decoration-dotted underline-offset-2 hover:text-ink">
               Explore
             </Link>{" "}
@@ -60,10 +60,11 @@ export default function SchedulePage() {
           <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
             <div>
               <h2 className="text-[20px] font-semibold tracking-[-0.02em] text-ink">
-                The weekends ahead
+                The season
               </h2>
               <p className="mt-1 text-[13px] text-ink-muted">
-                Session times are shown in your device&rsquo;s time zone.
+                Every round, in order. Session times are shown in your
+                device&rsquo;s time zone.
               </p>
             </div>
             <Link href="/history"
@@ -73,7 +74,7 @@ export default function SchedulePage() {
                 className="transition-transform duration-[--dur-2] group-hover/hist:translate-x-0.5" />
             </Link>
           </div>
-          <UpcomingSchedule className="mt-4" limit={8} />
+          <SeasonSchedule className="mt-4" />
         </section>
       </main>
 

@@ -19,6 +19,17 @@ def get_grands_prix(year: int) -> tuple[list[GrandPrix], DataSource]:
     return mark_completed(gps), src
 
 
+def get_grands_prix_detailed(year: int) -> tuple[list[GrandPrix], DataSource, dict]:
+    """The calendar, and how many rounds each source contributed to it.
+
+    The report is what makes "the schedule is missing the last three races"
+    answerable without a bisect: it says whether the season arrived short or
+    was trimmed after it arrived. See dsm.get_grands_prix_detailed.
+    """
+    gps, src, report = dsm.get_grands_prix_detailed(year)
+    return mark_completed(gps), src, report
+
+
 def mark_completed(gps: list[GrandPrix]) -> list[GrandPrix]:
     """Stamp every event with what has actually been run.
 

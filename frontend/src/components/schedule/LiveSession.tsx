@@ -44,7 +44,7 @@ import { cx } from "@/lib/format";
 export function LiveSessionPanel({ live, className, onOpenSchedule }: {
   live?: Live | null; className?: string; onOpenSchedule?: boolean;
 }) {
-  const { schedule } = useSchedule(6);
+  const { schedule } = useSchedule();
   const now = useNow(true);
   const derived = useLiveNow(schedule, now);
   const session = live ?? derived;
@@ -236,7 +236,7 @@ function WeekendRail({ sessions, liveName }: {
 /* changeover happens on the second, without a reload.                         */
 /* -------------------------------------------------------------------------- */
 export function SessionHero({ className }: { className?: string }) {
-  const { schedule } = useSchedule(6);
+  const { schedule } = useSchedule();
   const now = useNow(true);
   const live = useLiveNow(schedule, now);
   return live
@@ -250,7 +250,7 @@ export function SessionHero({ className }: { className?: string }) {
 /* counting down to FP2 while FP1 is running buries the more interesting fact. */
 /* -------------------------------------------------------------------------- */
 export function LiveStrip({ live, className }: { live?: Live | null; className?: string }) {
-  const { schedule } = useSchedule(4);
+  const { schedule } = useSchedule();
   const { prefs } = usePrefs();
   const now = useNow(true);
   const derived = useLiveNow(schedule, now);
@@ -287,7 +287,7 @@ export function LiveStrip({ live, className }: { live?: Live | null; className?:
  *  Used where the page already has a subject — the Explorer, the landing
  *  page's band — and the session is context rather than the headline. */
 export function SessionStrip({ className }: { className?: string }) {
-  const { schedule } = useSchedule(4);
+  const { schedule } = useSchedule();
   const now = useNow(true);
   const live = useLiveNow(schedule, now);
   return live
