@@ -5,9 +5,10 @@ import { ArrowRight, CalendarDays, MapPin } from "lucide-react";
 import { useLocale } from "@/lib/locale";
 import { usePrefs } from "@/lib/prefs";
 import {
-  sessionAbbr, sessionDay, splitDuration, stateAt, useChanged, useNextUp, useNow,
+  sessionAbbr, sessionDay, splitDuration, useChanged, useNextUp, useNow,
   useSchedule, weekendSpan,
 } from "@/lib/schedule";
+import { SessionPill } from "./SessionLink";
 import type { ScheduleEvent, ScheduledSession } from "@/lib/types";
 import { cx } from "@/lib/format";
 
@@ -172,33 +173,14 @@ function Clock({ iso }: { iso: string | null }) {
 /* the weekend that a reader most wants to see.                                */
 /* -------------------------------------------------------------------------- */
 function SessionRail({ event, nextName }: { event: ScheduleEvent; nextName: string }) {
+  const now = useNow(true);
   return (
     <ul className="mt-5 flex flex-wrap items-center gap-1.5">
       {event.sessions.map((s) => (
-        <SessionChip key={s.name} session={s} isNext={s.name === nextName} />
+        <SessionPill key={s.name} where={{ year: event.year, gp: event.name }}
+          session={s} now={now} isNext={s.name === nextName} />
       ))}
     </ul>
-  );
-}
-
-function SessionChip({ session, isNext }: { session: ScheduledSession; isNext: boolean }) {
-  const { time } = useLocale();
-  const d = session.start ? new Date(session.start) : null;
-  const when = d && Number.isFinite(d.getTime())
-    ? `${sessionDay(session.start)} ${time(d)}` : "";
-  // Struck through means read, not merely past — a session on track is
-  // neither, and marking it done would be the same lie in a smaller place.
-  const done = stateAt(session, Date.now()) === "available";
-  return (
-    <li>
-      <span title={when}
-        className={cx("inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.1em]",
-          isNext ? "bg-accent/15 text-accent-soft ring-1 ring-accent/30"
-            : done ? "bg-white/[0.04] text-ink-faint line-through decoration-white/20"
-              : "bg-white/[0.03] text-ink-muted")}>
-        {sessionAbbr(session.name)}
-      </span>
-    </li>
   );
 }
 

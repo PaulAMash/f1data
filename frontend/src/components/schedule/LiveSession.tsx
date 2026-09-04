@@ -5,9 +5,10 @@ import { useLocale } from "@/lib/locale";
 import { useMode } from "@/lib/mode";
 import { usePrefs } from "@/lib/prefs";
 import {
-  elapsedFraction, msSince, runningFor, sessionAbbr, sessionDay, stateAt, useLiveNow,
+  elapsedFraction, msSince, runningFor, sessionAbbr, sessionDay, useLiveNow,
   useNow, useSchedule,
 } from "@/lib/schedule";
+import { SessionPill } from "./SessionLink";
 import { NextSession, NextSessionStrip } from "./NextSession";
 import type { LiveSession as Live, ScheduledSession } from "@/lib/types";
 import { cx } from "@/lib/format";
@@ -187,40 +188,28 @@ export function LiveSessionPanel({ live, className, onOpenSchedule }: {
 
         {/* ---- where in the weekend this is ---- */}
         {isAdvanced && session.sessions?.length > 0 && (
-          <WeekendRail sessions={session.sessions} liveName={session.session} />
+          <WeekendRail where={{ year: session.year, gp: session.name }}
+            sessions={session.sessions} liveName={session.session} now={now} />
         )}
       </div>
     </section>
   );
 }
 
-/** Every session of the weekend, with the one on track marked and the ones
- *  already read struck through. Advanced only: in Simple the three lines
- *  above already answer "what is happening and what is next". */
-function WeekendRail({ sessions, liveName }: {
-  sessions: ScheduledSession[]; liveName: string;
+/** Every session of the weekend, with the one on track marked, the ones
+ *  already read struck through — and each of those a link to its own analysis.
+ *  Advanced only: in Simple the three lines above already answer "what is
+ *  happening and what is next". */
+function WeekendRail({ where, sessions, liveName, now }: {
+  where: { year: number; gp: string };
+  sessions: ScheduledSession[]; liveName: string; now: number;
 }) {
-  const { time } = useLocale();
   return (
     <ul className="mt-6 flex flex-wrap items-center gap-1.5 border-t border-white/[0.07] pt-5">
-      {sessions.map((s) => {
-        const isLive = s.name === liveName;
-        const done = stateAt(s, Date.now()) === "available";
-        const d = s.start ? new Date(s.start) : null;
-        const when = d && Number.isFinite(d.getTime()) ? `${sessionDay(s.start)} ${time(d)}` : "";
-        return (
-          <li key={s.name}>
-            <span title={when}
-              className={cx("inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.1em]",
-                isLive ? "bg-accent/15 text-accent-soft ring-1 ring-accent/30"
-                  : done ? "bg-white/[0.04] text-ink-faint line-through decoration-white/20"
-                    : "bg-white/[0.03] text-ink-muted")}>
-              {isLive && <span aria-hidden className="live-dot" />}
-              {sessionAbbr(s.name)}
-            </span>
-          </li>
-        );
-      })}
+      {sessions.map((s) => (
+        <SessionPill key={s.name} where={where} session={s} now={now}
+          isLive={s.name === liveName} />
+      ))}
     </ul>
   );
 }

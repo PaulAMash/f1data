@@ -94,12 +94,60 @@ for (const file of files) {
     // A card must not be made interactive from the event's own date, its
     // position, or the raw `completed` flag standing in for the lifecycle.
     lines.forEach((line, i) => {
-      if (/<Link\b/.test(line) && /event\.(date|completed)|index|idx\b/.test(line)) {
+      if (/<(Link|ScheduleLink)\b/.test(line)
+          && /event\.(date|completed)|index|idx\b/.test(line)) {
         report(file, i + 1,
           "a card linked from a date, an index or `completed` rather than "
           + "from readableRace()");
       }
     });
+  }
+
+  // ---- 3. a session is a link because the lifecycle says it can be read ----
+  //
+  // Scoped to `sessionHref`'s own body rather than to the file. Asking whether
+  // the FILE mentions `stateAt` passes while the gate itself has been swapped
+  // for something else — the other two functions here read `stateAt` for
+  // styling, and that was enough to hide a rewritten gate in testing.
+  if (/components\/schedule\/SessionLink\.tsx$/.test(rel)) {
+    const at = text.indexOf("function sessionHref");
+    const body = at < 0 ? "" : text.slice(at, text.indexOf("\n}", at) + 2);
+    if (!body) {
+      report(file, 1, "sessionHref() is where a session's openability is decided");
+    } else {
+      /* THE GATE ITSELF, not a token that happens to appear near it. Testing
+         only that the body mentions `stateAt`, or mentions "available",
+         passes while the gate reads `=== "upcoming"` — which would open a
+         door on a session that is on track. The three states have to stay
+         three, and only one of them may open one. */
+      const flat = body.replace(/\s+/g, " ");
+      if (!/stateAt\([^)]*\) !== ["']available["']/.test(flat)) {
+        report(file, 1,
+          'sessionHref() must refuse anything but "available":\n'
+          + '    if (stateAt(session, now) !== "available") return null;\n'
+          + "    upcoming and live are both unreadable, so neither is the "
+          + "thing to test against");
+      }
+      if (!/\bexplorerHref\s*\(/.test(body)) {
+        report(file, 1, "session links must be built by explorerHref()");
+      }
+    }
+  }
+}
+
+// ---- 4. nothing renders a session control except the shared one ------------
+for (const file of files) {
+  const rel = relative(ROOT, file);
+  if (!/components\/schedule\//.test(rel)) continue;
+  if (/SessionLink\.tsx$/.test(rel)) continue;
+  const text = code(readFileSync(file, "utf8"));
+  // Each rail and grid used to carry its own copy of the three-state logic,
+  // and three copies of a rule is three chances for one to say a session has
+  // been read when it has not.
+  if (/\bstateAt\s*\([^)]*\)\s*===\s*["']available["']/.test(text)) {
+    report(file, 1,
+      "a second copy of the session-readable rule — render a SessionPill or "
+      + "SessionSlot from SessionLink.tsx instead");
   }
 }
 

@@ -1,13 +1,11 @@
 "use client";
-import Link from "next/link";
 import { ArrowRight, CalendarDays, Check, MapPin } from "lucide-react";
-import { useLocale } from "@/lib/locale";
 import { explorerHref } from "@/lib/links";
 import {
-  readableRace, sessionAbbr, sessionDay, stateAt, useNextUp, useNow, useSchedule,
-  weekendSpan,
+  readableRace, sessionAbbr, stateAt, useNextUp, useNow, useSchedule, weekendSpan,
 } from "@/lib/schedule";
-import type { ScheduleEvent, ScheduledSession } from "@/lib/types";
+import { ScheduleLink, SessionSlot } from "./SessionLink";
+import type { ScheduleEvent } from "@/lib/types";
 import { cx } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
@@ -189,8 +187,15 @@ function EventCard({ event, now, nextSessionName }: {
 
       <ul className="grid grid-cols-2 gap-px border-t border-white/[0.06] bg-white/[0.04] sm:grid-cols-3 lg:grid-cols-5">
         {event.sessions.map((s) => (
-          <SessionCell key={s.name} session={s} now={now}
-            isNext={s.name === nextSessionName} />
+          <SessionSlot key={s.name} where={{ year: event.year, gp: event.name }}
+            session={s} now={now} isNext={s.name === nextSessionName}
+            /* A weekend whose race can be read is ALREADY one link, around the
+               whole card — an anchor inside an anchor is invalid, and the
+               card's promise came first. Its sessions stay reachable: the
+               Explorer's own picker offers every one of them on arrival. A
+               weekend still in progress has no race to open, so its finished
+               sessions are the only doors it has, and they open. */
+            linkable={!href} />
         ))}
       </ul>
     </article>
@@ -199,54 +204,15 @@ function EventCard({ event, now, nextSessionName }: {
   if (!href) return card;
 
   return (
-    <Link href={href} className="block rounded-2xl"
+    <ScheduleLink href={href} className="block rounded-2xl"
       /* The card is a wall of times; the link needs one sentence that says
          where it goes and which race it is about. */
-      aria-label={[
+      label={[
         event.name,
         typeof event.round === "number" && event.round > 0 ? `round ${event.round}` : null,
         "completed — read this race in Explore",
       ].filter(Boolean).join(", ")}>
       {card}
-    </Link>
-  );
-}
-
-function SessionCell({ session, now, isNext }: {
-  session: ScheduledSession; now: number; isNext: boolean;
-}) {
-  const { time } = useLocale();
-  const state = stateAt(session, now);
-  const isLive = state === "live";
-  const d = session.start ? new Date(session.start) : null;
-  const valid = d && Number.isFinite(d.getTime());
-  return (
-    <li className={cx("flex flex-col gap-0.5 px-4 py-3",
-      isLive ? "bg-accent/[0.13]" : isNext ? "bg-accent/[0.09]" : "bg-base-850/80")}>
-      <span className={cx("flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.14em]",
-        isLive || isNext ? "text-accent-soft"
-          : state === "available" ? "text-ink-faint" : "text-ink-muted")}>
-        {isLive && <span aria-hidden className="live-dot" />}
-        {sessionAbbr(session.name)}
-      </span>
-      <span className={cx("text-[13px] tabular-nums",
-        isLive || isNext ? "font-semibold text-ink" : "text-ink-muted")}>
-        {valid ? (
-          <>
-            <span className="text-ink-faint">{sessionDay(session.start)}</span>{" "}
-            {time(d!)}
-          </>
-        ) : <span className="text-ink-faint">TBC</span>}
-      </span>
-      {/* Where this session is in its life, in one word — "already read" and
-          "on track now" are not the same thing, and neither is "months away". */}
-      {isLive ? (
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-accent-soft">
-          On track
-        </span>
-      ) : state === "available" && !isNext && (
-        <span className="text-[10px] uppercase tracking-wide text-ink-faint/70">Run</span>
-      )}
-    </li>
+    </ScheduleLink>
   );
 }

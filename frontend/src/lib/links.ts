@@ -39,3 +39,44 @@ export function explorerHref({ year, gp, session }: RaceRef): string {
   });
   return `/explorer?${params.toString()}`;
 }
+
+/* -------------------------------------------------------------------------- */
+/* ARRIVING AT THE TOP.                                                       */
+/*                                                                            */
+/* A reader who has scrolled to round nineteen and opened it should land at    */
+/* the beginning of that race, not two thousand pixels into it. The router     */
+/* does reset the scroll on a push — measured, not assumed — but that is a     */
+/* default of somebody else's library, it does not apply to a same-route       */
+/* navigation, and when the destination is shorter than the offset the browser */
+/* clamps rather than resets, which reads as "it opened halfway down". A page  */
+/* that must start at the top should say so.                                   */
+/*                                                                            */
+/* IT IS A ONE-SHOT REQUEST, NOT A POLICY, and that is what keeps Back         */
+/* working. The flag exists only because a link asked for it, is consumed by   */
+/* the first page that honours it, and is never set by a Back or a Forward —   */
+/* so returning to the Schedule still restores the reader's place, and nothing */
+/* here touches `history.scrollRestoration`.                                   */
+/*                                                                            */
+/* Deliberately NOT done by scrolling the source page before leaving it: that  */
+/* would write scroll position 0 into the history entry we are leaving, and    */
+/* Back would return to the top of the Schedule rather than to the round the   */
+/* reader was looking at.                                                      */
+/* -------------------------------------------------------------------------- */
+const TOP_ON_ARRIVAL = "pitwall-iq:open-at-top";
+
+/** Ask the next page to start at the top. Called from a link's own click. */
+export function requestTopOnArrival(): void {
+  try { sessionStorage.setItem(TOP_ON_ARRIVAL, "1"); } catch { /* private mode */ }
+}
+
+/** Honour a pending request, once. Returns whether it did anything. */
+export function consumeTopOnArrival(): boolean {
+  try {
+    if (!sessionStorage.getItem(TOP_ON_ARRIVAL)) return false;
+    sessionStorage.removeItem(TOP_ON_ARRIVAL);
+    window.scrollTo(0, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}

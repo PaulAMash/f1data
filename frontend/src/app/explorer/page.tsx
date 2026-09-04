@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
 import { LiveSessionPanel, SessionStrip } from "@/components/schedule/LiveSession";
+import { consumeTopOnArrival } from "@/lib/links";
 import { useTourDrive } from "@/lib/tour";
 import { Footer } from "@/components/layout/Footer";
 import { RaceSelector, type Selection } from "@/components/explorer/RaceSelector";
@@ -131,6 +132,17 @@ export default function ExplorerPage() {
      to answer "what do people look at" without turning every click into a row.
      All of it is fire-and-forget — see lib/analytics. */
   useEffect(() => { trackPageView("/explorer"); }, []);
+
+  /* A RACE OPENED FROM THE SCHEDULE STARTS AT ITS BEGINNING.
+     A reader who scrolled to round nineteen and opened it should not arrive
+     two thousand pixels into the race. The router does reset scroll on a push
+     — measured, not assumed — but that is somebody else's default, it does
+     not apply to a same-route navigation, and where the destination is shorter
+     than the offset the browser clamps rather than resets, which reads as
+     "it opened halfway down". So the link asks and this honours it, once.
+     Nothing here fires on a Back or a Forward, so returning to the Schedule
+     still restores the reader's place — see lib/links. */
+  useEffect(() => { consumeTopOnArrival(); }, []);
 
   useFreshEffect((fresh) => {
     api.meta()
