@@ -5,8 +5,7 @@ Keeps the API routes decoupled from the (now multi-source) data plumbing.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
-
+from . import schedule
 from .adapters import data_source_manager as dsm
 from .models import DataSource, GrandPrix, RaceSession, Season
 
@@ -21,7 +20,7 @@ def get_grands_prix(year: int) -> tuple[list[GrandPrix], DataSource]:
 
 
 def mark_completed(gps: list[GrandPrix]) -> list[GrandPrix]:
-    """Stamp every event with whether its race has actually been run.
+    """Stamp every event with what has actually been run.
 
     THE ROOT CAUSE THIS EXISTS TO CLOSE. `event_completed` was already the
     server's answer to "has this happened", and `get_current` was the only thing
@@ -33,9 +32,19 @@ def mark_completed(gps: list[GrandPrix]) -> list[GrandPrix]:
     Every client re-deriving that rule from `date` would be three copies of one
     decision, drifting apart the first time a session slips. It is decided here,
     once, and travels with the data.
+
+    V101 MOVED THE ANSWER OFF `date` AND ONTO THE SESSION TIMES, because the
+    rule above was right and its input was not: OpenF1 puts the weekend's
+    Friday in `date` and Jolpica puts the race's Sunday there, so on the
+    opening day of a weekend the event was stamped completed and the Explorer
+    went looking for a race two days out. Both sources agree about
+    `session_times`, so that is what decides — per session, not per weekend.
+    See app/schedule.py.
     """
+    now = schedule.now_utc()
     for g in gps:
-        g.completed = event_completed(g)
+        g.available_sessions = schedule.available_sessions(g, now)
+        g.completed = schedule.race_done(g, now)
     return gps
 
 
@@ -44,111 +53,60 @@ def get_session(year: int, gp: str, session_type: str = "Race",
     return dsm.load_session(year, gp, session_type, force_mock=force_mock, refresh=refresh)
 
 
-#: HOW LONG A SESSION CAN STILL BE RUNNING AFTER IT STARTED.
-#:
-#: The sport's own ceiling: a race is two hours of running inside a three-hour
-#: window once suspensions are counted, and no other session comes close. A
-#: Grand Prix is therefore "run" once its final scheduled session started this
-#: long ago — not before, and never on the strength of a calendar date alone.
-EVENT_RUN_WINDOW = timedelta(hours=3)
+def event_completed(g: GrandPrix) -> bool:
+    """Has this Grand Prix's race actually been run?
 
-#: The fallback when a calendar carries a start *instant* but no per-session
-#: schedule: a weekend is three days from its first session, and the window
-#: above covers the last of them.
-EVENT_SPAN_WITHOUT_SCHEDULE = timedelta(days=3)
-
-
-def _instant(text: str | None) -> datetime | None:
-    """A timezone-aware instant from an ISO string, or None. A naive value is
-    read as UTC, which is what every upstream source actually sends."""
-    if not text:
-        return None
-    try:
-        parsed = datetime.fromisoformat(str(text).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed
-
-
-def last_session_start(g: GrandPrix) -> datetime | None:
-    """The start of the event's final scheduled session, if the schedule says."""
-    starts = [_instant(t) for t in (g.session_times or {}).values()]
-    starts = [t for t in starts if t is not None]
-    return max(starts) if starts else None
-
-
-def event_completed(g: GrandPrix, now: datetime | None = None) -> bool:
-    """Has this Grand Prix already been run?
-
-    THE BUG THIS REPLACES. The previous rule reduced the event's `date` to a
-    calendar day and asked whether that day had arrived. `date` is the *first*
-    session's start — so from 00:00 UTC on Friday of a race weekend the whole
-    Grand Prix read as completed: ten hours before Practice 1, two and a half
-    days before the race. `get_current` then opened the app on a race with no
-    data, and every client that trusted the flag moved its countdown on to the
-    following Grand Prix while this one had not started.
-
-    The answer now comes from the schedule itself, compared as instants:
-
-    * with a session schedule, the event is run once its *last* session started
-      `EVENT_RUN_WINDOW` ago — a race that has begun is in progress, not done;
-    * with only a start instant (no schedule), the weekend is assumed to span
-      `EVENT_SPAN_WITHOUT_SCHEDULE` from that instant;
-    * with only a calendar day — historical sources give the race *day* — the
-      event is run once that day is over, UTC;
-    * with no date at all — some archive entries — it is history, as before.
-
-    `now` is injectable so the rule can be tested at any instant.
+    Kept as the named question the rest of the app asks; the answer now comes
+    from the race's own start time rather than from `date` — see
+    schedule.race_done and the note in mark_completed.
     """
-    now = now or datetime.now(timezone.utc)
-
-    last = last_session_start(g)
-    if last is not None:
-        return now >= last + EVENT_RUN_WINDOW
-
-    if not g.date:
-        return True
-    text = str(g.date)
-    if "T" not in text:
-        try:
-            return now.date() > date.fromisoformat(text[:10])
-        except ValueError:
-            return True
-    start = _instant(text)
-    if start is None:
-        return True
-    return now >= start + EVENT_SPAN_WITHOUT_SCHEDULE
+    return schedule.race_done(g)
 
 
-def get_current(now: datetime | None = None) -> dict:
-    """What Race Explorer opens by default: the current season and its most
-    recent *completed* Grand Prix — never a race that hasn't happened yet.
-    Older seasons live in Historical. `now` is injectable for tests."""
+def get_current() -> dict:
+    """What Race Explorer opens by default: the season in progress and the most
+    recent session that has actually been run.
+
+    IT NAMES THE SESSION, and that is the half that used to be missing. This
+    returned a Grand Prix and the literal string "Race", and the Explorer
+    opened on whatever it was handed — so during a weekend whose race is still
+    two days away the page asked for a race that did not exist. The most recent
+    RUN session is the honest answer to "what is there to read", and mid-weekend
+    it is Practice 1 or Qualifying rather than nothing at all.
+
+    Older seasons live in Historical.
+    """
+    from datetime import date
     from .config import get_settings
 
     settings = get_settings()
-    now = now or datetime.now(timezone.utc)
-    cal_year = now.year
+    cal_year = date.today().year
+    now = schedule.now_utc()
 
     # Try the calendar year's schedule directly (robust even if a seasons probe
-    # flakes); fall back through previous years until one has a completed race.
-    year, gp = cal_year, None
+    # flakes); fall back through previous years until one has something run.
+    year, gp, session = cal_year, None, "Race"
     for candidate in (cal_year, cal_year - 1, cal_year - 2):
         try:
             gps, _src = get_grands_prix(candidate)
         except Exception:  # noqa: BLE001
             continue
-        done = [g for g in gps if event_completed(g, now=now)]
-        if done:
-            year = candidate
-            if settings.mock_mode:
-                gp = next((g.name for g in done if "austria" in g.name.lower()), None)
-            gp = gp or done[-1].name
-            break
+        # An event is worth opening as soon as ANY of its sessions has run —
+        # a Friday reader gets Practice 1 rather than last month's race.
+        started = [g for g in gps if g.available_sessions]
+        if not started:
+            continue
+        year = candidate
+        chosen = started[-1]
+        if settings.mock_mode:
+            chosen = next((g for g in started if "austria" in g.name.lower()), chosen)
+        gp = chosen.name
+        # The latest session that has been run, which is the one a reader
+        # arriving mid-weekend actually wants.
+        session = chosen.available_sessions[-1]
+        break
 
-    return {"year": year, "gp": gp, "session": "Race", "seasons": [year]}
+    return {"year": year, "gp": gp, "session": session, "seasons": [year]}
 
 
 def data_source_health():

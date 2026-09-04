@@ -15,6 +15,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE_URL}/`, lastModified, changeFrequency: "daily", priority: 1 },
     { url: `${SITE_URL}/explorer`, lastModified, changeFrequency: "daily", priority: 0.9 },
     { url: `${SITE_URL}/history`, lastModified, changeFrequency: "weekly", priority: 0.8 },
+    // The upcoming calendar — changes as the season moves, and is a page
+    // readers arrive at directly on a race weekend.
+    { url: `${SITE_URL}/schedule`, lastModified, changeFrequency: "daily", priority: 0.8 },
     { url: `${SITE_URL}/welcome`, lastModified, changeFrequency: "monthly", priority: 0.5 },
     // The iPhone app's marketing page — the URL on the App Store listing.
     { url: `${SITE_URL}/app`, lastModified, changeFrequency: "monthly", priority: 0.7 },

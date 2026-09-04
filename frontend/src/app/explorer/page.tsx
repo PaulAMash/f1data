@@ -5,6 +5,7 @@ import {
   Gauge, Layers, LineChart, Timer, Wind, Braces, RefreshCw, AlertTriangle, CloudOff,
 } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
+import { NextSessionStrip } from "@/components/schedule/NextSession";
 import { useTourDrive } from "@/lib/tour";
 import { Footer } from "@/components/layout/Footer";
 import { RaceSelector, type Selection } from "@/components/explorer/RaceSelector";
@@ -172,8 +173,14 @@ export default function ExplorerPage() {
       if (!fresh()) return;
       setCurrentSeason(cur.year);
       if (deepLinked) return;
-      if (qGp) setSel({ year: qYear ? Number(qYear) : cur.year, gp: qGp, session: qSession || "Race" });
-      else if (cur.gp) setSel({ year: cur.year, gp: cur.gp, session: "Race" });
+      /* `cur.session`, NOT THE STRING "Race". This asked the server which
+         Grand Prix was current and then told it which session to open, and
+         the two disagreed the moment a weekend was in progress: on the
+         Friday of a race weekend the page requested a race two days away and
+         got nothing back. `/api/current` now names the most recent session
+         that has actually been run — see backend service.get_current. */
+      if (qGp) setSel({ year: qYear ? Number(qYear) : cur.year, gp: qGp, session: qSession || cur.session || "Race" });
+      else if (cur.gp) setSel({ year: cur.year, gp: cur.gp, session: cur.session || "Race" });
     }).catch(() => {
       if (!fresh()) return;
       /* `/api/current` FAILING MUST NOT MEAN A PAGE THAT NEVER OPENS.
@@ -443,6 +450,14 @@ export default function ExplorerPage() {
           <RaceSelector value={sel} onChange={setSel} loading={loading}
             onRefresh={() => setRefreshKey((k) => k + 1)} />
         </div>
+
+        {/* WHAT THIS PAGE CANNOT SHOW YET, SAID ONCE.
+            The Explorer reads sessions that have been run; on a race weekend
+            the interesting one is often still hours away, and a reader
+            wondering where it is deserves an answer rather than a picker that
+            simply does not list it. One line, and it removes itself when the
+            calendar has nothing upcoming. */}
+        <NextSessionStrip className="mb-4" />
 
         {currentSeason && sel.year < currentSeason && (
           <p className="mb-4 rounded-lg border border-sky-400/15 bg-sky-400/[0.04] px-3 py-1.5 text-xs text-sky-300/90">

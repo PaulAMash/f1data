@@ -209,10 +209,33 @@ export interface Season { year: number; events: number; }
 export interface GrandPrix {
   round?: number | null; name: string; official_name?: string | null;
   location?: string | null; country?: string | null; circuit?: Circuit | null;
-  date?: string | null; sessions: string[];
+  date?: string | null;
+  /** SCHEDULED sessions — what the calendar promises. */
+  sessions: string[];
   session_times?: Record<string, string>;   // session name -> ISO start time
+  /** AVAILABLE sessions — what has actually been run and can be loaded.
+   *  Decided server-side from the session times; see app/schedule.py. Never
+   *  re-derive this from `date`: that field means the Friday to one upstream
+   *  source and the Sunday to another, which is what once put an unrun race
+   *  in front of a reader. */
+  available_sessions?: string[];
   /** Has the race been run? Decided server-side — see service.mark_completed. */
   completed?: boolean;
+}
+
+/** One upcoming event, from /api/schedule — the countdown and the schedule
+ *  both read this, so neither carries dates of its own. */
+export interface ScheduledSession { name: string; start: string | null; available: boolean; }
+export interface ScheduleEvent {
+  year: number; round?: number | null; name: string;
+  location?: string | null; country?: string | null; circuit?: string | null;
+  date?: string | null;
+  sessions: ScheduledSession[];
+  next_session: { name: string; start: string };
+  completed: boolean;
+}
+export interface Schedule {
+  source: string; year: number; now: string; mock: boolean; events: ScheduleEvent[];
 }
 export interface Meta {
   app: string; mock_mode: boolean; live_fetch_enabled: boolean; llm_available: boolean;

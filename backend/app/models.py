@@ -72,13 +72,17 @@ class GrandPrix(BaseModel):
     country: Optional[str] = None
     circuit: Optional[Circuit] = None
     date: Optional[str] = None        # event (start) date, ISO — used to hide future races
-    sessions: list[str] = Field(default_factory=list)  # available session names
-    # session name -> ISO start time, so the UI can offer a session only once it
-    # has actually begun (an in-progress weekend shows P1 but not yet the race)
+    sessions: list[str] = Field(default_factory=list)  # SCHEDULED session names
+    # session name -> ISO start time. The only unambiguous instant on this
+    # model: `date` means the Friday to OpenF1 and the Sunday to Jolpica, so
+    # every lifecycle question is answered from here — see app/schedule.py.
     session_times: dict[str, str] = Field(default_factory=dict)
-    # Has the race itself been run? Stamped server-side by the service layer so
-    # every consumer gets the same answer — see service.mark_completed for why
-    # this is not left to each client to work out from `date`.
+    # SCHEDULED is not AVAILABLE. `sessions` is what the calendar promises;
+    # this is what has actually been run and can therefore be loaded. Stamped
+    # server-side so no client re-derives it — see service.mark_completed.
+    available_sessions: list[str] = Field(default_factory=list)
+    # Has the race itself been run? Decided from the Race session's own start
+    # time rather than from `date`, which is the field that meant two things.
     completed: bool = True
 
 

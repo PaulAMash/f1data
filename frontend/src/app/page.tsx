@@ -8,6 +8,7 @@ import { Footer } from "@/components/layout/Footer";
 import { HeroField } from "@/components/landing/HeroField";
 import { AppPromoBand } from "@/components/promo/AppPromo";
 import { AppleLogo } from "@/components/promo/AppleMark";
+import { NextSession } from "@/components/schedule/NextSession";
 import { FeaturedRace } from "@/components/landing/FeaturedRace";
 import { Flag, Gauge, LineChart } from "@/components/ui/MotionIcon";
 import { usePrefs } from "@/lib/prefs";
@@ -58,6 +59,7 @@ export default function Landing() {
   const featureBand = useReveal<HTMLElement>();
   const doorBand = useReveal<HTMLElement>();
   const appBand = useReveal<HTMLElement>();
+  const nextBand = useReveal<HTMLElement>();
   const { start } = useTour();
 
   /* THE CHOICE HAPPENS BEFORE THIS PAGE, NOT ON IT.
@@ -236,10 +238,31 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* ---- 3b. what is coming ------------------------------------------
+          The last race and the next session are the same question asked in
+          two directions, so they sit together: 01 is what just happened, 02
+          is what happens next. Both are facts about right now, which is why
+          they lead the page rather than the product tour below them. */}
+      <section ref={nextBand.ref}
+        className={cx("mx-auto max-w-7xl px-4 pt-20 sm:px-6 sm:pt-24", nextBand.className)}>
+        <SectionHead n="02" chapter="Next" title="The one that hasn't happened yet"
+          line="Every session of the weekend ahead, counted down in your own time zone."
+          aside={
+            <Link href="/schedule"
+              className="group/sched inline-flex items-center gap-1.5 text-[13.5px] text-ink-muted transition-colors hover:text-ink">
+              Full schedule
+              <ArrowRight size={14}
+                className="transition-transform duration-[--dur-2] group-hover/sched:translate-x-0.5" />
+            </Link>} />
+        <div className="mt-7">
+          <NextSession />
+        </div>
+      </section>
+
       {/* ---- 4. the way in ---------------------------------------------- */}
       <section ref={doorBand.ref}
         className={cx("mx-auto max-w-7xl px-4 pt-20 sm:px-6 sm:pt-24", doorBand.className)}>
-        <SectionHead n="02" chapter="Enter" title="Three ways in"
+        <SectionHead n="03" chapter="Enter" title="Three ways in"
           line="Pick the one that matches the question you arrived with." />
         <div className="mt-7 grid gap-4 sm:grid-cols-3">
           <Door href="/explorer" icon={<Timer size={16} />} title="Read a race"
@@ -261,7 +284,7 @@ export default function Landing() {
           /app, one press away. */}
       <section ref={appBand.ref}
         className={cx("mx-auto max-w-7xl px-4 pb-20 pt-20 sm:px-6 sm:pb-28 sm:pt-24", appBand.className)}>
-        <SectionHead n="03" chapter="Carry" title="Take the pit wall with you"
+        <SectionHead n="04" chapter="Carry" title="Take the pit wall with you"
           line="Pitwall IQ is coming to iPhone, built for race day." />
         <div className="mt-7">
           <AppPromoBand />

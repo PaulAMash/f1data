@@ -4,7 +4,7 @@
 import { normalizeBundle } from "./sessionShape";
 import type {
   ArchiveScale, Featured,
-  GrandPrix, Meta, QuestionAnswer, RaceBundle, Season, SimulationResult,
+  GrandPrix, Meta, QuestionAnswer, RaceBundle, Schedule, Season, SimulationResult,
 } from "./types";
 
 /**
@@ -126,7 +126,12 @@ export const api = {
   current: () =>
     get<{ year: number; gp: string | null; session: string; seasons: number[] }>("/api/current"),
   sessionsAvailable: (year: number, gp: string) =>
-    get<{ source: string; sessions: string[] }>("/api/sessions/available", { year, gp }),
+    get<{ source: string; sessions: string[]; scheduled: string[]; known: boolean }>(
+      "/api/sessions/available", { year, gp }),
+  /* The upcoming calendar. Small, cacheable, and the single source both the
+     countdown and the schedule read — see backend app/schedule.py. */
+  schedule: (limit = 6) =>
+    get<Schedule>("/api/schedule", { limit }),
   // The backend caps every probe and runs them together, so this answers in
   // seconds or not at all — 20s is generous headroom, not a target.
   // a liveness probe answers "right now" or it answers nothing useful

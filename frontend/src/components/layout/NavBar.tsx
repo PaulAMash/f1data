@@ -49,7 +49,9 @@ function NavStep({ dir, onClick, enabled, shown }: {
   );
 }
 
-export function NavBar({ active }: { active?: "home" | "explorer" | "history" | "settings" }) {
+export function NavBar({ active }: {
+  active?: "home" | "explorer" | "history" | "schedule" | "settings";
+}) {
   const { canBack, canForward, back, forward } = useNavHistory();
 
   return (
@@ -105,6 +107,10 @@ export function NavBar({ active }: { active?: "home" | "explorer" | "history" | 
               stuff" will never look for a championship behind it — and this is
               where the sport's whole history lives. */}
           <Link href="/history" data-tour="nav-history" className={link(active === "history")}>Seasons</Link>
+          {/* A working destination sits ahead of the three SOON labels: it is
+              the question readers arrive with on a race weekend, and a nav
+              whose first items are all disabled teaches the wrong thing. */}
+          <Link href="/schedule" className={link(active === "schedule")}>Schedule</Link>
           {/* WHAT IS COMING, STATED RATHER THAN HINTED.
               A disabled tab is only worth having if it reads as a PLAN. These
               are not greyed-out buttons that look broken: they are legible, they

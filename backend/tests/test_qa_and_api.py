@@ -169,143 +169,29 @@ def test_archive_scale_route():
 # --------------------------------------------------------------------------- #
 # A race that has not been run is never offered
 # --------------------------------------------------------------------------- #
-def test_calendar_completion_follows_the_schedule_not_the_calendar_day():
-    """`completed` means the event has been RUN — its final scheduled session
-    started long enough ago to have finished. It must never mean "the first
-    session's day has arrived", which is what stamped a Friday-morning Grand
-    Prix as done and sent every client on to the following race."""
-    from datetime import date, datetime, timezone
-    from app.service import EVENT_RUN_WINDOW, get_grands_prix, last_session_start
+def test_calendar_marks_races_that_have_not_happened():
+    """The root cause of the future-race bug: the rule existed and only one
+    caller asked. Every calendar now carries the answer."""
+    from datetime import date
+    from app.service import get_grands_prix
 
     gps, _ = get_grands_prix(date.today().year)
     assert gps, "the current season should have a calendar"
-    now = datetime.now(timezone.utc)
+    # V101: the stamp agrees with the RACE SESSION's own instant, not with the
+    # event date. `date` means the Friday to OpenF1 and the Sunday to Jolpica,
+    # and comparing it to today is what opened the Explorer on an unrun race —
+    # see app/schedule.py and tests/test_session_lifecycle.py.
+    from app import schedule
+    now = schedule.now_utc()
     for g in gps:
-        last = last_session_start(g)
-        if last is not None:
-            assert g.completed == (now >= last + EVENT_RUN_WINDOW), g.name
+        assert g.completed == schedule.race_done(g, now)
+        # and the two lists mean different things: scheduled vs actually run
+        assert set(g.available_sessions) <= set(g.sessions)
+        if not g.completed:
+            assert "Race" not in g.available_sessions
+    # a season in progress must have at least one of each, or the fixture
+    # has stopped exercising the thing this test is about
     assert any(g.completed for g in gps)
-
-
-def _event(**overrides):
-    from app.models import GrandPrix
-    base = dict(
-        name="Italian Grand Prix", location="Monza",
-        date="2026-09-04T10:30:00+00:00",
-        sessions=["Practice 1", "Practice 2", "Practice 3", "Qualifying", "Race"],
-        session_times={
-            "Practice 1": "2026-09-04T10:30:00+00:00",
-            "Practice 2": "2026-09-04T14:00:00+00:00",
-            "Practice 3": "2026-09-05T10:30:00+00:00",
-            "Qualifying": "2026-09-05T14:00:00+00:00",
-            "Race": "2026-09-06T13:00:00+00:00",
-        })
-    base.update(overrides)
-    return GrandPrix(**base)
-
-
-def _at(iso: str):
-    from datetime import datetime
-    return datetime.fromisoformat(iso)
-
-
-def test_a_grand_prix_is_not_completed_on_the_morning_of_its_first_session():
-    """THE REGRESSION. 00:56 UTC on Practice 1's day: nothing has run."""
-    from app.service import event_completed
-    assert event_completed(_event(), now=_at("2026-09-04T00:56:00+00:00")) is False
-
-
-def test_a_weekend_in_progress_is_not_completed():
-    from app.service import event_completed
-    g = _event()
-    assert event_completed(g, now=_at("2026-09-04T12:00:00+00:00")) is False, "after P1"
-    assert event_completed(g, now=_at("2026-09-05T15:30:00+00:00")) is False, "after quali"
-    assert event_completed(g, now=_at("2026-09-06T12:59:59+00:00")) is False, "before the race"
-
-
-def test_a_race_that_has_started_is_in_progress_not_completed():
-    from app.service import event_completed
-    g = _event()
-    assert event_completed(g, now=_at("2026-09-06T13:00:01+00:00")) is False
-    assert event_completed(g, now=_at("2026-09-06T15:59:59+00:00")) is False
-
-
-def test_a_grand_prix_is_completed_once_its_last_session_has_had_time_to_finish():
-    from app.service import event_completed
-    g = _event()
-    assert event_completed(g, now=_at("2026-09-06T16:00:00+00:00")) is True
-    assert event_completed(g, now=_at("2026-09-07T09:00:00+00:00")) is True
-
-
-def test_completion_is_decided_on_instants_not_local_days():
-    """The same instant expressed in another zone gives the same answer, and a
-    session that crosses a UTC midnight is judged by its time, not its day."""
-    from app.service import event_completed
-    g = _event(session_times={"Race": "2026-09-06T23:30:00+00:00"},
-               date="2026-09-06T23:30:00+00:00")
-    # 01:00 UTC on the 7th — 21:00 the evening before in New York; race 1.5h old.
-    assert event_completed(g, now=_at("2026-09-07T01:00:00+00:00")) is False
-    assert event_completed(g, now=_at("2026-09-06T21:00:00-04:00")) is False
-    assert event_completed(g, now=_at("2026-09-07T02:30:00+00:00")) is True
-    assert event_completed(g, now=_at("2026-09-07T11:30:00+09:00")) is True
-
-
-def test_a_naive_schedule_time_is_read_as_utc():
-    from app.service import event_completed
-    g = _event(session_times={"Race": "2026-09-06T13:00:00"})
-    assert event_completed(g, now=_at("2026-09-06T15:59:00+00:00")) is False
-    assert event_completed(g, now=_at("2026-09-06T16:01:00+00:00")) is True
-
-
-def test_without_a_schedule_a_race_day_is_run_once_the_day_is_over():
-    """Historical sources give the race *day* and nothing else."""
-    from app.service import event_completed
-    g = _event(date="1988-04-03", session_times={}, sessions=["Race"])
-    assert event_completed(g, now=_at("1988-04-03T23:00:00+00:00")) is False
-    assert event_completed(g, now=_at("1988-04-04T00:00:01+00:00")) is True
-
-
-def test_without_a_schedule_a_start_instant_spans_the_weekend():
-    from app.service import event_completed
-    g = _event(session_times={})
-    assert event_completed(g, now=_at("2026-09-06T14:00:00+00:00")) is False
-    assert event_completed(g, now=_at("2026-09-07T10:30:00+00:00")) is True
-
-
-def test_an_undated_event_is_history():
-    from app.service import event_completed
-    assert event_completed(_event(date=None, session_times={})) is True
-
-
-def test_current_opens_on_the_last_event_that_has_actually_been_run(monkeypatch):
-    """On the morning of Italian Practice 1 the pointer must be the Dutch race —
-    never Italy, and never Spain. And once the Italian race is run, Italy."""
-    from app import service
-    from app.models import DataSource
-
-    def calendar():
-        return [
-            _event(name="Dutch Grand Prix", date="2026-08-21T10:30:00+00:00",
-                   session_times={"Practice 1": "2026-08-21T10:30:00+00:00",
-                                  "Race": "2026-08-23T13:00:00+00:00"}),
-            _event(),
-            _event(name="Spanish Grand Prix", date="2026-09-11T11:30:00+00:00",
-                   session_times={"Practice 1": "2026-09-11T11:30:00+00:00",
-                                  "Race": "2026-09-13T13:00:00+00:00"}),
-        ]
-
-    monkeypatch.setattr(service.dsm, "get_grands_prix",
-                        lambda year: (calendar(), DataSource.LIVE) if year == 2026
-                        else ([], DataSource.LIVE))
-
-    cur = service.get_current(now=_at("2026-09-04T00:56:00+00:00"))
-    assert (cur["year"], cur["gp"], cur["session"]) == (2026, "Dutch Grand Prix", "Race")
-
-    cur = service.get_current(now=_at("2026-09-06T14:00:00+00:00"))
-    assert cur["gp"] == "Dutch Grand Prix", "a race in progress is not yet the latest run race"
-
-    cur = service.get_current(now=_at("2026-09-06T16:30:00+00:00"))
-    assert cur["gp"] == "Italian Grand Prix"
 
 
 def test_finished_seasons_are_entirely_complete():

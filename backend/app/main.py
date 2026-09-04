@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from . import analytics, cache, service, timing, upstream
+from . import schedule as app_schedule
 from .analytics import classify as ask_classify
 from .analytics import queries as analytics_queries
 from .analytics import report as analytics_report
@@ -367,18 +368,138 @@ def current_default(response: Response):
 
 @app.get("/api/sessions/available")
 def sessions_available(year: int = Query(...), gp: str = Query(...)):
-    """Which session types are available for a given GP (Practice…Race)."""
+    """Which sessions of this Grand Prix have actually been run.
+
+    THE NAME WAS ALWAYS RIGHT AND THE ANSWER WAS ALWAYS THE SCHEDULE. This
+    returned `match.sessions` — the calendar's promise — so an unrun race was
+    offered the moment its weekend appeared, and when the calendar itself
+    could not be loaded it fell through to a hard-coded list of all five,
+    which offered a race for *any* Grand Prix including one months away.
+    Both are the same mistake: treating scheduled as available.
+
+    `scheduled` still travels alongside, because the countdown and the
+    schedule need to show sessions that have NOT run — that is their whole
+    job. The two lists are named for what they are.
+    """
     data, src = service.get_grands_prix(year)
     match = next((g for g in data if g.name.lower() == gp.lower()
                  or gp.lower() in g.name.lower()), None)
-    sessions = match.sessions if match else ["Practice 1", "Practice 2", "Practice 3", "Qualifying", "Race"]
-    return {"source": src.value, "year": year, "gp": gp, "sessions": sessions}
+    if match is None:
+        # No calendar, no claim. An empty list makes the client show its
+        # upcoming/unavailable state; a guessed list makes it fetch a race
+        # that may not have been run.
+        return {"source": src.value, "year": year, "gp": gp,
+                "sessions": [], "scheduled": [], "known": False}
+    return {"source": src.value, "year": year, "gp": gp,
+            "sessions": match.available_sessions,
+            "scheduled": match.sessions,
+            "session_times": match.session_times,
+            "completed": match.completed, "known": True}
+
+
+@app.get("/api/schedule")
+def schedule_route(year: int | None = Query(None), limit: int = Query(6)):
+    """The upcoming calendar: what is next, and what follows it.
+
+    ONE SOURCE OF TRUTH WITH THE AVAILABILITY RULES. The countdown and the
+    schedule read this, and this reads the same `session_times` that decide
+    whether a session may be loaded — so nothing can be counted down to and
+    simultaneously offered as readable, and no date is maintained by hand.
+
+    Cheap by construction: it is the season calendar the Explorer already
+    fetches, filtered and sorted. No session payloads are touched.
+    """
+    from datetime import date as _date
+
+    settings = get_settings()
+    year = year or _date.today().year
+    now = app_schedule.now_utc()
+
+    def season(y: int):
+        try:
+            gps, src = service.get_grands_prix(y)
+            return gps, src
+        except Exception:  # noqa: BLE001
+            return [], DataSource.MOCK
+
+    gps, src = season(year)
+    # A season that has finished rolls into the next one rather than showing
+    # an empty schedule through the winter.
+    if gps and not app_schedule.next_session_across(gps, now):
+        nxt_gps, nxt_src = season(year + 1)
+        if nxt_gps and app_schedule.next_session_across(nxt_gps, now):
+            gps, src, year = nxt_gps, nxt_src, year + 1
+
+    events = []
+    for g in gps:
+        upcoming = [
+            {"name": s, "start": (t := app_schedule.session_start(g, s)) and t.isoformat(),
+             "available": s in g.available_sessions}
+            for s in (g.sessions or [])
+        ]
+        # An event belongs on an upcoming schedule while any of its sessions
+        # is still to come — which keeps a weekend in progress on the list
+        # rather than dropping it the moment practice starts.
+        nxt = app_schedule.next_session(g, now)
+        if not nxt:
+            continue
+        events.append({
+            "year": year, "round": g.round, "name": g.name,
+            "location": g.location, "country": g.country,
+            "circuit": g.circuit.name if g.circuit else None,
+            "date": g.date,
+            "sessions": upcoming,
+            "next_session": {"name": nxt[0], "start": nxt[1].isoformat()},
+            "completed": g.completed,
+        })
+        if len(events) >= max(1, min(limit, 30)):
+            break
+
+    return {"source": src.value, "year": year, "now": now.isoformat(),
+            "mock": settings.mock_mode, "events": events}
 
 
 # --------------------------------------------------------------------------- #
 # session bundle (Race Explorer)
 # --------------------------------------------------------------------------- #
+def _guard_unrun(year: int, gp: str, session_type: str) -> None:
+    """Refuse a session that has not been run, before any source is touched.
+
+    A LINK CAN NAME A SESSION THAT DOES NOT EXIST YET. The pickers no longer
+    offer one, but a bookmark, a shared URL or a stale tab still can — and the
+    old path answered by asking OpenF1, FastF1 and Jolpica in turn for a race
+    two days in the future, waiting out every timeout to conclude what the
+    calendar already knew. That is the request the reader waits on for nothing.
+
+    So it is answered here, from the calendar, in the same structured shape
+    every other unavailable session uses — `future_session` was already the
+    right reason code and the right sentence; it simply never fired inside the
+    current season, which is exactly where this happens. A missing or
+    unreadable calendar refuses nothing: an unknown answer must not become a
+    denial.
+    """
+    try:
+        gps, _src = service.get_grands_prix(year)
+    except Exception:  # noqa: BLE001 — no calendar, no opinion
+        return
+    match = next((g for g in gps if g.name.lower() == gp.lower()
+                  or gp.lower() in g.name.lower()), None)
+    if match is None or not match.sessions:
+        return
+    if session_type in match.available_sessions:
+        return
+    # Only refuse what the calendar positively says is still to come. An
+    # unrecognised session name is not evidence of anything.
+    if session_type not in match.sessions:
+        return
+    err = DataUnavailableError(year, gp, session_type, attempts=[])
+    err.reason = "future_session"
+    err.retryable = False
+    raise err
+
+
 def _bundle(year, gp, session_type, mock, refresh):
+    _guard_unrun(year, gp, session_type)
     with timing.phase("load"):
         s = service.get_session(year, gp, session_type, force_mock=mock, refresh=refresh)
     with timing.phase("analyze"):

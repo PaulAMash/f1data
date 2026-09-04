@@ -35,28 +35,21 @@ export function RaceSelector({
       .catch(() => { if (fresh()) setRaces([]); });
   }, [value.year]);
 
-  // A session is offered only once it has actually started — so an in-progress
-  // weekend shows Practice 1 as soon as it runs, and the race appears on race
-  // day, never before. Without per-session times we fall back to the event date.
-  const now = Date.now();
-  const startedSessions = (r: GrandPrix): string[] => {
-    const names = r.sessions?.length ? r.sessions : SESSION_TYPES;
-    const times = r.session_times ?? {};
-    return names.filter((s) => {
-      const t = times[s];
-      if (t) return new Date(t).getTime() <= now;
-      return !r.date || new Date(r.date).getTime() <= now;
-    });
-  };
+  /* WHAT HAS ACTUALLY BEEN RUN IS THE SERVER'S ANSWER, NOT OURS.
+     This used to re-derive availability here from `session_times`, with
+     `completed` consulted first as a safety net. Both halves were wrong in
+     the same way: `completed` was computed upstream from `date`, a field that
+     means the Friday to OpenF1 and the Sunday to Jolpica — so on the opening
+     day of a weekend `completed` was true, the `||` short-circuited, and the
+     Grand Prix was offered with a race two days away. The client cannot fix a
+     rule it is downstream of; the rule moved to app/schedule.py and the
+     answer now travels on the payload as `available_sessions`. */
+  const runSessions = (r: GrandPrix): string[] => r.available_sessions ?? [];
 
-  /* A Grand Prix appears as soon as its first session has run (fixes ongoing
-     weekends being hidden until race day). Undated events are kept.
-
-     `completed` is the server's own answer and is checked first, because a
-     session-time table can be missing or stale while the date never is — see
-     service.mark_completed for why that decision lives there rather than here. */
-  const availableRaces = races.filter(
-    (r) => r.completed !== false || startedSessions(r).length > 0);
+  /* A Grand Prix appears once any of its sessions has been run — which is
+     what keeps a weekend in progress on the list from Friday afternoon,
+     showing Practice while the race is still two days out. */
+  const availableRaces = races.filter((r) => runSessions(r).length > 0);
 
   /* AND A SELECTION IS NEVER ALLOWED TO OUTLIVE THE LIST.
      Filtering the dropdown is only half the fix: the selection can also arrive
@@ -72,17 +65,21 @@ export function RaceSelector({
   }, [races, value.gp]);
 
   const currentRace = availableRaces.find((r) => r.name === value.gp);
-  const sessions = currentRace ? startedSessions(currentRace)
+  const sessions = currentRace ? runSessions(currentRace)
     : races.length ? [] : SESSION_TYPES;
 
-  // If the selected session hasn't happened for this event (e.g. picking an
-  // in-progress weekend while "Race" is selected), snap to the latest one that has.
+  /* If the selected session has not been run for this event — picking a
+     weekend in progress while "Race" is selected — snap to the latest that
+     has. Depends on `sessions` itself, not just on the Grand Prix: during a
+     live weekend the list grows under a reader who has not touched the
+     picker, and a selection made before Qualifying ran must not be left
+     pointing at a session the server has since stopped offering. */
   useEffect(() => {
     if (currentRace && sessions.length && !sessions.includes(value.session)) {
       onChange({ ...value, session: sessions[sessions.length - 1] });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value.gp, races]);
+  }, [value.gp, races, sessions.join("|")]);
 
   return (
     <div className="grid grid-cols-2 items-end gap-2.5 sm:flex sm:flex-wrap">

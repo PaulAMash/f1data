@@ -84,10 +84,43 @@ def _mock_date(year: int, rnd: int) -> str:
     return (date(year, 3, 8) + timedelta(days=(rnd - 1) * 11)).isoformat()
 
 
+def _mock_session_times(race_day: str) -> dict[str, str]:
+    """A real weekend's shape around a demo round's race date.
+
+    THE DEMO HAS TO OBEY THE SAME RULE AS THE PRODUCT — and after V101 that
+    rule reads `session_times`, not `date`. Without these a demo event offered
+    only its race (every other session has no instant to have passed), which
+    would have quietly taken Practice and Qualifying out of offline review and
+    left the countdown with nothing to count. Friday practice, Saturday
+    practice and qualifying, Sunday race: the layout of almost every Grand
+    Prix, hung off the date the round already had.
+    """
+    from datetime import date, datetime, time, timedelta, timezone
+
+    sunday = date.fromisoformat(race_day)
+    friday, saturday = sunday - timedelta(days=2), sunday - timedelta(days=1)
+
+    def at(day: date, hh: int, mm: int) -> str:
+        return datetime.combine(day, time(hh, mm), tzinfo=timezone.utc).isoformat()
+
+    return {
+        "Practice 1": at(friday, 11, 30),
+        "Practice 2": at(friday, 15, 0),
+        "Practice 3": at(saturday, 10, 30),
+        "Qualifying": at(saturday, 14, 0),
+        "Race": at(sunday, 13, 0),
+    }
+
+
 def mock_grands_prix(year: int) -> list[GrandPrix]:
-    return [GrandPrix(round=e["round"], name=e["name"], location=e["location"],
-                      country=e["country"], sessions=list(_SESSIONS),
-                      date=_mock_date(year, e["round"])) for e in _CALENDAR]
+    out = []
+    for e in _CALENDAR:
+        race_day = _mock_date(year, e["round"])
+        out.append(GrandPrix(
+            round=e["round"], name=e["name"], location=e["location"],
+            country=e["country"], sessions=list(_SESSIONS),
+            date=race_day, session_times=_mock_session_times(race_day)))
+    return out
 
 
 def _mock_report() -> SourceReport:

@@ -46,6 +46,7 @@ export function Footer() {
               ["Read a race", "/explorer"],
               ["Ask a question", "/explorer?tab=ask"],
               ["Seasons & championships", "/history"],
+              ["Race schedule", "/schedule"],
               ["Settings", "/settings"],
               ["Pitwall IQ for iPhone", "/app"],
             ].map(([label, href]) => (

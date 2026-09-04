@@ -3761,3 +3761,82 @@ html.theme-sweep::view-transition-new(root) {
   animation: app-stat-dot calc(3.2s * var(--m)) ease-in-out infinite;
 }
 :root[data-motion="reduced"] .app-stat-dot { animation: none; opacity: .6; }
+
+
+/* ---------------------------------------------------------------------------
+   THE COUNTDOWN.
+
+   A readout, not a widget. Every loop below rides the product's own tempo
+   dials (--m, --amp) so Calm slows it, and every one has a reduced rule so
+   stillness is a complete state rather than a broken animation.
+   --------------------------------------------------------------------------- */
+
+/* A digit that has just changed. The seconds column ticks once a second and
+   is the only thing on the page moving that often, so the movement has to be
+   small enough to read past: the glyph rises a hair and settles. */
+@keyframes cd-tick {
+  from { opacity: .35; transform: translateY(calc(-2px * var(--amp))); }
+  to   { opacity: 1; transform: none; }
+}
+.cd-tick { animation: cd-tick var(--dur-2) var(--ease-out); }
+:root[data-motion="reduced"] .cd-tick { animation: none; }
+
+/* The session changing — FP1 giving way to FP2 — is a bigger event than a
+   second passing, so it gets the house arrival curve rather than a tick. */
+@keyframes cd-session-in {
+  from { opacity: 0; transform: translateY(calc(6px * var(--amp))); }
+  to   { opacity: 1; transform: none; }
+}
+.cd-session-in { animation: cd-session-in var(--dur-4) var(--ease-out) both; }
+:root[data-motion="reduced"] .cd-session-in { animation: fb-fade var(--dur-2) linear both; }
+
+/* The lights: five panels above the readout, filling left to right on a slow
+   loop — the one piece of pure atmosphere here, and the most recognisable
+   object in the sport. It never completes to green, because the thing it is
+   waiting for has not happened yet either. */
+.cd-lights { display: flex; gap: 6px; }
+.cd-light {
+  width: 26px; height: 7px; border-radius: 3px;
+  background: rgb(var(--tint) / .07);
+  box-shadow: inset 0 0 0 1px rgb(var(--tint) / .06);
+  animation: cd-light calc(4.2s * var(--m)) ease-in-out infinite;
+}
+@keyframes cd-light {
+  0%, 12%  { background: rgb(var(--tint) / .07); box-shadow: inset 0 0 0 1px rgb(var(--tint) / .06); }
+  22%, 68% { background: rgb(var(--accent) / .85);
+             box-shadow: inset 0 0 0 1px rgb(var(--accent) / .5), 0 0 12px -2px rgb(var(--accent) / .55); }
+  84%, 100% { background: rgb(var(--tint) / .07); box-shadow: inset 0 0 0 1px rgb(var(--tint) / .06); }
+}
+:root[data-motion="reduced"] .cd-light {
+  animation: none;
+  background: rgb(var(--accent) / .5);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent) / .35);
+}
+
+/* The band the countdown sits on: a slow sweep of light across the surface,
+   the same idea as the app page's shimmer and at the same tempo. */
+@keyframes cd-sweep { from { transform: translateX(-30%); } to { transform: translateX(130%); } }
+.cd-sweep {
+  position: absolute; inset: 0; pointer-events: none; overflow: hidden;
+  border-radius: inherit;
+}
+.cd-sweep::before {
+  content: ""; position: absolute; inset: 0; width: 45%;
+  background: linear-gradient(100deg, transparent,
+    rgb(var(--accent) / calc(.07 * var(--glow-k))), transparent);
+  animation: cd-sweep calc(7s * var(--m)) var(--ease-in-out) infinite;
+}
+:root[data-motion="reduced"] .cd-sweep::before { animation: none; opacity: 0; }
+
+/* A live session: the dot the product already uses for "this is happening". */
+.cd-live-dot { position: relative; width: 7px; height: 7px; flex: none; }
+.cd-live-dot::before,
+.cd-live-dot::after {
+  content: ""; position: absolute; inset: 0; border-radius: 999px;
+}
+.cd-live-dot::before { background: rgb(var(--good)); }
+.cd-live-dot::after {
+  background: rgb(var(--good) / .5);
+  animation: ping-soft calc(2.2s * var(--m)) cubic-bezier(0, 0, .2, 1) infinite;
+}
+:root[data-motion="reduced"] .cd-live-dot::after { animation: none; opacity: 0; }
