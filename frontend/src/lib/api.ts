@@ -4,8 +4,8 @@
 import { normalizeBundle } from "./sessionShape";
 import type {
   ArchiveScale, Featured,
-  GrandPrix, Meta, QuestionAnswer, RaceBundle, Schedule, Season, SessionState,
-  SimulationResult,
+  GrandPrix, Meta, QuestionAnswer, RaceBundle, Schedule, Season, SessionAnalysis,
+  SessionState, SimulationResult,
 } from "./types";
 
 /**
@@ -128,7 +128,9 @@ export const api = {
     get<{ year: number; gp: string | null; session: string; seasons: number[] }>("/api/current"),
   sessionsAvailable: (year: number, gp: string) =>
     get<{ source: string; sessions: string[]; scheduled: string[];
-          live: string[]; states: Record<string, SessionState>; known: boolean }>(
+          live: string[]; completed_sessions: string[];
+          states: Record<string, SessionState>;
+          analysis: Record<string, SessionAnalysis>; known: boolean }>(
       "/api/sessions/available", { year, gp }),
   /* THE WHOLE SEASON, and deliberately without a `limit`.
      It used to pass one — six by default — and that number decided which

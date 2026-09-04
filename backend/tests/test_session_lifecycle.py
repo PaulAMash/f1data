@@ -277,8 +277,8 @@ def test_schedule_route_marks_what_has_run_without_hiding_what_has_not():
         "the whole season is returned, and it says so"
     for ev in body["events"]:
         for s in ev["sessions"]:
-            assert (s["state"] == "available") is s["available"]
-            if s["state"] == "upcoming":
+            assert (s["analysis"] == "available") is s["available"]
+            if s["state"] in ("upcoming", "live"):
                 assert not s["available"], f"{ev['name']} {s['name']}"
 
 

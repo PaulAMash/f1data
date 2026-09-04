@@ -229,9 +229,17 @@ export interface GrandPrix {
 
 /** One upcoming event, from /api/schedule — the countdown and the schedule
  *  both read this, so neither carries dates of its own. */
-/** Where a session is in its life. Decided server-side, once, from the same
- *  session times the countdown reads — see backend/app/schedule.py. */
-export type SessionState = "upcoming" | "live" | "available";
+/** WHAT THE CARS ARE DOING. Read from the schedule alone, server-side, from
+ *  the same session times the countdown reads — see backend/app/schedule.py.
+ *  `live` ends at the scheduled end: a slow archive is not a running session,
+ *  which is what made a finished Practice 2 claim to be on track for twenty
+ *  minutes after the flag. */
+export type SessionState = "upcoming" | "live" | "completed";
+
+/** WHAT PITWALL IQ CAN SHOW. A separate axis, layered on top: a session can be
+ *  `completed` and `awaiting` for an hour, which is an ordinary state of the
+ *  world and the one that previously had no name. */
+export type SessionAnalysis = "available" | "awaiting";
 
 export interface ScheduledSession {
   name: string;
@@ -243,6 +251,8 @@ export interface ScheduledSession {
   available_at?: string | null;
   /** True when the server wrote the response; `stateAt` keeps it current. */
   state?: SessionState;
+  /** Likewise, kept current by `analysisAt`. */
+  analysis?: SessionAnalysis;
   /** The old boolean. Same answer as `state === "available"`. */
   available: boolean;
 }

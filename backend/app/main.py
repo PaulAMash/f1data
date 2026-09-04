@@ -389,7 +389,8 @@ def sessions_available(year: int = Query(...), gp: str = Query(...)):
         # upcoming/unavailable state; a guessed list makes it fetch a race
         # that may not have been run.
         return {"source": src.value, "year": year, "gp": gp,
-                "sessions": [], "scheduled": [], "live": [], "states": {},
+                "sessions": [], "scheduled": [], "live": [],
+                "completed_sessions": [], "states": {}, "analysis": {},
                 "known": False}
     now = app_schedule.now_utc()
     return {"source": src.value, "year": year, "gp": gp,
@@ -399,8 +400,16 @@ def sessions_available(year: int = Query(...), gp: str = Query(...)):
             # ones months away is telling a reader the wrong thing about the
             # session they can currently hear on the television.
             "live": match.live_sessions,
+            # Run, whether or not the data has landed. A picker that only knows
+            # `sessions` cannot tell "not yet published" from "never happened".
+            # Named for the model field rather than `completed`, which on this
+            # payload is already the event-level boolean — two keys of one name
+            # in a dict literal is the later one silently winning.
+            "completed_sessions": match.completed_sessions,
             "states": {s: app_schedule.session_state(match, s, now)
                        for s in (match.sessions or [])},
+            "analysis": {s: app_schedule.session_analysis(match, s, now)
+                         for s in (match.sessions or [])},
             "session_times": match.session_times,
             "completed": match.completed, "known": True}
 
@@ -477,9 +486,15 @@ def schedule_route(year: int | None = Query(None), limit: int | None = Query(Non
             # page can turn a session over on the exact second rather than
             # whenever it next asks — see schedule.session_available_at.
             "available_at": (a := app_schedule.session_available_at(g, s)) and a.isoformat(),
+            # TWO ANSWERS, NOT ONE. `state` is what the cars are doing and
+            # comes from the schedule alone; `analysis` is what Pitwall IQ can
+            # show and is layered on top. A session is `completed`/`awaiting`
+            # for the twenty minutes after the flag, which used to be reported
+            # as still live — see app/schedule.py.
             "state": app_schedule.session_state(g, s, now),
-            # `available` stays for clients written before there were three
-            # states. It is the same answer, narrowed.
+            "analysis": app_schedule.session_analysis(g, s, now),
+            # `available` stays for clients written before either field
+            # existed. It is `analysis == "available"`, unchanged.
             "available": s in g.available_sessions,
         }
 
@@ -576,6 +591,19 @@ def _guard_unrun(year: int, gp: str, session_type: str) -> None:
     # unrecognised session name is not evidence of anything.
     if session_type not in match.sessions:
         return
+    # A SESSION THAT HAS FINISHED IS WORTH ASKING FOR, EVEN THIS SOON.
+    #
+    # This used to refuse everything that was not yet `available`, which swept
+    # up the twenty minutes after the flag — a window in which the data very
+    # often HAS landed, and in which the reader is at their most interested.
+    # Refusing without asking also made "Try again" a button that could not
+    # possibly work. What this guard is for is refusing the impossible: a
+    # session that has not started cannot have data, and neither can one whose
+    # cars are still on track. Anything already run goes to the sources, and
+    # if they have nothing yet the answer says so — see `_reason_for_finished`.
+    if session_type in match.completed_sessions:
+        return
+
     err = DataUnavailableError(year, gp, session_type, attempts=[])
     # A SESSION THAT IS RUNNING IS NOT A SESSION THAT HAS NOT HAPPENED, and
     # answering both with `future_session` is what would have sent a reader
@@ -593,10 +621,54 @@ def _guard_unrun(year: int, gp: str, session_type: str) -> None:
     raise err
 
 
+def _reason_for_finished(year: int, gp: str, session_type: str, err) -> None:
+    """Re-read a failure in the light of what the calendar says.
+
+    THE FOUR OUTCOMES THIS KEEPS APART. A fetch that comes back empty is not
+    one situation, and answering all of them with "unavailable" is what turned
+    a Practice 2 that had simply not been published yet into a page that read
+    like a fault. What the sources said is the strongest evidence available:
+
+      * they errored or timed out   -> the providers are unreachable. Their own
+                                       words, unchanged; that is a real outage
+                                       and saying otherwise would be guessing.
+      * they answered with nothing, -> the record has not landed yet. Ordinary,
+        and the session has only       expected, and temporary — `awaiting_data`.
+        just finished
+      * they answered with nothing, -> there is genuinely no data. The existing
+        long after the fact            no-coverage answer, unchanged.
+
+    Only the middle case is new, and it is only ever reached for a session the
+    calendar says is OVER. Nothing here invents a delay or promises a time.
+    """
+    if err.reason not in ("no_source_coverage", "not_found"):
+        return          # a provider outage keeps its own, more specific answer
+    try:
+        gps, _src = service.get_grands_prix(year)
+    except Exception:  # noqa: BLE001
+        return
+    match = next((g for g in gps if g.name.lower() == gp.lower()
+                  or gp.lower() in g.name.lower()), None)
+    if match is None:
+        return
+    # Settled means the archive has had its grace period and still has nothing;
+    # that is a different sentence from "it finished a moment ago".
+    if (session_type in match.completed_sessions
+            and session_type not in match.available_sessions):
+        err.reason = "awaiting_data"
+        err.retryable = True
+
+
 def _bundle(year, gp, session_type, mock, refresh):
     _guard_unrun(year, gp, session_type)
     with timing.phase("load"):
-        s = service.get_session(year, gp, session_type, force_mock=mock, refresh=refresh)
+        try:
+            s = service.get_session(year, gp, session_type, force_mock=mock, refresh=refresh)
+        except DataUnavailableError as err:
+            # The sources have spoken; the calendar decides what their silence
+            # means for a session that is already over.
+            _reason_for_finished(year, gp, session_type, err)
+            raise
     with timing.phase("analyze"):
         strategy, pace = analyze(s)
         practice = compute_practice(s) if s.category == "practice" else None

@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import { RACE_SESSION } from "./links";
 import type {
-  LiveSession, Schedule, ScheduleEvent, ScheduledSession, SessionState,
+  LiveSession, Schedule, ScheduleEvent, ScheduledSession, SessionAnalysis,
+  SessionState,
 } from "./types";
 
 /* -------------------------------------------------------------------------- */
@@ -90,46 +91,68 @@ export function useSchedule() {
 }
 
 /**
- * Where a session is right now, from the instants the server sent.
+ * WHAT THE CARS ARE DOING, from the instants the server sent.
  *
  * THE SERVER'S `state` IS A PHOTOGRAPH; this is the film. `state` was true at
  * the moment the response was written, and a page open across the start of
  * Practice 1 would have kept showing "upcoming" until it next happened to
- * ask. Both boundaries are published as instants — `start` and `available_at`
- * — so the page can move through them on the exact second against the reader's
- * own clock, with no request and no rule of its own.
+ * ask. Both boundaries are published as instants — `start` and `end` — so the
+ * page moves through them on the exact second against the reader's own clock,
+ * with no request and no rule of its own.
+ *
+ * `live` ENDS AT THE SCHEDULED END. It used to end at `available_at`, twenty
+ * minutes later, which is why a finished Practice 2 kept saying it was on
+ * track while the archive caught up. That window belongs to `analysisAt`.
  */
 export function stateAt(s: ScheduledSession, now: number): SessionState {
   const start = s.start ? new Date(s.start).getTime() : NaN;
-  const opens = s.available_at ? new Date(s.available_at).getTime() : NaN;
+  const ends = s.end ? new Date(s.end).getTime() : NaN;
   if (!Number.isFinite(start)) {
     // No published start: the server's answer is the only one available, and
     // a session with no instant is never called live (see backend schedule.py).
-    return s.state ?? (s.available ? "available" : "upcoming");
+    return s.state ?? (s.available ? "completed" : "upcoming");
   }
   if (now < start) return "upcoming";
-  if (!Number.isFinite(opens)) return s.state === "available" ? "available" : "live";
-  return now >= opens ? "available" : "live";
+  if (!Number.isFinite(ends)) return s.state === "completed" ? "completed" : "live";
+  return now < ends ? "live" : "completed";
+}
+
+/**
+ * WHAT PITWALL IQ CAN SHOW for it — the other axis, and the only one that may
+ * decide whether something is openable.
+ *
+ * A session is `awaiting` between the flag and the moment its official timing
+ * is published. That is an ordinary state of the world, not a failure, and it
+ * is the one the product previously had no name for: it borrowed "live" for
+ * the first twenty minutes and then "unavailable" for whatever came after.
+ */
+export function analysisAt(s: ScheduledSession, now: number): SessionAnalysis {
+  const opens = s.available_at ? new Date(s.available_at).getTime() : NaN;
+  if (!Number.isFinite(opens)) {
+    // Nothing to count from: the server's own answer stands.
+    return s.analysis ?? (s.available ? "available" : "awaiting");
+  }
+  return now >= opens ? "available" : "awaiting";
 }
 
 /**
  * The race of this weekend, but only once it can actually be read.
  *
  * WHAT MAKES A ROUND ON THE SCHEDULE OPENABLE. Not that its date has passed,
- * not where it sits in the array, not whether something happens to be cached —
- * the same lifecycle answer everything else reads. `race_done` on the server
- * IS `session_available(gp, "Race")` (backend app/schedule.py), and `stateAt`
- * is that same rule evaluated against the same published instants, so the card
- * and the Explorer's own gate cannot disagree about whether there is a race
- * there to open. It returns the session rather than a boolean because the link
- * needs to name it.
+ * not where it sits in the array, not whether something happens to be cached,
+ * and — since V106 — not merely that the race has FINISHED. Opening a round
+ * means opening its analysis, so the gate is the DATA axis: `analysisAt`, the
+ * same `session_available` the server computes and the same one the Explorer's
+ * own guard reads. A race that took the flag ten minutes ago is `completed`
+ * and not yet readable, and this returns null for it.
  *
- * Null while the race is upcoming or on track, and for a weekend with no race
- * on its card at all.
+ * It returns the session rather than a boolean because the link needs to name
+ * it. Null while the race is upcoming, on track, or finished but unpublished,
+ * and for a weekend with no race on its card at all.
  */
 export function readableRace(event: ScheduleEvent, now: number): ScheduledSession | null {
   const race = event.sessions?.find((s) => s.name === RACE_SESSION);
-  return race && stateAt(race, now) === "available" ? race : null;
+  return race && analysisAt(race, now) === "available" ? race : null;
 }
 
 /**

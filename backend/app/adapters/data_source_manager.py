@@ -86,6 +86,8 @@ _REASON_MESSAGE = {
     "future_session": "This session may not have happened yet, so no source has data for it.",
     "live_session": "This session is running right now. Timing data is published once it "
                     "has finished, and the full analysis will load then.",
+    "awaiting_data": "This session has finished. Its completed timing has not reached our "
+                     "sources yet — the analysis loads once it does.",
     "no_source_coverage": "None of our sources (OpenF1, FastF1, Jolpica) cover this session — "
                           "it may be too old for detailed timing, or the name didn't match.",
     "source_error": "The data sources were unreachable. This is usually a temporary network issue.",

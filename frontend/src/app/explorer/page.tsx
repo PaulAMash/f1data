@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
 import { LiveSessionPanel, SessionStrip } from "@/components/schedule/LiveSession";
+import { AwaitingData } from "@/components/schedule/AwaitingData";
 import { consumeTopOnArrival } from "@/lib/links";
 import { useTourDrive } from "@/lib/tour";
 import { Footer } from "@/components/layout/Footer";
@@ -422,6 +423,37 @@ export default function ExplorerPage() {
     );
   }
 
+  /* A SESSION THAT IS OVER AND NOT YET PUBLISHED IS NOT A FAILURE.
+     The third answer, and the one the product could not previously give: the
+     sources were asked, they have nothing yet, and the session itself finished
+     — which is an ordinary state of a race weekend rather than a fault. It
+     gets its own state for the same reason the live one does. See the backend's
+     `awaiting_data` reason and main._reason_for_finished. */
+  if (blocked && error?.reason === "awaiting_data") {
+    return (
+      <div className="min-h-screen">
+        <NavBar active="explorer" />
+        <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-6">
+          <div className="mb-4">
+            <RaceSelector value={sel} onChange={setSel} loading={loading}
+              onRefresh={() => setRefreshKey((k) => k + 1)} />
+          </div>
+          <AwaitingData year={sel.year} gp={sel.gp} session={sel.session}
+            retrying={loading} onRetry={() => setRefreshKey((k) => k + 1)} />
+          {/* The provider detail, and only that: the panel above has already
+              said what happened, and repeating it under a second heading that
+              reads "not available right now" would take the sentence back. */}
+          {(error?.attempts?.length ?? 0) > 0 && (
+            <div className="mt-4 max-w-xl">
+              <SourceAttempts attempts={error?.attempts} />
+            </div>
+          )}
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
   if (blocked) {
     return (
       <div className="min-h-screen">
@@ -649,6 +681,7 @@ const WHOSE: Record<string, { who: "provider" | "session" | "server"; line: stri
   timeout: { who: "provider", line: "A provider accepted the request and then took too long to answer. That is upstream of us, and it is usually brief." },
   no_source_coverage: { who: "session", line: "None of our providers publish detailed timing for this session. Older seasons carry an official classification and nothing more — that is the complete record that exists, and it is in Seasons." },
   future_session: { who: "session", line: "No provider has data for a session that has not been run yet. This page will fill itself in once it has." },
+  awaiting_data: { who: "session", line: "This session has finished. Its completed timing has not reached the open providers we read from yet — the analysis loads once it does." },
   not_found: { who: "session", line: "No provider recognised this combination of season, Grand Prix and session. Check the three pickers above." },
   live_disabled: { who: "server", line: "Live fetching is switched off on this deployment, so nothing was requested from any provider." },
 };
@@ -689,6 +722,35 @@ const FACET_LABEL: Record<string, string> = {
 function listOf(items: string[]): string {
   if (items.length <= 1) return items[0] ?? "";
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/** WHAT EACH PROVIDER ACTUALLY SAID.
+ *
+ *  Lifted out of the unavailable panel so the awaiting-data state can show the
+ *  same detail without also inheriting its headline. A reader who wants to know
+ *  that OpenF1 returned an error can still find it; one who only wants to know
+ *  that Practice 2 has finished is not made to read it first. */
+function SourceAttempts({ attempts }: { attempts?: any[] }) {
+  if (!attempts?.length) return null;
+  return (
+    <div className="mt-1 overflow-hidden rounded-xl border border-white/[0.06] bg-base-900/40">
+      <p className="border-b border-white/[0.06] px-3.5 py-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+        What each source said
+      </p>
+      <ul>
+        {attempts.slice(0, 4).map((a: any, i: number) => (
+          <li key={i}
+            className="flex items-center gap-3 border-b border-white/[0.04] px-3.5 py-2 text-[12.5px] last:border-b-0">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber/70" />
+            <span className="text-ink-muted">{SOURCE_NAME[a.source] ?? a.source}</span>
+            <span className="ml-auto text-right text-ink-faint">
+              {ATTEMPT_STATE[a.category] ?? a.category}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function SessionUnavailable({ error, incomplete, session, onRetry, onPick, onChampionship }: {
@@ -746,25 +808,7 @@ function SessionUnavailable({ error, incomplete, session, onRetry, onPick, onCha
           )}
 
           {/* ---- 3. what each provider actually said ---------------------- */}
-          {(error?.attempts?.length ?? 0) > 0 && (
-            <div className="mt-1 overflow-hidden rounded-xl border border-white/[0.06] bg-base-900/40">
-              <p className="border-b border-white/[0.06] px-3.5 py-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                What each source said
-              </p>
-              <ul>
-                {error!.attempts.slice(0, 4).map((a: any, i: number) => (
-                  <li key={i}
-                    className="flex items-center gap-3 border-b border-white/[0.04] px-3.5 py-2 text-[12.5px] last:border-b-0">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber/70" />
-                    <span className="text-ink-muted">{SOURCE_NAME[a.source] ?? a.source}</span>
-                    <span className="ml-auto text-right text-ink-faint">
-                      {ATTEMPT_STATE[a.category] ?? a.category}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <SourceAttempts attempts={error?.attempts} />
 
           {/* ---- 4. what to do now ---------------------------------------- */}
           <div className="flex flex-wrap items-center gap-2 pt-1">

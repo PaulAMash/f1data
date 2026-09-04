@@ -81,10 +81,15 @@ class GrandPrix(BaseModel):
     # this is what has actually been run and can therefore be loaded. Stamped
     # server-side so no client re-derives it — see service.mark_completed.
     available_sessions: list[str] = Field(default_factory=list)
-    # Running right now: started, not yet finished, nothing to analyse yet.
-    # The third state, and the one a boolean had nowhere to put — a reader
-    # arriving during Practice 1 was being told it had not happened.
+    # Running right now: the cars are on track. The third state, and the one a
+    # boolean had nowhere to put — a reader arriving during Practice 1 was
+    # being told it had not happened.
     live_sessions: list[str] = Field(default_factory=list)
+    # RUN, whether or not the data has arrived. The larger set: everything in
+    # `available_sessions` is here, and so is a session that finished ten
+    # minutes ago and whose timing is still being published. Keeping the two
+    # apart is what stops a slow archive being mistaken for a running session.
+    completed_sessions: list[str] = Field(default_factory=list)
     # Has the race itself been run? Decided from the Race session's own start
     # time rather than from `date`, which is the field that meant two things.
     completed: bool = True

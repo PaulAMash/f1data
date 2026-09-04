@@ -140,7 +140,7 @@ def test_a_race_already_run_is_still_on_the_schedule(calendar):
     happened cannot answer 'when was round 3'."""
     events = get()["events"]
     past = [e for e in events
-            if all(s["state"] == "available" for s in e["sessions"])]
+            if all(s["state"] == "completed" for s in e["sessions"])]
     assert past, "a mid-season calendar has races already run"
     assert past[0]["name"] == calendar[0].name
 
@@ -167,11 +167,18 @@ def test_a_future_race_is_never_reported_as_available(calendar):
                 assert s["available"] is False, (event["name"], s["name"])
 
 
-def test_every_session_carries_exactly_one_of_the_three_states(calendar):
+def test_every_session_carries_a_lifecycle_and_a_data_state(calendar):
+    """TWO AXES, AND THE ASYMMETRY BETWEEN THEM. What the cars are doing and
+    what Pitwall IQ can show are different questions: readable implies
+    finished, but finished does not imply readable — which is the twenty
+    minutes after the flag that used to be reported as still live."""
     for event in get()["events"]:
         for s in event["sessions"]:
-            assert s["state"] in ("upcoming", "live", "available")
-            assert (s["state"] == "available") is s["available"]
+            assert s["state"] in ("upcoming", "live", "completed")
+            assert s["analysis"] in ("available", "awaiting")
+            assert (s["analysis"] == "available") is s["available"]
+            if s["analysis"] == "available":
+                assert s["state"] == "completed", (event["name"], s["name"])
 
 
 def test_states_run_forwards_across_the_season(calendar):
@@ -257,7 +264,8 @@ def test_a_finished_season_still_returns_all_of_its_rounds(monkeypatch, calendar
     events = get()["events"]
     assert len(events) == ROUNDS
     assert all(e["completed"] for e in events)
-    assert all(s["state"] == "available" for e in events for s in e["sessions"])
+    assert all(s["state"] == "completed" for e in events for s in e["sessions"])
+    assert all(s["analysis"] == "available" for e in events for s in e["sessions"])
 
 
 def test_a_season_before_it_starts_returns_all_of_its_rounds(monkeypatch, calendar):
@@ -272,20 +280,19 @@ def test_a_season_before_it_starts_returns_all_of_its_rounds(monkeypatch, calend
 # --------------------------------------------------------------------------- #
 # 7. One definition of "completed", for the page that acts on it
 # --------------------------------------------------------------------------- #
-def test_completed_and_the_race_session_state_are_the_same_answer(calendar):
-    """WHAT THE SCHEDULE PAGE'S LINKS DEPEND ON.
+def test_completed_is_the_races_lifecycle_and_nothing_else(calendar):
+    """THE EVENT-LEVEL FLAG FOLLOWS THE FLAG, NOT THE ARCHIVE.
 
-    A round on the Schedule opens that race in Explore once it has been run,
-    and the client decides that from the Race session's own state — which is
-    only safe because it is not a second opinion. `race_done` IS
-    `session_available(gp, "Race")` (app/schedule.py), so the event-level flag
-    and the session-level state cannot disagree. If they ever do, a card will
-    offer a race the Explorer then refuses, and this is where that shows up.
+    `completed` is what the Schedule's card prints, and a race is over when it
+    is over. It used to mean "the race's data has settled", so a finished race
+    read as still in progress for twenty minutes on the card as well. Whether
+    its analysis has arrived is `analysis`, and the two are deliberately not
+    the same field.
     """
     for event in get()["events"]:
         race = next((s for s in event["sessions"] if s["name"] == "Race"), None)
         assert race is not None
-        assert event["completed"] is (race["state"] == "available"), event["name"]
+        assert event["completed"] is (race["state"] == "completed"), event["name"]
 
 
 def test_a_race_the_schedule_would_link_to_is_one_the_explorer_will_serve(calendar):

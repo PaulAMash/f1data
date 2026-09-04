@@ -46,26 +46,50 @@ def at(iso: str) -> datetime:
 # --------------------------------------------------------------------------- #
 # 1. The three states, at every boundary
 # --------------------------------------------------------------------------- #
-@pytest.mark.parametrize("when, expected", [
-    ("2026-09-04T11:29:59", schedule.UPCOMING),   # a second before the green
-    ("2026-09-04T11:30:00", schedule.LIVE),       # the instant it starts
-    ("2026-09-04T12:00:00", schedule.LIVE),       # half an hour in
-    ("2026-09-04T12:29:59", schedule.LIVE),       # a second before the flag
-    ("2026-09-04T12:30:00", schedule.LIVE),       # the flag — still settling
-    ("2026-09-04T12:49:59", schedule.LIVE),       # a second before it settles
-    ("2026-09-04T12:50:00", schedule.AVAILABLE),  # 60 min + 20 min settle
-    ("2026-09-05T00:00:00", schedule.AVAILABLE),  # and it stays that way
+@pytest.mark.parametrize("when, lifecycle, analysis", [
+    # THE MATRIX THE ITALIAN GRAND PRIX EXPOSED. The old model had one axis and
+    # called the whole settle window "live", so after Practice 2 finished the
+    # site said the cars were still out for another twenty minutes. The flag
+    # ends the session; the archive catching up is a separate column.
+    ("2026-09-04T11:29:59", schedule.UPCOMING,  schedule.AWAITING),   # before the green
+    ("2026-09-04T11:30:00", schedule.LIVE,      schedule.AWAITING),   # the instant it starts
+    ("2026-09-04T12:00:00", schedule.LIVE,      schedule.AWAITING),   # half an hour in
+    ("2026-09-04T12:29:59", schedule.LIVE,      schedule.AWAITING),   # a second before the flag
+    ("2026-09-04T12:30:00", schedule.COMPLETED, schedule.AWAITING),   # THE FLAG. Over, not live.
+    ("2026-09-04T12:49:59", schedule.COMPLETED, schedule.AWAITING),   # still waiting on the data
+    ("2026-09-04T12:50:00", schedule.COMPLETED, schedule.AVAILABLE),  # 60 min + 20 min settle
+    ("2026-09-05T00:00:00", schedule.COMPLETED, schedule.AVAILABLE),  # and it stays that way
 ])
-def test_practice_one_moves_through_its_states_on_the_second(when, expected):
-    assert schedule.session_state(monza(), "Practice 1", at(when)) == expected
+def test_practice_one_moves_through_both_of_its_states_on_the_second(
+        when, lifecycle, analysis):
+    gp, now = monza(), at(when)
+    assert schedule.session_state(gp, "Practice 1", now) == lifecycle
+    assert schedule.session_analysis(gp, "Practice 1", now) == analysis
 
 
-def test_a_session_is_live_for_exactly_as_long_as_it_runs_plus_the_settle():
-    """The race is the long one: 150 scheduled minutes and the same 20-minute
-    settle, so a reader is not told to come back before the podium."""
+def test_a_session_is_live_for_exactly_as_long_as_it_runs():
+    """THE REGRESSION THIS FILE NOW GUARDS. Not "as long as it runs plus the
+    settle" — that was the bug. A slow archive is not a running car, and the
+    twenty minutes afterwards belong to `analysis`, not to the lifecycle."""
     gp = monza()
-    assert schedule.session_state(gp, "Race", at("2026-09-06T15:29:00")) == schedule.LIVE
-    assert schedule.session_state(gp, "Race", at("2026-09-06T15:50:00")) == schedule.AVAILABLE
+    end = at("2026-09-06T15:30:00")          # a 150-minute race from 13:00
+    assert schedule.session_state(gp, "Race", end - timedelta(seconds=1)) == schedule.LIVE
+    assert schedule.session_state(gp, "Race", end) == schedule.COMPLETED
+    # …and it is emphatically not readable yet, which is the other half.
+    assert schedule.session_analysis(gp, "Race", end) == schedule.AWAITING
+    assert schedule.session_analysis(gp, "Race", end + timedelta(minutes=20)) \
+        == schedule.AVAILABLE
+
+
+def test_a_provider_being_slow_cannot_make_a_session_live_again():
+    """The invariant the whole split exists for, stated on its own: the
+    lifecycle is a function of the schedule and the clock. Nothing that
+    fetches is an input to it, so there is no delay of any length that can
+    put a finished session back on track."""
+    gp = monza()
+    for minutes in range(0, 6 * 60, 5):
+        now = at("2026-09-04T12:30:00") + timedelta(minutes=minutes)
+        assert schedule.session_state(gp, "Practice 1", now) == schedule.COMPLETED, now
 
 
 # --------------------------------------------------------------------------- #
@@ -125,8 +149,14 @@ def test_no_session_is_ever_two_things_at_once():
         now = at("2026-09-04T00:00:00") + timedelta(minutes=minutes)
         for name in gp.sessions:
             state = schedule.session_state(gp, name, now)
-            assert state in (schedule.UPCOMING, schedule.LIVE, schedule.AVAILABLE)
-            assert (state == schedule.AVAILABLE) is schedule.session_available(gp, name, now)
+            analysis = schedule.session_analysis(gp, name, now)
+            assert state in (schedule.UPCOMING, schedule.LIVE, schedule.COMPLETED)
+            assert analysis in (schedule.AVAILABLE, schedule.AWAITING)
+            assert (analysis == schedule.AVAILABLE) is schedule.session_available(gp, name, now)
+            # Readable implies finished — never the other way round, which is
+            # the asymmetry the old single axis could not express.
+            if analysis == schedule.AVAILABLE:
+                assert state == schedule.COMPLETED
             if state == schedule.LIVE:
                 assert name not in schedule.available_sessions(gp, now)
                 nxt = schedule.next_session(gp, now)
@@ -153,7 +183,7 @@ def test_an_event_with_only_a_calendar_date_is_never_called_live():
         now = at("1994-05-01T00:00:00") + timedelta(hours=hour)
         assert schedule.live_sessions(gp, now) == [], now
         assert schedule.session_state(gp, "Race", now) in (
-            schedule.UPCOMING, schedule.AVAILABLE)
+            schedule.UPCOMING, schedule.COMPLETED)
 
 
 def test_a_session_with_no_published_time_is_never_called_live():
@@ -211,13 +241,18 @@ def test_the_weekend_hands_over_to_the_next_grand_prix():
 # --------------------------------------------------------------------------- #
 # 6. `available_at` — the instant the client turns the page over on
 # --------------------------------------------------------------------------- #
-def test_available_at_is_the_moment_the_state_changes():
+def test_available_at_is_the_moment_the_ANALYSIS_changes():
+    """It was the moment the lifecycle changed, and that was the bug. It marks
+    the archive catching up; the session itself ended twenty minutes earlier."""
     gp = monza()
     opens = schedule.session_available_at(gp, "Practice 1")
     assert opens == at("2026-09-04T12:50:00")
-    assert schedule.session_state(gp, "Practice 1", opens - timedelta(seconds=1)) \
-        == schedule.LIVE
-    assert schedule.session_state(gp, "Practice 1", opens) == schedule.AVAILABLE
+    assert schedule.session_analysis(gp, "Practice 1", opens - timedelta(seconds=1)) \
+        == schedule.AWAITING
+    assert schedule.session_analysis(gp, "Practice 1", opens) == schedule.AVAILABLE
+    # The lifecycle is already past by then and does not move here.
+    for when in (opens - timedelta(seconds=1), opens):
+        assert schedule.session_state(gp, "Practice 1", when) == schedule.COMPLETED
 
 
 def test_available_at_is_unknown_when_the_start_is():

@@ -103,34 +103,52 @@ for (const file of files) {
     });
   }
 
-  // ---- 3. a session is a link because the lifecycle says it can be read ----
+  // ---- 3. an analysis link is gated on the DATA axis, not the lifecycle ----
   //
-  // Scoped to `sessionHref`'s own body rather than to the file. Asking whether
-  // the FILE mentions `stateAt` passes while the gate itself has been swapped
-  // for something else — the other two functions here read `stateAt` for
+  // Scoped to each function's own body rather than to the file. Asking whether
+  // the FILE mentions `analysisAt` passes while the gate itself has been
+  // swapped for something else — the other functions here read both axes for
   // styling, and that was enough to hide a rewritten gate in testing.
   if (/components\/schedule\/SessionLink\.tsx$/.test(rel)) {
-    const at = text.indexOf("function sessionHref");
-    const body = at < 0 ? "" : text.slice(at, text.indexOf("\n}", at) + 2);
-    if (!body) {
+    const bodyOf = (name) => {
+      const at = text.indexOf(`function ${name}`);
+      return at < 0 ? "" : text.slice(at, text.indexOf("\n}", at) + 2)
+        .replace(/\s+/g, " ");
+    };
+
+    /* THE GATE ITSELF, not a token that happens to appear near it — and the
+       RIGHT AXIS. Since V106 there are two, and the tempting regression is no
+       longer `=== "upcoming"` but `stateAt(...) !== "completed"`: it reads
+       correctly, it compiles, and it offers an analysis for the twenty minutes
+       between the flag and the timing being published. Opening a session means
+       opening its DATA, so only `analysisAt` may decide. */
+    const href = bodyOf("sessionHref");
+    if (!href) {
       report(file, 1, "sessionHref() is where a session's openability is decided");
     } else {
-      /* THE GATE ITSELF, not a token that happens to appear near it. Testing
-         only that the body mentions `stateAt`, or mentions "available",
-         passes while the gate reads `=== "upcoming"` — which would open a
-         door on a session that is on track. The three states have to stay
-         three, and only one of them may open one. */
-      const flat = body.replace(/\s+/g, " ");
-      if (!/stateAt\([^)]*\) !== ["']available["']/.test(flat)) {
+      if (!/analysisAt\([^)]*\) !== ["']available["']/.test(href)) {
         report(file, 1,
-          'sessionHref() must refuse anything but "available":\n'
-          + '    if (stateAt(session, now) !== "available") return null;\n'
-          + "    upcoming and live are both unreadable, so neither is the "
-          + "thing to test against");
+          'sessionHref() must refuse anything but available ANALYSIS:\n'
+          + '    if (analysisAt(session, now) !== "available") return null;\n'
+          + "    a session that has merely finished is not yet readable");
       }
-      if (!/\bexplorerHref\s*\(/.test(body)) {
+      if (/\bstateAt\s*\(/.test(href)) {
+        report(file, 1,
+          "sessionHref() must not consult the lifecycle — `completed` is not "
+          + "`readable`, and conflating them is the bug V106 exists to fix");
+      }
+      if (!/\bexplorerHref\s*\(/.test(href)) {
         report(file, 1, "session links must be built by explorerHref()");
       }
+    }
+
+    // And its mirror: the door to the explanation is the lifecycle's, and it
+    // must never open for a session still running or still to come.
+    const waiting = bodyOf("waitingHref");
+    if (waiting && !/stateAt\([^)]*\) !== ["']completed["']/.test(waiting)) {
+      report(file, 1,
+        'waitingHref() must offer the explanation only for a session that is '
+        + 'over:\n    if (stateAt(session, now) !== "completed") return null;');
     }
   }
 }

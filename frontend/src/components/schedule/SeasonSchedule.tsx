@@ -126,6 +126,10 @@ function EventCard({ event, now, nextSessionName }: {
   const href = race
     ? explorerHref({ year: event.year, gp: event.name, session: race.name })
     : null;
+  /* Every session of the weekend has been run. The card says "Completed" from
+     that, not from whether the analysis has arrived. */
+  const finished = event.sessions.length > 0
+    && event.sessions.every((s) => stateAt(s, now) === "completed");
 
   const card = (
     <article className={cx("panel h-full overflow-hidden transition-colors",
@@ -147,7 +151,11 @@ function EventCard({ event, now, nextSessionName }: {
             <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-[0.18em] text-accent-soft">
               Next Grand Prix
             </p>
-          ) : href && (
+          ) : finished && (
+            /* THE LABEL IS THE LIFECYCLE; THE LINK IS THE DATA. A race that
+               took the flag ten minutes ago is completed and says so, whether
+               or not its analysis has landed — which is exactly the twenty
+               minutes that used to be reported as still running. */
             <p className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.18em] text-ink-faint">
               <Check size={11} className="shrink-0" />
               Completed
