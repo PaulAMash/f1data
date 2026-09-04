@@ -44,6 +44,7 @@ def mark_completed(gps: list[GrandPrix]) -> list[GrandPrix]:
     now = schedule.now_utc()
     for g in gps:
         g.available_sessions = schedule.available_sessions(g, now)
+        g.live_sessions = schedule.live_sessions(g, now)
         g.completed = schedule.race_done(g, now)
     return gps
 

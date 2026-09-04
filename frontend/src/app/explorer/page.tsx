@@ -5,7 +5,7 @@ import {
   Gauge, Layers, LineChart, Timer, Wind, Braces, RefreshCw, AlertTriangle, CloudOff,
 } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
-import { NextSessionStrip } from "@/components/schedule/NextSession";
+import { LiveSessionPanel, SessionStrip } from "@/components/schedule/LiveSession";
 import { useTourDrive } from "@/lib/tour";
 import { Footer } from "@/components/layout/Footer";
 import { RaceSelector, type Selection } from "@/components/explorer/RaceSelector";
@@ -389,6 +389,27 @@ export default function ExplorerPage() {
   const blocked = !loading && view === "session"
     && (Boolean(error) || (Boolean(session) && session!.complete === false));
 
+  /* A SESSION THAT IS RUNNING IS NOT A SESSION THAT FAILED.
+     The backend refuses it either way — there is genuinely nothing to analyse
+     until the timing is published — but the reason it gives is now the truth,
+     and "this is happening right now" deserves the live panel rather than the
+     status screen for a dead end. See backend main._guard_unrun. */
+  if (blocked && error?.reason === "live_session") {
+    return (
+      <div className="min-h-screen">
+        <NavBar active="explorer" />
+        <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-6">
+          <div className="mb-4">
+            <RaceSelector value={sel} onChange={setSel} loading={loading}
+              onRefresh={() => setRefreshKey((k) => k + 1)} />
+          </div>
+          <LiveSessionPanel onOpenSchedule />
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
   if (blocked) {
     return (
       <div className="min-h-screen">
@@ -457,7 +478,7 @@ export default function ExplorerPage() {
             wondering where it is deserves an answer rather than a picker that
             simply does not list it. One line, and it removes itself when the
             calendar has nothing upcoming. */}
-        <NextSessionStrip className="mb-4" />
+        <SessionStrip className="mb-4" />
 
         {currentSeason && sel.year < currentSeason && (
           <p className="mb-4 rounded-lg border border-sky-400/15 bg-sky-400/[0.04] px-3 py-1.5 text-xs text-sky-300/90">

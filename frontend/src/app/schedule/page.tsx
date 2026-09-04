@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { NavBar } from "@/components/layout/NavBar";
 import { Footer } from "@/components/layout/Footer";
-import { NextSession } from "@/components/schedule/NextSession";
+import { SessionHero } from "@/components/schedule/LiveSession";
 import { UpcomingSchedule } from "@/components/schedule/UpcomingSchedule";
 import { trackPageView } from "@/lib/analytics";
 
@@ -43,7 +43,8 @@ export default function SchedulePage() {
           </h1>
           <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-ink-muted">
             Every session of the weekend ahead, and the Grands Prix after it —
-            in your own time zone. Once a session has run,{" "}
+            in your own time zone. While a session is on track this page says
+            so. Once it has run,{" "}
             <Link href="/explorer" className="underline decoration-dotted underline-offset-2 hover:text-ink">
               Explore
             </Link>{" "}
@@ -51,7 +52,9 @@ export default function SchedulePage() {
           </p>
         </header>
 
-        <NextSession />
+        {/* The countdown, or the session it was counting down to — see
+            SessionHero. One place on the page, whichever is true. */}
+        <SessionHero />
 
         <section className="mt-9">
           <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">

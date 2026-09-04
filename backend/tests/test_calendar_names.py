@@ -68,7 +68,12 @@ def test_calendar_names_are_unique_within_a_season(openf1):
     names = [g.name for g in gps]
     assert len(names) == len(set(names)), names
     assert names == ["Bahrain Grand Prix", "Italian Grand Prix", "Bahrain Grand Prix in Malaysia"]
-    assert [g.round for g in gps] == [1282, 1293, 1308]
+    # `round` is unset here on purpose. It used to carry the meeting key —
+    # 1282, 1293, 1308 — an internal identifier in the thousands rather than a
+    # round number, and a calendar claiming Las Vegas is round 1287 is worse
+    # than one admitting it does not know. The real numbers come from the
+    # source that publishes them, or from position; see adapters/calendar_merge.
+    assert [g.round for g in gps] == [None, None, None]
 
 
 def test_the_earlier_round_keeps_the_plain_name_and_the_later_is_read_from_its_title():

@@ -389,10 +389,18 @@ def sessions_available(year: int = Query(...), gp: str = Query(...)):
         # upcoming/unavailable state; a guessed list makes it fetch a race
         # that may not have been run.
         return {"source": src.value, "year": year, "gp": gp,
-                "sessions": [], "scheduled": [], "known": False}
+                "sessions": [], "scheduled": [], "live": [], "states": {},
+                "known": False}
+    now = app_schedule.now_utc()
     return {"source": src.value, "year": year, "gp": gp,
             "sessions": match.available_sessions,
             "scheduled": match.sessions,
+            # Running right now. A picker that greys these out alongside the
+            # ones months away is telling a reader the wrong thing about the
+            # session they can currently hear on the television.
+            "live": match.live_sessions,
+            "states": {s: app_schedule.session_state(match, s, now)
+                       for s in (match.sessions or [])},
             "session_times": match.session_times,
             "completed": match.completed, "known": True}
 
@@ -424,39 +432,86 @@ def schedule_route(year: int | None = Query(None), limit: int = Query(6)):
 
     gps, src = season(year)
     # A season that has finished rolls into the next one rather than showing
-    # an empty schedule through the winter.
-    if gps and not app_schedule.next_session_across(gps, now):
+    # an empty schedule through the winter. A season whose LAST session is
+    # running has not finished — rolling over then would have thrown away the
+    # live Abu Dhabi race to show an empty next year.
+    spent = (not app_schedule.next_session_across(gps, now)
+             and not app_schedule.live_now(gps, now))
+    if gps and spent:
         nxt_gps, nxt_src = season(year + 1)
         if nxt_gps and app_schedule.next_session_across(nxt_gps, now):
             gps, src, year = nxt_gps, nxt_src, year + 1
 
+    def describe(g, s: str) -> dict:
+        start = app_schedule.session_start(g, s)
+        end = app_schedule.session_end(g, s)
+        return {
+            "name": s,
+            "start": start and start.isoformat(),
+            # Expected, not observed: a scheduled length plus whatever the
+            # session actually does. The client says so rather than printing
+            # it as a fact.
+            "end": end and end.isoformat(),
+            # When this stops being live and becomes readable. Sent so the
+            # page can turn a session over on the exact second rather than
+            # whenever it next asks — see schedule.session_available_at.
+            "available_at": (a := app_schedule.session_available_at(g, s)) and a.isoformat(),
+            "state": app_schedule.session_state(g, s, now),
+            # `available` stays for clients written before there were three
+            # states. It is the same answer, narrowed.
+            "available": s in g.available_sessions,
+        }
+
+    def place(g) -> dict:
+        return {"year": year, "round": g.round, "name": g.name,
+                "location": g.location, "country": g.country,
+                "circuit": g.circuit.name if g.circuit else None,
+                "date": g.date}
+
     events = []
     for g in gps:
-        upcoming = [
-            {"name": s, "start": (t := app_schedule.session_start(g, s)) and t.isoformat(),
-             "available": s in g.available_sessions}
-            for s in (g.sessions or [])
-        ]
-        # An event belongs on an upcoming schedule while any of its sessions
-        # is still to come — which keeps a weekend in progress on the list
-        # rather than dropping it the moment practice starts.
+        # An event belongs on an upcoming schedule while anything about it is
+        # still to come — a session yet to start, OR one running right now.
+        # Testing only for the former dropped a Grand Prix off the schedule
+        # during its own final session, which is the moment it matters most.
         nxt = app_schedule.next_session(g, now)
-        if not nxt:
+        running = app_schedule.live_sessions(g, now)
+        if not nxt and not running:
             continue
         events.append({
-            "year": year, "round": g.round, "name": g.name,
-            "location": g.location, "country": g.country,
-            "circuit": g.circuit.name if g.circuit else None,
-            "date": g.date,
-            "sessions": upcoming,
-            "next_session": {"name": nxt[0], "start": nxt[1].isoformat()},
+            **place(g),
+            "sessions": [describe(g, s) for s in (g.sessions or [])],
+            "next_session": nxt and {"name": nxt[0], "start": nxt[1].isoformat()},
+            "live_session": running[0] if running else None,
             "completed": g.completed,
         })
         if len(events) >= max(1, min(limit, 30)):
             break
 
+    # WHAT IS HAPPENING RIGHT NOW, asked once, of the whole season rather than
+    # of the trimmed list above — so a live session is never lost to a `limit`.
+    # This is the entire basis of the live experience: the same session times
+    # the countdown counts down to and the Explorer gates on, so the site
+    # cannot call a session live and offer to analyse it in the same breath.
+    live = None
+    running = app_schedule.live_now(gps, now)
+    if running:
+        g, name = running
+        start = app_schedule.session_start(g, name)
+        end = app_schedule.session_end(g, name)
+        nxt = app_schedule.next_session(g, now)
+        available_at = app_schedule.session_available_at(g, name)
+        live = {
+            **place(g), "session": name,
+            "start": start and start.isoformat(),
+            "end": end and end.isoformat(),
+            "available_at": available_at and available_at.isoformat(),
+            "next_session": nxt and {"name": nxt[0], "start": nxt[1].isoformat()},
+            "sessions": [describe(g, s) for s in (g.sessions or [])],
+        }
+
     return {"source": src.value, "year": year, "now": now.isoformat(),
-            "mock": settings.mock_mode, "events": events}
+            "mock": settings.mock_mode, "live": live, "events": events}
 
 
 # --------------------------------------------------------------------------- #
@@ -493,6 +548,17 @@ def _guard_unrun(year: int, gp: str, session_type: str) -> None:
     if session_type not in match.sessions:
         return
     err = DataUnavailableError(year, gp, session_type, attempts=[])
+    # A SESSION THAT IS RUNNING IS NOT A SESSION THAT HAS NOT HAPPENED, and
+    # answering both with `future_session` is what would have sent a reader
+    # who tuned in for Practice 1 to a page saying it had not been run. The
+    # refusal is the same — there is genuinely nothing to analyse until the
+    # timing is published — but the reason is the truth, and the client turns
+    # this one into the live experience rather than an unavailable screen.
+    # Retryable, because unlike a future session this one resolves by itself.
+    if session_type in match.live_sessions:
+        err.reason = "live_session"
+        err.retryable = True
+        raise err
     err.reason = "future_session"
     err.retryable = False
     raise err

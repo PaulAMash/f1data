@@ -35,7 +35,10 @@ from ..models import (
     SourceReport,
     session_category,
 )
-from . import headshots, jolpica_adapter, mock_adapter, openf1_adapter, pitstop_service
+from . import (
+    calendar_merge, headshots, jolpica_adapter, mock_adapter, openf1_adapter,
+    pitstop_service,
+)
 from . import pitwall_adapter as fastf1
 from .pitwall_runtime import ArchiveClientUnavailable, explain_import
 
@@ -81,6 +84,8 @@ def _reason_code(year: int, attempts: list[dict]) -> str:
 
 _REASON_MESSAGE = {
     "future_session": "This session may not have happened yet, so no source has data for it.",
+    "live_session": "This session is running right now. Timing data is published once it "
+                    "has finished, and the full analysis will load then.",
     "no_source_coverage": "None of our sources (OpenF1, FastF1, Jolpica) cover this session — "
                           "it may be too old for detailed timing, or the name didn't match.",
     "source_error": "The data sources were unreachable. This is usually a temporary network issue.",
@@ -1159,17 +1164,49 @@ def _merge_seasons(seasons: list[Season]) -> list[Season]:
 
 
 def get_grands_prix(year: int) -> tuple[list[GrandPrix], DataSource]:
+    """The season's calendar — every round of it.
+
+    IT IS A MERGE, NOT A RACE. This used to return the first source that
+    answered with anything, and OpenF1 answers first: a live-timing mirror
+    that creates a meeting weeks, not months, before the cars run. Mid-season
+    it therefore knows the rounds that have happened and the few that are
+    imminent, and the season quietly ended wherever its knowledge did — in
+    2026, at São Paulo, with Las Vegas, Qatar and Abu Dhabi missing from the
+    page whose whole job is to say what is coming.
+
+    Jolpica knows which Grands Prix exist and how they are numbered from the
+    day the calendar is published; OpenF1 knows exactly when each session of a
+    weekend it has loaded will start. Both are asked and the two are merged —
+    see adapters/calendar_merge — so the list is as long as the season and as
+    precise as the sources allow. Either source failing costs detail or
+    ordering, never an event.
+    """
     settings = get_settings()
     if not settings.mock_mode and settings.enable_live_fetch:
-        sources = ([openf1_adapter.list_grands_prix, jolpica_adapter.list_grands_prix]
-                   if year >= 2023 else [jolpica_adapter.list_grands_prix])
-        for fn in sources:
+        def ask(fn) -> list[GrandPrix]:
             try:
-                gps = fn(year)
-                if gps:
-                    return gps, DataSource.LIVE
+                return fn(year) or []
             except Exception:  # noqa: BLE001
-                continue
+                return []
+
+        # AT THE SAME TIME, NOT ONE AFTER THE OTHER. Asking a second source is
+        # what makes the calendar complete; making the reader wait for the sum
+        # of two hosts to find that out is not. This call is on the critical
+        # path of the Explorer's first paint, so the merge costs the slower of
+        # the two rather than both. Pre-2023 predates OpenF1 entirely, and
+        # asking it costs a timeout for a certain empty answer.
+        if year >= 2023:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                spine_f = pool.submit(ask, jolpica_adapter.list_grands_prix)
+                detail_f = pool.submit(ask, openf1_adapter.list_grands_prix)
+                spine, detail = spine_f.result(), detail_f.result()
+        else:
+            spine, detail = ask(jolpica_adapter.list_grands_prix), []
+
+        merged = calendar_merge.merge(spine, detail)
+        if merged:
+            return merged, DataSource.LIVE
     return mock_adapter.mock_grands_prix(year), DataSource.MOCK
 
 

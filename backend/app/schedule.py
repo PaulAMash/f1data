@@ -30,6 +30,14 @@ THE DISTINCTION THIS MODULE IS BUILT ON:
 A calendar tells you the first. Only the clock tells you the second, and
 conflating them is what put an unrun race in front of a reader.
 
+BETWEEN THEM SITS THE STATE THE PRODUCT LIVES FOR. A session that has started
+and not yet finished is neither scheduled nor available, and a boolean has
+nowhere to put it — so a reader arriving during Practice 1 was told the
+session had not happened, which is the one thing that was not true. `session_state`
+names all three (UPCOMING / LIVE / AVAILABLE) and everything above it — the
+countdown, the schedule, the Explorer's gate, the live page — reads that one
+answer rather than re-deriving its own.
+
 WHY "FINISHED", NOT "STARTED". A session that began ninety seconds ago has
 no classification, no stint table and no strategy to analyse — asking for it
 buys a reader a spinner and an empty page. Availability therefore means the
@@ -122,6 +130,21 @@ def session_end(gp: GrandPrix, name: str) -> datetime | None:
     return start + timedelta(minutes=SESSION_MINUTES.get(name, DEFAULT_MINUTES))
 
 
+def session_available_at(gp: GrandPrix, name: str) -> datetime | None:
+    """The instant this session stops being live and becomes readable.
+
+    SENT TO THE CLIENT SO IT NEED NOT GUESS. The browser already holds every
+    start time and can move a session from upcoming to live the second the
+    clock passes it; without this it could not do the same at the other end,
+    because the settle window lives here and nowhere else. Publishing the
+    instant rather than the rule keeps one definition of "available" — this
+    one — and still lets the page turn over exactly on time instead of
+    whenever it next happens to ask.
+    """
+    end = session_end(gp, name)
+    return end + timedelta(minutes=SETTLE_MINUTES) if end else None
+
+
 def session_available(gp: GrandPrix, name: str, now: datetime | None = None) -> bool:
     """Has this session run, such that completed data can exist for it?
 
@@ -145,10 +168,69 @@ def session_available(gp: GrandPrix, name: str, now: datetime | None = None) -> 
     return now >= dated + timedelta(hours=DATE_ONLY_GRACE_HOURS)
 
 
+#: The three states a scheduled session can be in. `available` is the only one
+#: from which Pitwall IQ's analysis can be loaded; the other two are the
+#: honest answers to "why not yet".
+UPCOMING = "upcoming"     # the clock has not reached it
+LIVE = "live"             # it is running now — nothing to analyse yet
+AVAILABLE = "available"   # it has finished and settled; the archive can answer
+
+
+def session_state(gp: GrandPrix, name: str, now: datetime | None = None) -> str:
+    """Where this session is in its life: UPCOMING, LIVE or AVAILABLE.
+
+    THE MIDDLE STATE IS THE POINT. `session_available` answers one question
+    with a boolean, and a boolean has no room for the ninety minutes when the
+    cars are actually on track: not available, and emphatically not "later".
+    A reader who arrives during Practice 1 was being told the session had not
+    happened, which is the one thing that was untrue.
+
+    AN EVENT WITH NO PUBLISHED START IS NEVER CALLED LIVE. A bare calendar
+    date parses to midnight UTC — thirteen hours before a race that starts at
+    one in the afternoon — so claiming a session is underway on the strength
+    of it would put a red dot on a page for most of a day for no reason. With
+    no instant to stand on, the honest states are the two on either side.
+    """
+    now = now or now_utc()
+    start = session_start(gp, name)
+    if start is None:
+        return AVAILABLE if session_available(gp, name, now) else UPCOMING
+    if now < start:
+        return UPCOMING
+    return AVAILABLE if session_available(gp, name, now) else LIVE
+
+
 def available_sessions(gp: GrandPrix, now: datetime | None = None) -> list[str]:
     """Every session of this weekend that has actually been run, in order."""
     now = now or now_utc()
     return [s for s in (gp.sessions or []) if session_available(gp, s, now)]
+
+
+def live_sessions(gp: GrandPrix, now: datetime | None = None) -> list[str]:
+    """Every session of this weekend that is running right now.
+
+    A list rather than one name because the model permits it, not because the
+    sport does — two sessions of one Grand Prix never overlap, and if a
+    schedule ever says they do, saying so is better than picking one.
+    """
+    now = now or now_utc()
+    return [s for s in (gp.sessions or []) if session_state(gp, s, now) == LIVE]
+
+
+def live_now(gps: list[GrandPrix], now: datetime | None = None
+             ) -> tuple[GrandPrix, str] | None:
+    """The session being run right now, anywhere on the calendar, if any.
+
+    The whole basis of the live experience: one question, asked of the same
+    session times the countdown counts and the Explorer gates on, so the site
+    cannot simultaneously call a session live and offer to analyse it.
+    """
+    now = now or now_utc()
+    for gp in gps:
+        running = live_sessions(gp, now)
+        if running:
+            return gp, running[0]
+    return None
 
 
 def race_done(gp: GrandPrix, now: datetime | None = None) -> bool:

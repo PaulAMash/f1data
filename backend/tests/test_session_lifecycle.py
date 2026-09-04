@@ -263,10 +263,11 @@ def test_schedule_route_lists_only_sessions_still_to_come():
     assert r.status_code == 200
     body = r.json()
     assert body["events"], "there should be upcoming events in a season in progress"
-    first = body["events"][0]
-    assert first["next_session"]["name"]
-    # every event on an upcoming schedule has something left to run
+    # Every event on an upcoming schedule has something left to run — a
+    # session still to start, or one on track right now. Testing only for the
+    # former dropped a Grand Prix off the list during its own final session.
     for ev in body["events"]:
+        assert ev["next_session"] or ev["live_session"]
         assert any(not s["available"] for s in ev["sessions"])
 
 

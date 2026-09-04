@@ -219,23 +219,60 @@ export interface GrandPrix {
    *  source and the Sunday to another, which is what once put an unrun race
    *  in front of a reader. */
   available_sessions?: string[];
+  /** LIVE sessions — started, not yet readable. Offered by the pickers because
+   *  a session on track is worth opening; it answers with the live state
+   *  rather than an analysis. See app/schedule.py. */
+  live_sessions?: string[];
   /** Has the race been run? Decided server-side — see service.mark_completed. */
   completed?: boolean;
 }
 
 /** One upcoming event, from /api/schedule — the countdown and the schedule
  *  both read this, so neither carries dates of its own. */
-export interface ScheduledSession { name: string; start: string | null; available: boolean; }
+/** Where a session is in its life. Decided server-side, once, from the same
+ *  session times the countdown reads — see backend/app/schedule.py. */
+export type SessionState = "upcoming" | "live" | "available";
+
+export interface ScheduledSession {
+  name: string;
+  start: string | null;
+  /** Expected end — a scheduled length, not an observed one. */
+  end?: string | null;
+  /** When it stops being live and becomes readable. The page moves through
+   *  this instant on its own clock rather than waiting to be told. */
+  available_at?: string | null;
+  /** True when the server wrote the response; `stateAt` keeps it current. */
+  state?: SessionState;
+  /** The old boolean. Same answer as `state === "available"`. */
+  available: boolean;
+}
+export interface SessionRef { name: string; start: string }
 export interface ScheduleEvent {
   year: number; round?: number | null; name: string;
   location?: string | null; country?: string | null; circuit?: string | null;
   date?: string | null;
   sessions: ScheduledSession[];
-  next_session: { name: string; start: string };
+  /** Null once every session of the weekend has started. */
+  next_session: SessionRef | null;
+  live_session?: string | null;
   completed: boolean;
 }
+/** The session being run right now, anywhere on the calendar. */
+export interface LiveSession {
+  year: number; round?: number | null; name: string;
+  location?: string | null; country?: string | null; circuit?: string | null;
+  date?: string | null;
+  session: string;
+  start: string | null;
+  end: string | null;
+  available_at?: string | null;
+  next_session: SessionRef | null;
+  sessions: ScheduledSession[];
+}
 export interface Schedule {
-  source: string; year: number; now: string; mock: boolean; events: ScheduleEvent[];
+  source: string; year: number; now: string; mock: boolean;
+  live?: LiveSession | null;
+  events: ScheduleEvent[];
 }
 export interface Meta {
   app: string; mock_mode: boolean; live_fetch_enabled: boolean; llm_available: boolean;

@@ -4,7 +4,8 @@
 import { normalizeBundle } from "./sessionShape";
 import type {
   ArchiveScale, Featured,
-  GrandPrix, Meta, QuestionAnswer, RaceBundle, Schedule, Season, SimulationResult,
+  GrandPrix, Meta, QuestionAnswer, RaceBundle, Schedule, Season, SessionState,
+  SimulationResult,
 } from "./types";
 
 /**
@@ -126,7 +127,8 @@ export const api = {
   current: () =>
     get<{ year: number; gp: string | null; session: string; seasons: number[] }>("/api/current"),
   sessionsAvailable: (year: number, gp: string) =>
-    get<{ source: string; sessions: string[]; scheduled: string[]; known: boolean }>(
+    get<{ source: string; sessions: string[]; scheduled: string[];
+          live: string[]; states: Record<string, SessionState>; known: boolean }>(
       "/api/sessions/available", { year, gp }),
   /* The upcoming calendar. Small, cacheable, and the single source both the
      countdown and the schedule read — see backend app/schedule.py. */

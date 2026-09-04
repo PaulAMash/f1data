@@ -46,10 +46,25 @@ export function RaceSelector({
      answer now travels on the payload as `available_sessions`. */
   const runSessions = (r: GrandPrix): string[] => r.available_sessions ?? [];
 
-  /* A Grand Prix appears once any of its sessions has been run — which is
-     what keeps a weekend in progress on the list from Friday afternoon,
-     showing Practice while the race is still two days out. */
-  const availableRaces = races.filter((r) => runSessions(r).length > 0);
+  /* AND A SESSION ON TRACK IS WORTH OPENING TOO.
+     `available` was the whole list, so during Practice 1 the session a reader
+     could actually hear on the television was the one session the picker
+     refused to offer. It is offered now and answers with the live state —
+     which Grand Prix, which session, how long it has been running, what is
+     next — rather than with an analysis it does not have. Kept in the
+     weekend's own order, so "the latest" below is still the latest. */
+  const offered = (r: GrandPrix): string[] => {
+    const run = new Set(r.available_sessions ?? []);
+    const live = new Set(r.live_sessions ?? []);
+    return (r.sessions ?? []).filter((s) => run.has(s) || live.has(s));
+  };
+  const isLive = (r: GrandPrix | undefined, s: string) =>
+    !!r?.live_sessions?.includes(s);
+
+  /* A Grand Prix appears once any of its sessions has been run or is running —
+     which is what keeps a weekend in progress on the list from Friday
+     afternoon, showing Practice while the race is still two days out. */
+  const availableRaces = races.filter((r) => offered(r).length > 0);
 
   /* AND A SELECTION IS NEVER ALLOWED TO OUTLIVE THE LIST.
      Filtering the dropdown is only half the fix: the selection can also arrive
@@ -65,7 +80,7 @@ export function RaceSelector({
   }, [races, value.gp]);
 
   const currentRace = availableRaces.find((r) => r.name === value.gp);
-  const sessions = currentRace ? runSessions(currentRace)
+  const sessions = currentRace ? offered(currentRace)
     : races.length ? [] : SESSION_TYPES;
 
   /* If the selected session has not been run for this event — picking a
@@ -109,7 +124,12 @@ export function RaceSelector({
       <Field label="Session">
         <Select value={value.session} onChange={(v) => onChange({ ...value, session: v })}
           ariaLabel="Session"
-          options={(sessions.length ? sessions : [value.session]).map((s) => ({ value: s, label: s }))} />
+          options={(sessions.length ? sessions : [value.session]).map((s) => ({
+            value: s,
+            // The one on track is named as such in the list itself — a reader
+            // scanning the sessions should not have to open one to find out.
+            label: isLive(currentRace, s) ? `${s} · Live` : s,
+          }))} />
       </Field>
 
       <button onClick={onRefresh} disabled={loading}

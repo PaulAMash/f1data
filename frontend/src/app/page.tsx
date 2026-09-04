@@ -8,12 +8,13 @@ import { Footer } from "@/components/layout/Footer";
 import { HeroField } from "@/components/landing/HeroField";
 import { AppPromoBand } from "@/components/promo/AppPromo";
 import { AppleLogo } from "@/components/promo/AppleMark";
-import { NextSession } from "@/components/schedule/NextSession";
+import { SessionHero } from "@/components/schedule/LiveSession";
 import { FeaturedRace } from "@/components/landing/FeaturedRace";
 import { Flag, Gauge, LineChart } from "@/components/ui/MotionIcon";
 import { usePrefs } from "@/lib/prefs";
 import { useTour, TOUR } from "@/lib/tour";
 import { useLocale } from "@/lib/locale";
+import { useLiveSession } from "@/lib/schedule";
 import { useReveal } from "@/lib/useReveal";
 import { useCountUp } from "@/lib/useCountUp";
 import { api } from "@/lib/api";
@@ -61,6 +62,8 @@ export default function Landing() {
   const appBand = useReveal<HTMLElement>();
   const nextBand = useReveal<HTMLElement>();
   const { start } = useTour();
+  /** Whether a session is on track, so the band below can name itself. */
+  const live = useLiveSession();
 
   /* THE CHOICE HAPPENS BEFORE THIS PAGE, NOT ON IT.
      "Choose your experience" used to be a band a screen and a half down here,
@@ -245,8 +248,15 @@ export default function Landing() {
           they lead the page rather than the product tour below them. */}
       <section ref={nextBand.ref}
         className={cx("mx-auto max-w-7xl px-4 pt-20 sm:px-6 sm:pt-24", nextBand.className)}>
-        <SectionHead n="02" chapter="Next" title="The one that hasn't happened yet"
-          line="Every session of the weekend ahead, counted down in your own time zone."
+        {/* The heading follows the state under it. "The one that hasn't
+            happened yet" sitting directly above a session that is happening
+            is the same contradiction the live state exists to end, and a
+            reader would believe the bigger type. */}
+        <SectionHead n="02" chapter={live ? "Now" : "Next"}
+          title={live ? "The one happening right now" : "The one that hasn't happened yet"}
+          line={live
+            ? "A Grand Prix is on track. Pitwall IQ reads it the moment its timing is published."
+            : "Every session of the weekend ahead, counted down in your own time zone."}
           aside={
             <Link href="/schedule"
               className="group/sched inline-flex items-center gap-1.5 text-[13.5px] text-ink-muted transition-colors hover:text-ink">
@@ -255,7 +265,7 @@ export default function Landing() {
                 className="transition-transform duration-[--dur-2] group-hover/sched:translate-x-0.5" />
             </Link>} />
         <div className="mt-7">
-          <NextSession />
+          <SessionHero />
         </div>
       </section>
 

@@ -127,8 +127,14 @@ def list_grands_prix(year: int) -> list[GrandPrix]:
     names = unique_event_names(events)
     for m in events:
         mk = m.get("meeting_key")
+        # `round` is deliberately left unset. It used to carry `meeting_key` —
+        # an internal identifier in the thousands, not a round number — and a
+        # calendar that says the Las Vegas Grand Prix is round 1287 is worse
+        # than one that admits it does not know. The merge numbers the season
+        # from the source that publishes real rounds, or by position when it
+        # cannot (adapters/calendar_merge).
         out.append(GrandPrix(
-            round=mk, name=names.get(mk) or m.get("meeting_name", "?"),
+            name=names.get(mk) or m.get("meeting_name", "?"),
             official_name=m.get("meeting_official_name"), location=m.get("location"),
             country=m.get("country_name"), date=m.get("date_start"),
             sessions=by_meeting.get(mk, []),

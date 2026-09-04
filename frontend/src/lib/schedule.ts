@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
-import type { Schedule, ScheduleEvent, ScheduledSession } from "./types";
+import type {
+  LiveSession, Schedule, ScheduleEvent, ScheduledSession, SessionState,
+} from "./types";
 
 /* -------------------------------------------------------------------------- */
 /* THE UPCOMING CALENDAR, ONCE.                                               */
@@ -31,21 +33,113 @@ export interface NextUp {
   msLeft: number;
 }
 
-/** Fetch the upcoming calendar once. Failure is quiet: the countdown is an
- *  enhancement, and a dead schedule endpoint must not take a page with it. */
+/** How long a fetched calendar may be reused before it is asked for again.
+ *  A published schedule changes on the timescale of a press release; what
+ *  changes minute to minute is the clock, and the clock is local. */
+const SCHEDULE_TTL_MS = 5 * 60 * 1000;
+
+const inflight = new Map<number, { at: number; promise: Promise<Schedule> }>();
+
+/** One request per calendar, however many components want it.
+ *
+ * The Schedule page mounts three readers of the same endpoint — the live
+ * panel, the countdown and the list — and each used to fetch for itself. They
+ * ask the same question and are entitled to the same answer. */
+function loadSchedule(limit: number, force = false): Promise<Schedule> {
+  const hit = inflight.get(limit);
+  if (!force && hit && Date.now() - hit.at < SCHEDULE_TTL_MS) return hit.promise;
+  const promise = api.schedule(limit);
+  inflight.set(limit, { at: Date.now(), promise });
+  // A failure must not be cached, or one bad moment costs the page five
+  // minutes of nothing.
+  promise.catch(() => {
+    if (inflight.get(limit)?.promise === promise) inflight.delete(limit);
+  });
+  return promise;
+}
+
+/** Fetch the upcoming calendar. Failure is quiet: the countdown is an
+ *  enhancement, and a dead schedule endpoint must not take a page with it.
+ *
+ *  It re-asks on a slow timer so a tab left open across a session boundary
+ *  eventually sees the new calendar. It does not need to for the *states* to
+ *  move — every instant that decides them is already in the payload, and
+ *  `stateAt` reads them against the local clock every tick. */
 export function useSchedule(limit = 6) {
   const [data, setData] = useState<Schedule | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let live = true;
-    api.schedule(limit)
-      .then((d) => { if (live) setData(d); })
-      .catch(() => { if (live) setFailed(true); });
-    return () => { live = false; };
+    const ask = (force = false) => {
+      loadSchedule(limit, force)
+        .then((d) => { if (live) { setData(d); setFailed(false); } })
+        .catch(() => { if (live && !data) setFailed(true); });
+    };
+    ask();
+    const id = setInterval(() => ask(true), SCHEDULE_TTL_MS);
+    return () => { live = false; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [limit]);
 
   return { schedule: data, failed, loading: !data && !failed };
+}
+
+/**
+ * Where a session is right now, from the instants the server sent.
+ *
+ * THE SERVER'S `state` IS A PHOTOGRAPH; this is the film. `state` was true at
+ * the moment the response was written, and a page open across the start of
+ * Practice 1 would have kept showing "upcoming" until it next happened to
+ * ask. Both boundaries are published as instants — `start` and `available_at`
+ * — so the page can move through them on the exact second against the reader's
+ * own clock, with no request and no rule of its own.
+ */
+export function stateAt(s: ScheduledSession, now: number): SessionState {
+  const start = s.start ? new Date(s.start).getTime() : NaN;
+  const opens = s.available_at ? new Date(s.available_at).getTime() : NaN;
+  if (!Number.isFinite(start)) {
+    // No published start: the server's answer is the only one available, and
+    // a session with no instant is never called live (see backend schedule.py).
+    return s.state ?? (s.available ? "available" : "upcoming");
+  }
+  if (now < start) return "upcoming";
+  if (!Number.isFinite(opens)) return s.state === "available" ? "available" : "live";
+  return now >= opens ? "available" : "live";
+}
+
+/**
+ * The session on track right now, assembled from the calendar the page
+ * already has.
+ *
+ * Derived rather than taken from `schedule.live` for the reason above: this
+ * turns over the instant the clock does. `schedule.live` remains the server's
+ * own answer to the same question, and the two agree by construction because
+ * they read the same instants.
+ */
+export function useLiveNow(schedule: Schedule | null, now: number): LiveSession | null {
+  return useMemo(() => {
+    if (!schedule?.events?.length) return null;
+    for (const event of schedule.events) {
+      const running = event.sessions.find((s) => stateAt(s, now) === "live");
+      if (!running) continue;
+      const next = event.sessions
+        .filter((s) => s.start && new Date(s.start).getTime() > now)
+        .sort((a, b) => new Date(a.start!).getTime() - new Date(b.start!).getTime())[0];
+      return {
+        year: event.year, round: event.round, name: event.name,
+        location: event.location, country: event.country, circuit: event.circuit,
+        date: event.date,
+        session: running.name,
+        start: running.start ?? null,
+        end: running.end ?? null,
+        available_at: running.available_at ?? null,
+        next_session: next?.start ? { name: next.name, start: next.start } : null,
+        sessions: event.sessions,
+      };
+    }
+    return null;
+  }, [schedule, now]);
 }
 
 /**
@@ -90,6 +184,52 @@ export function useNextUp(schedule: Schedule | null, now: number): NextUp | null
     }
     return best ? { ...best, msLeft: Math.max(0, best.startsAt - now) } : null;
   }, [schedule, now]);
+}
+
+/**
+ * How far the clock has run into a session, 0…1 — or null when the schedule
+ * does not give both ends of it.
+ *
+ * IT IS THE CLOCK, NOT THE SESSION. This measures scheduled minutes elapsing;
+ * it does not know the lap count, a red flag, or a session that ran long, and
+ * the label beside it says "expected" for exactly that reason. Presenting it
+ * as session progress would be the first fabricated number on the page.
+ */
+export function elapsedFraction(start: string | null | undefined,
+                                end: string | null | undefined,
+                                now: number): number | null {
+  if (!start || !end) return null;
+  const a = new Date(start).getTime();
+  const b = new Date(end).getTime();
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return null;
+  return Math.min(1, Math.max(0, (now - a) / (b - a)));
+}
+
+/** Milliseconds since a session started; never negative, null if unknown. */
+export function msSince(start: string | null | undefined, now: number): number | null {
+  if (!start) return null;
+  const a = new Date(start).getTime();
+  return Number.isFinite(a) ? Math.max(0, now - a) : null;
+}
+
+/** "1h 04m" / "42 min" — how long something has been running, in words a
+ *  person would use. Deliberately coarser than the countdown: this number is
+ *  context, and a second-by-second clock here would compete with the one that
+ *  is actually counting down to something. */
+export function runningFor(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 60000));
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return h > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${m} min`;
+}
+
+/** The live session, fetched and derived in one call — for callers that only
+ *  need to know whether anything is on track, such as a section heading that
+ *  must not say "hasn't happened yet" above a session that is happening. */
+export function useLiveSession(limit = 6): LiveSession | null {
+  const { schedule } = useSchedule(limit);
+  const now = useNow(true);
+  return useLiveNow(schedule, now);
 }
 
 /** Days / hours / minutes / seconds, already padded for display. */
