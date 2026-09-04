@@ -321,6 +321,14 @@ def _fetch_via_fastf1(year: int, gp: str, session_type: str) -> RaceSession:
         raise FetchError(f"FastF1 could not load {gp} {year} {session_type}: {exc}") from exc
 
     ev = session.event
+    # FastF1's lookup is fuzzy: it returns the nearest event name, and a season
+    # can carry two events one word apart. Refuse anything that is not the event
+    # asked for — the source chain moves on, and nothing is served under the
+    # wrong title.
+    from .openf1_adapter import names_agree
+    resolved = " ".join(str(ev.get(k, "")) for k in ("EventName", "Location", "Country"))
+    if not names_agree(gp, resolved):
+        raise FetchError(f"FastF1 resolved '{gp}' to '{ev.get('EventName')}', a different event")
     results = session.results
     laps_df = session.laps
     notes: list[str] = []
@@ -551,6 +559,9 @@ def _weather_from_fastf1(session) -> list[WeatherPoint]:
 def _fetch_via_static(year: int, gp: str, session_type: str) -> RaceSession:
     pitwall = _pitwall()
     path, race_name = pitwall._find_session(year, gp, session_type)
+    from .openf1_adapter import names_agree
+    if race_name and not names_agree(gp, str(race_name)):
+        raise FetchError(f"The archive resolved '{gp}' to '{race_name}', a different event")
     if not path:
         raise FetchError(f"No '{session_type}' session found for '{gp}' in {year}.")
 

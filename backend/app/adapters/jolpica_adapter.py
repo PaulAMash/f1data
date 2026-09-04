@@ -178,16 +178,45 @@ def list_grands_prix(year: int) -> list[GrandPrix]:
     return out
 
 
+#: Words that carry no identity — "in" is in "International", and matches everything.
+_STOP_WORDS = {"in", "de", "du", "of", "the", "da", "di", "del", "la", "le", "grand", "prix"}
+
+
 def _resolve_round(year: int, gp: str) -> tuple[int | None, dict | None]:
-    gp_l = gp.lower().replace("grand prix", "").strip()
-    for r in _races(f"{year}.json", limit=40):
+    """The round a Grand Prix name means.
+
+    The official race name first, exactly — so "Bahrain Grand Prix in Malaysia"
+    is round 16 and never the first round whose blurb contains "bahrain". Then
+    the whole phrase, then the round whose blurb matches the MOST of the name's
+    words, earliest round breaking ties: "Bahrain Grand Prix" alone scores one
+    word on both Bahrain rounds and lands on April's, while the Malaysian one
+    scores two on Sepang. The old rule took the first round matching ANY word,
+    which is the same one-word tie decided the wrong way.
+    """
+    races = _races(f"{year}.json", limit=40)
+    gp_l = " ".join(gp.lower().split())
+    for r in races:
+        if str(r.get("raceName", "")).lower() == gp_l:
+            return int(r["round"]), r
+
+    def blob(r: dict) -> str:
         c = r.get("Circuit", {})
         loc = c.get("Location", {})
-        blob = " ".join([r.get("raceName", ""), c.get("circuitName", ""),
+        return " ".join([r.get("raceName", ""), c.get("circuitName", ""),
                          loc.get("locality", ""), loc.get("country", "")]).lower()
-        if gp_l in blob or any(tok in blob for tok in gp_l.split()):
+
+    stem = " ".join(w for w in gp_l.split() if w not in _STOP_WORDS)
+    for r in races:
+        if stem and stem in blob(r):
             return int(r["round"]), r
-    return None, None
+    best: tuple[int, dict] | None = None
+    best_score = 0
+    for r in races:
+        text = blob(r)
+        score = sum(1 for tok in stem.split() if tok in text)
+        if score > best_score:
+            best, best_score = (int(r["round"]), r), score
+    return best if best else (None, None)
 
 
 # --------------------------------------------------------------------------- #

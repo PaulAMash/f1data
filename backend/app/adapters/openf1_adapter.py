@@ -121,13 +121,14 @@ def list_grands_prix(year: int) -> list[GrandPrix]:
         if s.get("date_start"):
             times.setdefault(mk, {})[name] = str(s["date_start"])
     out: list[GrandPrix] = []
-    for m in sorted(meetings, key=lambda x: x.get("date_start", "")):
-        # Pre-season testing isn't a Grand Prix — keep it out of the calendar.
-        if is_testing_event(m.get("meeting_name", "")):
-            continue
+    # Pre-season testing isn't a Grand Prix — keep it out of the calendar.
+    events = [m for m in sorted(meetings, key=lambda x: x.get("date_start", ""))
+              if not is_testing_event(m.get("meeting_name", ""))]
+    names = unique_event_names(events)
+    for m in events:
         mk = m.get("meeting_key")
         out.append(GrandPrix(
-            round=mk, name=m.get("meeting_name", "?"),
+            round=mk, name=names.get(mk) or m.get("meeting_name", "?"),
             official_name=m.get("meeting_official_name"), location=m.get("location"),
             country=m.get("country_name"), date=m.get("date_start"),
             sessions=by_meeting.get(mk, []),
@@ -161,29 +162,141 @@ def _name_tokens(text: str) -> set[str]:
             if t and t not in _GENERIC_TOKENS}
 
 
+def names_agree(requested: str, resolved: str) -> bool:
+    """Does a resolved event answer the requested one?
+
+    Every identifying word of the request must appear in the resolved event's
+    description — "Bahrain Grand Prix in Malaysia" is not answered by an event
+    whose words are only "bahrain" and "sakhir". Used by the archive routes, whose
+    lookups are fuzzy and would otherwise hand back the nearest name.
+    """
+    want = _name_tokens(requested) - _SMALL_TOKENS
+    return not want or want <= _name_tokens(resolved)
+
+
+_SMALL_TOKENS = {"in", "de", "du", "of", "da", "di", "del", "la", "le"}
+
+
 def is_testing_event(name: str) -> bool:
     import re
     return bool(re.search(r"\btest(ing)?\b|pre-?season", name or "", re.I))
+
+
+# --------------------------------------------------------------------------- #
+# event names
+# --------------------------------------------------------------------------- #
+# Words that stay lower-case inside a title-cased event name.
+_SMALL_WORDS = {"in", "de", "du", "of", "the", "da", "di", "del", "della", "la", "le", "y", "e", "a"}
+
+
+def _titlecase(text: str) -> str:
+    out = []
+    for i, word in enumerate(text.split()):
+        low = word.lower()
+        if i > 0 and low in _SMALL_WORDS:
+            out.append(low)
+        else:
+            out.append(low[:1].upper() + low[1:])
+    return " ".join(out)
+
+
+def name_from_official(meeting_name: str, official: str | None) -> str | None:
+    """The event's own name, read out of its official title.
+
+    OpenF1's `meeting_name` is the sponsor-free short form, and it is not always
+    unique: 2026 has "Bahrain Grand Prix" twice, because the second is the
+    "FORMULA 1 GULF AIR BAHRAIN GRAND PRIX IN MALAYSIA 2026" at Sepang. The
+    official title carries the distinguishing words, after the short name and
+    before the year — so this returns "Bahrain Grand Prix in Malaysia", which is
+    also the name the results archive (Jolpica) uses for the round.
+    """
+    import re
+    if not meeting_name or not official:
+        return None
+    idx = official.lower().find(meeting_name.lower())
+    if idx < 0:
+        return None
+    tail = re.sub(r"\s+(19|20)\d{2}\s*$", "", official[idx:]).strip()
+    return _titlecase(tail) if tail else None
+
+
+def unique_event_names(meetings: list[dict]) -> dict[int, str]:
+    """ONE NAME PER MEETING, UNIQUE WITHIN THE SEASON.
+
+    The name is the key every consumer uses — the website's selector, the app's
+    picker, `/api/session?gp=` — so two events sharing one is two events sharing
+    one identity: a list keyed on it drew round 4 in round 18's place. The first
+    meeting to carry a name keeps it, in date order; a later one is renamed from
+    its official title, and failing that by its location.
+    """
+    names: dict[int, str] = {}
+    taken: set[str] = set()
+    for m in sorted(meetings, key=lambda x: x.get("date_start", "")):
+        mk = m.get("meeting_key")
+        base = m.get("meeting_name") or "?"
+        name = base
+        if name.lower() in taken:
+            derived = name_from_official(base, m.get("meeting_official_name"))
+            if derived and derived.lower() not in taken:
+                name = derived
+            else:
+                place = m.get("location") or m.get("circuit_short_name") or str(mk)
+                name = f"{base} ({place})"
+        taken.add(name.lower())
+        names[mk] = name
+    return names
+
+
+def _season_names(year: int) -> dict[int, str]:
+    """The season's unique names, or nothing when the meetings call fails — the
+    resolver below then falls back to the raw meeting names."""
+    try:
+        meetings = [m for m in _get("meetings", year=year)
+                    if not is_testing_event(m.get("meeting_name", ""))]
+    except Exception:  # noqa: BLE001
+        return {}
+    return unique_event_names(meetings)
 
 
 def _resolve_session(year: int, gp: str, session_type: str) -> dict | None:
     sessions = _get("sessions", year=year)
     st_l = session_type.lower()
     want = _name_tokens(gp)
+    names = _season_names(year)
+    official = {}
+    try:
+        official = {m.get("meeting_key"): str(m.get("meeting_official_name") or "")
+                    for m in _get("meetings", year=year)}
+    except Exception:  # noqa: BLE001
+        pass
 
     def blob_tokens(s: dict) -> set[str]:
+        # The official title is in the haystack: "in Malaysia" is what tells the
+        # two Bahrain Grands Prix apart, and only the title carries it.
         return _name_tokens(" ".join(str(s.get(k, "")) for k in
-                            ("meeting_name", "location", "country_name", "circuit_short_name")))
+                            ("meeting_name", "location", "country_name", "circuit_short_name"))
+                            + " " + official.get(s.get("meeting_key"), ""))
 
-    # Exact meeting-name match first, then a strict whole-token subset match
-    # ("austrian" can never match "Australian Grand Prix"). Crucially, if the
-    # Grand Prix doesn't match any meeting we return None so the source chain
-    # moves on — we NEVER fall back to an unrelated meeting's sessions (that
-    # bug used to serve Melbourne data under an "Austrian Grand Prix" title).
-    exact = [s for s in sessions if str(s.get("meeting_name", "")).lower() == gp.lower()]
-    cands = exact or [s for s in sessions if want and want <= blob_tokens(s)]
+    # The season's own unique name first, exactly — so "Bahrain Grand Prix" is the
+    # April meeting and "Bahrain Grand Prix in Malaysia" the October one. Then the
+    # raw meeting name, then a strict whole-token subset match ("austrian" can never
+    # match "Australian Grand Prix"). Crucially, if the Grand Prix doesn't match any
+    # meeting we return None so the source chain moves on — we NEVER fall back to an
+    # unrelated meeting's sessions (that bug used to serve Melbourne data under an
+    # "Austrian Grand Prix" title).
+    keys = {mk for mk, n in names.items() if n.lower() == gp.lower()}
+    cands = [s for s in sessions if s.get("meeting_key") in keys] if keys else []
+    if not cands:
+        exact = [s for s in sessions if str(s.get("meeting_name", "")).lower() == gp.lower()]
+        cands = exact or [s for s in sessions if want and want <= blob_tokens(s)]
     if not cands:
         return None
+    # The unique name travels with the answer, so the session is labelled the way
+    # the calendar names it and a client comparing the two sees one identity.
+    cands = [dict(c, _display_name=names[c["meeting_key"]],
+                  _official_name=official.get(c["meeting_key"]) or None)
+             if c.get("meeting_key") in names else c
+             for c in cands]
     # exact session-name match first, then type, then contains
     for pred in (
         lambda s: s.get("session_name", "").lower() == st_l,
@@ -363,8 +476,8 @@ def fetch_session(year: int, gp: str, session_type: str) -> RaceSession:
         partial=bool(missing), probes=[])
 
     return RaceSession(
-        year=year, grand_prix=meta.get("meeting_name") or gp,
-        official_name=meta.get("meeting_official_name"),
+        year=year, grand_prix=meta.get("_display_name") or meta.get("meeting_name") or gp,
+        official_name=meta.get("meeting_official_name") or meta.get("_official_name"),
         session_type=meta.get("session_name") or session_type,
         category=session_category(meta.get("session_name") or session_type),
         circuit=circuit, total_laps=total_laps, data_source=DataSource.LIVE,
