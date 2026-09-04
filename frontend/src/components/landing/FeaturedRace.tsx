@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, CornerDownLeft, MessageSquareText } from "lucide-react";
 import { api } from "@/lib/api";
+import { explorerHref } from "@/lib/links";
 import type { Featured } from "@/lib/types";
 import { useLivery } from "@/lib/liveryColor";
 import { cx } from "@/lib/format";
@@ -50,8 +51,16 @@ export function FeaturedRace() {
 
   if (failed) return null;
 
-  const href = race
-    ? `/explorer?year=${race.year}&gp=${encodeURIComponent(race.gp ?? "")}&session=Race`
+  /* Built by lib/links rather than written out here: one convention for "the
+     Explorer, opened on this race", so a second one cannot drift.
+
+     Both halves are required, and that is new. The hand-written template
+     literal this replaces interpolated `race.year` whether or not it was
+     there, so a featured payload missing the season produced a link reading
+     `?year=undefined` — which the Explorer would have taken at face value.
+     Without the pair, the plain Explorer is the honest destination. */
+  const href = race?.year && race.gp
+    ? explorerHref({ year: race.year, gp: race.gp })
     : "/explorer";
   const tint = paint(race?.winner?.team_color);
 

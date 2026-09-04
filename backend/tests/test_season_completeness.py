@@ -267,3 +267,34 @@ def test_a_season_before_it_starts_returns_all_of_its_rounds(monkeypatch, calend
     assert len(events) == ROUNDS
     assert all(not e["completed"] for e in events)
     assert all(s["state"] == "upcoming" for e in events for s in e["sessions"])
+
+
+# --------------------------------------------------------------------------- #
+# 7. One definition of "completed", for the page that acts on it
+# --------------------------------------------------------------------------- #
+def test_completed_and_the_race_session_state_are_the_same_answer(calendar):
+    """WHAT THE SCHEDULE PAGE'S LINKS DEPEND ON.
+
+    A round on the Schedule opens that race in Explore once it has been run,
+    and the client decides that from the Race session's own state — which is
+    only safe because it is not a second opinion. `race_done` IS
+    `session_available(gp, "Race")` (app/schedule.py), so the event-level flag
+    and the session-level state cannot disagree. If they ever do, a card will
+    offer a race the Explorer then refuses, and this is where that shows up.
+    """
+    for event in get()["events"]:
+        race = next((s for s in event["sessions"] if s["name"] == "Race"), None)
+        assert race is not None
+        assert event["completed"] is (race["state"] == "available"), event["name"]
+
+
+def test_a_race_the_schedule_would_link_to_is_one_the_explorer_will_serve(calendar):
+    """The other half of the same promise: every round the page may link to is
+    a round whose Race the session guard lets through."""
+    from app.service import get_grands_prix
+
+    gps = {g.name: g for g in get_grands_prix(2026)[0]}
+    for event in get()["events"]:
+        if not event["completed"]:
+            continue
+        assert "Race" in gps[event["name"]].available_sessions, event["name"]

@@ -1,8 +1,11 @@
 "use client";
-import { CalendarDays, Check, MapPin } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, CalendarDays, Check, MapPin } from "lucide-react";
 import { useLocale } from "@/lib/locale";
+import { explorerHref } from "@/lib/links";
 import {
-  sessionAbbr, sessionDay, stateAt, useNextUp, useNow, useSchedule, weekendSpan,
+  readableRace, sessionAbbr, sessionDay, stateAt, useNextUp, useNow, useSchedule,
+  weekendSpan,
 } from "@/lib/schedule";
 import type { ScheduleEvent, ScheduledSession } from "@/lib/types";
 import { cx } from "@/lib/format";
@@ -95,22 +98,45 @@ export function SeasonSchedule({ className }: { className?: string }) {
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* A ROUND THAT HAS BEEN RUN IS A DOOR; ONE THAT HAS NOT IS A NOTICE.          */
+/*                                                                            */
+/* The run cards already lifted and brightened under the cursor and then did   */
+/* nothing when clicked — an affordance that lied. It is honoured rather than  */
+/* removed: a completed weekend opens that race in Explore, and it is a real   */
+/* anchor around the whole card, so it works with a tap, with Enter, with the  */
+/* middle mouse button and with "open in new tab", and browser Back returns    */
+/* here. Everything the hover promised, it now keeps.                          */
+/*                                                                            */
+/* AND A ROUND THAT HAS NOT BEEN RUN IS NOT A LINK AT ALL — not a disabled     */
+/* one, not an anchor with the click swallowed. There is nothing in the tab    */
+/* order, nothing announced as a control, and no cursor or lift suggesting     */
+/* otherwise, because Pitwall IQ genuinely cannot open a race that has not     */
+/* happened and the card should not imply that it might.                      */
+/*                                                                            */
+/* WHICH OF THE TWO IT IS comes from `readableRace` — the same lifecycle rule  */
+/* the countdown, the pickers and the Explorer's own gate read, evaluated      */
+/* against the same published instants. Not the date, not the array position,  */
+/* not the cache.                                                             */
+/* -------------------------------------------------------------------------- */
 function EventCard({ event, now, nextSessionName }: {
   event: ScheduleEvent; now: number; nextSessionName: string | null;
 }) {
   const liveName = event.sessions.find((s) => stateAt(s, now) === "live")?.name ?? null;
   const isNextEvent = nextSessionName !== null;
-  /* Run, and nothing left to run. `completed` is the server's answer about the
-     race; a weekend is finished when every session of it has been read. */
-  const finished = !liveName && event.sessions.length > 0
-    && event.sessions.every((s) => stateAt(s, now) === "available");
+  const race = readableRace(event, now);
+  const href = race
+    ? explorerHref({ year: event.year, gp: event.name, session: race.name })
+    : null;
 
-  return (
-    <article className={cx("panel overflow-hidden transition-colors",
+  const card = (
+    <article className={cx("panel h-full overflow-hidden transition-colors",
       liveName ? "border-accent/30" : isNextEvent ? "border-accent/20" : undefined,
       // A weekend already read steps back rather than disappearing: it is still
       // part of the season, and a reader looking for "when was Monza" needs it.
-      finished && "opacity-[0.62] hover:opacity-100")}>
+      // It brightens under the cursor because it is now a door — `pressable` is
+      // the same lift, cursor and press the rest of the product's cards use.
+      href && "pressable opacity-[0.62] hover:opacity-100")}>
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 px-5 py-4 sm:px-6 sm:py-5">
         <div className="min-w-0">
           {/* One line of status, and only when there is one to give. */}
@@ -123,7 +149,7 @@ function EventCard({ event, now, nextSessionName }: {
             <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-[0.18em] text-accent-soft">
               Next Grand Prix
             </p>
-          ) : finished && (
+          ) : href && (
             <p className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.18em] text-ink-faint">
               <Check size={11} className="shrink-0" />
               Completed
@@ -148,6 +174,17 @@ function EventCard({ event, now, nextSessionName }: {
             )}
           </p>
         </div>
+
+        {/* THE CUE THAT DOES NOT NEED A CURSOR. A hover is not available to a
+            thumb, so what makes this card a door is written down rather than
+            only felt. It leans in on hover through the house `.pressable`
+            language, and is absent entirely on a round that cannot be opened. */}
+        {href && (
+          <span className="flex shrink-0 items-center gap-1.5 self-center text-[12.5px] font-medium text-ink-muted">
+            Read the race
+            <ArrowRight size={14} className="icon-lift shrink-0 text-ink-faint" />
+          </span>
+        )}
       </div>
 
       <ul className="grid grid-cols-2 gap-px border-t border-white/[0.06] bg-white/[0.04] sm:grid-cols-3 lg:grid-cols-5">
@@ -157,6 +194,21 @@ function EventCard({ event, now, nextSessionName }: {
         ))}
       </ul>
     </article>
+  );
+
+  if (!href) return card;
+
+  return (
+    <Link href={href} className="block rounded-2xl"
+      /* The card is a wall of times; the link needs one sentence that says
+         where it goes and which race it is about. */
+      aria-label={[
+        event.name,
+        typeof event.round === "number" && event.round > 0 ? `round ${event.round}` : null,
+        "completed — read this race in Explore",
+      ].filter(Boolean).join(", ")}>
+      {card}
+    </Link>
   );
 }
 

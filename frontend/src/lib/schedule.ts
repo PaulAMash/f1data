@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
+import { RACE_SESSION } from "./links";
 import type {
   LiveSession, Schedule, ScheduleEvent, ScheduledSession, SessionState,
 } from "./types";
@@ -109,6 +110,26 @@ export function stateAt(s: ScheduledSession, now: number): SessionState {
   if (now < start) return "upcoming";
   if (!Number.isFinite(opens)) return s.state === "available" ? "available" : "live";
   return now >= opens ? "available" : "live";
+}
+
+/**
+ * The race of this weekend, but only once it can actually be read.
+ *
+ * WHAT MAKES A ROUND ON THE SCHEDULE OPENABLE. Not that its date has passed,
+ * not where it sits in the array, not whether something happens to be cached —
+ * the same lifecycle answer everything else reads. `race_done` on the server
+ * IS `session_available(gp, "Race")` (backend app/schedule.py), and `stateAt`
+ * is that same rule evaluated against the same published instants, so the card
+ * and the Explorer's own gate cannot disagree about whether there is a race
+ * there to open. It returns the session rather than a boolean because the link
+ * needs to name it.
+ *
+ * Null while the race is upcoming or on track, and for a weekend with no race
+ * on its card at all.
+ */
+export function readableRace(event: ScheduleEvent, now: number): ScheduledSession | null {
+  const race = event.sessions?.find((s) => s.name === RACE_SESSION);
+  return race && stateAt(race, now) === "available" ? race : null;
 }
 
 /**
