@@ -289,24 +289,19 @@ def list_grands_prix(year: int) -> list[GrandPrix]:
 # Starting grid via Jolpica (works even when FastF1 grid is missing)
 # --------------------------------------------------------------------------- #
 def _jolpica_grid(year: int, gp_name: str) -> dict[str, int]:
-    """Return {driver_code: grid_position} from Jolpica qualifying/grid, best-effort."""
-    pitwall = _pitwall()
+    """Return {driver_code: grid_position} from the results archive, best-effort.
+
+    Through the Jolpica adapter — remembered, coalesced and paced with every
+    other request to that host (see app/upstream). This used to be a bare
+    `requests.get` against a circuit-resolved URL: an unpaced request to a host
+    with a four-per-second limit, and a second copy of the results parser."""
+    if not gp_name:
+        return {}
     try:
-        circuit = pitwall._resolve_circuit_id(gp_name) if gp_name else None
-        url = (f"{pitwall.JOLPICA}/{year}/circuits/{circuit}/results.json?limit=40"
-               if circuit else f"{pitwall.JOLPICA}/{year}/results.json?limit=40")
-        import requests
-        data = requests.get(url, timeout=get_settings().fetch_timeout).json()
-        races = data.get("MRData", {}).get("RaceTable", {}).get("Races", [])
-        grid: dict[str, int] = {}
-        for r in races:
-            for res in r.get("Results", []):
-                code = (res.get("Driver", {}).get("code") or "").upper()
-                g = res.get("grid")
-                if code and g is not None:
-                    grid[code] = int(g)
-        return grid
-    except Exception:
+        from . import jolpica_adapter
+        _drivers, rows, _meta = jolpica_adapter.fetch_classification(year, gp_name)
+        return {r.driver.upper(): r.grid for r in rows if r.driver and r.grid is not None}
+    except Exception:  # noqa: BLE001
         return {}
 
 

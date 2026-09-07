@@ -158,8 +158,16 @@ class PitStop(BaseModel):
     driver: str
     lap: int
     stationary_time: Optional[float] = None       # wheel-gun to release (s), measured
-    pit_lane_time: Optional[float] = None          # total pit-lane loss (s)
-    stop_duration: Optional[float] = None          # OpenF1 "pit_duration" (stationary-ish)
+    # Pit-lane entry to exit, in seconds. THIS is what OpenF1's `pit_duration`
+    # and Ergast/Jolpica's pit-stop `duration` measure — twenty-odd seconds,
+    # of which the car is stationary for two or three. Both used to be copied
+    # into `stop_duration` as well and read back as the stop itself, which is
+    # how a 24-second lane transit was drawn as a 24-second stationary time.
+    pit_lane_time: Optional[float] = None
+    # A source's measure of the stop as a whole, when it has one that is
+    # neither the stationary time nor the lane time. No configured source
+    # publishes one today; kept for the schema, never derived from lane time.
+    stop_duration: Optional[float] = None
     estimated_stationary_time: Optional[float] = None  # derived estimate when not measured
     compound_before: Compound = Compound.UNKNOWN
     compound_after: Compound = Compound.UNKNOWN
@@ -351,6 +359,22 @@ class SourceReport(BaseModel):
     # record that is not settled is served, labelled, and re-asked for.
     provisional: list[str] = Field(default_factory=list)
     settled: bool = True
+    # ---- the third axis: official, and still owed a field -------------------
+    #
+    # `settled` says the classification is the official one. It does not say
+    # the official RECORD is whole: OpenF1 publishes a result with no starting
+    # grid when its grid feed is empty and never with a classified time or a
+    # retirement reason; the results archive has all three, hours later. A
+    # record can therefore be settled — every position, gap and point right —
+    # and still print "won from P?" because the one field the sentence needs
+    # never arrived from the one source that was asked. That is not
+    # provisional (nothing is standing in for anything) and it must not flip
+    # `settled` (the reader would be told an official result is pending). It
+    # is a field the record is still waiting on, named here so the pipeline
+    # keeps asking the source that publishes it, on the same cadence as an
+    # unsettled record, and so the sources panel can say what is missing.
+    # Values: "grid", "race_time", "retirement_reason", "pit_timing".
+    awaiting: list[str] = Field(default_factory=list)
     cache_key: Optional[str] = None
 
 

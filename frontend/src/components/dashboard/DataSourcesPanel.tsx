@@ -27,6 +27,13 @@ const FACET_LABEL: Record<string, string> = {
   // legacy names for the same facet — sessions cached before the adapters agreed
   // on one spelling still carry them, and an unlabelled facet reads as a bug
   tyres: "Tyres & stints", "tyres/compounds": "Tyres & stints",
+  starting_grid: "Starting grid",
+};
+
+// official fields a settled record can still be owed — see SourceReport.awaiting
+const AWAITING_LABEL: Record<string, string> = {
+  grid: "the starting grid", race_time: "classified race times",
+  retirement_reason: "retirement reasons", pit_timing: "pit-stop timing",
 };
 
 export function DataSourcesPanel({
@@ -76,6 +83,9 @@ export function DataSourcesPanel({
   const facets = report?.report?.facets ?? [];
   const missing: string[] = report?.report?.missing ?? [];
   const missingReason: string | null = report?.report?.missing_reason ?? null;
+  // official, and still owed a field by a source that publishes it — the
+  // backend keeps asking; the panel says so rather than leaving a "—" unexplained
+  const awaiting: string[] = report?.report?.awaiting ?? [];
 
   return (
     <div className="grid items-start gap-4 lg:grid-cols-2">
@@ -118,6 +128,12 @@ export function DataSourcesPanel({
                 <p className="mt-1 leading-snug text-ink-muted">{missingReason}</p>
               )}
             </div>
+          )}
+          {awaiting.length > 0 && (
+            <p className="pt-1 text-xs leading-snug text-ink-muted">
+              Still waiting on {awaiting.map((a) => AWAITING_LABEL[a] ?? a).join(", ")} from the
+              results archive — the record is official and is re-checked until they arrive.
+            </p>
           )}
         </CardBody>
       </Card>

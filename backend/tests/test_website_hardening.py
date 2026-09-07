@@ -788,7 +788,14 @@ def test_a_still_dead_archive_never_rewrites_the_cache(monkeypatch):
     _fresh_breaker(monkeypatch)
     monkeypatch.setattr(dsm.fastf1, "fetch_session",
                         lambda *a, **kw: (_ for _ in ()).throw(OSError("connection refused")))
-    assert dsm._heal_cached(_archive_session()) is False
+    session = _archive_session()
+    # a record owed nothing by the results archive either (V108 names what a
+    # settled record still lacks, and naming it for the first time is itself
+    # worth one write — that is a different heal from this one)
+    for c in session.classification:
+        c.grid, c.race_time = 1, 5000.0
+    assert dsm._heal_cached(session) is False
+    assert session.source_report.awaiting == []
 
 
 # --------------------------------------------------------------------------- #

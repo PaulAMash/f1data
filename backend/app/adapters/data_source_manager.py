@@ -20,7 +20,9 @@ from typing import Callable
 
 from .. import cache
 from ..analysis.events import infer_overtakes
-from ..analysis.normalize import order_classification
+from ..analysis.normalize import (
+    canonicalize_names, fix_classification, order_classification, sync_grids,
+)
 from ..config import get_settings
 from .. import timing, upstream
 from ..models import (
@@ -157,6 +159,10 @@ def load_session(year: int, gp: str, session_type: str,
         if cached is not None:
             if cached.source_report:
                 cached.source_report.data_source = DataSource.CACHE
+            # what the file said, before today's pipeline says otherwise — so a
+            # record an older build wrote with shouted names or a grid on one
+            # of its two copies is written back once it has been put right
+            stale = (_readiness(cached), _identity(cached))
             # A CACHED SESSION IS A SESSION THAT SKIPPED THE PIPELINE.
             #
             # Everything derived — the entry list, the position trace, FIA
@@ -197,9 +203,10 @@ def load_session(year: int, gp: str, session_type: str,
                 # window is not sent to ask again.
                 due = (cache.age_seconds(year, gp, session_type) or 0.0) >= _REVALIDATE_AFTER
                 try:
-                    if _heal_cached(cached, revalidate=due):
+                    healed = _heal_cached(cached, revalidate=due)
+                    if healed or (_readiness(cached), _identity(cached)) != stale:
                         cache.save(cached)
-                    elif due and not cached.settled:
+                    elif due and _needs_revalidation(cached):
                         cache.touch(year, gp, session_type)
                 except Exception as exc:  # noqa: BLE001
                     log.info("cached facet heal failed: %s", exc)
@@ -381,6 +388,108 @@ def _reconcile_results(session: RaceSession, rows, source: str,
     session.classification = merged
     _set_facet(session, "results", source, "high", detail, provisional=False)
     return True
+
+
+# --------------------------------------------------------------------------- #
+# results that are official, and still missing a field another source has
+# --------------------------------------------------------------------------- #
+#
+# THE ITALIAN GRAND PRIX, SECOND BUG, IN ONE SENTENCE: the record settled, and
+# the pipeline stopped asking — for everything, including the fields the
+# settling source never carries.
+#
+# OpenF1's `session_result` is the official classification and it has no
+# starting grid in it; the grid is a separate feed, and when that feed is
+# empty every row is built with `grid=None`. The results archive publishes the
+# grid for every race since 1950, and it was being asked anyway — for
+# retirement reasons — but the enrichment copied only reasons and times. So a
+# race could have every position, gap and point right, be `settled`, be
+# cached as such, and print "won from P?" on a page whose gainers, losers and
+# standout-drive cards all read "no notable movers". Every 2026 record served
+# through OpenF1 after V107 had it; the Dutch Grand Prix only escaped because
+# its record had been written by the archive route, which reads the grid off
+# the results.
+#
+# The rule: THE OFFICIAL RECORD IS COMPLETED FIELD BY FIELD from whichever
+# configured source has the field — never overwriting a value a row already
+# holds, never estimating — on the first fetch and, for a record that is
+# still owed a field, on later reads at the same cadence as an unsettled one.
+# `SourceReport.awaiting` names what is owed; it does not touch `settled`.
+
+def _fill_official_fields(session: RaceSession, rows, source: str) -> set[str]:
+    """Complete an official classification from another source's rows.
+
+    The complement of `_reconcile_results`: that lays the official record over
+    a provisional one and DECIDES the official fields; this only FILLS what a
+    row has nothing for. The grid, the classified time, the laps and the
+    retirement reason are per-car facts and fill whenever the row is blank.
+    The gap and the points depend on the position, so they fill only when
+    both sources agree where the car finished — a post-race penalty can move
+    a car between two publications, and a gap for the wrong position is
+    worse than none. Returns the names of the fields it filled.
+    """
+    by_code = {(r.driver or "").upper(): r for r in rows if r.driver}
+    filled: set[str] = set()
+
+    def take(row, field, value):
+        setattr(row, field, value)
+        filled.add(field)
+
+    for c in session.classification:
+        src = by_code.get((c.driver or "").upper())
+        if src is None:
+            continue
+        if c.grid is None and src.grid is not None:
+            take(c, "grid", src.grid)
+        if c.laps_completed is None and src.laps_completed is not None:
+            take(c, "laps_completed", src.laps_completed)
+        if c.retired:
+            if not c.retirement_reason and src.retirement_reason:
+                take(c, "retirement_reason", src.retirement_reason)
+                c.retirement_source = src.retirement_source or source
+        else:
+            if c.race_time is None and src.race_time is not None:
+                take(c, "race_time", src.race_time)
+            same_place = src.position is not None and src.position == c.position
+            if c.gap is None and src.gap and same_place and c.position != 1:
+                take(c, "gap", src.gap)
+            if c.points is None and src.points is not None and same_place:
+                take(c, "points", src.points)
+        if (not c.name or c.name == c.driver) and src.name:
+            c.name = src.name
+        if c.team in ("", "?") and src.team:
+            c.team, c.team_color = src.team, src.team_color
+    if "grid" in filled:
+        _set_facet(session, "starting_grid", source, "high",
+                   f"Starting grid from {_SOURCE_NAMES.get(source, source)}, reconciled "
+                   "onto a classification whose own source published none.")
+    return filled
+
+
+_SOURCE_NAMES = {"jolpica": "the results archive (Ergast/Jolpica)",
+                 "f1-archive": "the F1 live-timing archive", "openf1": "OpenF1"}
+
+
+def _results_archive_owes(session: RaceSession) -> list[str]:
+    """The official fields this classification holds for NO car, that the
+    results archive publishes for every race it has: the starting grid, the
+    classified time of the lead-lap finishers, the reason each retirement
+    retired. "No car" and not "some car": a lapped car never has a classified
+    time and a car that finished has no retirement reason, so per-row gaps
+    are the record being right, not the record being owed."""
+    rows = session.classification
+    if session.category != "race" or not rows:
+        return []
+    owed: list[str] = []
+    if not any(c.grid is not None for c in rows):
+        owed.append("grid")
+    finishers = [c for c in rows if not c.retired]
+    if finishers and not any(c.race_time is not None for c in finishers):
+        owed.append("race_time")
+    retired = [c for c in rows if c.retired]
+    if retired and not any(c.retirement_reason for c in retired):
+        owed.append("retirement_reason")
+    return owed
 
 
 def _merge_missing_facets(session: RaceSession, primary: str) -> None:
@@ -751,13 +860,17 @@ def _merge_from_archive(session: RaceSession, primary: str,
         _set_facet(session, "weather", "f1-archive", "high",
                    "Weather trace from the F1 live-timing archive.")
     # the archive's own classification is the official one (its static route
-    # says otherwise, and is flagged) — lay it over a provisional order
-    if (other.classification and _results_provisional(session)
-            and not _results_provisional(other)):
-        _reconcile_results(
-            session, other.classification, "f1-archive",
-            "Official classification from the F1 live-timing archive, reconciled "
-            "over the timing feed's provisional running order.")
+    # says otherwise, and is flagged) — lay it over a provisional order, or
+    # complete an official one with the fields it carries that ours lacks
+    # (the archive reads the grid off the results; OpenF1's result has none)
+    if other.classification and not _results_provisional(other):
+        if _results_provisional(session):
+            _reconcile_results(
+                session, other.classification, "f1-archive",
+                "Official classification from the F1 live-timing archive, reconciled "
+                "over the timing feed's provisional running order.")
+        else:
+            _fill_official_fields(session, other.classification, "f1-archive")
 
 
 #: How often an UNSETTLED cached record is checked against the sources again.
@@ -781,8 +894,25 @@ def _pit_timing_known(session: RaceSession) -> int:
 def _readiness(session: RaceSession) -> tuple:
     """Everything a revalidation can improve, as one comparable value."""
     r = session.source_report
-    return (tuple(r.missing), tuple(r.provisional), r.settled,
+    return (tuple(r.missing), tuple(r.provisional), r.settled, tuple(r.awaiting),
             _pit_timing_known(session)) if r else ()
+
+
+def _identity(session: RaceSession) -> tuple:
+    """Who is in the record and where they started — the two facts an older
+    build could have written wrong (a shouted surname, a grid on one copy)
+    and today's offline derivations put right. Compared before and after so
+    the repair is written back once instead of redone on every read."""
+    return (tuple((d.code, d.name, d.grid) for d in session.drivers),
+            tuple((c.driver, c.name, c.grid) for c in session.classification))
+
+
+def _needs_revalidation(session: RaceSession) -> bool:
+    """Is there anything left for the sources to answer? Unsettled, or settled
+    and still owed a field (see SourceReport.awaiting). A record with neither
+    costs no round trips, ever."""
+    r = session.source_report
+    return bool(r) and (not r.settled or bool(r.awaiting))
 
 
 def _adopt_pit_stops(session: RaceSession, stops) -> None:
@@ -797,29 +927,36 @@ def _adopt_pit_stops(session: RaceSession, stops) -> None:
     by_key = {(s.driver, s.lap): s for s in stops}
     for p in session.pit_stops:
         late = by_key.get((p.driver, p.lap))
-        if late and late.stop_duration and not (p.stop_duration or p.stationary_time):
-            p.stop_duration, p.pit_lane_time = late.stop_duration, late.pit_lane_time
+        if late and late.pit_lane_time and not (p.pit_lane_time or p.stop_duration or p.stationary_time):
+            p.pit_lane_time = late.pit_lane_time
             p.source, p.confidence, p.explanation = late.source, late.confidence, late.explanation
             p.estimated_stationary_time = None
 
 
 def _revalidate(session: RaceSession) -> None:
-    """Ask again for what an unsettled record is still waiting on.
+    """Ask again for what a record is still waiting on.
 
     THE SAME SOURCES, THE SAME MERGES, LATER. This is not a second pipeline:
     every step here is one the fresh fetch already runs, pointed at a record
     that was assembled before the sources had finished publishing. What was
     missing then is asked for now — the official classification first, from
-    whichever source has it, then the feeds that are only worth asking once a
-    result exists. Nothing already authoritative is touched, and nothing is
-    estimated: a source that still has nothing leaves the record as it was,
-    still labelled provisional, to be asked again next window.
+    whichever source has it, then the fields the settling source never
+    carries (`_results_archive_owes`), then the feeds that are only worth
+    asking once a result exists. Nothing already authoritative is touched,
+    and nothing is estimated: a source that still has nothing leaves the
+    record as it was, to be asked again next window.
+
+    A record that is settled and owed only a field asks only for that field:
+    one request to the results archive, the pit feed if the durations are
+    still blank — not the F1 archive's whole session over again.
     """
+    provisional = _results_provisional(session)
+    awaiting = session.source_report.awaiting if session.source_report else []
     if session.category in ("race", "sprint") and any(
             name == "openf1" for name, _fetch in _chain(session.year)):
         # the cheap question — the one endpoint a provisional record is waiting
         # on, without the eleven the first load paid for
-        if _results_provisional(session):
+        if provisional:
             try:
                 rows = openf1_adapter.fetch_results(
                     session.year, session.grand_prix, session.session_type)
@@ -830,17 +967,20 @@ def _revalidate(session: RaceSession) -> None:
                         "reconciled over the timing feed's provisional running order.")
             except Exception as exc:  # noqa: BLE001
                 log.info("openf1 result revalidation failed: %s", exc)
-        # …and the pit feed, whose durations land after the stops themselves
-        if not _pit_timing_known(session):
+        # …and the pit feed, whose durations land after the stops themselves —
+        # for a record still assembling, or one whose stops are owed a time;
+        # not for a settled record that is only waiting on its grid
+        if (provisional or "pit_timing" in awaiting) and not _pit_timing_known(session):
             try:
                 _adopt_pit_stops(session, openf1_adapter.fetch_pit_stops(
                     session.year, session.grand_prix, session.session_type))
             except Exception as exc:  # noqa: BLE001
                 log.info("openf1 pit revalidation failed: %s", exc)
-    # the results archive and the F1 archive, exactly as on a fresh fetch
-    _merge_missing_facets(session, primary="cache")
-    _merge_from_archive(session, primary="cache", ask_for_results=True)
-    _enrich_retirements(session, primary="cache")
+    if provisional:
+        # the results archive and the F1 archive, exactly as on a fresh fetch
+        _merge_missing_facets(session, primary="cache")
+        _merge_from_archive(session, primary="cache", ask_for_results=True)
+    _enrich_from_results_archive(session, primary="cache")
     try:
         pitstop_service.enrich(session, allow_network=True)
     except Exception as exc:  # noqa: BLE001
@@ -855,9 +995,11 @@ def _heal_cached(session: RaceSession, revalidate: bool = False) -> bool:
     Three things go stale in a thirty-day cache: facets that were missing only
     because a source was down at fetch time, facets a newer release no longer
     considers missing at all — and, since V107, a record that was assembled
-    before the sources had published the official result. All were frozen
-    into the file, so a session kept showing "Partial data" — or a full page
-    with a "—" in every result column — long after the reason had gone.
+    before the sources had published the official result, which V108 widened
+    to a record whose official result is missing a field another source has.
+    All were frozen into the file, so a session kept showing "Partial data" —
+    or a full page with a "—" in every result column, or "won from P?" — long
+    after the reason had gone.
 
     The first two are free and run on every read. The third costs round trips
     and runs only when the caller says the record is due (`revalidate`), which
@@ -878,22 +1020,30 @@ def _heal_cached(session: RaceSession, revalidate: bool = False) -> bool:
     if any(f in report.missing for f in _ARCHIVE_FACETS):
         _merge_from_archive(session, primary="cache", ask_for_results=False)
         _audit_report(session)
-    if revalidate and not report.settled:
+    if revalidate and _needs_revalidation(session):
         _revalidate(session)
     return _readiness(session) != before
 
 
-def _enrich_retirements(session: RaceSession, primary: str) -> None:
-    """Copy across what live timing lacks from the official archive: retirement
-    reasons ("Hydraulics", "Collision", ...) for the DNF badge, and the FIA
-    classified race time for each lead-lap finisher. Races only: the Jolpica
-    results endpoint describes the Grand Prix, not sprints."""
+def _enrich_from_results_archive(session: RaceSession, primary: str) -> None:
+    """Complete the classification from the results archive: the starting
+    grid, the FIA classified time of each lead-lap finisher, the reason each
+    car retired ("Hydraulics", "Collision", …), the laps a retirement made.
+
+    THIS USED TO COPY REASONS AND TIMES AND NOTHING ELSE. It asked the archive
+    for its classification — one request, cached and paced — and then read two
+    fields off the answer while the starting grid sat in the same rows. That
+    is the field "won from P?" was missing. Everything the archive publishes
+    that the row lacks is filled now (`_fill_official_fields`), and nothing a
+    row already holds is touched. Races only: the Jolpica results endpoint
+    describes the Grand Prix, not sprints.
+    """
     if primary == "jolpica" or session.category != "race":
         return
     retired = [c for c in session.classification if c.retired]
     need_reasons = retired and not all(c.retirement_reason for c in retired)
     need_times = any(not c.retired and c.race_time is None for c in session.classification)
-    if not need_reasons and not need_times:
+    if not need_reasons and not need_times and not _results_archive_owes(session):
         return
     try:
         _drivers, rows, _meta = jolpica_adapter.fetch_classification(
@@ -901,18 +1051,7 @@ def _enrich_retirements(session: RaceSession, primary: str) -> None:
     except Exception as exc:  # noqa: BLE001
         log.info("classification enrich failed: %s", exc)
         return
-    by_code = {r.driver: r for r in rows}
-    for c in session.classification:
-        src = by_code.get(c.driver)
-        if not src:
-            continue
-        if c.retired and src.retirement_reason and not c.retirement_reason:
-            c.retirement_reason = src.retirement_reason
-            c.retirement_source = "jolpica"
-            if c.laps_completed is None:
-                c.laps_completed = src.laps_completed
-        if not c.retired and c.race_time is None and src.race_time is not None:
-            c.race_time = src.race_time
+    _fill_official_fields(session, rows, "jolpica")
 
 
 def quali_grid_changes(session: RaceSession, quali_rows) -> list[dict]:
@@ -1274,6 +1413,17 @@ def _audit_report(session: RaceSession) -> None:
     # be is called finished — so that is a separate word, and the one the
     # clients gate their derived facts (margins, finishers, retirements) on.
     report.settled = report.complete and not any(p in essential for p in provisional)
+    # THE THIRD AXIS: official, and still owed a field — see SourceReport.
+    # Only asked of an official classification (a provisional one is owed
+    # the whole result, and is already re-asked for it), and only for fields
+    # a configured source publishes for this era.
+    awaiting: list[str] = []
+    if "results" not in provisional:
+        awaiting += _results_archive_owes(session)
+    if (cat in ("race", "sprint") and session.year >= _FACET_FROM["pit_stops"]
+            and session.pit_stops and not _pit_timing_known(session)):
+        awaiting.append("pit_timing")
+    report.awaiting = awaiting
     if not missing:
         report.missing_reason = None
     session.partial = report.partial
@@ -1314,6 +1464,12 @@ def _finalize_session(session: RaceSession) -> None:
     # underneath it is complete.
     _derive_drivers_from_classification(session)
 
+    # names in the sport's own case, and the grid on both copies of the entry
+    # — offline, on every path, so a record cached with "Kimi ANTONELLI" or
+    # with the grid on its rows and not its drivers is right on its next read
+    canonicalize_names(session)
+    sync_grids(session)
+
     # the position trace, before anything that reads one. Every line chart in
     # the product plots it, and the overtake inference below needs it to work
     # over — see _derive_positions for why it must not depend on who answered.
@@ -1344,6 +1500,10 @@ def _finalize_session(session: RaceSession) -> None:
     if session.category in ("race", "sprint"):
         try:
             order_classification(session)
+            # and the gaps in one shape whichever source wrote them: none for
+            # the winner (OpenF1 says "LEADER", the archive says nothing),
+            # "+11.536s" for everyone else, a total time never shown as a gap
+            fix_classification(session)
         except Exception as exc:  # noqa: BLE001
             log.warning("classification ordering failed: %s", exc)
 
@@ -1444,8 +1604,9 @@ def _post_process(session: RaceSession, primary: str) -> None:
     # session is one or the other). Pit stops touch pit stops; portraits touch
     # drivers. Nothing here reads another's output.
     _together([
-        # retirement reasons for the DNF badge (jolpica has them, live timing doesn't)
-        ("enrich.retirements", False, lambda: _enrich_retirements(session, primary)),
+        # the fields the results archive has that the primary lacks — the
+        # starting grid, classified times, retirement reasons
+        ("enrich.results", False, lambda: _enrich_from_results_archive(session, primary)),
         # qualifying: per-segment Q1/Q2/Q3 bests from the archive (live timing
         # exposes laps but not which knockout segment they belonged to)
         ("enrich.quali", False, lambda: _enrich_quali_segments(session, primary)),

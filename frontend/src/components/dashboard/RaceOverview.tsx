@@ -330,6 +330,16 @@ function pitTimingVisual(v: any): React.ReactNode {
         scaleMin="Slow" scaleMax="2.0s — a great stop" />
     );
   }
+  if (v?.lane_s != null) {
+    // a lane time is the whole cost of the stop — entry line to exit line —
+    // and lives in a different window: ~18s is a quick lane, 30s a slow one.
+    // It used to arrive in `stationary_s` and be drawn against the 2.0s scale.
+    return (
+      <Meter label="Pit-lane time" tone="amber" value={`${v.lane_s.toFixed(2)}s`}
+        pct={Math.min(100, Math.max(5, ((32 - v.lane_s) / 14) * 100))}
+        scaleMin="Slow" scaleMax="~18s — a quick lane" />
+    );
+  }
   return undefined;
 }
 

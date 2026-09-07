@@ -459,8 +459,9 @@ def _h_could_do_better(q, ctx, ents):
     if not c:
         return _missing(q, [f"race data for {code}"], ctx)
     if code == winner:
-        return _qa(q, f"{code} did win — P{c.grid or '?'} to P1. They controlled track position and "
-                   f"nailed the stops.", "could_better", "high", ctx, [code],
+        return _qa(q, f"{code} did win — {f'P{c.grid} to P1' if c.grid else 'P1 at the flag'}. "
+                   f"They controlled track position and nailed the stops.",
+                   "could_better", "high", ctx, [code],
                    follow_ups=["What was the turning point?", "Explain simply"])
 
     where, options = [], []
@@ -588,8 +589,9 @@ def _h_why_lost(q, ctx, ents):
     if not c:
         return _missing(q, [f"race data for {code}"], ctx)
     if c.retired:
-        return _qa(q, f"{code} didn't lose places on merit — they retired from the race ({c.status}) "
-                   f"after starting P{c.grid or '?'}. Look at the lap they dropped out on the position chart.",
+        return _qa(q, f"{code} didn't lose places on merit — they retired from the race ({c.status})"
+                   f"{f' after starting P{c.grid}' if c.grid else ''}. "
+                   f"Look at the lap they dropped out on the position chart.",
                    "why_lost", "high", ctx, [code], follow_ups=["Show the position chart", "Explain simply"])
 
     # --- mechanism: where and how they fell, from the position trace ---

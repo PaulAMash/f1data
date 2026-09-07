@@ -120,7 +120,9 @@ export function RaceStory({ bundle, onJump }: {
             : "Took the chequered flag first."}
           detail={
             <p>
-              {winner?.name} started P{winner?.grid ?? "?"} and finished P1
+              {/* where they started is a fact the record either holds or does
+                  not — "P?" was a placeholder printed as a position */}
+              {winner?.name} {startedFrom(winner?.grid)} and finished P1
               {winner?.pit_stops != null ? ` after ${plural(winner.pit_stops, "stop")}` : ""}.
               The track-position chart shows exactly where the race was won.
             </p>
@@ -190,3 +192,7 @@ export function RaceStory({ bundle, onJump }: {
 
 const lastName = (name: string) => name.split(" ").slice(-1)[0] || name;
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+/** "started P3" / "started from the pit lane" / "started from a grid slot the sources did not record". */
+const startedFrom = (grid?: number | null) =>
+  grid == null ? "started from a grid slot the sources did not record"
+    : grid === 0 ? "started from the pit lane" : `started P${grid}`;

@@ -150,7 +150,9 @@ def compute_pace(session: RaceSession) -> list[DriverPaceSummary]:
 
         meta = driver_meta.get(code)
         row = class_by_driver.get(code)
-        grid = meta.grid if meta else (row.grid if row else None)
+        # the entry list and the classification row each hold the grid; read
+        # whichever knows it — the row is the copy the reconciliation fills
+        grid = meta.grid if meta and meta.grid is not None else (row.grid if row else None)
         finish = row.position if row else None
         net = (grid - finish) if (grid and finish) else None
 

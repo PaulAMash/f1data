@@ -27,7 +27,7 @@ from ..models import (
     UndercutEvent,
 )
 from .normalize import official_incident_cause
-from .text import plural
+from .text import from_grid, plural
 
 PIT_LOSS_GREEN_EST = 20.5   # used to value VSC/SC cheap stops when lane time is unknown
 
@@ -238,12 +238,13 @@ def _story(session, classified, winner, gainers, losers, best_strategy, worst_st
     s: list[str] = []
     win = next((c for c in classified if c.driver == winner), None)
     if win:
-        from_grid = f" from P{win.grid}" if win.grid and win.grid > 1 else " from pole"
+        # where they started, or nothing: an unknown grid used to read as
+        # "from pole", because None is not greater than one
         # Only mention the stop count when pit data is trustworthy — never claim a
         # "0-stop race" just because a source lacked pit data.
         strat = (f", running a {win.pit_stops}-stop race"
                  if session.pit_data_reliable and win.pit_stops > 0 else "")
-        s.append(f"{win.name} won the {session.grand_prix}{from_grid}{strat}.")
+        s.append(f"{win.name} won the {session.grand_prix}{from_grid(win.grid)}{strat}.")
         # The line under the headline must be ABOUT the headline. Jumping
         # straight to another driver's strategy read as a non-sequitur: the
         # reader is told who won, then immediately handed someone else.
@@ -321,7 +322,7 @@ def _story_advanced(session, classified, pace, avg_pit_loss, avg_pit_loss_kind,
         margin = f" by {p2.gap}" if p2 and p2.gap else ""
         stops = (f", {win.pit_stops} stops" if session.pit_data_reliable and win.pit_stops else "")
         best = f", best lap {_fmt_laptime(win.best_lap)}" if win.best_lap else ""
-        s.append(f"{win.name} won from P{win.grid or '?'}{margin}{stops}{best}.")
+        s.append(f"{win.name} won{from_grid(win.grid, analyst=True)}{margin}{stops}{best}.")
 
     ranked = sorted((p for p in pace if p.pace_rank and p.clean_air_pace),
                     key=lambda p: p.pace_rank)[:3]
@@ -380,17 +381,21 @@ def _best_pit_timing(session: RaceSession) -> dict | None:
             "detail": (f"{name} pitted on lap {best.lap} under {window}, saving "
                        f"~{saving(best)}s versus a green-flag stop.{cause_txt}"),
         }
-    # fall back to whichever stop-duration measure the source provides
+    # fall back to whichever stop measure the source provides — and SAY WHICH.
+    # A lane time is the stop's cost, twenty-odd seconds of it transit; it is
+    # not the stationary time and must not be drawn against a 2.0s scale.
     def dur(ps):
         return ps.stationary_time or ps.stop_duration or ps.pit_lane_time
     with_time = [ps for ps in session.pit_stops if dur(ps)]
     if with_time:
         best = min(with_time, key=dur)
         name = next((d.name for d in session.drivers if d.code == best.driver), best.driver)
-        kind_txt = "stationary" if best.stationary_time else "in the pit lane"
+        stationary = bool(best.stationary_time or best.stop_duration)
+        kind_txt = "stationary" if stationary else "in the pit lane"
         return {
             "driver": best.driver, "lap": best.lap, "kind": "fastest stop",
-            "stationary_s": dur(best),
+            "stationary_s": dur(best) if stationary else None,
+            "lane_s": None if stationary else dur(best),
             "detail": f"{name} had the fastest stop: {dur(best):.2f}s {kind_txt} on lap {best.lap}.",
         }
     return None

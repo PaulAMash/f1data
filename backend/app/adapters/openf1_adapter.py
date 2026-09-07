@@ -11,10 +11,12 @@ degrades the session to `partial` rather than failing the whole fetch.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 import requests
 
+from ..analysis.normalize import canonical_name
 from ..config import get_settings
 from .. import upstream
 from . import probe_detail
@@ -45,6 +47,8 @@ from ..models import (
 
 BASE = "https://api.openf1.org/v1"
 _HOST = "api.openf1.org"
+
+log = logging.getLogger("pitwall_iq.openf1")
 
 _COMPOUND = {
     "SOFT": Compound.SOFT, "MEDIUM": Compound.MEDIUM, "HARD": Compound.HARD,
@@ -341,7 +345,7 @@ def fetch_session(year: int, gp: str, session_type: str) -> RaceSession:
                  "weather", "race_control", "overtakes", "starting_grid", "session_result"]
     with ThreadPoolExecutor(max_workers=6) as pool:
         futures = {ep: pool.submit(lambda e=ep: _get(e, session_key=sk)) for ep in endpoints}
-        raw = {ep: _safe(f.result, []) for ep, f in futures.items()}
+        raw = {ep: _safe(f.result, [], what=f"{ep} for session {sk}") for ep, f in futures.items()}
     drivers_raw, laps_raw, stints_raw = raw["drivers"], raw["laps"], raw["stints"]
     pit_raw, pos_raw, interval_raw = raw["pit"], raw["position"], raw["intervals"]
     weather_raw, rc_raw, overtake_raw = raw["weather"], raw["race_control"], raw["overtakes"]
@@ -351,7 +355,7 @@ def fetch_session(year: int, gp: str, session_type: str) -> RaceSession:
     dmap: dict[int, dict] = {}
     drivers: list[Driver] = []
     team_colors: dict[str, str] = {}
-    grid_by_num = {g.get("driver_number"): g.get("position") for g in grid_raw}
+    grid_by_num = _grid_by_number(grid_raw)
     for d in drivers_raw:
         num = d.get("driver_number")
         code = d.get("name_acronym") or str(num)
@@ -359,12 +363,18 @@ def fetch_session(year: int, gp: str, session_type: str) -> RaceSession:
         color = d.get("team_colour")
         color = f"#{color}" if color and not str(color).startswith("#") else (color or "#888888")
         team_colors[team] = color
-        dmap[num] = {"code": code, "team": team, "color": color,
-                     "name": d.get("full_name") or code}
+        dmap[num] = {"code": code, "team": team, "color": color, "name": _driver_name(d, code)}
         drivers.append(Driver(number=str(num), code=code, name=dmap[num]["name"], team=team,
                               team_color=color, grid=grid_by_num.get(num),
                               country=d.get("country_code"), headshot_url=d.get("headshot_url")))
     facet("drivers", bool(drivers))
+    # THE GRID IS ITS OWN FEED HERE, AND IT CAN BE EMPTY WHILE EVERYTHING ELSE
+    # IS FULL. Say whether it answered, so the pipeline knows to ask the
+    # results archive for the one field a result without it cannot supply —
+    # rather than a "won from P?" that nothing ever explained.
+    if grid_by_num:
+        facets.append(FacetSource(facet="starting_grid", source="openf1", confidence="high",
+                                  detail="Starting grid from OpenF1's starting_grid feed."))
 
     def code_of(num) -> str:
         return dmap.get(num, {}).get("code", str(num))
@@ -431,19 +441,12 @@ def fetch_session(year: int, gp: str, session_type: str) -> RaceSession:
             l.is_outlier = True
     _fill_intervals(laps)
 
-    # --- pit stops (pit_duration = time in pit lane; OpenF1's best stop proxy) ---
+    # --- pit stops (pit_duration = pit-lane entry to exit: the stop's COST) ---
     pit_stops: list[PitStop] = []
     for p in pit_raw:
         code = code_of(p.get("driver_number"))
         lap_no = p.get("lap_number") or 0
-        dur = _num(p.get("pit_duration"))
-        pit_stops.append(PitStop(
-            driver=code, lap=lap_no, stop_duration=dur, pit_lane_time=dur,
-            compound_before=_compound_before(stints, code, lap_no),
-            compound_after=_compound_after(stints, code, lap_no),
-            source="openf1", confidence="high" if dur else "low",
-            explanation="OpenF1 pit_duration (time stationary + pit-lane).",
-        ))
+        pit_stops.append(_pit_stop(code, lap_no, _num(p.get("pit_duration")), stints))
     facet("pit_stops", bool(pit_stops))
 
     # --- enrich stint pace from laps ---
@@ -514,11 +517,63 @@ def fetch_session(year: int, gp: str, session_type: str) -> RaceSession:
 # --------------------------------------------------------------------------- #
 # helpers
 # --------------------------------------------------------------------------- #
-def _safe(fn, default):
+def _safe(fn, default, what: str | None = None):
+    """Best-effort, and SAID OUT LOUD when it fails. Eleven endpoints are asked
+    at once and any one of them may 404, time out or be rate-limited; a feed
+    that silently became an empty list was how the starting grid vanished
+    from every record without a line in any log to say which feed had gone."""
     try:
         return fn()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        if what:
+            log.info("openf1 %s unavailable — %s: %s", what, type(exc).__name__, str(exc)[:160])
         return default
+
+
+def _driver_name(d: dict, code: str) -> str:
+    """The driver's name as the sport writes it.
+
+    OpenF1's `full_name` is "Kimi ANTONELLI" — the timing screen's shouted
+    surname — and it was copied onto every record verbatim. The same row
+    carries `first_name` and `last_name` in ordinary case; those are the
+    name. When a session's driver rows predate the split fields, the shouted
+    form is re-cased instead, and the code is the last resort."""
+    first = str(d.get("first_name") or "").strip()
+    last = str(d.get("last_name") or "").strip()
+    if first and last:
+        return f"{first} {last}"
+    full = str(d.get("full_name") or "").strip()
+    if full:
+        return canonical_name(full)
+    return canonical_name(last or first) or code
+
+
+def _grid_by_number(grid_raw) -> dict:
+    """{driver_number: grid position} from the starting_grid feed — a real
+    position only; a row without one carries nothing."""
+    out: dict = {}
+    for g in grid_raw or []:
+        pos = _int(g.get("position"))
+        if g.get("driver_number") is not None and pos is not None:
+            out[g.get("driver_number")] = pos
+    return out
+
+
+def _pit_stop(code: str, lap_no: int, lane: float | None, stints: list[Stint]) -> PitStop:
+    """One pit entry. `pit_duration` is the time between the pit-lane entry
+    and exit lines — the loss a stop costs — and it is recorded as exactly
+    that. It is NOT the stationary time and no longer pretends to be: the
+    stationary estimate, when there is one, is derived and labelled later
+    (analysis/normalize.finalize_pit_stop)."""
+    return PitStop(
+        driver=code, lap=lap_no, pit_lane_time=lane,
+        compound_before=_compound_before(stints, code, lap_no),
+        compound_after=_compound_after(stints, code, lap_no),
+        source="openf1", confidence="medium" if lane else "low",
+        explanation=("OpenF1 pit_duration — time in the pit lane from entry to exit, "
+                     "not the stationary time." if lane else
+                     "OpenF1 pit entry without a duration yet."),
+    )
 
 
 def _lap_windows(laps_raw, code_of):
@@ -737,17 +792,18 @@ def fetch_results(year: int, gp: str, session_type: str) -> list[ClassificationR
     result_raw = _get("session_result", session_key=sk)
     if not result_raw:
         return []
-    drivers_raw = _safe(lambda: _get("drivers", session_key=sk), [])
-    grid_raw = _safe(lambda: _get("starting_grid", session_key=sk), [])
+    drivers_raw = _safe(lambda: _get("drivers", session_key=sk), [], what=f"drivers for session {sk}")
+    grid_raw = _safe(lambda: _get("starting_grid", session_key=sk), [],
+                     what=f"starting_grid for session {sk}")
     dmap: dict[int, dict] = {}
     for d in drivers_raw:
         num = d.get("driver_number")
+        code = d.get("name_acronym") or str(num)
         color = d.get("team_colour")
         color = f"#{color}" if color and not str(color).startswith("#") else (color or "#888888")
-        dmap[num] = {"code": d.get("name_acronym") or str(num), "team": d.get("team_name") or "?",
-                     "color": color, "name": d.get("full_name") or d.get("name_acronym") or str(num)}
-    grid_by_num = {g.get("driver_number"): g.get("position") for g in grid_raw}
-    return _classification(result_raw, dmap, [], grid_by_num, [])
+        dmap[num] = {"code": code, "team": d.get("team_name") or "?",
+                     "color": color, "name": _driver_name(d, code)}
+    return _classification(result_raw, dmap, [], _grid_by_number(grid_raw), [])
 
 
 def fetch_pit_stops(year: int, gp: str, session_type: str) -> list[PitStop]:
@@ -767,8 +823,8 @@ def fetch_pit_stops(year: int, gp: str, session_type: str) -> list[PitStop]:
     pit_raw = _get("pit", session_key=sk)
     if not pit_raw:
         return []
-    drivers_raw = _safe(lambda: _get("drivers", session_key=sk), [])
-    stints_raw = _safe(lambda: _get("stints", session_key=sk), [])
+    drivers_raw = _safe(lambda: _get("drivers", session_key=sk), [], what=f"drivers for session {sk}")
+    stints_raw = _safe(lambda: _get("stints", session_key=sk), [], what=f"stints for session {sk}")
     code_by_num = {d.get("driver_number"): d.get("name_acronym") or str(d.get("driver_number"))
                    for d in drivers_raw}
 
@@ -784,19 +840,8 @@ def fetch_pit_stops(year: int, gp: str, session_type: str) -> list[PitStop]:
         stints.append(Stint(driver=code_of(s.get("driver_number")), stint=s.get("stint_number", 1),
                             compound=_COMPOUND.get(str(s.get("compound") or "").upper(), Compound.UNKNOWN),
                             start_lap=ls, end_lap=le, laps=le - ls + 1))
-    stops: list[PitStop] = []
-    for p in pit_raw:
-        code = code_of(p.get("driver_number"))
-        lap_no = p.get("lap_number") or 0
-        dur = _num(p.get("pit_duration"))
-        stops.append(PitStop(
-            driver=code, lap=lap_no, stop_duration=dur, pit_lane_time=dur,
-            compound_before=_compound_before(stints, code, lap_no),
-            compound_after=_compound_after(stints, code, lap_no),
-            source="openf1", confidence="high" if dur else "low",
-            explanation="OpenF1 pit_duration (time stationary + pit-lane).",
-        ))
-    return stops
+    return [_pit_stop(code_of(p.get("driver_number")), p.get("lap_number") or 0,
+                      _num(p.get("pit_duration")), stints) for p in pit_raw]
 
 
 def _gap_str(v):

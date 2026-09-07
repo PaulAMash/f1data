@@ -123,6 +123,75 @@ Derived facts are gated on the flag rather than counted: `/api/featured` sends `
 `finishers` as `null` while `settled` is false, and the Race Story shows "—" for finishers
 and no retirements card instead of "22/22".
 
+## An official record is completed field by field (V108)
+
+V107 settled the Italian Grand Prix — margin, finishers, retirements, points — and the page
+then read **"Kimi ANTONELLI won from P? by +3.857s"**, with "no notable movers" under it and
+every surname on every page in capitals. Nothing was provisional any more. Two fields had
+never arrived, from a source that never carries one of them, and the pipeline had stopped
+asking the moment the record settled. Both symptoms appeared on every 2026 race at once
+because Render's disk is ephemeral: the V107 deploy rebuilt every record through the
+now-working OpenF1 route.
+
+**Root cause 1 — the name is the provider's own string.** OpenF1's `drivers` feed publishes
+`full_name` as `"Kimi ANTONELLI"` (the timing screen's shouted surname) alongside
+`first_name`/`last_name` in ordinary case. The adapter copied `full_name` verbatim. No
+fallback path was involved and nothing in the website or the app changes case; every
+surface that takes the last word of a name as the surname inherited it. The adapter now
+builds the name from the parts (`openf1_adapter._driver_name`), and the offline finalizer
+re-cases any shouted name it meets (`analysis/normalize.canonical_name`), so a record cached
+with `"Kimi ANTONELLI"` is right on its next read and written back once.
+
+**Root cause 2 — the grid is a separate feed, and the settled record was never asked for
+it.** OpenF1's `session_result` carries no starting grid; the grid is its `starting_grid`
+feed, and when that is empty (or fails — the failure was swallowed without a log line)
+every row is built with `grid=None`. The results archive publishes the grid for every race
+since 1950 and was already being asked for retirement reasons, but the enrichment copied
+reasons and classified times and nothing else, and `_reconcile_results` only runs while a
+result is provisional. The Dutch Grand Prix only escaped because its record had been written
+by the F1-archive route, which reads the grid off the results. The same feed failure also
+left the entry list's `Driver.grid` empty while the classification row had one, so the pace
+table lost its net positions.
+
+The rules, in `app/adapters/data_source_manager.py`:
+
+- **`_fill_official_fields`** completes an official classification from another source's
+  rows: the grid, the classified time, the laps and the retirement reason fill whenever the
+  row has nothing; the gap and the points fill only when both sources agree where the car
+  finished. Nothing a row holds is ever overwritten; a blank (`None`, `""`, `NaN`) from the
+  second source is not a value. It runs on the first fetch (`_enrich_from_results_archive`,
+  which replaced the reasons-only enrichment) and whenever the F1 archive is fetched anyway.
+- **`SourceReport.awaiting`** names the official fields a *settled* record is still owed —
+  `"grid"`, `"race_time"`, `"retirement_reason"` when no row has one, `"pit_timing"` when no
+  stop has a duration. It never touches `settled`: nothing is standing in for anything, and a
+  reader must not be told an official result is pending. An awaiting record is re-checked on
+  the same cadence as an unsettled one (`_REVALIDATE_AFTER`), asking **only** for what it is
+  owed — one results-archive request, the pit feed if durations are blank — never the F1
+  archive's whole session again; a check that gains nothing touches the entry. A record that
+  is settled and owed nothing is never re-asked.
+- **`sync_grids`** keeps the grid on both copies of the entry (`Driver.grid` and
+  `ClassificationRow.grid`), offline, on every path.
+- **The story never invents a start.** `analysis/text.from_grid` writes " from P7", " from
+  pole", " from the pit lane" (Ergast's grid 0) — or nothing when the grid is unknown. It
+  used to print "P?", and worse, "from pole" when the grid was `None`.
+- **Gaps in one format.** Ergast's bare `"+17.878"` becomes `"+17.878s"` like every other
+  source, and the winner's gap is `None` on the record itself (OpenF1 wrote `"LEADER"`).
+
+**Found on the way — pit-lane time is not stationary time.** OpenF1's `pit_duration` and
+Ergast's pit-stop `duration` are both measured from the pit-entry line to the pit-exit line:
+twenty-odd seconds. Both were written to `stop_duration` as well as `pit_lane_time`, and
+every reader of `stop_duration` treated it as the stop itself — "Best pit timing: stationary
+time 24.20s" against a 2.0s scale. They now populate `pit_lane_time` only; the stationary
+estimate derived from it is labelled as one; `best_pit_timing` carries `lane_s` rather than
+`stationary_s` for a lane measure. And a lane duration beyond `MAX_RACING_PIT_LANE_S` (180 s)
+— a red flag parks every car in the pit lane for twenty minutes, and the feeds record that
+as a pit entry — is kept as an entry but excluded from every cost figure, which is how "Avg
+pit loss 1298.1s" happened. Both rules live in `normalize.finalize_pit_stop` and run on every
+read, so cached records heal without a refetch.
+
+Verification of a provider failure is now visible: `openf1_adapter._safe` logs which endpoint
+failed for which session instead of returning an empty list in silence.
+
 ## Network policy note
 
 If the environment's egress policy blocks the F1 hosts above (403 on

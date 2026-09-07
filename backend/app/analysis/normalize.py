@@ -15,6 +15,186 @@ from ..models import Compound, PitStop, RaceSession, Stint
 # cumulative time, not a gap — so we drop it rather than display nonsense.
 MAX_PLAUSIBLE_GAP_S = 300.0
 
+
+# --------------------------------------------------------------------------- #
+# A driver's name, in one case
+#
+# "Kimi ANTONELLI" is not a fallback and it is not a style: it is the literal
+# `full_name` OpenF1 publishes, surname shouted the way a timing screen does.
+# For as long as the OpenF1 adapter could not serve a session (V107 fixed the
+# crash that kept it out of the chain) nobody saw it; the day it became the
+# primary for 2023+, every name on every page arrived in that case, and every
+# surface that takes the last word of a name as the surname — the story, the
+# position chart, the initials in an avatar — inherited it. The website and
+# the app do not style names; they show what the record says. So the record
+# says it once, here, the way the sport writes it: given name, family name,
+# each capitalised, particles ("de", "van der") lower where they belong.
+#
+# Applied on the way in (the OpenF1 adapter builds from `first_name` and
+# `last_name` and only falls back to this) and on the way out of the cache
+# (`data_source_manager._finalize_session`), so a record cached with shouted
+# names is healed on its next read at no cost.
+# --------------------------------------------------------------------------- #
+_NAME_PARTICLES = {"de", "da", "di", "del", "della", "van", "der", "den", "von",
+                   "la", "le", "du", "dos", "das", "af", "av"}
+
+
+def _cased(token: str) -> str:
+    """"ANTONELLI" -> "Antonelli", "O'WARD" -> "O'Ward", "JEAN-ERIC" -> "Jean-Eric"."""
+    return re.sub(r"[^\W\d_]+", lambda m: m.group(0)[:1].upper() + m.group(0)[1:].lower(), token)
+
+
+def canonical_name(name: str | None) -> str:
+    """A display name in the sport's own case; a name already in it is unchanged.
+
+    Only tokens that are ENTIRELY upper-case are touched, so "Nyck de Vries",
+    "JJ Lehto" and "Zhou Guanyu" pass through as written. A lone three-letter
+    token is a driver code standing in for a name and is left alone.
+    """
+    if not name:
+        return name or ""
+    tokens = name.split()
+    out: list[str] = []
+    for i, tok in enumerate(tokens):
+        letters = sum(1 for ch in tok if ch.isalpha())
+        shouted = letters >= 2 and tok == tok.upper() and tok != tok.lower()
+        if not shouted:
+            out.append(tok)
+        elif i > 0 and tok.lower() in _NAME_PARTICLES:
+            out.append(tok.lower())
+        elif letters <= 2 or (len(tokens) == 1 and letters <= 3):
+            out.append(tok)                     # initials ("JJ"), or a bare code
+        else:
+            out.append(_cased(tok))
+    return " ".join(out)
+
+
+def canonicalize_names(session: RaceSession) -> bool:
+    """Every driver and classification name in canonical case. Returns whether
+    anything changed, so a cached record that needed it can be written back."""
+    changed = False
+    for d in session.drivers:
+        fixed = canonical_name(d.name)
+        if fixed != d.name:
+            d.name, changed = fixed, True
+    for c in session.classification:
+        fixed = canonical_name(c.name)
+        if fixed != c.name:
+            c.name, changed = fixed, True
+    return changed
+
+
+# --------------------------------------------------------------------------- #
+# One fact, held twice
+# --------------------------------------------------------------------------- #
+def sync_grids(session: RaceSession) -> bool:
+    """The starting grid lives on the entry list AND on the classification row,
+    and the reconciliation steps fill only the row. The pace model reads the
+    entry list first, so a grid the row knew and the entry did not produced a
+    pace table with no net positions on a race whose classification had every
+    one. Fill each from the other; never overwrite either."""
+    by_code = {c.driver: c for c in session.classification}
+    changed = False
+    for d in session.drivers:
+        c = by_code.get(d.code)
+        if c is None:
+            continue
+        if d.grid is None and c.grid is not None:
+            d.grid, changed = c.grid, True
+        elif c.grid is None and d.grid is not None:
+            c.grid, changed = d.grid, True
+    return changed
+
+
+# --------------------------------------------------------------------------- #
+# The gap, in one format
+# --------------------------------------------------------------------------- #
+def canonical_gap(gap: str | None) -> str | None:
+    """"+17.878" (Ergast's own string) -> "+17.878s"; "+1 Lap", "LEADER" and
+    "+11.536s" are already canonical. Every source's margin reads the same."""
+    if gap is None:
+        return None
+    g = str(gap).strip()
+    if not g:
+        return None
+    if re.fullmatch(r"[-+]?\d+(?:\.\d+)?", g):
+        return f"{g if g.startswith(('+', '-')) else '+' + g}s"
+    return g
+
+
+# --------------------------------------------------------------------------- #
+# What a pit-lane duration is, and when it is not a stop
+# --------------------------------------------------------------------------- #
+#: Longer than this in the pit lane is not a racing stop. A tyre change with a
+#: front-wing replacement is forty seconds; a rear-wing change or a puncture
+#: repair, ninety. Twenty minutes is a red flag — every car parked in the lane
+#: until the restart — or a car in the garage for repairs, and the feeds record
+#: both as a pit entry with a duration. Averaging those into "pit loss" put a
+#: 1,298-second figure on a card whose scale ends at thirty.
+MAX_RACING_PIT_LANE_S = 180.0
+#: Typical green-flag pit-lane transit (drive in + out, excluding the stop
+#: itself), used only to derive a LABELLED estimate of the stationary time
+#: from the lane time when nothing measured the stop.
+TYPICAL_LANE_TRANSIT_S = 18.5
+MIN_STATIONARY_S = 1.9
+
+_STOPPAGE_NOTE = ("In the pit lane for {secs:.0f}s — a stoppage, repair or garage stay "
+                  "rather than a racing stop, so it is not counted as a stop cost.")
+
+
+def finalize_pit_stop(p: PitStop) -> bool:
+    """Settle every derived pit-stop field from the measured ones, for any
+    source and any season, idempotently. Returns whether anything changed.
+
+    Three rules, in order:
+
+    1. A lane duration that arrived in `stop_duration` from a source that only
+       ever measured the lane (they used to be written to both fields) is a
+       lane time and is moved there; the stop itself was never measured.
+    2. A lane time beyond `MAX_RACING_PIT_LANE_S` is a stoppage, not a stop
+       cost: the entry stays (the car did enter the pit lane) and the cost
+       fields are cleared, with the reason kept in plain words.
+    3. Confidence, explanation and the labelled stationary ESTIMATE follow
+       from whatever measured value remains.
+    """
+    before = (p.stationary_time, p.pit_lane_time, p.stop_duration,
+              p.estimated_stationary_time, p.confidence, p.explanation)
+    if p.stop_duration is not None and p.stop_duration == p.pit_lane_time:
+        p.stop_duration = None
+    for field in ("pit_lane_time", "stop_duration"):
+        v = getattr(p, field)
+        if v is not None and v > MAX_RACING_PIT_LANE_S:
+            p.pit_lane_time = p.stop_duration = p.estimated_stationary_time = None
+            p.confidence = "low"
+            p.explanation = _STOPPAGE_NOTE.format(secs=v)
+            break
+    if p.stationary_time:
+        p.confidence = "high"
+        p.explanation = p.explanation or "Measured stationary time (wheel-gun to release)."
+    elif p.stop_duration:
+        p.explanation = p.explanation or f"{p.source.title()} stop duration."
+    elif p.pit_lane_time:
+        # Derive a plausible stationary estimate from total pit-lane loss.
+        p.estimated_stationary_time = round(
+            max(MIN_STATIONARY_S, p.pit_lane_time - TYPICAL_LANE_TRANSIT_S), 1)
+        p.confidence = "low"
+        p.source = p.source if p.source not in ("unknown",) else "derived"
+        p.explanation = (f"Estimated from pit-lane loss (~{p.pit_lane_time:.0f}s − "
+                         f"~{TYPICAL_LANE_TRANSIT_S:.0f}s transit). Approximate.")
+    else:
+        p.estimated_stationary_time = None
+        p.confidence = "low"
+        p.explanation = p.explanation or "No stop-duration data available for this session."
+    return (p.stationary_time, p.pit_lane_time, p.stop_duration,
+            p.estimated_stationary_time, p.confidence, p.explanation) != before
+
+
+def finalize_pit_stops(session: RaceSession) -> bool:
+    changed = False
+    for p in session.pit_stops:
+        changed = finalize_pit_stop(p) or changed
+    return changed
+
 # Official broadcast colours by team-name token, used to replace the generic
 # grey when a source (mostly the historical archive) has no colour of its own.
 # Ordered: more specific tokens first so "red bull" wins before "racing bulls".
@@ -226,6 +406,7 @@ def fix_classification(session: RaceSession) -> None:
         if c.position == 1:
             c.gap = None            # winner: the UI renders "Winner"
             continue
+        c.gap = canonical_gap(c.gap)
         if not c.gap:
             continue
         g = str(c.gap)
@@ -391,6 +572,11 @@ def normalize_session(session: RaceSession) -> None:
     reliability so the UI never fabricates '0-stop race' claims or absurd gaps."""
     fix_classification(session)
     fill_team_colors(session)
+    canonicalize_names(session)
+    sync_grids(session)
+    # a stoppage is not a stop cost, and a lane time is not a stationary time —
+    # settled here, on every read, so a cached record's stops are right too
+    finalize_pit_stops(session)
     attach_window_causes(session)
     # Give every retirement a real "laps completed" from the timing when the
     # source left it blank, so the DNF badge and pace verdict always show a lap.
@@ -435,7 +621,7 @@ def order_classification(session: RaceSession) -> None:
     the merge steps mixed conventions. Live timing gives a retirement no
     position at all; the results archive numbers retirements straight on after
     the finishers. Take the classification from one and the retirement flags
-    from the other — which is exactly what `_enrich_retirements` does — and a
+    from the other — which is exactly what `_enrich_from_results_archive` does — and a
     driver who took the flag ends up sitting between two DNFs.
 
     So the order is decided after every merge, from the facts on the rows,

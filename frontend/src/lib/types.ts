@@ -55,6 +55,10 @@ export interface SourceReport {
   essential_missing?: string[]; complete?: boolean;
   /** Essential facets present only in provisional form; `settled` is complete AND none of these. */
   provisional?: string[]; settled?: boolean;
+  /** Official fields the settled record is still owed by a source that publishes them
+      ("grid", "race_time", "retirement_reason", "pit_timing"). Informational: nothing
+      is provisional and `settled` is unaffected; the backend keeps asking for them. */
+  awaiting?: string[];
 }
 export interface RaceControlEvent {
   lap?: number | null; time?: string | null; category: string; flag?: string | null;

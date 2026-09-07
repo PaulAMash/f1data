@@ -103,6 +103,10 @@ class Sources:
         self.gp = gp
         self.openf1_result = False
         self.openf1_pit_time = False
+        # OpenF1's starting grid is its own feed: True answers, False is empty,
+        # "error" fails the request (V108 — the feed that vanished in production)
+        self.openf1_grid: bool | str = True
+        self.openf1_name_parts = True      # first_name / last_name on the driver rows
         self.jolpica = False
         self.jolpica_reason = "Hydraulics"
         self.archive: RaceSession | None = None
@@ -129,11 +133,29 @@ class Sources:
         return getattr(self, f"_ep_{path}")()
 
     def _ep_drivers(self):
-        return [{"driver_number": n, "name_acronym": c, "full_name": name, "team_name": team,
-                 "team_colour": col.lstrip("#"), "country_code": "XX", "headshot_url": None}
-                for n, c, name, team, col, _g in FIELD]
+        # THE SHAPE OPENF1 ACTUALLY ANSWERS WITH. `full_name` is "Kimi ANTONELLI"
+        # — the timing screen's shouted surname — and the cased name lives in
+        # `first_name` / `last_name`. V107's stub answered "Kimi Antonelli"
+        # here, which is why the shouting reached production unseen.
+        rows = []
+        for n, c, name, team, col, _g in FIELD:
+            first, last = name.split(" ", 1)
+            row = {"driver_number": n, "name_acronym": c,
+                   "full_name": f"{first} {last.upper()}",
+                   "broadcast_name": f"{first[0]} {last.upper()}",
+                   "team_name": team, "team_colour": col.lstrip("#"),
+                   "country_code": "XX", "headshot_url": None}
+            if self.openf1_name_parts:
+                row["first_name"], row["last_name"] = first, last
+            rows.append(row)
+        return rows
 
     def _ep_starting_grid(self):
+        if self.openf1_grid == "error":
+            import requests
+            raise requests.HTTPError("404 Client Error: Not Found for url: .../starting_grid")
+        if not self.openf1_grid:
+            return []
         return [{"driver_number": n, "position": g} for n, _c, _n, _t, _col, g in FIELD]
 
     def _ep_laps(self):
@@ -231,9 +253,9 @@ class Sources:
         if not self.jolpica:
             return []
         from app.models import PitStop
-        return [PitStop(driver=code, lap=2, stop_duration=23.1, pit_lane_time=23.1,
+        return [PitStop(driver=code, lap=2, pit_lane_time=23.1,
                         source="jolpica", confidence="medium",
-                        explanation="Ergast/Jolpica pit-stop duration (total time in pit).")
+                        explanation="Ergast/Jolpica pit-stop duration — time in the pit lane.")
                 for _n, code, *_rest in FIELD if code != "LEC"]
 
     # ---- the F1 live-timing archive ------------------------------------------
@@ -336,6 +358,11 @@ def assert_official(session: RaceSession, source: str | None = None) -> None:
     assert sum(1 for c in session.classification if c.retired) == 1, "retirements"
     # FIA order: finishers first, the retirement last and unnumbered
     assert [c.driver for c in session.classification] == ["ANT", "NOR", "VER", "HAM", "LEC"]
+    # V108: the record is whole as well as official — every car has a grid
+    # slot, on both copies of the entry, and a name in the sport's own case
+    assert [c.grid for c in session.classification] == [1, 2, 3, 5, 4], "the starting grid"
+    assert {d.code: d.grid for d in session.drivers} == {c.driver: c.grid for c in session.classification}
+    assert rows["ANT"].name == "Kimi Antonelli" and rows["VER"].name == "Max Verstappen"
 
 
 def assert_provisional(session: RaceSession) -> None:
@@ -365,7 +392,7 @@ def test_a_race_fetched_after_the_sources_published_is_complete_and_settled(worl
     assert_official(s, source="openf1")
     assert by_code(s)["LEC"].retirement_reason == "Hydraulics", "reasons still enriched"
     assert by_code(s)["ANT"].race_time is not None, "classified times still enriched"
-    assert all(p.stop_duration for p in s.pit_stops)
+    assert all(p.pit_lane_time for p in s.pit_stops)
 
 
 # --------------------------------------------------------------------------- #
@@ -403,11 +430,20 @@ def test_an_incomplete_first_fetch_does_not_poison_the_cache(world):
     on_disk = cache.load(YEAR, "Italian Grand Prix", "Race")
     assert on_disk is not None and on_disk.settled is True
     assert by_code(on_disk)["LEC"].retired is True
-    # and a settled record is never re-asked
+    # OpenF1's result settles the record and carries no classified time and no
+    # retirement reason; the results archive is owed those (V108) — and the
+    # pit feed its durations — and each is asked once per window until it has
+    # them…
+    assert on_disk.source_report.awaiting == ["race_time", "retirement_reason", "pit_timing"]
+    src.jolpica = True
+    age_cache("Italian Grand Prix", dsm._REVALIDATE_AFTER + 1)
+    load()
+    assert cache.load(YEAR, "Italian Grand Prix", "Race").source_report.awaiting == []
+    # …and a settled record that is owed nothing is never re-asked
     before = dict(src.calls)
     age_cache("Italian Grand Prix", dsm._REVALIDATE_AFTER * 10)
     load()
-    assert src.calls == before, "a settled record costs no round trips"
+    assert src.calls == before, "a whole record costs no round trips"
 
 
 def test_a_hollow_record_cached_by_an_older_build_is_recognised(world):
@@ -546,7 +582,10 @@ def test_final_classification_is_complete_when_authoritative_data_exists(world):
         assert c.status in ("Finished", "DNF")
         assert c.points is not None
         if not c.retired:
-            assert c.gap is not None and c.position is not None
+            assert c.position is not None
+            # the winner has no gap — the record says so the same way for every
+            # source (V108), rather than "LEADER" from one and nothing from another
+            assert (c.gap is None) == (c.position == 1)
     assert_official(s)
 
 
@@ -594,7 +633,7 @@ def test_optional_missing_data_does_not_invalidate_the_session(world):
     src._ep_weather = lambda: []       # the trace never came
     s = load()
     assert_official(s, source="openf1")
-    assert not any(p.stop_duration for p in s.pit_stops)
+    assert not any(p.pit_lane_time or p.stop_duration for p in s.pit_stops)
     assert "weather" in s.source_report.missing and s.settled is True
 
 
@@ -652,7 +691,7 @@ def test_pit_durations_that_landed_late_are_adopted(world):
     src.openf1_pit_time = True
     age_cache("Italian Grand Prix", dsm._REVALIDATE_AFTER + 1)
     s = load()
-    assert all(p.stop_duration for p in s.pit_stops)
+    assert all(p.pit_lane_time for p in s.pit_stops)
     strategy, _pace = analyze(s)
     assert strategy.avg_pit_loss and strategy.avg_pit_loss_kind == "measured"
 
@@ -662,7 +701,9 @@ def test_pit_durations_that_landed_late_are_adopted(world):
 # --------------------------------------------------------------------------- #
 def test_older_races_keep_their_complete_data(world):
     """A record cached by an older build with a real classification in it:
-    read back settled, untouched, and without a single round trip."""
+    read back settled and untouched. Its result sources are not re-asked; the
+    one thing it is asked about is the field it lacks — the results archive
+    is owed its grid and classified time (V108), one request per window."""
     src = world()
     old = RaceSession(
         year=2024, grand_prix="Bahrain Grand Prix", session_type="Race", category="race",
@@ -686,8 +727,15 @@ def test_older_races_keep_their_complete_data(world):
     # the result sources were not asked — the archive was, for the tyre /
     # weather / race-control facets this fixture lacks, which is the heal
     # that predates V107 and is bounded by its breaker
-    assert not {k for k in src.calls if k in ("openf1.session_result", "jolpica.results",
-                                              "openf1.pit", "jolpica.pitstops")}
+    assert not {k for k in src.calls if k in ("openf1.session_result", "openf1.pit",
+                                              "jolpica.pitstops")}
+    # the results archive was asked exactly once, for the grid and the
+    # classified time this record has on no row; it had nothing (the stub
+    # knows another race), so the record is unchanged and marked as checked
+    assert src.calls.get("jolpica.results") == 1
+    assert s.source_report.awaiting == ["grid", "race_time", "retirement_reason"]
+    dsm.load_session(2024, "Bahrain Grand Prix", "Race")
+    assert src.calls.get("jolpica.results") == 1, "not inside the same window"
 
 
 def test_the_results_archive_supplies_the_margin_it_publishes():
@@ -700,7 +748,8 @@ def test_the_results_archive_supplies_the_margin_it_publishes():
            "Constructor": {"constructorId": "mclaren", "name": "McLaren"},
            "Time": {"millis": "4823456", "time": "+11.536"}}
     _driver, row = jolpica_adapter._driver_from(res)
-    assert row.gap == "+11.536" and row.race_time == pytest.approx(4823.456)
+    # in the one format every source's gap uses (V108), not Ergast's bare string
+    assert row.gap == "+11.536s" and row.race_time == pytest.approx(4823.456)
     winner = dict(res, position="1", Time={"millis": "4811920", "time": "1:20:11.920"})
     assert jolpica_adapter._driver_from(winner)[1].gap is None, "a total is not a gap"
     lapped = dict(res, position="15", status="+1 Lap")

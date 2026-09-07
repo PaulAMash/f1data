@@ -16,6 +16,7 @@ import re
 
 import requests
 
+from ..analysis.normalize import canonical_gap
 from ..config import get_settings
 from .. import upstream
 from . import probe_detail
@@ -262,11 +263,13 @@ def _gap_to_leader(res: dict, pos: int | None, retired: bool) -> str | None:
     classified time on every row and a margin on none, and the race margin
     the page leads with read "—". Lapped cars have no `Time` and keep their
     "+1 Lap" status; the winner's total is not a gap and is not one here.
+    Written in the one format every other source's gap uses ("+17.878s"), so
+    a margin reads the same whichever archive it came from.
     """
     if retired or pos == 1:
         return None
     t = str(res.get("Time", {}).get("time") or "").strip()
-    return t if t.startswith("+") else None
+    return canonical_gap(t) if t.startswith("+") else None
 
 
 def fetch_classification(year: int, gp: str) -> tuple[list[Driver], list[ClassificationRow], dict]:
@@ -306,10 +309,13 @@ def fetch_pitstops(year: int, gp: str) -> list[PitStop]:
     for ps in races[0].get("PitStops", []):
         dur = _num(ps.get("duration"))
         code = id_to_code.get(ps.get("driverId"), (ps.get("driverId") or "")[:3].upper())
+        # `duration` is pit entry to pit exit — the lane time, the stop's cost —
+        # and is recorded as that, never as the stationary time
         stops.append(PitStop(
-            driver=code, lap=_int(ps.get("lap")) or 0, stop_duration=dur, pit_lane_time=dur,
-            source="jolpica", confidence="medium",
-            explanation="Ergast/Jolpica pit-stop duration (total time in pit)."))
+            driver=code, lap=_int(ps.get("lap")) or 0, pit_lane_time=dur,
+            source="jolpica", confidence="medium" if dur else "low",
+            explanation="Ergast/Jolpica pit-stop duration — time in the pit lane from "
+                        "entry to exit, not the stationary time."))
     return stops
 
 
