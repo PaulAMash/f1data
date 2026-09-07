@@ -59,6 +59,8 @@ export interface SourceReport {
       ("grid", "race_time", "retirement_reason", "pit_timing"). Informational: nothing
       is provisional and `settled` is unaffected; the backend keeps asking for them. */
   awaiting?: string[];
+  /** Two official sources disagreed on a car's position; nothing position-dependent was merged. */
+  conflicts?: string[];
 }
 export interface RaceControlEvent {
   lap?: number | null; time?: string | null; category: string; flag?: string | null;
@@ -70,9 +72,21 @@ export interface WeatherPoint {
   wind_speed?: number | null; wind_direction?: number | null;
 }
 export interface PositionPoint { driver: string; lap: number; position: number; }
+/** Something race control logged, with the cars the line itself named. */
+export interface Incident {
+  lap?: number | null; kind: string; drivers: string[]; message: string; source: string;
+}
 export interface TrackStatusWindow {
   status: TrackStatusKind; start_lap: number; end_lap: number; label: string;
-  cause?: string | null;   // "Kimi Antonelli stopped on track" — who brought it out
+  /** Only when race control stated it (see cause_source / cause_message). */
+  cause?: string | null;
+  cause_source?: string | null; cause_message?: string | null;
+  /** Logged in these laps — not asserted as the trigger. */
+  incidents?: Incident[];
+  /** race_control | track_status | mock */
+  source?: string;
+  confidence?: string;
+  end_known?: boolean;
 }
 export interface ClassificationRow {
   position?: number | null; driver: string; name: string; team: string; team_color: string;
@@ -113,7 +127,25 @@ export interface DriverPaceSummary {
   clean_air_pace?: number | null; consistency?: number | null; consistency_score?: number | null;
   pit_stops: number; total_pit_loss?: number | null; traffic_laps: number;
   tyre_limited: boolean; stints: StintPace[]; pace_rank?: number | null; verdict?: string | null;
+  /** Seconds behind the fastest ranked car's clean-air pace, rounded once by the backend. */
+  gap_to_best?: number | null;
   representative_laps?: number; pace_evaluated?: boolean;
+}
+export interface NeutralizationCounts {
+  safety_cars: number; virtual_safety_cars: number; red_flags: number; total: number;
+  local_yellows: number; source: string;
+}
+/** The race-level facts, computed once by the backend (analysis/facts). None = not established. */
+export interface RaceFacts {
+  settled: boolean; awaiting: string[];
+  entries?: number | null; finishers?: number | null; retirements?: number | null;
+  winner?: string | null; winner_name?: string | null; winner_grid?: number | null;
+  runner_up?: string | null; margin?: string | null; margin_s?: number | null;
+  fastest_lap_driver?: string | null; fastest_lap?: number | null;
+  best_pace_driver?: string | null; best_pace?: number | null;
+  best_pace_gap?: number | null; best_pace_gap_to?: string | null;
+  race_distance_laps?: number | null; pit_data_reliable: boolean;
+  neutralizations: NeutralizationCounts;
 }
 export interface RaceInsight {
   kind: string; title: string; detail: string; explanation?: string | null; drivers: string[];
@@ -124,6 +156,7 @@ export interface UndercutEvent {
   positions_gained: number; kind: string;
 }
 export interface StrategySummary {
+  facts?: RaceFacts | null;
   winner?: string | null; driver_of_the_day?: string | null; dotd_reason?: string | null;
   dotd_factors?: string[];
   biggest_gainers: any[]; biggest_losers: any[];
@@ -180,7 +213,12 @@ export interface QualifyingSummary {
     places: number | null; kind?: "drop" | "promotion" | "pit_lane";
   }[];
   interruptions: { message: string; driver?: string | null; driver_name?: string | null;
-    cause?: string | null; turn?: string | null; lap?: number | null }[];
+    /** stated by the red-flag line itself */
+    cause?: string | null;
+    /** an incident line logged on that lap or the one before — not the stated reason */
+    logged?: string | null; logged_driver?: string | null; logged_driver_name?: string | null;
+    logged_message?: string | null;
+    turn?: string | null; lap?: number | null }[];
   pole_sector_breakdown?: { pole: (number | null)[]; session_best: (number | null)[] } | null;
   segment_bests: Record<string, number>;
   rows: QualiDriverRow[]; team_ranking: { team: string; color: string; best: number; gap: number }[];

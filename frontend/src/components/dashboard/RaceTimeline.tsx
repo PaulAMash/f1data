@@ -5,7 +5,7 @@ import { FacetGap } from "@/components/ui/misc";
 import { MousePointerClick } from "lucide-react";
 import type { RaceBundle } from "@/lib/types";
 import { AXIS_TICK_COLOR } from "@/lib/chartTheme";
-import { MOMENT, rankedUndercuts, undercutStory } from "@/lib/raceEvents";
+import { MOMENT, deriveWindows, rankedUndercuts, undercutStory, windowContext } from "@/lib/raceEvents";
 import { useIsAdvanced } from "@/lib/mode";
 import { fmtLap } from "@/lib/format";
 
@@ -124,12 +124,17 @@ export function RaceTimeline({ bundle }: { bundle: RaceBundle }) {
   const windowTip = (w: any) => {
     const inWindow = Array.from(new Set(
       session.pit_stops.filter((p) => p.lap >= w.start_lap && p.lap <= w.end_lap).map((p) => p.driver)));
+    const win = deriveWindows(session).find((x) => x.start === w.start_lap && x.end === w.end_lap) ?? null;
+    const ctx = win ? windowContext(win, nameOf) : null;
+    const stopped = w.status === "RED";
     return [
-      `Laps ${w.start_lap}–${w.end_lap}`,
-      ...(w.cause ? [`Brought out when ${w.cause}`] : []),
-      inWindow.length
-        ? `Pitted cheap in this window: ${inWindow.slice(0, 8).join(", ")}`
-        : "No cars pitted in this window",
+      `Laps ${w.start_lap}–${w.end_lap}${w.end_known === false ? " (end not published)" : ""}`,
+      ...(ctx ? [ctx] : ["Race control did not record what triggered it"]),
+      stopped
+        ? "Race stopped — tyres changed in the pit lane here are not pit stops"
+        : inWindow.length
+          ? `Pitted cheap in this window: ${inWindow.slice(0, 8).join(", ")}`
+          : "No cars pitted in this window",
     ];
   };
 

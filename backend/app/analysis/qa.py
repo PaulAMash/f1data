@@ -378,11 +378,21 @@ def _h_why_retired(q, ctx, ents):
     bits = [f"{c.name} retired"
             + (f" with {reason.lower()}" if reason and reason.lower() not in ("retired", "dnf") else "")
             + (f" after {c.laps_completed} laps" if c.laps_completed else "") + "."]
+    # a neutralisation is tied to this driver only when race control tied it
+    # (`cause` carries provenance); an incident line that names them in a
+    # window's laps is reported as logged, not as the trigger
     win = next((w for w in ctx.session.track_status_windows
                 if w.cause and (c.name in w.cause or code in w.cause)), None)
     if win:
-        bits.append(f"Their stoppage brought out the {win.label} on lap {win.start_lap} — "
-                    f"the cheap-stop window that reshaped the race behind them.")
+        bits.append(f"Race control stated their stoppage brought out the {win.label} on lap "
+                    f"{win.start_lap} — the cheap-stop window that reshaped the race behind them.")
+    else:
+        near = next((w for w in ctx.session.track_status_windows
+                     if any(code in inc.drivers for inc in w.incidents)), None)
+        if near:
+            bits.append(f"Race control logged them in the laps of the {near.label} "
+                        f"(laps {near.start_lap}–{near.end_lap}); the feed does not state "
+                        f"that it was the trigger.")
     surname = c.name.split()[-1].upper() if c.name else code
     rc = [m for m in ctx.session.race_control
           if m.message and (surname in m.message.upper() or f"({code})" in m.message.upper())]

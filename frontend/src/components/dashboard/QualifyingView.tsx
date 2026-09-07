@@ -899,10 +899,15 @@ function LapAnalysis({ q, session }: { q: QualifyingSummary; session: RaceSessio
             info={<InfoTip label="What counts" text="An interruption is a stoppage or neutralisation — a red flag, safety car or VSC. Local yellow flags are reported separately: the session kept running through them." />} />
           <CardBody className="space-y-2">
             {q.interruptions.length ? q.interruptions.map((it, i) => {
+              // the red-flag line's own statement, or what the log holds beside it —
+              // never a nearby incident promoted into the reason the session stopped
               const who = it.driver_name ?? it.driver;
-              const plain = who
-                ? `Session stopped after ${who} ${it.cause ?? "brought out the red flag"}${it.turn ? ` at ${it.turn}` : ""}.`
-                : `Session stopped${it.turn ? ` after an incident at ${it.turn}` : ""}.`;
+              const loggedWho = it.logged_driver_name ?? it.logged_driver;
+              const plain = who && it.cause
+                ? `Session stopped after ${who} ${it.cause}${it.turn ? ` at ${it.turn}` : ""}.`
+                : loggedWho && it.logged
+                  ? `Session stopped${it.turn ? ` after an incident at ${it.turn}` : ""}. Race control logged ${loggedWho} ${it.logged} on that lap; the red-flag line itself does not say why.`
+                  : `Session stopped${it.turn ? ` after an incident at ${it.turn}` : ""}${!it.turn ? "; race control did not say why" : ""}.`;
               return (
                 <div key={i} className="rounded-xl border border-rose-400/20 bg-rose-400/[0.06] p-3.5">
                   <div className="flex items-start gap-3">

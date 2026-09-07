@@ -10,6 +10,7 @@ import type { RaceSession, Driver, StrategySummary, Compound, RaceInsight, Drive
 import { COMPOUND_COLOR, COMPOUND_LABEL, COMPOUND_SHORT } from "@/lib/compounds";
 import {
   EVENT, MOMENT, deriveWindows, lapStatusMap, momentClassOf, rankedUndercuts, undercutStory,
+  windowContext, windowOutcome,
   type EventKind, type MomentClass, type Win,
 } from "@/lib/raceEvents";
 import { AXIS_TICK_COLOR, CURSOR_COLOR, SURFACE_COLOR, axisLine, axisTick } from "@/lib/chartTheme";
@@ -219,8 +220,12 @@ export function PositionChart({
     for (const w of windows) {
       out.push({
         lap: w.start, kind: w.kind, label: EVENT[w.kind].label, endLap: w.end,
-        outcome: w.cause ? `Brought out when ${w.cause}.` : EVENT[w.kind].blurb,
-        impact: `${w.end - w.start + 1} lap${w.end - w.start ? "s" : ""} neutralised`,
+        // the stated cause, or what the log holds, or the generic blurb — never
+        // the nearest incident presented as the trigger
+        outcome: windowOutcome(w, (c) => driverByCode[c]?.name ?? c),
+        impact: w.kind === "red"
+          ? `${w.end - w.start + 1} lap${w.end - w.start ? "s" : ""} stopped`
+          : `${w.end - w.start + 1} lap${w.end - w.start ? "s" : ""} neutralised`,
       });
     }
     // Undercuts are read BEFORE the generic insight list, because both can
@@ -290,9 +295,10 @@ export function PositionChart({
         A.push(pole ? `${nm(pole)} converted pole into the lead.` : "Clean getaway off the line.", upStr, dnStr, "First-lap positions set the strategy landscape for the stint to come.");
       } else if (m.kind === "sc" || m.kind === "vsc" || m.kind === "red") {
         const meta = EVENT[m.kind];
-        S.push(`${m.insight?.detail ?? (w?.cause ? `${w.cause}. ` : "")}${meta.blurb}`.trim());
+        const ctx = w ? windowContext(w, (c) => driverByCode[c]?.name ?? c) : null;
+        S.push(`${m.insight?.detail ?? (ctx ? `${ctx}. ` : "")}${meta.blurb}`.trim());
         S.push(leadStr ? `${leadStr}.` : pitStr ? `${pitStr}.` : upStr ? `${upStr}.` : null);
-        A.push(`${w?.cause ? w.cause + " — " : ""}${meta.label}${dur ? ` for ${dur} lap${dur === 1 ? "" : "s"}` : ""}.`,
+        A.push(`${meta.label}${dur ? ` for ${dur} lap${dur === 1 ? "" : "s"}` : ""}${ctx ? ` — ${ctx}` : ""}.`,
           leadStr ? `${leadStr} as the pack compressed.` : null,
           pitStr ? `${pitStr} — a discounted stop while the field ran slowly.` : "Few took the stop, keeping track position.", upStr, dnStr);
       } else if (m.kind === "story") {

@@ -7,7 +7,7 @@ import { InsightCard, InsightGrid } from "@/components/ui/InsightCard";
 import { StoryPanel, type StoryHighlight } from "@/components/ui/StoryPanel";
 import { Meter, PositionShift } from "@/components/ui/Visuals";
 import { fmtGap } from "@/lib/format";
-import { deriveWindows } from "@/lib/raceEvents";
+import { EVENT, deriveWindows } from "@/lib/raceEvents";
 import { TrackConditionsPanel } from "@/components/charts/TrackConditions";
 import { RaceOverview } from "./RaceOverview";
 import { RaceTimeline } from "./RaceTimeline";
@@ -44,46 +44,51 @@ export function RaceStory({ bundle, onJump }: {
   const story = (!simple && strategy.story_advanced?.length)
     ? strategy.story_advanced : strategy.story;
 
-  /* COUNTED ONLY FROM AN OFFICIAL RESULT. `retired` is false on every row of
-     a provisional running order — not because every car finished, but because
-     nothing has been classified yet — so counting "not retired" over one said
-     22/22 still running, with no retirements card, for a race in which six
-     cars stopped. The backend's `settled` flag is the one word for whether
-     these fields exist yet; until they do the figures are unknown, and an
-     unknown is shown as one rather than as a number that happens to be wrong.
-     See backend data_source_manager._reconcile_results. */
-  const settled = session.settled !== false;
-  const finishers = cls.filter((c) => !c.retired).length;
-  const retirements = cls.length - finishers;
+  /* THE NUMBERS ARE THE BACKEND'S. Finishers, retirements, the margin, the
+     best-pace gap and the neutralisation count are read from `strategy.facts`
+     (backend analysis/facts), which computes each once from the canonical
+     record and leaves it null when the record cannot establish it — a
+     provisional running order has nobody retired in it, which is not the same
+     as nobody having retired. This component used to count `!retired` rows
+     and subtract two rounded paces itself; the app did its own arithmetic;
+     the two disagreed on the same record. The fallbacks below exist only for
+     a payload cached before the facts block existed. */
+  const facts = strategy.facts ?? null;
+  const settled = facts ? facts.settled : session.settled !== false;
+  const finishers = facts ? facts.finishers : (settled ? cls.filter((c) => !c.retired).length : null);
+  const retirements = facts ? facts.retirements : (settled && finishers != null ? cls.length - finishers : null);
   const windows = deriveWindows(session);
-  const paceGap = topPace?.clean_air_pace != null && secondPace?.clean_air_pace != null
-    ? secondPace.clean_air_pace - topPace.clean_air_pace : null;
+  const paceGap = facts ? facts.best_pace_gap
+    : (topPace?.clean_air_pace != null && secondPace?.clean_air_pace != null
+      ? Math.round((secondPace.clean_air_pace - topPace.clean_air_pace) * 1000) / 1000 : null);
   const maxNet = Math.max(1, ...[...strategy.biggest_gainers, ...strategy.biggest_losers]
     .map((m: any) => Math.abs(m?.net ?? 0)));
   // the field's pace spread gives every pace bar on this page one honest scale
   const paceValues = bundle.pace.map((p) => p.clean_air_pace).filter((v): v is number => v != null);
   const paceSpread = paceValues.length >= 2
     ? Math.max(...paceValues) - Math.min(...paceValues) : 0.6;
+  const neutral = facts?.neutralizations.total ?? windows.length;
 
   const highlights: StoryHighlight[] = [
     { label: "Winner", value: lastName(winner?.name ?? winner?.driver ?? "—"), tone: "accent" },
     ...(runnerUp
-      ? [{ label: "Margin", term: "margin", value: fmtGap(2, runnerUp.gap),
+      ? [{ label: "Margin", term: "margin",
+           value: facts ? (facts.margin ?? "—") : fmtGap(2, runnerUp.gap),
            sub: settled ? `to ${runnerUp.driver}` : "official result pending",
            tone: "speed" as const }] : []),
     { label: "Finishers", term: "finishers",
-      value: settled ? `${finishers}/${cls.length}` : "—",
-      sub: settled ? "still running at the flag" : "official result pending" },
-    ...(settled && retirements
+      value: finishers != null ? `${finishers}/${facts?.entries ?? cls.length}` : "—",
+      sub: finishers != null ? "still running at the flag" : "official result pending" },
+    ...(retirements
       ? [{ label: "Retirements", term: "retirements", value: retirements, tone: "bad" as const }] : []),
     {
       label: "Neutralisations",
       term: "neutralisations",
-      value: windows.length || "None",
+      value: neutral || "None",
       sub: windows.length
-        ? windows.map((w) => `L${w.start}–${w.end}`).slice(0, 2).join(", ")
+        ? windows.map((w) => `${EVENT[w.kind].code} L${w.start}–${w.end}`).slice(0, 3).join(", ")
         : "green flag throughout",
-      tone: (windows.length ? "amber" : "good") as StoryHighlight["tone"],
+      tone: (neutral ? "amber" : "good") as StoryHighlight["tone"],
     },
   ];
 
@@ -116,7 +121,8 @@ export function RaceStory({ bundle, onJump }: {
               Led from pole
             </span>
           ) : undefined}
-          takeaway={runnerUp?.gap ? `${fmtGap(2, runnerUp.gap)} clear of ${runnerUp.driver}.`
+          takeaway={(facts ? facts.margin : runnerUp?.gap)
+            ? `${facts ? facts.margin : fmtGap(2, runnerUp?.gap)} clear of ${runnerUp?.driver}.`
             : "Took the chequered flag first."}
           detail={
             <p>

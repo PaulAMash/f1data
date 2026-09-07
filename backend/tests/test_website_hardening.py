@@ -205,11 +205,12 @@ def test_team_colors_filled_from_official_map():
     assert row.team_color == "#FF8000"          # McLaren papaya
 
 
-def test_window_cause_attribution():
-    """A VSC window is attributed to the driver named by race control, or to a
-    retirement at the window start."""
+def test_window_incidents_are_logged_not_asserted_as_the_cause():
+    """V109: an incident line in a window's laps is attached as an incident,
+    with the cars the line names; it is not the window's cause, because the
+    log never said so. A retirement at the window start is a retirement."""
     from app.adapters.mock_adapter import get_mock_session
-    from app.analysis.normalize import attach_window_causes
+    from app.analysis.neutralizations import attach_incidents
     from app.models import RaceControlEvent
 
     s = get_mock_session(2026, "Austrian Grand Prix", "Race")
@@ -218,11 +219,16 @@ def test_window_cause_attribution():
     victim = s.drivers[5]
     s.race_control.append(RaceControlEvent(
         lap=w.start_lap, category="Flag",
-        message=f"FIA STEWARDS: CAR {victim.number} ({victim.code}) STOPPED ON TRACK"))
-    attach_window_causes(s)
-    assert w.cause and victim.name in w.cause and "stopped" in w.cause
+        message=f"CAR {victim.number} ({victim.code}) STOPPED ON TRACK"))
+    attach_incidents(s)
+    # the simulator's deployment line reads "VIRTUAL SAFETY CAR DEPLOYED — CAR
+    # STOPPED AT TURN 4": the line itself states a cause, so the cause is that
+    # line's — a car, unnamed — and not the driver a nearby line names
+    assert w.cause == "a car stopped on track" and w.cause_source == "race_control"
+    assert victim.name not in w.cause
+    assert [victim.code] in [i.drivers for i in w.incidents if i.kind == "stopped"]
 
-    # fallback path: no message naming a car, but a retirement at the start
+    # a retirement at the window start is not promoted into a cause either
     s2 = get_mock_session(2026, "Austrian Grand Prix", "Race")
     w2 = s2.track_status_windows[0]
     s2.race_control = []
@@ -230,8 +236,8 @@ def test_window_cause_attribution():
     ret.retired = True
     ret.retirement_reason = "Hydraulics"
     ret.laps_completed = w2.start_lap
-    attach_window_causes(s2)
-    assert w2.cause and ret.name in w2.cause and "hydraulics" in w2.cause
+    attach_incidents(s2)
+    assert w2.cause is None and w2.incidents == []
 
 
 def test_qualifying_summary():
@@ -263,12 +269,14 @@ def test_qualifying_summary():
 
 
 
-def test_sc_cause_ignores_incidental_mentions_and_names_all_cars():
-    """Regression for the Belgian-GP bug: an incidental 'CAR 23 (ALB) TRACK
-    LIMITS' note near the window start must NOT be treated as the Safety Car
-    cause. The genuine collision message wins and names every car involved."""
+def test_sc_incidents_ignore_incidental_mentions_and_name_all_cars():
+    """Regression for the Belgian-GP bug, restated for V109: an incidental
+    'CAR 23 (ALB) TRACK LIMITS' note near the window start is not an incident.
+    The genuine collision line is attached as an incident naming every car it
+    names — and it is still not called the cause, because the deployment line
+    did not say so."""
     from app.adapters.mock_adapter import get_mock_session
-    from app.analysis.normalize import attach_window_causes
+    from app.analysis.neutralizations import attach_incidents, logged_alongside
     from app.models import RaceControlEvent
 
     s = get_mock_session(2026, "Belgian Grand Prix", "Race")
@@ -283,29 +291,34 @@ def test_sc_cause_ignores_incidental_mentions_and_names_all_cars():
                          message="INCIDENT INVOLVING CARS 44 (HAM) AND 63 (RUS) - TURN 1"),
         RaceControlEvent(lap=1, category="SafetyCar", message="SAFETY CAR DEPLOYED"),
     ]
-    attach_window_causes(s)
-    assert w.cause == "Lewis Hamilton and George Russell collided"
-    assert "Albon" not in w.cause
+    attach_incidents(s)
+    assert w.cause is None
+    assert [i.drivers for i in w.incidents] == [["HAM", "RUS"]]
+    assert logged_alongside(s, w) == "Lewis Hamilton and George Russell collided (lap 1)"
+    assert "Albon" not in logged_alongside(s, w)
 
 
-def test_sc_cause_undetermined_when_no_official_incident():
-    """When the official feed names no genuine incident and no single clear
-    retirement coincides, the cause is left undetermined — never invented."""
+def test_sc_cause_stated_only_by_the_deployment_line_itself():
+    """The one path to a cause with provenance: the deployment line states it."""
     from app.adapters.mock_adapter import get_mock_session
-    from app.analysis.normalize import attach_window_causes
+    from app.analysis.neutralizations import attach_incidents
     from app.models import RaceControlEvent
 
     s = get_mock_session(2026, "Belgian Grand Prix", "Race")
     w = s.track_status_windows[0]
     w.cause = None; w.start_lap = 1; w.end_lap = 3
-    for c in s.classification:
-        c.retired = False
     s.race_control = [
         RaceControlEvent(lap=1, category="Other", message="CAR 23 (ALB) NOTED - TRACK LIMITS"),
         RaceControlEvent(lap=1, category="Other", message="DRS DISABLED"),
     ]
-    attach_window_causes(s)
-    assert w.cause is None
+    attach_incidents(s)
+    assert w.cause is None and w.incidents == []
+    s.race_control.append(RaceControlEvent(
+        lap=1, category="SafetyCar",
+        message="VIRTUAL SAFETY CAR DEPLOYED - CAR 63 (RUS) STOPPED AT TURN 5"))
+    attach_incidents(s)
+    assert w.cause == "George Russell stopped on track"
+    assert w.cause_source == "race_control" and "STOPPED AT TURN 5" in w.cause_message
 
 
 def test_turning_point_states_undetermined_cause_explicitly():

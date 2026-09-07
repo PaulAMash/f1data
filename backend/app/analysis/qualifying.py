@@ -264,44 +264,48 @@ def _red_flags(session: RaceSession) -> list[str]:
 
 
 def _interruptions(session: RaceSession) -> list[dict]:
-    """Structured parse of each red flag: who triggered it, what happened,
-    where. Attribution uses the same accuracy-first interpreter as the race
-    engine — a red-flag line that only references a car incidentally (track
-    limits, investigation) never attributes it, and the cause is pulled from
-    the nearest genuine incident message when the red-flag line itself has none.
-    Never fabricates: no cause/driver is asserted unless the data supports it."""
-    incident_msgs = [m for m in session.race_control if m.message]
+    """Structured parse of each red flag: the stoppage, and what the log says
+    about it — kept apart.
+
+    `cause`, `driver` and `driver_name` come from the red-flag line ITSELF
+    ("RED FLAG - CAR 4 (NOR) CRASHED AT TURN 9"), which is the one line that
+    can state why the session stopped. An incident line logged on the same
+    lap or the one before is reported under `logged` / `logged_driver` /
+    `logged_driver_name` — what race control recorded around the stoppage,
+    not asserted as its trigger. It used to be promoted into `cause`, which
+    is proximity, not provenance.
+    """
     out: list[dict] = []
-    for i, m in enumerate(session.race_control):
+    for m in session.race_control:
         msg = (m.message or "").strip()
         if not msg or not re.search(r"\bRED\s+FLAG\b", msg, re.I):
             continue
-
         names, verb = classify_incident_message(session, msg)
-        # if the red-flag line itself names no genuine incident, borrow the
-        # nearest real incident message (by lap) around it
-        if not verb:
-            near = sorted(
-                (mm for mm in incident_msgs
-                 if mm is not m and mm.lap is not None and m.lap is not None
-                 and abs(mm.lap - m.lap) <= 1),
-                key=lambda mm: abs((mm.lap or 0) - (m.lap or 0)))
+        logged_names, logged_verb, logged_msg = [], None, None
+        if not verb and m.lap is not None:
+            near = sorted((mm for mm in session.race_control
+                           if mm is not m and mm.message and mm.lap is not None
+                           and 0 <= m.lap - mm.lap <= 1),
+                          key=lambda mm: (m.lap - (mm.lap or 0)))
             for mm in near:
                 nnames, nverb = classify_incident_message(session, mm.message)
                 if nverb:
-                    names, verb = nnames, nverb
+                    logged_names, logged_verb, logged_msg = nnames, nverb, mm.message.strip()[:160]
                     break
 
-        code = names_code = None
-        if names:
-            names_code = next((d.code for d in session.drivers if d.name == names[0]), None)
-            code = names_code
+        def code_of(nm):
+            return next((d.code for d in session.drivers if d.name == nm), None) if nm else None
+
         turn_m = re.search(r"TURN\s*\d+", msg, re.I)
         out.append({
             "message": msg[:160],
-            "driver": code,
+            "driver": code_of(names[0] if names else None),
             "driver_name": names[0] if names else None,
             "cause": verb,
+            "logged": logged_verb,
+            "logged_driver": code_of(logged_names[0] if logged_names else None),
+            "logged_driver_name": logged_names[0] if logged_names else None,
+            "logged_message": logged_msg,
             "turn": turn_m.group(0).title() if turn_m else None,
             "lap": m.lap,
         })

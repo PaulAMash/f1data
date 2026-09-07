@@ -26,7 +26,7 @@ from ..models import (
     TrackStatusWindow,
     UndercutEvent,
 )
-from .normalize import official_incident_cause
+from .neutralizations import logged_alongside
 from .text import from_grid, plural
 
 PIT_LOSS_GREEN_EST = 20.5   # used to value VSC/SC cheap stops when lane time is unknown
@@ -408,27 +408,43 @@ def _turning_points(session: RaceSession, pace_by_driver) -> list[RaceInsight]:
     for w in session.track_status_windows:
         pitted = sorted({ps.driver for ps in session.pit_stops
                          if w.start_lap <= ps.lap <= w.end_lap})
-        # cause + verbatim trigger come from the one shared, accuracy-first
-        # extractor — never a fabricated or first-car-mentioned attribution
-        cause, trigger = official_incident_cause(session, w)
-        cause = cause or w.cause
-        if cause:
-            cause_txt = f" Brought out when {cause}."
+        # THE EVENT, THEN WHAT THE LOG HOLDS, THEN NO MORE. A cause is stated
+        # only when race control stated it; the incident lines logged in the
+        # window's laps are reported as logged, and the sentence says the feed
+        # does not name the trigger — it used to name the nearest one.
+        logged = logged_alongside(session, w)
+        if w.cause:
+            cause_txt = f" Brought out when {w.cause}."
+        elif logged:
+            cause_txt = (f" Race control logged {logged} in these laps; the feed does not "
+                         f"state what triggered the {w.label.lower()}.")
         else:
             cause_txt = " The official race-control feed didn't record what triggered it."
-        detail = (f"{w.label} from lap {w.start_lap} to {w.end_lap}.{cause_txt} "
-                  + (f"Cheap-stop window taken by {', '.join(pitted)}." if pitted
-                     else "No cars converted a stop here."))
+        stopped = w.status == TrackStatus.RED
+        head = (f"Race stopped — red flag — from lap {w.start_lap} to {w.end_lap}."
+                if stopped else f"{w.label} from lap {w.start_lap} to {w.end_lap}.")
+        if stopped:
+            tail = ("Tyres may be changed in the pit lane during a stoppage; that is not a "
+                    "pit stop and is not counted as one.")
+        else:
+            tail = (f"Cheap-stop window taken by {', '.join(pitted)}." if pitted
+                    else "No cars converted a stop here.")
+        unsure = "" if w.end_known else " The feed did not publish when it ended; the last lap shown is the last the log knows."
+        detail = f"{head}{cause_txt} {tail}{unsure}"
         explanation = (
             "While the field circulates slowly, a pit stop costs roughly 10 seconds less than at "
             "racing speed — so anyone due a stop who pitted here effectively jumped the cars that "
             "had already paid full price for theirs."
-            + (f" Official trigger: “{trigger.strip()}”." if trigger else ""))
+            if not stopped else
+            "Under a red flag the race is suspended and the field is held in the pit lane; "
+            "the order at the restart is the order at the stoppage.")
+        if w.cause_message:
+            explanation += f" Race control: “{w.cause_message.strip()}”."
         out.append(RaceInsight(
             kind="turning_point", title=f"{w.label} (laps {w.start_lap}-{w.end_lap})",
             detail=detail, explanation=explanation,
             drivers=pitted, lap_range=[w.start_lap, w.end_lap],
-            severity="key", confidence="high",
+            severity="key", confidence="high" if w.end_known and w.confidence == "high" else "medium",
         ))
 
     # 2. extra-stop cost among front-runners
@@ -441,12 +457,15 @@ def _turning_points(session: RaceSession, pace_by_driver) -> list[RaceInsight]:
             for c in extra:
                 p = pace_by_driver.get(c.driver)
                 if p and p.pace_rank and p.pace_rank < c.position:
+                    # two facts and a general cost; the link between them is a
+                    # reading, and it is worded as one
                     out.append(RaceInsight(
                         kind="turning_point",
-                        title=f"{c.driver}'s extra stop cost track position",
-                        detail=(f"{c.driver} ran {c.pit_stops} stops vs {min_stops} for rivals and "
-                                f"finished P{c.position} despite P{p.pace_rank} pace — the extra pit "
-                                f"loss (~{PIT_LOSS_GREEN_EST:.0f}s) dropped them behind two-stoppers."),
+                        title=f"{c.driver}'s extra stop and their finishing position",
+                        detail=(f"{c.driver} ran {c.pit_stops} stops against {min_stops} for the cars "
+                                f"around them and finished P{c.position} with P{p.pace_rank} corrected "
+                                f"pace. A green-flag stop costs about {PIT_LOSS_GREEN_EST:.0f}s, which is "
+                                f"consistent with the places between those two numbers."),
                         drivers=[c.driver], severity="key", confidence="medium",
                     ))
     return out[:5]

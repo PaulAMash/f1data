@@ -2,6 +2,8 @@
 
 Pitwall IQ gets real F1 data through the open-source **pitwall** stack. All of it is free
 and needs no API key. This document records exactly what is used and how it's normalized.
+The rules for what may be shown as a fact — provenance, defaults, neutralisations,
+calculations, cache healing — are in [DATA_INTEGRITY.md](DATA_INTEGRITY.md).
 
 ## Real sources
 

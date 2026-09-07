@@ -1,6 +1,6 @@
 import { ShieldAlert, Eye } from "lucide-react";
 import { Flag, Gauge, TrendingDown, TrendingUp } from "@/components/ui/MotionIcon";
-import type { RaceSession, StrategySummary, UndercutEvent } from "./types";
+import type { Incident, NeutralizationCounts, RaceSession, StrategySummary, UndercutEvent } from "./types";
 
 /* -------------------------------------------------------------------------- */
 /* One source of truth for race-control events, shared by every chart so a     */
@@ -152,42 +152,97 @@ export function rankedUndercuts(strategy?: StrategySummary | null, limit = 3): U
     .slice(0, limit);
 }
 
-export interface Win { kind: EventKind; start: number; end: number; cause?: string | null; }
+export interface Win {
+  kind: EventKind; start: number; end: number;
+  /** Stated by race control — only ever set with provenance. */
+  cause?: string | null;
+  causeMessage?: string | null;
+  /** Incident lines logged in these laps; NOT asserted as the trigger. */
+  incidents: Incident[];
+  source: string;
+  endKnown: boolean;
+}
 
 const STATUS_TO_KIND = (s: string): EventKind | null =>
   s === "SAFETY_CAR" ? "sc" : s === "VSC" ? "vsc" : s === "RED" ? "red" : null;
-const SEV: Record<EventKind, number> = { red: 4, sc: 3, vsc: 2, start: 0 };
 
-/** Contiguous neutralisation windows, most-severe-wins per lap, with a cause. */
+/**
+ * The backend's canonical neutralisation windows, in the shape the charts draw.
+ *
+ * NOTHING IS DERIVED HERE ANY MORE. This used to merge the reported windows
+ * with a scan of every lap's status, most-severe-wins, and then pick a cause
+ * from whichever window overlapped — a second, independent inference of a
+ * domain fact, running in the browser, which is how the website and the app
+ * could show a different number of Safety Cars for one record. The backend
+ * builds the windows from the FIA's own deployment lines and the timing
+ * system's status codes (analysis/neutralizations) and stamps the laps from
+ * them; every client draws that list.
+ */
 export function deriveWindows(session: RaceSession): Win[] {
-  const total = session.total_laps;
-  const lapKind = new Map<number, EventKind>();
-  const bump = (lap: number, k: EventKind) => {
-    if (lap < 1 || lap > total) return;
-    if (SEV[k] > SEV[lapKind.get(lap) ?? "start"]) lapKind.set(lap, k);
-  };
-  for (const w of session.track_status_windows) {
-    const k = STATUS_TO_KIND(w.status);
-    if (k) for (let l = w.start_lap; l <= w.end_lap; l++) bump(l, k);
-  }
-  for (const lp of session.laps) {
-    const k = STATUS_TO_KIND(lp.track_status);
-    if (k) bump(lp.lap, k);
-  }
   const wins: Win[] = [];
-  let cur: Win | null = null;
-  for (let l = 1; l <= total; l++) {
-    const k = lapKind.get(l) ?? null;
-    if (k && cur && cur.kind === k && l === cur.end + 1) cur.end = l;
-    else { if (cur) wins.push(cur); cur = k ? { kind: k, start: l, end: l } : null; }
+  for (const w of session.track_status_windows) {
+    const kind = STATUS_TO_KIND(w.status);
+    if (!kind) continue;
+    wins.push({
+      kind, start: w.start_lap, end: w.end_lap,
+      cause: w.cause ?? null, causeMessage: w.cause_message ?? null,
+      incidents: w.incidents ?? [], source: w.source ?? "unknown",
+      endKnown: w.end_known !== false,
+    });
   }
-  if (cur) wins.push(cur);
-  for (const w of wins) {
-    const src = session.track_status_windows.find(
-      (s) => STATUS_TO_KIND(s.status) === w.kind && s.start_lap <= w.end && s.end_lap >= w.start && s.cause);
-    w.cause = src?.cause ?? null;
+  return wins.sort((a, b) => a.start - b.start);
+}
+
+/* -------------------------------------------------------------------------- */
+/* What a window can say about itself, in words that do not outrun the data.   */
+/* -------------------------------------------------------------------------- */
+const INCIDENT_VERB: Record<string, string> = {
+  collision: "collided", crash: "crashed", spun: "spun", stopped: "stopped on track",
+  puncture: "had a puncture", debris: "left debris on track", incident: "was involved in an incident",
+};
+const INCIDENT_NEUTRAL: Record<string, string> = {
+  collision: "cars collided", crash: "a car crashed", spun: "a car spun",
+  stopped: "a car stopped on track", puncture: "a car had a puncture", debris: "debris was left on track",
+};
+
+/** "Charles Leclerc stopped on track" — the line's own cars and verb, nothing added. */
+export function describeIncident(inc: Incident, nameOf: (code: string) => string): string {
+  const names = inc.drivers.map(nameOf);
+  if (!names.length) return INCIDENT_NEUTRAL[inc.kind] ?? "an incident on track";
+  if (inc.kind === "collision") {
+    return names.length >= 2
+      ? `${names.slice(0, 2).join(" and ")} collided${names.length > 2 ? ` (+${names.length - 2} more)` : ""}`
+      : `${names[0]} was involved in a collision`;
   }
-  return wins;
+  return `${names[0]} ${INCIDENT_VERB[inc.kind] ?? "was involved in an incident"}`;
+}
+
+/** The incident lines logged in the window's laps, as one clause — or null. */
+export function loggedAlongside(w: Win, nameOf: (code: string) => string): string | null {
+  if (!w.incidents?.length) return null;
+  return w.incidents.slice(0, 2)
+    .map((i) => describeIncident(i, nameOf) + (i.lap ? ` (lap ${i.lap})` : ""))
+    .join("; ");
+}
+
+/**
+ * One sentence about why a window happened — and only as much as the log
+ * supports: the stated cause when race control stated one, otherwise what it
+ * logged in those laps with an explicit "does not name the trigger", otherwise
+ * the generic description of the event kind.
+ */
+export function windowOutcome(w: Win, nameOf: (code: string) => string): string {
+  if (w.cause) return `Brought out when ${w.cause}.`;
+  const logged = loggedAlongside(w, nameOf);
+  if (logged) return `Race control logged ${logged}; the feed does not name the trigger.`;
+  return EVENT[w.kind].blurb;
+}
+
+/** Short form for a tooltip line: the stated cause or the logged incidents, or nothing. */
+export function windowContext(w: Win, nameOf: (code: string) => string): string | null {
+  if (w.cause) return `Brought out when ${w.cause}`;
+  const logged = loggedAlongside(w, nameOf);
+  return logged ? `Logged in these laps: ${logged}` : null;
 }
 
 /** lap → the neutralisation kind in force on that lap (for hover banners). */
@@ -263,7 +318,16 @@ function sectorOf(message: string): string {
 export function sessionInterruptions(
   raceControl: { flag?: string | null; message: string; status?: string | null }[],
   windows?: Win[],
+  canonical?: NeutralizationCounts | null,
 ): SessionInterruptions {
+  // the backend's own count, when the payload carries it — one implementation
+  if (canonical) {
+    return {
+      stoppages: canonical.red_flags, safetyCars: canonical.safety_cars,
+      virtualSafetyCars: canonical.virtual_safety_cars, total: canonical.total,
+      localYellows: canonical.local_yellows,
+    };
+  }
   let stoppages = 0;
   let inRed = false;
   const openYellow = new Set<string>();

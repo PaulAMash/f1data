@@ -451,6 +451,13 @@ def _fill_official_fields(session: RaceSession, rows, source: str) -> set[str]:
             if c.race_time is None and src.race_time is not None:
                 take(c, "race_time", src.race_time)
             same_place = src.position is not None and src.position == c.position
+            if (src.position is not None and c.position is not None and not same_place
+                    and session.source_report is not None):
+                # two official sources, two positions: nothing that depends on
+                # the position is taken, and the disagreement is on record
+                line = f"position {c.driver}: held={c.position} {source}={src.position}"
+                if line not in session.source_report.conflicts:
+                    session.source_report.conflicts.append(line)
             if c.gap is None and src.gap and same_place and c.position != 1:
                 take(c, "gap", src.gap)
             if c.points is None and src.points is not None and same_place:
@@ -584,27 +591,34 @@ def _derive_positions(session: RaceSession) -> None:
                "position feed answered for this session.")
 
 
-def _stamp_track_status(session: RaceSession) -> None:
-    """Per-lap track status, inherited from the neutralisation windows when
-    the source recorded none of its own.
+def _laps_are_coded(session: RaceSession) -> bool:
+    """Do the laps carry the timing system's OWN status codes?
 
-    The F1 archive stamps every lap with its track status and the pace model
-    reads it — a lap behind the Safety Car is not a pace lap. OpenF1 has no
-    per-lap status; it has the race-control log, from which its adapter builds
-    the windows. Same fact, held in a different shape — and until V107 repaired
-    the OpenF1 adapter that shape was never served, so nothing noticed that
-    every OpenF1 lap read GREEN and the fuel model would fit straight through
-    a Safety Car. Carried across here, offline, for exactly the laps inside a
-    window. A source that stamped any lap itself is left alone.
+    The archive route stamps every lap from the TrackStatus stream — those
+    are evidence. OpenF1 publishes no per-lap status; this pipeline copies the
+    windows onto its laps for the pace model, and a copy of a window is not
+    evidence for a window. So the per-lap status is read back only for laps a
+    coding source supplied, and rewritten on every read for the rest — a
+    record cached with windows an older builder got wrong must not re-derive
+    the same wrong windows from the statuses it stamped from them.
     """
-    if not session.track_status_windows or not session.laps:
-        return
-    if any(lp.track_status != TrackStatus.GREEN for lp in session.laps):
-        return
-    for w in session.track_status_windows:
-        for lp in session.laps:
-            if w.start_lap <= lp.lap <= w.end_lap:
-                lp.track_status = w.status
+    report = session.source_report
+    src = next((f.source for f in report.facets if f.facet == "laps"), None) if report else None
+    return src not in ("openf1", "jolpica", None) or (src is None and session.data_source == DataSource.MOCK)
+
+
+def _derive_neutralizations(session: RaceSession) -> None:
+    """The session's Safety Car / VSC / red-flag windows, from its own record,
+    on every read — see analysis/neutralizations for the rules. Then the two
+    things that follow from them: the per-lap status the pace model reads
+    (stamped for a source with no codes of its own), and which pit stops fell
+    inside a window."""
+    from ..analysis import neutralizations as neu
+    coded = _laps_are_coded(session)
+    session.track_status_windows = neu.derive_windows(session, lap_status_authoritative=coded)
+    neu.stamp_lap_status(session, overwrite=not coded)
+    neu.attach_incidents(session)
+    neu.stamp_pit_stops(session)
 
 
 def _derive_total_laps(session: RaceSession) -> None:
@@ -904,7 +918,11 @@ def _identity(session: RaceSession) -> tuple:
     and today's offline derivations put right. Compared before and after so
     the repair is written back once instead of redone on every read."""
     return (tuple((d.code, d.name, d.grid) for d in session.drivers),
-            tuple((c.driver, c.name, c.grid) for c in session.classification))
+            tuple((c.driver, c.name, c.grid) for c in session.classification),
+            # the neutralisations too: a record cached with windows an older
+            # builder paired wrong is rebuilt on read and written back once
+            tuple((w.status, w.start_lap, w.end_lap, w.cause, w.source)
+                  for w in session.track_status_windows))
 
 
 def _needs_revalidation(session: RaceSession) -> bool:
@@ -1475,8 +1493,9 @@ def _finalize_session(session: RaceSession) -> None:
     # over — see _derive_positions for why it must not depend on who answered.
     _derive_positions(session)
 
-    # the track status of each lap, for a source that only knows it as windows
-    _stamp_track_status(session)
+    # the neutralisations, from the log and the coded laps — never from the
+    # windows an earlier build wrote — and everything stamped from them
+    _derive_neutralizations(session)
 
     # overtakes: infer if the source didn't supply them (races/sprints only).
     #

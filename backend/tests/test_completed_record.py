@@ -48,6 +48,7 @@ from app.analysis.engine import analyze
 from app.main import app
 from app.models import (
     ClassificationRow, Driver, FacetSource, Lap, PositionPoint, RaceSession, SourceReport,
+    TrackStatusWindow,
 )
 
 client = TestClient(app)
@@ -814,28 +815,37 @@ def test_future_completed_races_use_the_same_assembly_path(world, gp):
 
 
 def test_openf1_laps_inherit_the_track_status_of_their_window():
-    """OpenF1 knows neutralisations as race-control windows, not per lap; the
+    """OpenF1 knows neutralisations as race-control lines, not per lap; the
     pace model reads per lap. With the OpenF1 adapter actually serving
-    sessions now, the two shapes have to meet — offline, from data held."""
-    from app.models import TrackStatus, TrackStatusWindow
+    sessions now, the two shapes have to meet — offline, from data held. V109:
+    the window itself is built from the FIA's deployment and ending lines on
+    every read, and a lap's status is stamped from it only for a source that
+    codes no laps of its own."""
+    from app.models import RaceControlEvent, TrackStatus
     s = RaceSession(
         year=YEAR, grand_prix="Anywhere", session_type="Race", category="race", total_laps=10,
+        source_report=SourceReport(facets=[FacetSource(facet="laps", source="openf1")]),
         laps=[Lap(driver="VER", lap=k, lap_time=90.0, position=1) for k in range(1, 11)],
-        track_status_windows=[TrackStatusWindow(status=TrackStatus.SAFETY_CAR,
-                                                start_lap=5, end_lap=7, label="Safety Car")])
+        race_control=[RaceControlEvent(lap=5, category="SafetyCar", message="SAFETY CAR DEPLOYED"),
+                      RaceControlEvent(lap=7, category="SafetyCar", message="SAFETY CAR IN THIS LAP")])
     dsm._finalize_session(s)
+    assert [(w.status, w.start_lap, w.end_lap, w.source) for w in s.track_status_windows] == \
+        [(TrackStatus.SAFETY_CAR, 5, 7, "race_control")]
     assert [lp.track_status for lp in s.laps if 5 <= lp.lap <= 7] == [TrackStatus.SAFETY_CAR] * 3
     assert all(lp.track_status == TrackStatus.GREEN for lp in s.laps if not 5 <= lp.lap <= 7)
-    # a source that stamped its own laps is not second-guessed
+    # a source that coded its own laps is not second-guessed: the archive's
+    # statuses stand, and a window the log does not support does not survive
     t = RaceSession(
         year=YEAR, grand_prix="Anywhere", session_type="Race", category="race", total_laps=10,
+        source_report=SourceReport(facets=[FacetSource(facet="laps", source="f1-archive")]),
         laps=[Lap(driver="VER", lap=k, lap_time=90.0, position=1,
                   track_status=TrackStatus.YELLOW if k == 2 else TrackStatus.GREEN)
               for k in range(1, 11)],
         track_status_windows=[TrackStatusWindow(status=TrackStatus.SAFETY_CAR,
                                                 start_lap=5, end_lap=7, label="Safety Car")])
     dsm._finalize_session(t)
-    assert t.laps[5].track_status == TrackStatus.GREEN
+    assert t.track_status_windows == []
+    assert t.laps[1].track_status == TrackStatus.YELLOW and t.laps[5].track_status == TrackStatus.GREEN
 
 
 def test_the_readiness_verdict_is_the_same_object_every_page_reads():

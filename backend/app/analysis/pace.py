@@ -228,6 +228,8 @@ def _rank_and_score(summaries: list[DriverPaceSummary]) -> None:
                     key=lambda s: s.clean_air_pace)
     for i, s in enumerate(ranked, start=1):
         s.pace_rank = i
+        # the margin to the fastest, computed here and nowhere else
+        s.gap_to_best = round(s.clean_air_pace - ranked[0].clean_air_pace, 3)
 
     stdevs = [s.consistency for s in summaries if s.consistency is not None]
     if stdevs:

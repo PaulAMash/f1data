@@ -229,18 +229,13 @@ def featured():
         logging.getLogger("pitwall_iq").info("featured race unavailable: %s", exc)
         return {"available": False}
 
-    rows = sorted([c for c in bundle.classification if c.position],
-                  key=lambda c: c.position or 99)
-    win = rows[0] if rows else None
-    second = rows[1] if len(rows) > 1 else None
+    # THE SAME FACTS THE EXPLORER SHOWS, FROM THE SAME PLACE. Winner, grid,
+    # margin, finishers and entries are read off `strategy.facts` (see
+    # analysis/facts) rather than counted here a second time — a running
+    # order is not a result, and the facts already say None until it is.
+    facts = strategy.facts
+    win = next((c for c in bundle.classification if facts and c.driver == facts.winner), None)
     turn = strategy.turning_points[0] if strategy.turning_points else None
-    # A RUNNING ORDER IS NOT A RESULT. Minutes after the flag the session is
-    # complete and its classification is provisional — the official one has
-    # not been published — and counting "not retired" over that list says
-    # every car finished, because nothing in it has retired yet. The margin
-    # and the finisher count are facts the official result supplies; until it
-    # has, they are unknown, and the payload says so rather than counting.
-    settled = bundle.settled
 
     return {
         "available": bool(win),
@@ -250,17 +245,16 @@ def featured():
         "laps": bundle.total_laps,
         "winner": None if not win else {
             "code": win.driver, "name": win.name, "team": win.team,
-            "team_color": win.team_color, "grid": win.grid,
+            "team_color": win.team_color, "grid": facts.winner_grid if facts else win.grid,
         },
-        "margin": (second.gap if second and settled else None),
+        "margin": facts.margin if facts else None,
         "story": (strategy.story or [None])[0],
         "turning_point": None if not turn else {
             "title": turn.title, "lap": getattr(turn, "lap", None),
         },
-        "finishers": (sum(1 for c in bundle.classification if not c.retired)
-                      if settled else None),
+        "finishers": facts.finishers if facts else None,
         "entries": len(bundle.classification),
-        "settled": settled,
+        "settled": bundle.settled,
         "source": bundle.data_source.value,
     }
 

@@ -221,15 +221,48 @@ class PositionPoint(BaseModel):
     position: int
 
 
+class Incident(BaseModel):
+    """Something race control logged, exactly as the official line named it.
+
+    Participants are the cars the message itself cites ("CARS 16 (LEC) AND 44
+    (HAM)") — never a car that happened to be near, never a car that retired
+    around then. `kind` is the verb the message used. An incident is a fact
+    about the log; it is not, by itself, the cause of anything.
+    """
+    lap: Optional[int] = None
+    kind: str = "incident"            # collision | crash | spun | stopped | puncture | debris | incident
+    drivers: list[str] = Field(default_factory=list)   # codes, in the order the message named them
+    message: str = ""                 # the official line, verbatim
+    source: str = "race_control"
+
+
 class TrackStatusWindow(BaseModel):
-    """A contiguous window of non-green track status (VSC/SC/red flag)."""
+    """A contiguous window of non-green track status (VSC/SC/red flag).
+
+    THE EVENT IS NOT THE CAUSE. A Safety Car is a fact race control published
+    ("SAFETY CAR DEPLOYED", lap N); why it was deployed is a different fact,
+    and the FIA's log almost never states it. This model keeps the two apart:
+    `cause` is set only when a source SAYS so (`cause_source`, `cause_message`
+    carry the evidence); `incidents` are the official incident lines logged in
+    the window's laps, labelled as logged alongside it and nothing more. The
+    old model held one `cause` string that was filled from the nearest
+    incident message up to three laps away, which is how a restart Safety Car
+    was captioned with a lap-1 collision.
+    """
     status: TrackStatus
     start_lap: int
     end_lap: int
     label: str = ""
-    # Who/what brought it out, e.g. "Kimi Antonelli stopped on track" — derived
-    # from race-control messages and retirements (see normalize.attach_window_causes).
-    cause: Optional[str] = None
+    cause: Optional[str] = None       # ONLY with provenance — see cause_source
+    cause_source: Optional[str] = None      # "race_control" when the deployment line states it
+    cause_message: Optional[str] = None     # the official line that states it, verbatim
+    incidents: list[Incident] = Field(default_factory=list)   # logged in these laps; not asserted as the trigger
+    # where the window itself came from: race_control (the FIA's own
+    # deployment / ending lines), track_status (the timing system's per-lap
+    # status codes), mock (the simulator). Never "inferred from lap times".
+    source: str = "unknown"
+    confidence: str = "high"          # medium when a boundary lap had to be carried from the previous line
+    end_known: bool = True            # False when no ending line / status closed it (closed at the last known lap)
 
 
 class ClassificationRow(BaseModel):
@@ -240,7 +273,10 @@ class ClassificationRow(BaseModel):
     team_color: str = "#888888"
     grid: Optional[int] = None
     laps_completed: Optional[int] = None
-    status: str = "Finished"          # Finished, +1 Lap, DNF, ...
+    # Finished, +1 Lap, DNF, … — or "Provisional" until a source states it.
+    # The default used to be "Finished": a row nobody had classified read as
+    # a finisher, which is the one thing a missing status must not become.
+    status: str = "Provisional"
     gap: Optional[str] = None
     # Official classified race time in seconds (FIA classification total for
     # lead-lap finishers). None for lapped cars and retirements.
@@ -375,6 +411,14 @@ class SourceReport(BaseModel):
     # unsettled record, and so the sources panel can say what is missing.
     # Values: "grid", "race_time", "retirement_reason", "pit_timing".
     awaiting: list[str] = Field(default_factory=list)
+    # ---- the fourth axis: two sources, two answers ---------------------------
+    #
+    # When the source that settled a row and the source asked to complete it
+    # disagree about where a car finished, nothing position-dependent is taken
+    # from the second (see data_source_manager._fill_official_fields) and the
+    # disagreement is written here, one line each ("position NOR: openf1=3
+    # jolpica=4"), so it is visible rather than silently resolved.
+    conflicts: list[str] = Field(default_factory=list)
     cache_key: Optional[str] = None
 
 
@@ -469,6 +513,11 @@ class DriverPaceSummary(BaseModel):
     stints: list[StintPace] = Field(default_factory=list)
     # "Pace rank" among all classified drivers by clean-air pace (1 = fastest).
     pace_rank: Optional[int] = None
+    # Seconds per lap behind the fastest ranked car's clean-air pace, rounded
+    # ONCE here. The website used to subtract two already-rounded paces itself
+    # and print the floating-point residue to three places; the app did its
+    # own arithmetic; the two disagreed by a thousandth on the same record.
+    gap_to_best: Optional[float] = None
     verdict: Optional[str] = None
     # Number of representative (clean-air, non-outlier) laps behind the pace
     # read — surfaced so the UI can be honest about small samples.
@@ -500,7 +549,55 @@ class UndercutEvent(BaseModel):
     kind: str = "undercut"   # undercut | overcut
 
 
+class NeutralizationCounts(BaseModel):
+    safety_cars: int = 0
+    virtual_safety_cars: int = 0
+    red_flags: int = 0
+    total: int = 0                     # the three above — what "interruptions" means everywhere
+    local_yellows: int = 0             # sector yellows; the session was never neutralised
+    source: str = "none"               # race_control | track_status | mock | none
+
+
+class RaceFacts(BaseModel):
+    """The race-level facts every client shows, computed once, here.
+
+    WHY THIS EXISTS. The finisher count, the retirement count, the margin,
+    the fastest lap, the best-pace gap and the number of Safety Cars were each
+    being recomputed by whichever client was drawing them — the website
+    counted `!retired` rows and subtracted two rounded paces, the app did the
+    same in its own code — and two clients reading one record disagreed by a
+    thousandth of a second. A domain fact has one implementation, and it is
+    this one; a client formats it.
+
+    Every field is None when the record cannot establish it: no finisher
+    count before the classification is official, no margin without a
+    runner-up gap, no fastest lap without a lap table. None is the answer,
+    not zero.
+    """
+    settled: bool = True
+    awaiting: list[str] = Field(default_factory=list)
+    entries: Optional[int] = None
+    finishers: Optional[int] = None
+    retirements: Optional[int] = None
+    winner: Optional[str] = None
+    winner_name: Optional[str] = None
+    winner_grid: Optional[int] = None
+    runner_up: Optional[str] = None
+    margin: Optional[str] = None           # "+3.857s" / "+1 Lap", as the official result gives it
+    margin_s: Optional[float] = None       # seconds, when the margin is a time
+    fastest_lap_driver: Optional[str] = None
+    fastest_lap: Optional[float] = None    # quickest racing lap in the lap table (not the FIA award)
+    best_pace_driver: Optional[str] = None
+    best_pace: Optional[float] = None      # corrected clean-air pace, seconds
+    best_pace_gap: Optional[float] = None  # to the next ranked car, rounded once
+    best_pace_gap_to: Optional[str] = None
+    race_distance_laps: Optional[int] = None
+    pit_data_reliable: bool = True
+    neutralizations: NeutralizationCounts = Field(default_factory=NeutralizationCounts)
+
+
 class StrategySummary(BaseModel):
+    facts: Optional[RaceFacts] = None
     winner: Optional[str] = None
     driver_of_the_day: Optional[str] = None
     dotd_reason: Optional[str] = None

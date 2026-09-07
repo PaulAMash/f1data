@@ -21,6 +21,7 @@ from ..config import get_settings
 from .. import upstream
 from . import probe_detail
 from ..models import (
+    PROVISIONAL_STATUS,
     Circuit,
     ClassificationRow,
     Compound,
@@ -229,8 +230,10 @@ def _driver_from(res: dict) -> tuple[Driver, ClassificationRow]:
     code = (d.get("code") or d.get("driverId", "")[:3]).upper()
     team = c.get("name", "?")
     color = TEAM_COLORS.get(c.get("constructorId", ""), "#888888")
-    status = res.get("status", "Finished")
-    retired = status not in ("Finished",) and "Lap" not in status
+    # the archive states a status for every row it has ever published; a row
+    # without one is a row nobody has classified, not a finisher
+    status = str(res.get("status") or "") or PROVISIONAL_STATUS
+    retired = status not in ("Finished", PROVISIONAL_STATUS) and "Lap" not in status
     grid = _int(res.get("grid"))
     pos = _int(res.get("position"))
     fl = res.get("FastestLap", {}).get("Time", {}).get("time")

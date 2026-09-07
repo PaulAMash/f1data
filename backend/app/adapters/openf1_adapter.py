@@ -683,43 +683,27 @@ def _weather(rows, lap_windows):
 
 
 def _race_control(rows):
+    """The log as published, in the order published, and the neutralisation
+    windows paired from the FIA's own deployment / ending lines.
+
+    THE OLD BUILDER LIVED HERE AND READ SUBSTRINGS: any line containing
+    "SAFETY CAR" opened a window (a stewards' penalty for a safety-car
+    infringement deployed one), any line containing "CLEAR" closed every open
+    window (a sector clear ended a Safety Car on its first lap), and a red
+    flag opened nothing. The rules now live in analysis/neutralizations, and
+    a line's `status` is what the line IS, not what it mentions."""
+    from ..analysis.neutralizations import classify_line, windows_from_race_control
     events: list[RaceControlEvent] = []
     for m in rows:
-        msg = str(m.get("message") or "")
-        up = msg.upper()
-        status = (TrackStatus.VSC if "VIRTUAL SAFETY CAR" in up else
-                  TrackStatus.SAFETY_CAR if "SAFETY CAR" in up else
-                  TrackStatus.RED if "RED FLAG" in up else None)
-        events.append(RaceControlEvent(
+        e = RaceControlEvent(
             lap=m.get("lap_number"), category=str(m.get("category") or ""),
             flag=(str(m.get("flag")) if m.get("flag") else None),
             scope=(str(m.get("scope")) if m.get("scope") else None),
-            status=status, message=msg))
-    windows = _windows_from_rc(events)
-    return events, windows
-
-
-def _windows_from_rc(events):
-    windows: list[TrackStatusWindow] = []
-    open_status: dict = {}
-    last_lap = 0
-    for e in sorted(events, key=lambda x: (x.lap or 0)):
-        up = e.message.upper()
-        lap = e.lap or 0
-        last_lap = max(last_lap, lap)
-        if e.status in (TrackStatus.VSC, TrackStatus.SAFETY_CAR) and "END" not in up and "CLEAR" not in up:
-            open_status.setdefault(e.status, lap)
-        if ("ENDING" in up or "CLEAR" in up or "IN THIS LAP" in up) and open_status:
-            for st, start in list(open_status.items()):
-                windows.append(TrackStatusWindow(status=st, start_lap=start, end_lap=lap,
-                               label="Virtual Safety Car" if st == TrackStatus.VSC else "Safety Car"))
-                del open_status[st]
-    # A deployment with no recorded "ending" message (feed cut, session end)
-    # must still surface — close it at the last known lap instead of dropping it.
-    for st, start in open_status.items():
-        windows.append(TrackStatusWindow(status=st, start_lap=start, end_lap=max(start, last_lap),
-                       label="Virtual Safety Car" if st == TrackStatus.VSC else "Safety Car"))
-    return windows
+            message=str(m.get("message") or ""))
+        status, action = classify_line(e)
+        e.status = status if action == "start" else None
+        events.append(e)
+    return events, windows_from_race_control(events)
 
 
 def _classification(result_raw, dmap, laps, grid_by_num, positions):

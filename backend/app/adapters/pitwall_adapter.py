@@ -346,8 +346,11 @@ def _fetch_via_fastf1(year: int, gp: str, session_type: str) -> RaceSession:
         grid = int(grid) if grid and not math.isnan(grid) else grid_lookup.get(code)
         pos = row.get("Position")
         pos = int(pos) if pos and not math.isnan(pos) else None
-        status = str(row.get("Status") or "Finished")
-        retired = bool(status and "Finished" not in status and "Lap" not in status)
+        # an empty Status is a row the results archive has not classified —
+        # it is not a finisher, and it used to read "Finished"
+        status = str(row.get("Status") or "") or PROVISIONAL_STATUS
+        retired = bool(status not in ("", PROVISIONAL_STATUS) and "Finished" not in status
+                       and "Lap" not in status)
         drivers.append(Driver(
             number=str(row.get("DriverNumber") or ""), code=code,
             name=str(row.get("FullName") or code), team=team, team_color=color,
@@ -420,7 +423,7 @@ def _fetch_via_fastf1(year: int, gp: str, session_type: str) -> RaceSession:
                 compound_after=_compound_after(stints, code, lap_no)))
 
     # --- race control + windows --- #
-    race_control, windows = _race_control_from_fastf1(session)
+    race_control, windows = _race_control_from_fastf1(session, laps)
 
     # --- weather --- #
     weather = _weather_from_fastf1(session)
@@ -494,74 +497,30 @@ def _fastf1_report(laps, stints, pit_stops, weather, race_control,
     return SourceReport(data_source=DataSource.LIVE, fetched_at=_now(), facets=facets, missing=missing)
 
 
-def _race_control_from_fastf1(session) -> tuple[list[RaceControlEvent], list[TrackStatusWindow]]:
+def _race_control_from_fastf1(session, laps: list[Lap]) -> tuple[list[RaceControlEvent], list[TrackStatusWindow]]:
+    """The FIA log as the archive holds it, and the windows from the timing
+    system's per-lap status codes — the same normalized laps the session
+    carries, so what the record says and what its windows say are one thing.
+    A line's `status` is what the line IS (analysis/neutralizations); it used
+    to be any line that contained the letters "VSC"."""
+    from ..analysis.neutralizations import classify_line, windows_from_laps
     events: list[RaceControlEvent] = []
     try:
         rcm = session.race_control_messages
     except Exception:
-        return events, []
-    for _, m in rcm.iterrows():
-        status = None
-        msg = str(m.get("Message") or "")
-        upper = msg.upper()
-        if "VIRTUAL SAFETY CAR" in upper or "VSC" in upper:
-            status = TrackStatus.VSC
-        elif "SAFETY CAR" in upper:
-            status = TrackStatus.SAFETY_CAR
-        elif "RED FLAG" in upper:
-            status = TrackStatus.RED
-        events.append(RaceControlEvent(
-            lap=_int(m.get("Lap")), category=str(m.get("Category") or ""),
-            flag=(str(m.get("Flag")) if m.get("Flag") is not None else None),
-            scope=(str(m.get("Scope")) if m.get("Scope") is not None else None),
-            status=status, message=msg,
-        ))
-    windows = _windows_from_track_status(session)
-    return events, windows
-
-
-def _windows_from_track_status(session) -> list[TrackStatusWindow]:
-    """Derive VSC/SC/red windows from FastF1's per-lap track status column."""
-    windows: list[TrackStatusWindow] = []
-    try:
-        laps_df = session.laps
-    except Exception:
-        return windows
-    # collapse to one status per lap number across the field
-    per_lap: dict[int, TrackStatus] = {}
-    for _, lp in laps_df.iterrows():
-        ln = _int(lp.get("LapNumber"))
-        if ln is None:
-            continue
-        st = _track_status_from_codes(lp.get("TrackStatus"))
-        if st != TrackStatus.GREEN:
-            # keep the most severe seen on that lap
-            per_lap[ln] = st if ln not in per_lap else _more_severe(per_lap[ln], st)
-    # group contiguous laps of same status
-    labels = {TrackStatus.VSC: "Virtual Safety Car", TrackStatus.SAFETY_CAR: "Safety Car",
-              TrackStatus.RED: "Red Flag", TrackStatus.YELLOW: "Yellow"}
-    cur = None
-    for ln in sorted(per_lap):
-        st = per_lap[ln]
-        if cur and st == cur["status"] and ln == cur["end"] + 1:
-            cur["end"] = ln
-        else:
-            if cur:
-                windows.append(TrackStatusWindow(status=cur["status"], start_lap=cur["start"],
-                                                 end_lap=cur["end"], label=labels.get(cur["status"], "")))
-            cur = {"status": st, "start": ln, "end": ln}
-    if cur:
-        windows.append(TrackStatusWindow(status=cur["status"], start_lap=cur["start"],
-                                         end_lap=cur["end"], label=labels.get(cur["status"], "")))
-    return [w for w in windows if w.status in (TrackStatus.VSC, TrackStatus.SAFETY_CAR, TrackStatus.RED)]
-
-
-_SEVERITY = {TrackStatus.GREEN: 0, TrackStatus.YELLOW: 1, TrackStatus.VSC: 2,
-             TrackStatus.SAFETY_CAR: 3, TrackStatus.RED: 4}
-
-
-def _more_severe(a: TrackStatus, b: TrackStatus) -> TrackStatus:
-    return a if _SEVERITY[a] >= _SEVERITY[b] else b
+        rcm = None
+    if rcm is not None:
+        for _, m in rcm.iterrows():
+            e = RaceControlEvent(
+                lap=_int(m.get("Lap")), category=str(m.get("Category") or ""),
+                flag=(str(m.get("Flag")) if m.get("Flag") is not None else None),
+                scope=(str(m.get("Scope")) if m.get("Scope") is not None else None),
+                message=str(m.get("Message") or ""),
+            )
+            status, action = classify_line(e)
+            e.status = status if action == "start" else None
+            events.append(e)
+    return events, windows_from_laps(laps)
 
 
 def _weather_from_fastf1(session) -> list[WeatherPoint]:
@@ -676,27 +635,23 @@ def _fetch_via_static(year: int, gp: str, session_type: str) -> RaceSession:
             if st.stint > 1:
                 pit_stops.append(PitStop(driver=st.driver, lap=st.start_lap - 1))
 
-    # race control + windows
+    # race control + windows — the FIA's own lines, paired by what they are
+    from ..analysis.neutralizations import classify_line, windows_from_race_control
     race_control: list[RaceControlEvent] = []
     ml = rc_raw if isinstance(rc_raw, list) else list(rc_raw.values())
     for m in ml:
         if not isinstance(m, dict):
             continue
-        msg = str(m.get("Message") or "")
-        status = None
-        if "VIRTUAL SAFETY CAR" in msg.upper():
-            status = TrackStatus.VSC
-        elif "SAFETY CAR" in msg.upper():
-            status = TrackStatus.SAFETY_CAR
-        elif "RED" in msg.upper() and "FLAG" in msg.upper():
-            status = TrackStatus.RED
-        race_control.append(RaceControlEvent(
+        e = RaceControlEvent(
             lap=_int(m.get("Lap")), category=str(m.get("Category") or ""),
             flag=(str(m.get("Flag")) if m.get("Flag") else None),
             scope=(str(m.get("Scope")) if m.get("Scope") else None),
-            status=status, message=msg,
-        ))
-    windows = _windows_from_rc(race_control)
+            message=str(m.get("Message") or ""),
+        )
+        status, action = classify_line(e)
+        e.status = status if action == "start" else None
+        race_control.append(e)
+    windows = windows_from_race_control(race_control)
 
     # weather (keyframe is a snapshot; stream would give a series)
     weather: list[WeatherPoint] = []
@@ -827,24 +782,6 @@ def _fill_gaps(laps: list[Lap]) -> None:
                 g.interval = 0.0
             elif with_gap[i - 1].gap_to_leader is not None and g.gap_to_leader is not None:
                 g.interval = round(g.gap_to_leader - with_gap[i - 1].gap_to_leader, 3)
-
-
-def _windows_from_rc(events: list[RaceControlEvent]) -> list[TrackStatusWindow]:
-    """Pair deploy/clear race-control messages into track-status windows."""
-    windows: list[TrackStatusWindow] = []
-    open_status: dict[TrackStatus, int] = {}
-    for e in sorted(events, key=lambda x: (x.lap or 0)):
-        up = e.message.upper()
-        lap = e.lap or 0
-        if e.status in (TrackStatus.VSC, TrackStatus.SAFETY_CAR) and "END" not in up and "CLEAR" not in up:
-            open_status.setdefault(e.status, lap)
-        if ("ENDING" in up or "CLEAR" in up) and open_status:
-            for st, start in list(open_status.items()):
-                windows.append(TrackStatusWindow(
-                    status=st, start_lap=start, end_lap=lap,
-                    label="Virtual Safety Car" if st == TrackStatus.VSC else "Safety Car"))
-                del open_status[st]
-    return windows
 
 
 def _constructors(team_colors: dict[str, str]):

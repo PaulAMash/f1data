@@ -86,6 +86,9 @@ export function DataSourcesPanel({
   // official, and still owed a field by a source that publishes it — the
   // backend keeps asking; the panel says so rather than leaving a "—" unexplained
   const awaiting: string[] = report?.report?.awaiting ?? [];
+  // two official sources gave two answers; nothing that depends on the answer
+  // was merged, and the reader is told rather than handed a silent winner
+  const conflicts: string[] = report?.report?.conflicts ?? [];
 
   return (
     <div className="grid items-start gap-4 lg:grid-cols-2">
@@ -133,6 +136,12 @@ export function DataSourcesPanel({
             <p className="pt-1 text-xs leading-snug text-ink-muted">
               Still waiting on {awaiting.map((a) => AWAITING_LABEL[a] ?? a).join(", ")} from the
               results archive — the record is official and is re-checked until they arrive.
+            </p>
+          )}
+          {conflicts.length > 0 && (
+            <p className="pt-1 text-xs leading-snug text-amber">
+              Two official sources disagree ({conflicts.join("; ")}). The settling source&apos;s
+              positions are shown; nothing that depends on the disputed positions was merged from the other.
             </p>
           )}
         </CardBody>

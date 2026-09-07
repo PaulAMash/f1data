@@ -5,7 +5,7 @@ import type { RaceSession, Stint, UndercutEvent, Driver } from "@/lib/types";
 import {
   COMPOUND_COLOR, COMPOUND_LABEL, COMPOUND_MISSING_HINT, COMPOUND_SHORT, compoundKnown,
 } from "@/lib/compounds";
-import { EVENT, MOMENT, deriveWindows, undercutStory, type Win } from "@/lib/raceEvents";
+import { EVENT, MOMENT, deriveWindows, undercutStory, windowOutcome, type Win } from "@/lib/raceEvents";
 import { useCompoundColour } from "@/lib/liveryColor";
 import { cx, fmtLap } from "@/lib/format";
 import { FocusCardShell, type FocusTile } from "./FocusCardShell";
@@ -84,7 +84,6 @@ export function TyreStrategyChart({
     (w: Win) => session.pit_stops.filter((p) => p.lap >= w.start && p.lap <= w.end).length,
     [session.pit_stops],
   );
-
   const axisTicks = tickLaps(total);
   const focusCode = highlight.length === 1 ? highlight[0] : null;
   const focusable = !!onSelect;
@@ -218,7 +217,7 @@ export function TyreStrategyChart({
         </div>
 
         {tip && <StintTooltip {...tip} />}
-        {winTip && <WindowTooltip {...winTip} />}
+        {winTip && <WindowTooltip {...winTip} nameOf={nameOf} />}
         {ucTip && <UndercutTooltip u={ucTip.u} x={ucTip.x} y={ucTip.y} nameOf={nameOf} finishPos={finishPos} />}
       </div>
     </div>
@@ -472,7 +471,9 @@ function StintTooltip({ s, name, x, y }: { s: Stint; name: string; x: number; y:
   );
 }
 
-function WindowTooltip({ w, stops, x, y }: { w: Win; stops: number; x: number; y: number }) {
+function WindowTooltip({ w, stops, x, y, nameOf }: {
+  w: Win; stops: number; x: number; y: number; nameOf: (code: string) => string;
+}) {
   const meta = EVENT[w.kind];
   const Icon = meta.icon;
   const laps = w.end - w.start + 1;
@@ -488,7 +489,7 @@ function WindowTooltip({ w, stops, x, y }: { w: Win; stops: number; x: number; y
             chart — and it is derived, so it is stated only when it is true */}
         {stops > 0 && <Row k="Stops in window" v={`${stops} car${stops === 1 ? "" : "s"}`} />}
         <p className="mt-2 border-t border-white/[0.09] pt-2 text-[11.5px] leading-relaxed text-ink-muted">
-          {w.cause ? `Brought out when ${w.cause}. ` : ""}{meta.blurb}
+          {windowOutcome(w, nameOf)}{w.cause || w.incidents?.length ? ` ${meta.blurb}` : ""}
         </p>
         {stops > 0 && (
           <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-faint">

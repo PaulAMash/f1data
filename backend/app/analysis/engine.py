@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from ..models import DriverPaceSummary, RaceSession, StrategySummary
+from .facts import compute_facts
 from .normalize import normalize_session
 from .pace import compute_pace
 from .strategy import compute_strategy
@@ -11,6 +12,8 @@ def analyze(session: RaceSession) -> tuple[StrategySummary, list[DriverPaceSumma
     normalize_session(session)   # fix gaps + pit reliability before any analysis
     pace = compute_pace(session)
     strategy = compute_strategy(session, pace)
+    # the race-level numbers, once, for every client — see analysis/facts
+    strategy.facts = compute_facts(session, pace)
     return strategy, pace
 
 
