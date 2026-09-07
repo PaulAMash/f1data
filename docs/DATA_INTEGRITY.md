@@ -54,6 +54,26 @@ the last lap the log knows and the sentence says so).
 **Cars slowing down is never a neutralisation.** Nothing in the pipeline infers
 a Safety Car, VSC or red flag from lap times, gaps or positions.
 
+### The position trace, laps and retirements — the V110 headline
+
+| Was | Now |
+|---|---|
+| OpenF1's `position` feed publishes a car's initial placement and then a row only when its position changes. The adapter mapped each row to the lap it fell in and never carried the state forward, so a car holding station had no position for those laps. The website's line ended where the car last moved; the app read a car absent from a lap as retired on it — nineteen classified finishers rendered as DNF. | A position is a state: the adapter carries the last published position across every later lap the car completed (`_timeseries_to_lap(carry=True)`), and the offline finalizer does the same for cached records (`normalize.densify_positions`), so the trace has one point per car per completed lap and none beyond it. A gap is a measurement and is never carried. |
+| The V107/V108/V109 fixture emitted a position row per car per lap, so the sparsity never reached a test. | The fixture publishes changes only, like the feed. |
+| "Laps completed", when no result source stated it, was the highest lap number in the lap or position data — including the partial row the feed publishes for the lap a car stopped on. | Derived only from lap rows with a lap time. The official count, when stated, is never overridden. |
+| The static archive route labelled every car the timing frame did not flag as retired "Finished". | `Provisional`; the frame's `Retired` flag stands. |
+| A SafetyCar-category line this parser could not read vanished silently. | Reported on the session's notes and in the log, so a form not modelled here shows up on the first session that carries it. |
+
+Lap semantics, one meaning per word (also in `analysis/normalize.py`):
+
+- a **lap row** is a lap the feed published; the lap a car stopped on appears as a row with no lap time;
+- a **completed lap** is a lap row with a lap time;
+- `laps_completed` is the official count when stated, the completed-lap count otherwise; a retirement's is its retirement lap;
+- a **position point** is where the car was at the end of a completed lap; a car has none for a lap it did not complete;
+- the **race distance** is the leader's lap count.
+
+**Retirement is decided by a result source and nothing else.** Not by the trace ending, not by a missing lap, not by a missing packet, not by a missing status. Until a result source has classified a row its status is `Provisional` and `retired` is false; the clients read `retired` and only `retired` (`docs/API_CONTRACT.md`).
+
 ### Pit stops
 
 | Was | Now |

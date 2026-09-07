@@ -587,9 +587,12 @@ def _fetch_via_static(year: int, gp: str, session_type: str) -> RaceSession:
         retired = bool(isinstance(data, dict) and data.get("Retired"))
         drivers.append(Driver(number=num, code=tla, name=info.get("name", tla),
                               team=team, grid=grid))
+        # the timing frame's `Retired` flag is the timing system's own state and
+        # stands; a car it does not flag is running, not "Finished" — this is a
+        # running order and every other row says so
         classification.append(ClassificationRow(
             position=pos, driver=tla, name=info.get("name", tla), team=team,
-            grid=grid, status="DNF" if retired else "Finished",
+            grid=grid, status="DNF" if retired else PROVISIONAL_STATUS,
             gap=(data.get("GapToLeader") if isinstance(data, dict) else None),
             best_lap=_time_str_to_sec(_nested(data, "BestLapTime", "Value")),
             pit_stops=_int(data.get("NumberOfPitStops")) or 0 if isinstance(data, dict) else 0,

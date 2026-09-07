@@ -55,10 +55,26 @@ from ..models import (
 # --------------------------------------------------------------------------- #
 # the FIA's own lines
 # --------------------------------------------------------------------------- #
-_DEPLOY = re.compile(r"^\s*(?P<v>VIRTUAL\s+)?SAFETY\s+CAR\s+DEPLOYED\b", re.I)
-_END = re.compile(r"^\s*(?P<v>VIRTUAL\s+)?SAFETY\s+CAR\s+(ENDING|IN\s+THIS\s+LAP)\b", re.I)
+_DEPLOY = re.compile(r"^\s*(?:(?P<v>VIRTUAL\s+SAFETY\s+CAR|VSC)|SAFETY\s+CAR)\s+DEPLOYED\b", re.I)
+_END = re.compile(r"^\s*(?:(?P<v>VIRTUAL\s+SAFETY\s+CAR|VSC)|SAFETY\s+CAR)\s+(ENDING|IN\s+THIS\s+LAP)\b", re.I)
 _RED = re.compile(r"^\s*RED\s+FLAG\b", re.I)
 _RESUME = re.compile(r"\b(RESTART|RESUME|TRACK\s+CLEAR)\b", re.I)
+
+
+def unrecognised_status_lines(events: list[RaceControlEvent]) -> list[str]:
+    """Lines the feed filed under its SafetyCar category that this parser did
+    not read as a deployment or an ending. Reported on the session so a form
+    the FIA uses that is not modelled here shows up in the sources panel and
+    the logs of the first session that carries it — rather than as a
+    neutralisation that silently never appeared."""
+    out: list[str] = []
+    for e in events:
+        if (e.category or "").lower() != "safetycar":
+            continue
+        status, _action = classify_line(e)
+        if status is None:
+            out.append((e.message or "").strip()[:120])
+    return out
 
 LABEL = {TrackStatus.VSC: "Virtual Safety Car", TrackStatus.SAFETY_CAR: "Safety Car",
          TrackStatus.RED: "Red Flag"}

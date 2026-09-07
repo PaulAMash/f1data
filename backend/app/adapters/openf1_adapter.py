@@ -402,8 +402,18 @@ def fetch_session(year: int, gp: str, session_type: str) -> RaceSession:
     facet("stints", bool(stints))
 
     # --- per-lap position + gap mapping from time series ---
+    #
+    # THE POSITION FEED IS CHANGES, NOT SAMPLES. OpenF1 publishes a car's
+    # initial placement and then a row each time its position changes — a
+    # car that holds P6 for twenty laps has one row for twenty laps. Mapping
+    # rows to laps without carrying the last position forward left every
+    # unchanged lap with no position at all: the website drew a line that
+    # ended wherever the car last gained or lost a place, and the app read a
+    # car absent from a lap as retired on it. Nineteen classified finishers
+    # rendered as DNF from one missing `carry`. A gap is a measurement and is
+    # not carried; a position is a state and is.
     lap_windows = _lap_windows(laps_raw, code_of)
-    pos_by_lap = _timeseries_to_lap(pos_raw, "position", lap_windows, code_of)
+    pos_by_lap = _timeseries_to_lap(pos_raw, "position", lap_windows, code_of, carry=True)
     gap_by_lap = _timeseries_to_lap(interval_raw, "gap_to_leader", lap_windows, code_of)
 
     # --- laps ---
@@ -603,9 +613,16 @@ def _lap_windows(laps_raw, code_of):
     return windows
 
 
-def _timeseries_to_lap(rows, field, lap_windows, code_of) -> dict:
+def _timeseries_to_lap(rows, field, lap_windows, code_of, carry: bool = False) -> dict:
     """Map a time-series (position/intervals) to the lap active at each sample,
-    keeping the last value seen within each lap window."""
+    keeping the last value seen within each lap window.
+
+    `carry`: the value is a STATE the feed publishes only when it changes
+    (OpenF1's position feed), so the last value seen holds for every later
+    lap the driver completed until the next row. Never for a measurement
+    such as a gap, which would be fabricating readings for laps it was not
+    taken on. A lap before the first row stays unknown.
+    """
     out: dict[tuple[str, int], object] = {}
     for r in rows:
         code = code_of(r.get("driver_number"))
@@ -617,6 +634,14 @@ def _timeseries_to_lap(rows, field, lap_windows, code_of) -> dict:
             if start <= t < end:
                 out[(code, n)] = val
                 break
+    if carry:
+        for code, windows in lap_windows.items():
+            last = None
+            for n, _start, _end in windows:          # in lap order
+                if (code, n) in out:
+                    last = out[(code, n)]
+                elif last is not None:
+                    out[(code, n)] = last
     return out
 
 

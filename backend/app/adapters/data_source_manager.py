@@ -21,7 +21,7 @@ from typing import Callable
 from .. import cache
 from ..analysis.events import infer_overtakes
 from ..analysis.normalize import (
-    canonicalize_names, fix_classification, order_classification, sync_grids,
+    canonicalize_names, densify_positions, fix_classification, order_classification, sync_grids,
 )
 from ..config import get_settings
 from .. import timing, upstream
@@ -619,6 +619,14 @@ def _derive_neutralizations(session: RaceSession) -> None:
     neu.stamp_lap_status(session, overwrite=not coded)
     neu.attach_incidents(session)
     neu.stamp_pit_stops(session)
+    # a SafetyCar-category line this build could not read is said out loud
+    unread = neu.unrecognised_status_lines(session.race_control)
+    note_prefix = "Race-control lines in the safety-car category not recognised"
+    session.notes = [n for n in session.notes if not n.startswith(note_prefix)]
+    if unread:
+        note = f"{note_prefix} as a deployment or ending: {' | '.join(unread[:4])}"
+        session.notes.append(note)
+        log.warning("%s %s: %s", session.year, session.grand_prix, note)
 
 
 def _derive_total_laps(session: RaceSession) -> None:
@@ -922,7 +930,10 @@ def _identity(session: RaceSession) -> tuple:
             # the neutralisations too: a record cached with windows an older
             # builder paired wrong is rebuilt on read and written back once
             tuple((w.status, w.start_lap, w.end_lap, w.cause, w.source)
-                  for w in session.track_status_windows))
+                  for w in session.track_status_windows),
+            # and the trace's size: a sparse trace densified on read is the
+            # difference between a finisher and a car that vanished on lap 20
+            len(session.positions))
 
 
 def _needs_revalidation(session: RaceSession) -> bool:
@@ -1491,7 +1502,11 @@ def _finalize_session(session: RaceSession) -> None:
     # the position trace, before anything that reads one. Every line chart in
     # the product plots it, and the overtake inference below needs it to work
     # over — see _derive_positions for why it must not depend on who answered.
+    # And one point per completed lap: the feed publishes changes, a record
+    # cached from it held only the laps a car moved on, and both clients read
+    # the laps in between as the car being gone (normalize.densify_positions).
     _derive_positions(session)
+    densify_positions(session)
 
     # the neutralisations, from the log and the coded laps — never from the
     # windows an earlier build wrote — and everything stamped from them

@@ -117,9 +117,10 @@ class RaceWorld:
     results archive, the F1 archive — built from a roster and a log, counted."""
 
     def __init__(self, gp="Italian Grand Prix", roster=ITALY_2026, race_control=ITALY_2026_RACE_CONTROL,
-                 laps=53, pit_lap=20, red_restart_lap=4, red_lap=3):
+                 laps=53, pit_lap=20, red_restart_lap=4, red_lap=3, session_name="Race"):
         self.gp, self.roster, self.rc, self.laps = gp, roster, race_control, laps
         self.pit_lap, self.red_restart_lap, self.red_lap = pit_lap, red_restart_lap, red_lap
+        self.session_name = session_name
         self.openf1_result = True
         self.openf1_grid = True
         self.openf1_pits = True            # the pit and stint feeds answer
@@ -130,11 +131,11 @@ class RaceWorld:
 
     # ---- resolution ------------------------------------------------------
     def meta(self, year, gp, session_type):
-        if year != YEAR or gp.lower() != self.gp.lower() or session_type != "Race":
+        if year != YEAR or gp.lower() != self.gp.lower() or session_type != self.session_name:
             return None
-        return {"session_key": 9999, "meeting_key": 1290, "session_name": "Race", "session_type": "Race",
-                "meeting_name": self.gp, "circuit_short_name": "Monza", "location": "Monza",
-                "country_name": "Italy", "_display_name": self.gp}
+        return {"session_key": 9999, "meeting_key": 1290, "session_name": self.session_name,
+                "session_type": "Race", "meeting_name": self.gp, "circuit_short_name": "Monza",
+                "location": "Monza", "country_name": "Italy", "_display_name": self.gp}
 
     def openf1_get(self, path, **params):
         self.calls[f"openf1.{path}"] = self.calls.get(f"openf1.{path}", 0) + 1
@@ -154,23 +155,33 @@ class RaceWorld:
                 for n, c, f, l, t, col, *_r in self.roster]
 
     def _ep_laps(self):
+        """AS THE FEED PUBLISHES IT: a row per completed lap with its duration,
+        and — for a car that retired — one more row for the lap it stopped on,
+        with no duration. Leclerc completed lap 1 and has a lap-2 row."""
         rows = []
         for i, (n, code, *_r) in enumerate(self.roster):
-            done = self._done(code)
-            for k in range(1, done + 1):
-                dur = None if (k == done and _r[9]) else LAP_S + i * 0.05 + (2.0 if k == 1 else 0)
+            done, dnf = self._done(code), _r[9]
+            for k in range(1, done + (2 if dnf else 1)):
+                dur = None if k > done else LAP_S + i * 0.05 + (2.0 if k == 1 else 0)
                 rows.append({"driver_number": n, "lap_number": k, "date_start": _iso(START + timedelta(seconds=(k - 1) * LAP_S)),
                              "lap_duration": dur, "is_pit_out_lap": k == self.pit_lap + 1,
                              "duration_sector_1": None, "duration_sector_2": None, "duration_sector_3": None})
         return rows
 
     def _ep_position(self):
+        """AS THE FEED PUBLISHES IT: the initial placement, then a row only when
+        a car's position CHANGES. A car that holds station has no row for
+        those laps. V109's fixture emitted a row per car per lap, which is why
+        a trace with holes in it reached production unseen."""
         rows = []
+        held: dict[int, int] = {}
         for k in range(1, self.laps + 1):
             order = sorted(self._running(k), key=lambda r: (r[7] is None, r[7] or 99))
             for pos, r in enumerate(order, start=1):
-                rows.append({"driver_number": r[0], "date": _iso(START + timedelta(seconds=(k - 1) * LAP_S + 40)),
-                             "position": pos})
+                if held.get(r[0]) != pos:
+                    held[r[0]] = pos
+                    rows.append({"driver_number": r[0], "position": pos,
+                                 "date": _iso(START + timedelta(seconds=(k - 1) * LAP_S + 40))})
         return rows
 
     def _ep_intervals(self):
@@ -377,6 +388,109 @@ def test_italian_grand_prix_2026_story_says_only_what_the_record_supports(world)
     ranked = sorted((p for p in pace if p.pace_rank), key=lambda p: p.pace_rank)
     assert f.best_pace_driver == ranked[0].driver
     assert f.best_pace_gap == ranked[1].gap_to_best == round(ranked[1].clean_air_pace - ranked[0].clean_air_pace, 3)
+
+
+def test_italian_grand_prix_2026_position_trace_is_whole(world):
+    """THE iOS MASS-DNF, AND THE WEBSITE'S TRUNCATED LINES. The position feed
+    publishes changes; a car that held P6 for twenty laps had no position for
+    them, the website's line ended where the car last moved, and the app
+    read the missing laps as the car being gone. Every car now has one
+    position for every lap it completed — and no position for a lap it did
+    not: Leclerc's trace ends at lap 1, the lapped cars' at 52 and 51."""
+    world()
+    s = load()
+    by_driver: dict[str, list[int]] = {}
+    for p in s.positions:
+        by_driver.setdefault(p.driver, []).append(p.lap)
+    laps_done = {c.driver: c.laps_completed for c in s.classification}
+    for code, done in laps_done.items():
+        assert sorted(by_driver[code]) == list(range(1, done + 1)), f"{code}: {sorted(by_driver[code])[:5]}… vs 1..{done}"
+    assert max(by_driver["ANT"]) == 53 and max(by_driver["OCO"]) == 52 and max(by_driver["BOT"]) == 51
+    assert max(by_driver["LEC"]) == 1 and max(by_driver["STR"]) == 29 and max(by_driver["ALO"]) == 39
+    # a lap without a position is a lap the car did not complete, never a lap it was gone for
+    assert all(lp.position is not None for lp in s.laps if lp.lap_time is not None)
+    # the row the feed publishes for the lap a car stopped ON carries no position
+    lec_partial = next(lp for lp in s.laps if lp.driver == "LEC" and lp.lap == 2)
+    assert lec_partial.lap_time is None and lec_partial.position is None
+    # nobody who finished is retired, and the count of the two is the field
+    assert sum(1 for c in s.classification if c.retired) == 3
+    assert [c.driver for c in s.classification if c.retired] == ["ALO", "STR", "LEC"]
+
+
+def test_a_cached_sparse_trace_is_densified_on_read(world):
+    """The record production holds: positions only on the laps a car moved.
+    Read by this build the trace is whole, and the file is rewritten once."""
+    world()
+    s = load()
+    moved = {}
+    sparse = []
+    for p in sorted(s.positions, key=lambda p: (p.driver, p.lap)):
+        if moved.get(p.driver) != p.position:
+            moved[p.driver] = p.position
+            sparse.append(p)
+    s.positions = sparse
+    for lp in s.laps:
+        lp.position = next((p.position for p in sparse if p.driver == lp.driver and p.lap == lp.lap), None)
+    cache.save(s)
+    assert len(cache.load(YEAR, "Italian Grand Prix", "Race").positions) == len(sparse)
+    healed = load()
+    assert len(healed.positions) == sum(c.laps_completed for c in healed.classification)
+    assert len(cache.load(YEAR, "Italian Grand Prix", "Race").positions) == len(healed.positions), "written back"
+
+
+def test_laps_completed_is_derived_from_completed_laps_only():
+    """When a result source gave no lap count, the count is the laps with a
+    lap time — the partial lap the feed publishes for the lap a car stopped
+    on is not a completed lap, and a position sample taken mid-lap is not
+    either. A count the source stated is never overridden."""
+    from app.analysis.normalize import fill_laps_completed
+    s = RaceSession(year=YEAR, grand_prix="Anywhere", session_type="Race", category="race", total_laps=10,
+                    classification=[ClassificationRow(driver="LEC", name="Charles Leclerc", team="Ferrari",
+                                                      status="DNF", retired=True),
+                                    ClassificationRow(driver="STR", name="Lance Stroll", team="Aston Martin",
+                                                      status="DNF", retired=True, laps_completed=29)],
+                    laps=[Lap(driver="LEC", lap=1, lap_time=84.0, position=5),
+                          Lap(driver="LEC", lap=2, lap_time=None, position=None)]
+                         + [Lap(driver="STR", lap=k, lap_time=85.0, position=15) for k in range(1, 32)])
+    fill_laps_completed(s)
+    assert {c.driver: c.laps_completed for c in s.classification} == {"LEC": 1, "STR": 29}
+
+
+def test_a_retirement_needs_a_result_source_not_a_missing_packet(world):
+    """A car whose position feed simply stops is not retired: without an
+    official result nothing is retired and every status is provisional; with
+    one, the retirements are exactly the result's."""
+    race = world()
+    race.openf1_result = False
+    race.jolpica = False
+    s = load()
+    assert not any(c.retired for c in s.classification)
+    assert {c.status for c in s.classification} == {PROVISIONAL_STATUS}
+    assert s.settled is False
+    race.openf1_result = True
+    from tests.test_completed_record import age_cache
+    age_cache("Italian Grand Prix", dsm._REVALIDATE_AFTER + 1)
+    s = load()
+    assert sorted(c.driver for c in s.classification if c.retired) == ["ALO", "LEC", "STR"]
+
+
+def test_the_static_archive_route_never_calls_a_running_car_finished():
+    """The live-timing frame flags retirements; a car it does not flag is
+    running, and its row says provisional rather than 'Finished'."""
+    import inspect
+    src = inspect.getsource(fastf1._fetch_via_static)
+    assert 'status="DNF" if retired else PROVISIONAL_STATUS' in src
+
+
+def test_unrecognised_safety_car_lines_are_reported_not_dropped(world):
+    race = world(race_control=[
+        dict(lap_number=10, category="SafetyCar", flag=None, scope="Track", message="SAFETY CAR WILL BE DEPLOYED SHORTLY"),
+        dict(lap_number=11, category="SafetyCar", flag=None, scope="Track", message="VSC DEPLOYED"),
+        dict(lap_number=13, category="SafetyCar", flag=None, scope="Track", message="VSC ENDING"),
+    ], red_restart_lap=None, red_lap=None)
+    s = load()
+    assert windows_of(s) == [(TrackStatus.VSC, 11, 13)], "the abbreviated form is the same event"
+    assert any("not recognised" in n and "SAFETY CAR WILL BE DEPLOYED SHORTLY" in n for n in s.notes)
 
 
 def test_italian_grand_prix_2026_pit_semantics(world):

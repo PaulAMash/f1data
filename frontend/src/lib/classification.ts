@@ -52,9 +52,12 @@ export interface Classified {
     a dozen ways across three sources — "Retired", "Accident", "+2 Laps",
     "Finished", "" — and only one of those patterns is a finish. */
 export function didNotFinish(status?: string | null, retired?: boolean | null): boolean {
+  // the backend's `retired` is the one DNF signal; the status text is read only
+  // for rows that never carried the flag (the Historical Explorer), and there an
+  // unknown or provisional status is NOT a retirement — nothing is known yet
   if (retired != null) return !!retired;
   const s = (status ?? "").trim();
-  if (!s) return false;
+  if (!s || /^provisional$/i.test(s)) return false;
   return !/^(finished|classified)$/i.test(s) && !/^\+\d+\s*lap/i.test(s);
 }
 

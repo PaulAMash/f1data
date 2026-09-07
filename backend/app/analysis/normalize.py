@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from ..models import Compound, PitStop, RaceSession, Stint, TrackStatus
+from ..models import Compound, PitStop, PositionPoint, RaceSession, Stint, TrackStatus
 
 # A plausible on-track gap ceiling (seconds). Anything larger is almost certainly
 # cumulative time, not a gap — so we drop it rather than display nonsense.
@@ -302,24 +302,95 @@ def pit_data_reliable(session: RaceSession) -> bool:
     return len(session.pit_stops) > 0
 
 
+# --------------------------------------------------------------------------- #
+# Lap semantics — one meaning per word
+#
+#   * a LAP ROW (`session.laps`) is a lap the timing feed published for the car.
+#     OpenF1 and the archive publish the lap a car retired ON as a row with no
+#     lap time — it was started, not completed.
+#   * a COMPLETED LAP is a lap row with a lap time. "Laps completed" derived from
+#     timing is the count of those, and it is derived only when the official
+#     classification did not state it.
+#   * `laps_completed` on a classification row is the official count when a
+#     result source gave one; the derived count otherwise. A retirement's
+#     `laps_completed` is its retirement lap.
+#   * a POSITION POINT (`session.positions`) is where the car was at the end of
+#     a completed lap. The position feed publishes changes; the state is carried
+#     across the laps it held (see densify_positions). A car has no position
+#     point for a lap it did not complete.
+#   * the RACE DISTANCE (`total_laps`) is the leader's lap count, and it is not
+#     any car's lap count.
+# Nothing here decides who retired: that is the classification's, from a
+# result source (see ClassificationRow.retired / status).
+# --------------------------------------------------------------------------- #
 def fill_laps_completed(session: RaceSession) -> None:
     """Every classified retirement should report the lap it happened on. When a
-    source leaves ``laps_completed`` blank, derive it from the furthest lap the
-    driver actually reached in the lap / position data — a real figure straight
-    from the timing, never a guess. Only fills a missing value; never overrides
-    one the source provided."""
+    source leaves ``laps_completed`` blank, derive it from the laps the driver
+    actually COMPLETED — lap rows with a lap time — never from the partial lap
+    the feed publishes for the lap a car stopped on, and never from a position
+    sample taken mid-lap. Only fills a missing value; never overrides one the
+    source provided."""
     if session.category not in ("race", "sprint"):
         return
     reached: dict[str, int] = {}
     for l in session.laps:
-        reached[l.driver] = max(reached.get(l.driver, 0), l.lap)
-    for p in session.positions:
-        reached[p.driver] = max(reached.get(p.driver, 0), p.lap)
+        if l.lap_time is not None:
+            reached[l.driver] = max(reached.get(l.driver, 0), l.lap)
     for c in session.classification:
         if c.retired and not c.laps_completed:
             d = reached.get(c.driver)
             if d:
                 c.laps_completed = d
+
+
+def densify_positions(session: RaceSession) -> bool:
+    """One position point per completed lap per car, from a feed that publishes
+    changes. Returns whether anything changed.
+
+    The rule is the feed's own: a position holds until the feed publishes a
+    new one. So for every car, in lap order over the laps it has rows for, a
+    lap without a point takes the last point before it; a lap before the
+    first point stays unknown. A retirement's points stop at its official
+    retirement lap — a car has no race position on a lap it did not complete.
+
+    This is what makes a cached record right on read: the trace an older
+    build stored held only the laps on which a car gained or lost a place,
+    and both clients read the missing laps as the car being gone.
+    """
+    if session.category not in ("race", "sprint") or not session.laps:
+        return False
+    known: dict[tuple[str, int], int] = {(p.driver, p.lap): p.position for p in session.positions}
+    for lp in session.laps:
+        if lp.position is not None:
+            known.setdefault((lp.driver, lp.lap), lp.position)
+    limit = {c.driver: c.laps_completed for c in session.classification
+             if c.retired and c.laps_completed}
+    laps_of: dict[str, list[int]] = {}
+    for lp in session.laps:
+        laps_of.setdefault(lp.driver, []).append(lp.lap)
+    points: list[PositionPoint] = []
+    for driver, laps in laps_of.items():
+        last: int | None = None
+        for n in sorted(set(laps)):
+            if driver in limit and n > limit[driver]:
+                break
+            pos = known.get((driver, n))
+            if pos is None:
+                pos = last
+            if pos is None:
+                continue
+            last = pos
+            points.append(PositionPoint(driver=driver, lap=n, position=pos))
+    points.sort(key=lambda p: (p.lap, p.position))
+    before = {(p.driver, p.lap, p.position) for p in session.positions}
+    after = {(p.driver, p.lap, p.position) for p in points}
+    if after == before:
+        return False
+    session.positions = points
+    idx = {(p.driver, p.lap): p.position for p in points}
+    for lp in session.laps:
+        lp.position = idx.get((lp.driver, lp.lap))
+    return True
 
 
 def reconcile_stints_and_stops(session: RaceSession) -> None:
