@@ -22,7 +22,7 @@ from .. import cache
 from ..analysis.events import infer_overtakes
 from ..analysis.normalize import order_classification
 from ..config import get_settings
-from .. import timing
+from .. import timing, upstream
 from ..models import (
     DataSource,
     Driver,
@@ -33,6 +33,8 @@ from ..models import (
     Season,
     SourceProbe,
     SourceReport,
+    TrackStatus,
+    classification_is_official,
     session_category,
 )
 from . import (
@@ -184,9 +186,21 @@ def load_session(year: int, gp: str, session_type: str,
                 # keep showing "partial data" for a month after the source came
                 # back. Retry the still-missing facets (the breaker makes a
                 # still-dead host free) and re-save only if we actually gained.
+                #
+                # AND A SESSION CACHED BEFORE ITS RESULT WAS PUBLISHED IS CACHED
+                # UNSETTLED. That is the record the first request after a race
+                # produces, and it used to be the record every later request got
+                # for a month. It is served — it is real — but it is due to be
+                # checked against the sources again once the entry is older than
+                # the window the sources' own answers are kept for. A check that
+                # gains nothing is remembered too, so the next reader in the same
+                # window is not sent to ask again.
+                due = (cache.age_seconds(year, gp, session_type) or 0.0) >= _REVALIDATE_AFTER
                 try:
-                    if _heal_cached(cached):
+                    if _heal_cached(cached, revalidate=due):
                         cache.save(cached)
+                    elif due and not cached.settled:
+                        cache.touch(year, gp, session_type)
                 except Exception as exc:  # noqa: BLE001
                     log.info("cached facet heal failed: %s", exc)
             return cached
@@ -227,7 +241,8 @@ _report_lock = threading.Lock()
 
 
 def _set_facet(session: RaceSession, name: str, source: str,
-               confidence: str = "high", detail: str | None = None) -> None:
+               confidence: str = "high", detail: str | None = None,
+               provisional: bool = False) -> None:
     """Record where a facet came from — REPLACING any existing row for that
     facet (no duplicate 'Results & classification' entries) and clearing it
     from the missing list."""
@@ -236,8 +251,136 @@ def _set_facet(session: RaceSession, name: str, source: str,
     with _report_lock:
         session.source_report.facets = (
             [f for f in session.source_report.facets if f.facet != name]
-            + [FacetSource(facet=name, source=source, confidence=confidence, detail=detail)])
+            + [FacetSource(facet=name, source=source, confidence=confidence, detail=detail,
+                           provisional=provisional)])
         session.source_report.missing = [m for m in session.source_report.missing if m != name]
+
+
+# --------------------------------------------------------------------------- #
+# results that are present, and not yet the official record
+# --------------------------------------------------------------------------- #
+#
+# THE ITALIAN GRAND PRIX BUG, IN ONE SENTENCE: a classification was counted as
+# present because the list was not empty, and nothing ever asked whether the
+# list was the result.
+#
+# The first request for that race arrived before OpenF1 had published its
+# `session_result` and before the results archive had the round. OpenF1 still
+# answered — with every lap, stint and position — and its adapter, finding no
+# official result, built a running order from the final positions. Twenty-two
+# rows, every one "Finished", no gap, no time, no points, no retirement. That
+# list was non-empty, so the facet merge never asked the archive for the real
+# one; the retirement enrichment copied only reasons and times onto rows it
+# did not know were placeholders; the audit counted `results` as present and
+# declared the session complete; and the cache froze it for thirty days. Every
+# "—" on the page, the "22/22 still running", the missing retirements card and
+# the missing margin were that one list, read faithfully. The Dutch Grand Prix
+# beside it was fine only because its first request happened to come later.
+#
+# Two rules close it, and neither is about Monza:
+#
+#   1. A RUNNING ORDER IS PROVISIONAL AND SAYS SO. The adapters flag it
+#      (FacetSource.provisional), and — for records cached by builds that did
+#      not — the audit recognises the shape by content: a race classification
+#      with no gap, time, points or retirement on any row is not a result
+#      (`_results_hollow`). A provisional record is still served; it is not
+#      `settled`, and the clients read that one flag.
+#   2. THE OFFICIAL RECORD IS RECONCILED IN, FIELD BY FIELD, from whichever
+#      source publishes it first — the results archive, OpenF1's own result,
+#      or the F1 archive — on the first fetch if it is already out, and on
+#      revalidation of the cached record if it is not (`_reconcile_results`,
+#      `_revalidate`). Nothing is estimated in the meantime: the official
+#      fields stay None until an official source fills them.
+
+#: What the official classification decides, per row. Everything else on a row
+#: — the best lap, the pit count, the colour — was measured locally from the
+#: laps, is right already, and is kept.
+_OFFICIAL_ROW_FIELDS = ("position", "status", "retired", "gap", "race_time", "points",
+                        "laps_completed", "retirement_reason", "retirement_source")
+
+_HOLLOW_RESULTS_NOTE = ("Provisional running order — no gap, race time, points or "
+                        "retirement has been recorded for any car, so the official "
+                        "classification has not been reconciled into this session yet.")
+
+
+def _results_hollow(session: RaceSession) -> bool:
+    """A race classification with nothing in it that only a result carries.
+
+    Content, not provenance: this is how a record cached by a build that never
+    flagged provisional results is recognised on the way out of the cache, so
+    the fix is retroactive rather than waiting a month for the entry to expire.
+    The rule itself lives with the model (`classification_is_official`) because
+    the adapters apply the same one on the way in.
+    """
+    rows = session.classification
+    if not rows or session.category not in ("race", "sprint"):
+        return False
+    return not classification_is_official(rows)
+
+
+def _results_provisional(session: RaceSession) -> bool:
+    """Is the classification standing in for the official one?"""
+    report = session.source_report
+    if report and any(f.facet == "results" and f.source != "none" and f.provisional
+                      for f in report.facets):
+        return True
+    return _results_hollow(session)
+
+
+def _reconcile_results(session: RaceSession, rows, source: str,
+                       detail: str | None = None) -> bool:
+    """Lay the official classification over a provisional one, row by row.
+
+    THIS REPLACES "IF THE LIST IS EMPTY, TAKE THEIRS". The old merge treated a
+    classification as all-or-nothing, and a provisional list is neither: its
+    order is real, its best laps and pit counts were measured from laps we
+    hold, and only the official fields are missing. So the official source
+    decides exactly those fields — position, status, retirement, gap, race
+    time, points, laps — and the row keeps what it already knew. A car the
+    official list names that the position feed never saw (a non-starter) is
+    added; a car the feed saw that the official list does not name keeps its
+    provisional row, because a fact about where it was running is still a
+    fact, and inventing a status for it would not be.
+
+    Never estimates. A field the official source leaves empty stays empty.
+    Returns whether anything was reconciled.
+    """
+    if not rows:
+        return False
+    by_code = {(r.driver or "").upper(): r for r in rows if r.driver}
+    if not by_code:
+        return False
+    merged, seen = [], set()
+    for c in session.classification:
+        code = (c.driver or "").upper()
+        src = by_code.get(code)
+        if src is None:
+            merged.append(c)
+            continue
+        seen.add(code)
+        for field in _OFFICIAL_ROW_FIELDS:
+            value = getattr(src, field)
+            # position is None BECAUSE a car retired; status and retirement
+            # are always stated; anything else the source left blank does not
+            # blank what the timing feed measured
+            if field in ("position", "status", "retired") or value is not None:
+                setattr(c, field, value)
+        if c.grid is None and src.grid is not None:
+            c.grid = src.grid
+        if c.best_lap is None and src.best_lap is not None:
+            c.best_lap = src.best_lap
+        # a car the position feed could not name gets its name from the result
+        if (not c.name or c.name == c.driver) and src.name:
+            c.name = src.name
+        if c.team in ("", "?") and src.team:
+            c.team, c.team_color = src.team, src.team_color
+        merged.append(c)
+    for code, src in by_code.items():
+        if code not in seen:
+            merged.append(src.model_copy())
+    session.classification = merged
+    _set_facet(session, "results", source, "high", detail, provisional=False)
+    return True
 
 
 def _merge_missing_facets(session: RaceSession, primary: str) -> None:
@@ -266,15 +409,27 @@ def _merge_missing_facets(session: RaceSession, primary: str) -> None:
                 _set_facet(session, "pit_stops", "jolpica", "high")
         except Exception as exc:  # noqa: BLE001
             log.info("jolpica pit merge failed: %s", exc)
-    if not session.classification:
+    # RESULTS: absent, OR present only as a provisional running order. Both are
+    # the same question to the results archive — "what was the official
+    # classification?" — and a non-empty provisional list used to answer it
+    # on the archive's behalf, which is the Italian Grand Prix bug above. The
+    # reconciliation is races-only: the Jolpica results endpoint describes the
+    # Grand Prix, and laying it over a sprint would be a different race.
+    provisional = session.category == "race" and _results_provisional(session)
+    if not session.classification or provisional:
         try:
             _drivers, rows, _meta = jolpica_adapter.fetch_classification(session.year, session.grand_prix)
-            if rows:
+            if rows and not session.classification:
                 session.classification = rows
                 if not session.drivers:
                     session.drivers = _drivers
                     _set_facet(session, "drivers", "jolpica", "high")
                 _set_facet(session, "results", "jolpica", "high")
+            elif rows:
+                _reconcile_results(
+                    session, rows, "jolpica",
+                    "Official classification from the results archive, reconciled "
+                    "over the timing feed's provisional running order.")
         except Exception as exc:  # noqa: BLE001
             log.info("jolpica classification merge failed: %s", exc)
 
@@ -318,6 +473,29 @@ def _derive_positions(session: RaceSession) -> None:
     _set_facet(session, "positions", "derived", "high",
                "Rebuilt from the lap table's own per-lap positions — no separate "
                "position feed answered for this session.")
+
+
+def _stamp_track_status(session: RaceSession) -> None:
+    """Per-lap track status, inherited from the neutralisation windows when
+    the source recorded none of its own.
+
+    The F1 archive stamps every lap with its track status and the pace model
+    reads it — a lap behind the Safety Car is not a pace lap. OpenF1 has no
+    per-lap status; it has the race-control log, from which its adapter builds
+    the windows. Same fact, held in a different shape — and until V107 repaired
+    the OpenF1 adapter that shape was never served, so nothing noticed that
+    every OpenF1 lap read GREEN and the fuel model would fit straight through
+    a Safety Car. Carried across here, offline, for exactly the laps inside a
+    window. A source that stamped any lap itself is left alone.
+    """
+    if not session.track_status_windows or not session.laps:
+        return
+    if any(lp.track_status != TrackStatus.GREEN for lp in session.laps):
+        return
+    for w in session.track_status_windows:
+        for lp in session.laps:
+            if w.start_lap <= lp.lap <= w.end_lap:
+                lp.track_status = w.status
 
 
 def _derive_total_laps(session: RaceSession) -> None:
@@ -496,7 +674,8 @@ def _note_missing_reason(session: RaceSession, reason: str) -> None:
         session.source_report.missing_reason = reason
 
 
-def _merge_from_archive(session: RaceSession, primary: str) -> None:
+def _merge_from_archive(session: RaceSession, primary: str,
+                        ask_for_results: bool = True) -> None:
     """Fill the facets only the F1 archive has.
 
     The archive was wired as a *fallback* — used when OpenF1 fails entirely —
@@ -508,6 +687,13 @@ def _merge_from_archive(session: RaceSession, primary: str) -> None:
 
     Only runs when something is actually missing, only asks for the facets that
     are missing, and never overwrites data the primary source did supply.
+
+    The archive also holds the official classification, so a session whose
+    results are provisional counts that as missing too — when `ask_for_results`
+    is set, which the fresh fetch and the revalidation are and the per-read
+    heal of a cached record is not (that one must stay free of new round
+    trips; see `_heal_cached`). Whenever the archive is fetched for any
+    reason, an official classification it carries is reconciled in regardless.
     """
     # "fastf1" is the legacy name for the same host; asking the archive to
     # backfill a session the archive itself provided is a wasted round trip.
@@ -520,6 +706,8 @@ def _merge_from_archive(session: RaceSession, primary: str) -> None:
         _note_missing_reason(session, _PRE_ARCHIVE_NOTE)
         return
     wanted = [f for f in _ARCHIVE_FACETS if f in session.source_report.missing]
+    if ask_for_results and _results_provisional(session):
+        wanted.append("results")
     if not wanted:
         return
     if not _archive_breaker.allows():
@@ -562,29 +750,137 @@ def _merge_from_archive(session: RaceSession, primary: str) -> None:
         session.weather = other.weather
         _set_facet(session, "weather", "f1-archive", "high",
                    "Weather trace from the F1 live-timing archive.")
+    # the archive's own classification is the official one (its static route
+    # says otherwise, and is flagged) — lay it over a provisional order
+    if (other.classification and _results_provisional(session)
+            and not _results_provisional(other)):
+        _reconcile_results(
+            session, other.classification, "f1-archive",
+            "Official classification from the F1 live-timing archive, reconciled "
+            "over the timing feed's provisional running order.")
 
 
-def _heal_cached(session: RaceSession) -> bool:
+#: How often an UNSETTLED cached record is checked against the sources again.
+#:
+#: NOT A DELAY BEFORE THE DATA IS TRUSTED — the record is trusted for exactly
+#: what it is, and labelled so, from the first read. This is the cadence of
+#: re-asking, and it is the sources' own: `upstream` keeps a current-season
+#: answer for this long before fetching it afresh, so asking more often than
+#: this returns the same cached JSON and asking less often leaves a published
+#: result sitting unread. A settled record is never re-asked; a record that is
+#: revalidated and gains nothing is not re-asked before the next window.
+_REVALIDATE_AFTER = upstream.TTL_LIVE
+
+
+def _pit_timing_known(session: RaceSession) -> int:
+    """How many stops carry a measured duration — the pit facet's readiness."""
+    return sum(1 for p in session.pit_stops
+               if p.stationary_time or p.stop_duration or p.pit_lane_time)
+
+
+def _readiness(session: RaceSession) -> tuple:
+    """Everything a revalidation can improve, as one comparable value."""
+    r = session.source_report
+    return (tuple(r.missing), tuple(r.provisional), r.settled,
+            _pit_timing_known(session)) if r else ()
+
+
+def _adopt_pit_stops(session: RaceSession, stops) -> None:
+    """Take a later answer from the pit feed: whole, if we had none, or just the
+    durations, if the stops themselves were already known."""
+    if not stops:
+        return
+    if not session.pit_stops:
+        session.pit_stops = list(stops)
+        _set_facet(session, "pit_stops", "openf1", "high")
+        return
+    by_key = {(s.driver, s.lap): s for s in stops}
+    for p in session.pit_stops:
+        late = by_key.get((p.driver, p.lap))
+        if late and late.stop_duration and not (p.stop_duration or p.stationary_time):
+            p.stop_duration, p.pit_lane_time = late.stop_duration, late.pit_lane_time
+            p.source, p.confidence, p.explanation = late.source, late.confidence, late.explanation
+            p.estimated_stationary_time = None
+
+
+def _revalidate(session: RaceSession) -> None:
+    """Ask again for what an unsettled record is still waiting on.
+
+    THE SAME SOURCES, THE SAME MERGES, LATER. This is not a second pipeline:
+    every step here is one the fresh fetch already runs, pointed at a record
+    that was assembled before the sources had finished publishing. What was
+    missing then is asked for now — the official classification first, from
+    whichever source has it, then the feeds that are only worth asking once a
+    result exists. Nothing already authoritative is touched, and nothing is
+    estimated: a source that still has nothing leaves the record as it was,
+    still labelled provisional, to be asked again next window.
+    """
+    if session.category in ("race", "sprint") and any(
+            name == "openf1" for name, _fetch in _chain(session.year)):
+        # the cheap question — the one endpoint a provisional record is waiting
+        # on, without the eleven the first load paid for
+        if _results_provisional(session):
+            try:
+                rows = openf1_adapter.fetch_results(
+                    session.year, session.grand_prix, session.session_type)
+                if rows:
+                    _reconcile_results(
+                        session, rows, "openf1",
+                        "Official classification from OpenF1's session result, "
+                        "reconciled over the timing feed's provisional running order.")
+            except Exception as exc:  # noqa: BLE001
+                log.info("openf1 result revalidation failed: %s", exc)
+        # …and the pit feed, whose durations land after the stops themselves
+        if not _pit_timing_known(session):
+            try:
+                _adopt_pit_stops(session, openf1_adapter.fetch_pit_stops(
+                    session.year, session.grand_prix, session.session_type))
+            except Exception as exc:  # noqa: BLE001
+                log.info("openf1 pit revalidation failed: %s", exc)
+    # the results archive and the F1 archive, exactly as on a fresh fetch
+    _merge_missing_facets(session, primary="cache")
+    _merge_from_archive(session, primary="cache", ask_for_results=True)
+    _enrich_retirements(session, primary="cache")
+    try:
+        pitstop_service.enrich(session, allow_network=True)
+    except Exception as exc:  # noqa: BLE001
+        log.info("pit-stop revalidation failed: %s", exc)
+    _backfill_drivers(session, primary="cache")
+    _finalize_session(session)
+
+
+def _heal_cached(session: RaceSession, revalidate: bool = False) -> bool:
     """Bring a cached session up to what today's pipeline would have produced.
 
-    Two things go stale in a thirty-day cache: facets that were missing only
-    because a source was down at fetch time, and facets a newer release no
-    longer considers missing at all. Both were frozen into the file, so a
-    session kept showing "Partial data" long after the reason had gone.
+    Three things go stale in a thirty-day cache: facets that were missing only
+    because a source was down at fetch time, facets a newer release no longer
+    considers missing at all — and, since V107, a record that was assembled
+    before the sources had published the official result. All were frozen
+    into the file, so a session kept showing "Partial data" — or a full page
+    with a "—" in every result column — long after the reason had gone.
+
+    The first two are free and run on every read. The third costs round trips
+    and runs only when the caller says the record is due (`revalidate`), which
+    `load_session` decides from the entry's age — see `_REVALIDATE_AFTER`.
 
     Returns True only when something actually changed, so a still-unreachable
-    archive never triggers a pointless cache write.
+    archive, or a result still unpublished, never triggers a pointless write.
     """
     report = session.source_report
     if not report:
         return False
-    before = list(report.missing)
+    # measured before the audit, so a verdict the file froze and today's
+    # pipeline disagrees with — a gap a newer release closed, a provisional
+    # result an older one never flagged — counts as a change worth writing
+    before = _readiness(session)
     _prune_inapplicable_facets(session)
     _audit_report(session)
     if any(f in report.missing for f in _ARCHIVE_FACETS):
-        _merge_from_archive(session, primary="cache")
+        _merge_from_archive(session, primary="cache", ask_for_results=False)
         _audit_report(session)
-    return report.missing != before
+    if revalidate and not report.settled:
+        _revalidate(session)
+    return _readiness(session) != before
 
 
 def _enrich_retirements(session: RaceSession, primary: str) -> None:
@@ -914,9 +1210,25 @@ def _audit_report(session: RaceSession) -> None:
         if f.facet not in _CANONICAL_FACETS and f.source != "none":
             facets.append(f)
 
+    # THE SECOND AXIS: PRESENT, BUT NOT THE OFFICIAL RECORD. An adapter that
+    # fell back to a running order flagged the facet; a record cached before
+    # any adapter did is recognised by its shape. Either way the row is
+    # relabelled so the sources panel says what it is, and the verdict below
+    # carries it to the clients.
+    provisional: list[str] = []
+    for f in facets:
+        if f.source == "none":
+            continue
+        if f.facet == "results" and not f.provisional and _results_hollow(session):
+            f.provisional, f.confidence = True, "low"
+            f.detail = f.detail or _HOLLOW_RESULTS_NOTE
+        if f.provisional:
+            provisional.append(f.facet)
+
     report.facets = facets
     report.missing = missing
     report.partial = bool(missing)
+    report.provisional = provisional
     # THE ONE VERDICT, AND WHY IT GATES ON *ESSENTIAL* FACETS ONLY.
     #
     # V76 made this strict — `complete = not missing`, every absent facet
@@ -955,10 +1267,18 @@ def _audit_report(session: RaceSession) -> None:
     essential = _essential_for(cat, session.year)
     report.essential_missing = [m for m in missing if m in essential]
     report.complete = not report.essential_missing
+    # SETTLED IS COMPLETE AND OFFICIAL. `complete` keeps meaning "readable":
+    # a race with a provisional classification has every lap, stint and
+    # position, and refusing to show them for one late feed would be the
+    # generic unavailable screen the product exists to avoid. What it must not
+    # be is called finished — so that is a separate word, and the one the
+    # clients gate their derived facts (margins, finishers, retirements) on.
+    report.settled = report.complete and not any(p in essential for p in provisional)
     if not missing:
         report.missing_reason = None
     session.partial = report.partial
     session.complete = report.complete
+    session.settled = report.settled
 
     # and say which feeds had not started yet, so the absence has a reason
     note = _era_note(session.year)
@@ -998,6 +1318,9 @@ def _finalize_session(session: RaceSession) -> None:
     # the product plots it, and the overtake inference below needs it to work
     # over — see _derive_positions for why it must not depend on who answered.
     _derive_positions(session)
+
+    # the track status of each lap, for a source that only knows it as windows
+    _stamp_track_status(session)
 
     # overtakes: infer if the source didn't supply them (races/sprints only).
     #
@@ -1107,7 +1430,11 @@ def _post_process(session: RaceSession, primary: str) -> None:
         ("merge.facets", False, lambda: _merge_missing_facets(session, primary)),
         # …including the stints / race control / weather that only the F1 archive
         # has. Skipping this step is why every session reported partial data.
-        ("merge.archive", False, lambda: _merge_from_archive(session, primary)),
+        # Both may lay the official classification over a provisional one; they
+        # reconcile the same fields from the same record, so whichever lands
+        # second changes nothing.
+        ("merge.archive", False, lambda: _merge_from_archive(session, primary,
+                                                              ask_for_results=True)),
     ])
 
     # STAGE TWO — four decorations of what stage one settled.

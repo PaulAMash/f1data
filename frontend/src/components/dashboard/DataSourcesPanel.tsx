@@ -94,10 +94,19 @@ export function DataSourcesPanel({
           {loading && <div className="py-6 text-center"><Spinner /></div>}
           {!loading && facets.length === 0 && <p className="text-sm text-ink-faint">No source report available.</p>}
           {facets.map((f: any) => (
-            <div key={f.facet} className="flex items-center gap-3 rounded-lg border border-white/[0.05] bg-base-800/40 px-3 py-2">
-              <span className="flex-1 text-sm">{FACET_LABEL[f.facet] ?? f.facet}</span>
-              <Badge tone={f.source === "none" ? "bad" : "neutral"}>{SOURCE_NAMES[f.source] ?? f.source}</Badge>
-              <ConfDot conf={f.confidence} />
+            <div key={f.facet} className="rounded-lg border border-white/[0.05] bg-base-800/40 px-3 py-2">
+              <div className="flex items-center gap-3">
+                <span className="flex-1 text-sm">{FACET_LABEL[f.facet] ?? f.facet}</span>
+                {/* present is not the same as official — a running order that
+                    is standing in for the classification says so here, in the
+                    panel whose job is saying exactly what each facet is */}
+                {f.provisional && <Badge tone="key">provisional</Badge>}
+                <Badge tone={f.source === "none" ? "bad" : "neutral"}>{SOURCE_NAMES[f.source] ?? f.source}</Badge>
+                <ConfDot conf={f.confidence} />
+              </div>
+              {f.provisional && f.detail && (
+                <p className="mt-1 text-[11.5px] leading-snug text-ink-faint">{f.detail}</p>
+              )}
             </div>
           ))}
           {missing.length > 0 && (

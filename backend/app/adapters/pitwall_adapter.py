@@ -31,6 +31,7 @@ from ..config import get_settings
 from . import probe_detail
 from .pitwall_runtime import ArchiveClientUnavailable, load_pitwall
 from ..models import (
+    PROVISIONAL_STATUS,
     Circuit,
     ClassificationRow,
     Compound,
@@ -47,6 +48,7 @@ from ..models import (
     TrackStatus,
     TrackStatusWindow,
     WeatherPoint,
+    classification_is_official,
     session_category,
 )
 
@@ -363,6 +365,20 @@ def _fetch_via_fastf1(year: int, gp: str, session_type: str) -> RaceSession:
             retired=retired,
         ))
 
+    # THE RESULT THAT WAS NEVER A RESULT. FastF1 takes the running order from
+    # the live timing and Status, Points and Time from the results archive;
+    # asked before the archive has the round it hands back the order alone —
+    # Status '' on every row, Points NaN, Time NaT — and the loop above read
+    # that as a field of finishers with no gaps and no points. That record,
+    # cached, is the Italian Grand Prix as it shipped. It is a provisional
+    # running order and it is labelled as one; the official fields arrive by
+    # reconciliation (data_source_manager._reconcile_results) once any source
+    # publishes them.
+    provisional_results = bool(classification) and not classification_is_official(classification)
+    if provisional_results:
+        for c in classification:
+            c.status = PROVISIONAL_STATUS
+
     # --- laps --- #
     laps: list[Lap] = []
     positions: list[PositionPoint] = []
@@ -424,7 +440,9 @@ def _fetch_via_fastf1(year: int, gp: str, session_type: str) -> RaceSession:
 
     constructors = _constructors(team_colors)
     cat = session_category(session_type)
-    report = _fastf1_report(laps, stints, pit_stops, weather, race_control)
+    report = _fastf1_report(laps, stints, pit_stops, weather, race_control,
+                            classification=classification,
+                            provisional_results=provisional_results)
 
     return RaceSession(
         year=year, grand_prix=str(ev.get("EventName") or gp),
@@ -447,12 +465,27 @@ def _compound_after(stints, code, lap):
     return min(nxt, key=lambda s: s.start_lap).compound if nxt else Compound.UNKNOWN
 
 
-def _fastf1_report(laps, stints, pit_stops, weather, race_control):
+def _fastf1_report(laps, stints, pit_stops, weather, race_control,
+                   classification=None, provisional_results=False):
     from ..models import FacetSource, SourceReport
-    def f(name, present, conf="high", detail=None):
+    def f(name, present, conf="high", detail=None, provisional=False):
         return FacetSource(facet=name, source="f1-archive" if present else "none",
-                           confidence=conf if present else "low", detail=detail)
+                           confidence=conf if present else "low", detail=detail,
+                           provisional=bool(present and provisional))
     facets = [
+        # The results facet, declared rather than inferred. The FastF1 route
+        # reads the archive's official classification; the static route below
+        # rebuilds one from the final TimingData frame, which knows who was
+        # running where but not the official status, time or points — the
+        # same provisional shape OpenF1 falls back to, and flagged the same way
+        # so the pipeline reconciles it from a source that has the record.
+        f("results", bool(classification),
+          conf="low" if provisional_results else "high",
+          detail=("Provisional running order from the live timing — the official "
+                  "classification has not been published to the archive yet. Gaps, "
+                  "race times, points and retirements arrive with it.")
+                 if provisional_results else None,
+          provisional=provisional_results),
         # "stints" — the same name OpenF1 and the merge step use. Three adapters
         # once called this facet three things ("stints", "tyres",
         # "tyres/compounds"), so a backfill keyed on one name silently never ran
@@ -686,7 +719,8 @@ def _fetch_via_static(year: int, gp: str, session_type: str) -> RaceSession:
         year=year, grand_prix=race_name or gp, session_type=session_type,
         category=session_category(session_type),
         total_laps=total_laps, data_source=DataSource.LIVE, fetched_at=_now(), notes=notes,
-        source_report=_fastf1_report(laps, stints, pit_stops, weather, race_control),
+        source_report=_fastf1_report(laps, stints, pit_stops, weather, race_control,
+                                     classification=classification, provisional_results=True),
         drivers=drivers, constructors=_constructors(team_colors),
         classification=_sort_classification(classification), laps=laps, stints=stints,
         pit_stops=pit_stops, race_control=race_control, weather=weather,

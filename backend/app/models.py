@@ -252,6 +252,33 @@ class ClassificationRow(BaseModel):
     q3: Optional[float] = None
 
 
+#: What a row says in `status` while it is only a running order — a place in
+#: the timing feed's final order, not a classified result. It used to say
+#: "Finished", which is a claim a position feed cannot make.
+PROVISIONAL_STATUS = "Provisional"
+
+
+def classification_is_official(rows: list[ClassificationRow]) -> bool:
+    """Does this classification carry anything only an official result can?
+
+    THE RULE EVERY ADAPTER AND THE AUDIT SHARE. A running order rebuilt from a
+    timing feed — OpenF1's position feed, FastF1's results before the results
+    archive has the round, the F1 archive's last timing frame — has no gap, no
+    classified time, no points and no retirement on any row, and every status
+    is the default. A single one of those anywhere means a result was
+    published: no real classification has none of them, in any season since
+    1950. Provenance-free on purpose, so a record cached by a build that did
+    not flag its results is recognised by what it holds rather than by who
+    built it.
+    """
+    for c in rows:
+        if c.retired or c.gap is not None or c.race_time is not None or c.points is not None:
+            return True
+        if c.status and c.status not in ("Finished", PROVISIONAL_STATUS):
+            return True
+    return False
+
+
 # --------------------------------------------------------------------------- #
 # Source reporting (kept out of the main UI; surfaced in a Data Sources panel)
 # --------------------------------------------------------------------------- #
@@ -261,6 +288,14 @@ class FacetSource(BaseModel):
     source: str = "unknown"           # openf1 | fastf1 | jolpica | pitwall | mock | none
     confidence: str = "medium"        # high | medium | low
     detail: Optional[str] = None
+    # PRESENT IS NOT THE SAME AS AUTHORITATIVE. A classification rebuilt from
+    # the timing feed's final running order is a real list of real cars — and
+    # it is not the official result: it knows no gaps, no times, no points and
+    # no retirements, and a post-race penalty can reorder it. An adapter that
+    # had to fall back to one says so here, so the pipeline can keep asking the
+    # sources that publish the official record until one of them answers. See
+    # data_source_manager._reconcile_results.
+    provisional: bool = False
 
 
 class SourceProbe(BaseModel):
@@ -297,6 +332,25 @@ class SourceReport(BaseModel):
     essential_missing: list[str] = Field(default_factory=list)
     #: True when everything essential to this kind of session is present.
     complete: bool = True
+    # ---- the second axis: present, but not yet the official record ---------
+    #
+    # `complete` answers "can this session be read?" and it must keep doing
+    # only that: a race whose official classification has not been published
+    # yet still has every lap, every stint and every position, and refusing to
+    # show them because one feed is late would be the generic unavailable
+    # screen the product exists to avoid. What `complete` could not say is
+    # that the classification it counted as present was PROVISIONAL — a
+    # running order with no gaps, no points and no retirements in it. That
+    # silence is how a race fetched minutes after the flag was cached as
+    # finished, frozen for a month, and rendered with a "—" in every column
+    # the official result fills.
+    #
+    # `provisional` lists the essential facets that are present in that
+    # weaker form. `settled` is the single verdict the clients read: the record
+    # is complete AND nothing in it is standing in for the official one. A
+    # record that is not settled is served, labelled, and re-asked for.
+    provisional: list[str] = Field(default_factory=list)
+    settled: bool = True
     cache_key: Optional[str] = None
 
 
@@ -334,6 +388,11 @@ class RaceSession(BaseModel):
     # sessions render, incomplete ones get the unavailable screen rather than a
     # page the reader would have to take on trust.
     complete: bool = True
+    # True when the record is complete AND authoritative — nothing essential in
+    # it is a stand-in for the official one. False is the "still assembling"
+    # state: readable, labelled as provisional, and re-checked against the
+    # sources until it settles. See SourceReport.settled.
+    settled: bool = True
     pit_data_reliable: bool = True    # False when the source has no trustworthy pit data
     notes: list[str] = Field(default_factory=list)
     source_report: Optional[SourceReport] = None

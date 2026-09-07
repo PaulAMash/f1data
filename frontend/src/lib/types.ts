@@ -41,7 +41,11 @@ export interface Overtake {
   lap: number; overtaker: string; overtaken: string; position_after?: number | null;
   kind: string; source: string; detail?: string | null;
 }
-export interface FacetSource { facet: string; source: string; confidence: string; detail?: string | null; }
+export interface FacetSource {
+  facet: string; source: string; confidence: string; detail?: string | null;
+  /** Present, but standing in for the official record — a running order, not a result. */
+  provisional?: boolean;
+}
 export interface SourceProbe { name: string; reachable?: boolean | null; detail?: string | null; }
 export interface SourceReport {
   data_source: DataSource; fetched_at?: string | null; facets: FacetSource[];
@@ -49,6 +53,8 @@ export interface SourceReport {
   partial: boolean; cache_key?: string | null;
   /** Essential facets absent — see the backend's _ESSENTIAL_FACETS. */
   essential_missing?: string[]; complete?: boolean;
+  /** Essential facets present only in provisional form; `settled` is complete AND none of these. */
+  provisional?: string[]; settled?: boolean;
 }
 export interface RaceControlEvent {
   lap?: number | null; time?: string | null; category: string; flag?: string | null;
@@ -76,6 +82,14 @@ export interface RaceSession {
   year: number; grand_prix: string; official_name?: string | null; session_type: string;
   category: SessionCategory; circuit?: Circuit | null; total_laps: number; data_source: DataSource;
   fetched_at?: string | null; partial: boolean; complete?: boolean;
+  /** THE ONE READINESS FLAG. `complete` says the session can be read; this
+      says its record is the official one. A race is served with `settled:
+      false` in the window after the flag when the classification is still
+      the timing feed's running order — real positions, no gaps, times,
+      points or retirements yet. Everything derived from those fields reads
+      this flag instead of counting what is not there. Absent on older
+      payloads, which are settled by construction. */
+  settled?: boolean;
   pit_data_reliable?: boolean;
   notes: string[]; source_report?: SourceReport | null;
   drivers: Driver[]; constructors: Constructor[]; classification: ClassificationRow[];
@@ -324,7 +338,11 @@ export interface Featured {
   margin?: string | null;
   story?: string | null;
   turning_point?: { title: string; lap?: number | null } | null;
-  finishers?: number;
+  /** null while the race's official classification is unpublished — see `settled`. */
+  finishers?: number | null;
   entries?: number;
+  /** false when the winner is the car that crossed the line first in a
+      still-provisional running order — see RaceSession.settled. */
+  settled?: boolean;
   source?: string;
 }

@@ -79,6 +79,50 @@ of the normalized session.
 
 `GET /api/session/cache/clear` (with no key) clears this alongside the session cache.
 
+## A completed session's record is assembled, not frozen (V107)
+
+A session is over the moment the flag falls; the sources' *record* of it lands feed by feed
+over the following hours. OpenF1 answers with every lap, stint and position at once, but its
+`session_result` (the official classification: status, gaps, points, retirements) is
+published afterwards; FastF1 takes Status, Points and Time from the results archive, which
+has the round hours later still; Jolpica's pit-stop durations arrive with its results. A
+request that lands in that window gets a **provisional running order** — real positions,
+and no gap, time, points or retirement on any row.
+
+That record used to be indistinguishable from the official one. The classification was
+non-empty, so the facet merge never asked another source for it; the audit counted `results`
+as present and called the session complete; and `app/cache.py` kept it for thirty days. Every
+"—" in the results table, "22/22 still running", the missing retirements card, margin and pit
+timing were that one list, read faithfully. (The OpenF1 adapter had also been failing on a
+`datetime + float` in its lap-window builder since the first commit, so the "primary" for
+2023+ was in practice FastF1 — the same shape, one source over.)
+
+Two rules close it, in `app/adapters/data_source_manager.py`:
+
+- **Present is not official.** A running order is flagged provisional by the adapter that
+  built it (`FacetSource.provisional`), and — for records cached by older builds — recognised
+  by its shape (`models.classification_is_official`: no real classification has no gap, time,
+  points or retirement on *any* row). The session is still served and still `complete`; it is
+  not `settled`. `RaceSession.settled` / `SourceReport.settled` is the one readiness flag both
+  the website and the iOS app read; `SourceReport.provisional` names the facets.
+- **The official record is reconciled in, field by field** (`_reconcile_results`) from
+  whichever source publishes it first — Jolpica, OpenF1's `session_result`, or the F1
+  archive — on the first fetch if it is already out, and on a later read of the cached record
+  if not. Position, status, retirement, gap, classified time, points and laps come from the
+  official row; the best lap, pit count and colour measured locally are kept. Nothing is
+  estimated: a field the official source leaves blank stays blank.
+
+An **unsettled** cached record is checked against the sources again (`_revalidate`) when the
+entry is older than `upstream.TTL_LIVE` — the window the sources' own answers are kept for,
+so it is the cadence at which a new answer can exist, not a delay before the data is trusted.
+The check is cheap (OpenF1's result and pit feeds alone, Jolpica's results, the archive only
+if still needed), a check that gains nothing only touches the entry, and a settled record is
+never re-asked. `refresh=true` still reassembles from scratch through the same path.
+
+Derived facts are gated on the flag rather than counted: `/api/featured` sends `margin` and
+`finishers` as `null` while `settled` is false, and the Race Story shows "—" for finishers
+and no retirements card instead of "22/22".
+
 ## Network policy note
 
 If the environment's egress policy blocks the F1 hosts above (403 on

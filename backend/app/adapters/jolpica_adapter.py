@@ -243,12 +243,30 @@ def _driver_from(res: dict) -> tuple[Driver, ClassificationRow]:
     row = ClassificationRow(
         position=(None if retired else pos), driver=code, name=driver.name, team=team,
         team_color=color, grid=grid, laps_completed=_int(res.get("laps")),
-        status=("DNF" if retired else status), gap=None, race_time=race_time,
+        status=("DNF" if retired else status), gap=_gap_to_leader(res, pos, retired),
+        race_time=race_time,
         best_lap=_time_to_sec(fl), points=_num(res.get("points")), retired=retired,
         # keep the official reason ("Hydraulics", "Collision", ...) for the DNF tooltip
         retirement_reason=(status if retired else None),
         retirement_source=("jolpica" if retired else None))
     return driver, row
+
+
+def _gap_to_leader(res: dict, pos: int | None, retired: bool) -> str | None:
+    """The archive's own margin, which this adapter used to throw away.
+
+    Ergast/Jolpica's `Time.time` is the winner's total for P1 and, for every
+    other lead-lap finisher, the gap to the winner as a string — "+11.536".
+    Only `Time.millis` was being read, so a classification that came from the
+    archive (or was reconciled from it, see data_source_manager) carried a
+    classified time on every row and a margin on none, and the race margin
+    the page leads with read "—". Lapped cars have no `Time` and keep their
+    "+1 Lap" status; the winner's total is not a gap and is not one here.
+    """
+    if retired or pos == 1:
+        return None
+    t = str(res.get("Time", {}).get("time") or "").strip()
+    return t if t.startswith("+") else None
 
 
 def fetch_classification(year: int, gp: str) -> tuple[list[Driver], list[ClassificationRow], dict]:

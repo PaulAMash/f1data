@@ -543,6 +543,28 @@ export default function ExplorerPage() {
             Anything it would have had to report now means the session is not
             shown, and the unavailable screen says it properly. */}
 
+        {/* THE ONE THING A COMPLETE SESSION CAN STILL BE WAITING FOR.
+            In the window after the flag the sources have every lap, stint and
+            position and not yet the official classification, so the race is
+            readable and its result is provisional — the running order, with
+            no gap, time, points or retirement on any row. That is a state of
+            the record, not a fault, and the reader is told once, here, rather
+            than left to wonder why a column of dashes sits under a real race.
+            No time is promised: the backend re-asks the sources on its own and
+            the page shows the result when it exists. */}
+        {view === "session" && session && !loading && !error && session.settled === false && (
+          <p role="status"
+            className="mb-4 flex items-start gap-2 rounded-lg border border-amber/20 bg-amber/[0.05] px-3 py-2 text-[12.5px] leading-snug text-amber/90">
+            <RefreshCw size={13} className="mt-0.5 shrink-0" />
+            <span>
+              <span className="font-semibold">Provisional result.</span> The official
+              classification for this session has not been published yet, so positions are
+              the timing feed&rsquo;s final running order. Gaps, race times, points and
+              retirements appear once the result reaches the sources we read from.
+            </span>
+          </p>
+        )}
+
         {view === "session" && (bundle || loading) && (
           <div className="mb-5 flex items-center gap-2">
             <Tabs items={tabs} active={tab} onChange={setTab} className="min-w-0 flex-1" data-tour="tabs" />

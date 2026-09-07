@@ -657,9 +657,12 @@ def _filled(session, *, without=()):
     have = {
         "drivers": [Driver(number="1", code="VER", name="Max Verstappen",
                            team="Red Bull Racing", team_color="#3671C6")],
+        # a real result carries what only a result can — the gap and the
+        # points; a row with neither is a provisional running order, which
+        # V107 recognises and treats as unsettled (see test_completed_record)
         "classification": [ClassificationRow(position=1, driver="VER", name="Max Verstappen",
                                              team="Red Bull Racing", team_color="#3671C6",
-                                             status="Finished")],
+                                             status="Finished", gap="LEADER", points=25.0)],
         "laps": [Lap(driver="VER", lap=1, lap_time=92.5)],
         "positions": [PositionPoint(driver="VER", lap=1, position=1)],
         "stints": [Stint(driver="VER", stint=1, compound="MEDIUM",

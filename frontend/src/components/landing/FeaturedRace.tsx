@@ -120,11 +120,23 @@ export function FeaturedRace() {
                   </span>
                 </Fact>
               )}
-              <Fact label="Classified">
-                <span className="font-mono text-[17px] font-bold tabular-nums text-ink">
-                  {race.finishers}<span className="text-ink-faint">/{race.entries}</span>
-                </span>
-              </Fact>
+              {/* The count exists only once the official result does; before
+                  that the backend sends null rather than a number that counts
+                  every car as a finisher, and the card says which it is. */}
+              {race.finishers != null ? (
+                <Fact label="Classified">
+                  <span className="font-mono text-[17px] font-bold tabular-nums text-ink">
+                    {race.finishers}<span className="text-ink-faint">/{race.entries}</span>
+                  </span>
+                </Fact>
+              ) : race.settled === false && (
+                <Fact label="Result">
+                  <span className="text-[13px] font-semibold text-amber/90">Provisional</span>
+                  <span className="mt-0.5 block text-[11.5px] text-ink-faint">
+                    official classification pending
+                  </span>
+                </Fact>
+              )}
             </div>
 
             <span className="mt-6 inline-flex items-center gap-1.5 text-[13.5px] font-semibold text-accent-soft transition-colors group-hover/feat:text-accent">

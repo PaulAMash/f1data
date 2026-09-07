@@ -11,7 +11,7 @@ degrades the session to `partial` rather than failing the whole fetch.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -19,6 +19,7 @@ from ..config import get_settings
 from .. import upstream
 from . import probe_detail
 from ..models import (
+    PROVISIONAL_STATUS,
     Circuit,
     ClassificationRow,
     Compound,
@@ -326,9 +327,10 @@ def fetch_session(year: int, gp: str, session_type: str) -> RaceSession:
     facets: list[FacetSource] = []
     missing: list[str] = []
 
-    def facet(name, ok, conf="high", detail=None):
+    def facet(name, ok, conf="high", detail=None, provisional=False):
         facets.append(FacetSource(facet=name, source="openf1" if ok else "none",
-                                  confidence=conf if ok else "low", detail=detail))
+                                  confidence=conf if ok else "low", detail=detail,
+                                  provisional=bool(ok and provisional)))
         if not ok:
             missing.append(name)
 
@@ -468,8 +470,20 @@ def fetch_session(year: int, gp: str, session_type: str) -> RaceSession:
           detail=None if overtakes else "OpenF1 overtakes endpoint empty; inferred from trace")
 
     # --- classification ---
+    #
+    # THE FACET THAT USED TO LIE BY OMISSION. `session_result` is the official
+    # classification and it is published AFTER the session — for a race asked
+    # about minutes after the flag it is empty, and the fallback below builds
+    # a running order from the position feed instead. That order is real, and
+    # it is not a result: it carries no gap, no time, no points and no
+    # retirement for anyone, so every car in it reads as a finisher. Reporting
+    # it with the same confidence as the official list is what let a race be
+    # cached as complete with a "—" in every column the result fills.
     classification = _classification(result_raw, dmap, laps, grid_by_num, positions)
-    facet("results", bool(classification), conf="high" if result_raw else "medium")
+    facet("results", bool(classification),
+          conf="high" if result_raw else "low",
+          detail=None if result_raw else PROVISIONAL_RESULTS_NOTE,
+          provisional=not result_raw)
 
     total_laps = max((l.lap for l in laps), default=0)
     circuit = Circuit(id=str(meta.get("circuit_short_name", "")).lower().replace(" ", "_"),
@@ -521,7 +535,14 @@ def _lap_windows(laps_raw, code_of):
         rows.sort(key=lambda r: r[1])
         out = []
         for i, (n, ds, dur) in enumerate(rows):
-            end = rows[i + 1][1] if i + 1 < len(rows) else (ds + (dur or 100))
+            # THE LINE THAT TOOK OPENF1 OUT OF THE SOURCE CHAIN. A driver's
+            # last lap closed its window with `ds + (dur or 100)` — a datetime
+            # plus a float, which raises — so every session with a lap table
+            # failed here, was logged as "source openf1 failed (error)", and
+            # fell through to the archive. The documented primary for 2023+
+            # never once served a race; nothing exercised this function with
+            # laps until V107 (see tests/test_completed_record.py).
+            end = rows[i + 1][1] if i + 1 < len(rows) else (ds + timedelta(seconds=dur or 100))
             out.append((n, ds, end))
         windows[code] = out
     return windows
@@ -664,7 +685,12 @@ def _classification(result_raw, dmap, laps, grid_by_num, positions):
                 points=_num(r.get("points")), retired=dnf))
         rows.sort(key=lambda r: (r.position is None, r.position or 999))
         return rows
-    # derive from final lap positions
+    # derive from final lap positions — a PROVISIONAL running order, and it
+    # says so on every row. It used to say "Finished", which is a claim the
+    # position feed cannot make: a car that stopped on lap one still holds a
+    # position in it, and nothing here knows who was classified, who retired,
+    # or who scored. The official fields stay None until the official
+    # classification is reconciled in (see data_source_manager).
     final = {}
     for p in positions:
         final[p.driver] = p  # last wins (positions are appended in lap order)
@@ -674,9 +700,103 @@ def _classification(result_raw, dmap, laps, grid_by_num, positions):
         d = next((dd for dd in dmap.values() if dd["code"] == code), None) or {"team": "?", "color": "#888888", "name": code}
         best = min((l.lap_time for l in laps if l.driver == code and l.lap_time and not l.pit_in), default=None)
         rows.append(ClassificationRow(position=p.position, driver=code, name=d["name"], team=d["team"],
-                    team_color=d["color"], laps_completed=max((l.lap for l in laps if l.driver == code), default=0),
-                    best_lap=best, status="Finished"))
+                    team_color=d["color"], grid=next(
+                        (g for n, g in grid_by_num.items() if dmap.get(n, {}).get("code") == code), None),
+                    laps_completed=max((l.lap for l in laps if l.driver == code), default=0),
+                    best_lap=best, status=PROVISIONAL_STATUS))
     return rows
+
+
+#: Why the results facet is weaker than the rest of the session, for the
+#: sources panel. One sentence, and it must not promise a time.
+PROVISIONAL_RESULTS_NOTE = ("Provisional running order from the timing feed's final "
+                            "positions — the official classification has not been "
+                            "published yet. Gaps, race times, points and retirements "
+                            "arrive with it.")
+
+
+def fetch_results(year: int, gp: str, session_type: str) -> list[ClassificationRow]:
+    """The official classification alone, without the laps.
+
+    THIS IS THE CHEAP QUESTION THE HEAL PATH ASKS. A session that was first
+    fetched before OpenF1 published `session_result` is cached with a
+    provisional running order, and the only thing it is waiting for is that
+    one endpoint. Re-fetching the whole session to find out — eleven endpoints,
+    tens of thousands of position samples — would make revalidation cost as
+    much as the first load, so this asks for the result and the two small
+    feeds needed to name the cars, and nothing else.
+
+    Returns an empty list while the official classification is still
+    unpublished. Never derives one: the caller already holds a provisional
+    order and is asking specifically for something better.
+    """
+    meta = _resolve_session(year, gp, session_type)
+    if not meta:
+        raise OpenF1Error(f"No OpenF1 session for {gp} {year} {session_type}")
+    sk = meta["session_key"]
+    result_raw = _get("session_result", session_key=sk)
+    if not result_raw:
+        return []
+    drivers_raw = _safe(lambda: _get("drivers", session_key=sk), [])
+    grid_raw = _safe(lambda: _get("starting_grid", session_key=sk), [])
+    dmap: dict[int, dict] = {}
+    for d in drivers_raw:
+        num = d.get("driver_number")
+        color = d.get("team_colour")
+        color = f"#{color}" if color and not str(color).startswith("#") else (color or "#888888")
+        dmap[num] = {"code": d.get("name_acronym") or str(num), "team": d.get("team_name") or "?",
+                     "color": color, "name": d.get("full_name") or d.get("name_acronym") or str(num)}
+    grid_by_num = {g.get("driver_number"): g.get("position") for g in grid_raw}
+    return _classification(result_raw, dmap, [], grid_by_num, [])
+
+
+def fetch_pit_stops(year: int, gp: str, session_type: str) -> list[PitStop]:
+    """The pit-stop feed alone, for a record whose stops were asked for too early.
+
+    The same question as `fetch_results`, for the other feed a just-finished
+    session can be missing: `pit` answers during the session, but the
+    `pit_duration` on each row is filled in afterwards, and a record built in
+    between holds every stop with no duration on any of them. Three small
+    feeds — the stops, the stints that name the compounds, the drivers that
+    name the cars — and none of the laps.
+    """
+    meta = _resolve_session(year, gp, session_type)
+    if not meta:
+        raise OpenF1Error(f"No OpenF1 session for {gp} {year} {session_type}")
+    sk = meta["session_key"]
+    pit_raw = _get("pit", session_key=sk)
+    if not pit_raw:
+        return []
+    drivers_raw = _safe(lambda: _get("drivers", session_key=sk), [])
+    stints_raw = _safe(lambda: _get("stints", session_key=sk), [])
+    code_by_num = {d.get("driver_number"): d.get("name_acronym") or str(d.get("driver_number"))
+                   for d in drivers_raw}
+
+    def code_of(num) -> str:
+        return code_by_num.get(num, str(num))
+
+    stints: list[Stint] = []
+    for s in stints_raw:
+        ls, le = s.get("lap_start"), s.get("lap_end")
+        if not ls:
+            continue
+        le = le or ls
+        stints.append(Stint(driver=code_of(s.get("driver_number")), stint=s.get("stint_number", 1),
+                            compound=_COMPOUND.get(str(s.get("compound") or "").upper(), Compound.UNKNOWN),
+                            start_lap=ls, end_lap=le, laps=le - ls + 1))
+    stops: list[PitStop] = []
+    for p in pit_raw:
+        code = code_of(p.get("driver_number"))
+        lap_no = p.get("lap_number") or 0
+        dur = _num(p.get("pit_duration"))
+        stops.append(PitStop(
+            driver=code, lap=lap_no, stop_duration=dur, pit_lane_time=dur,
+            compound_before=_compound_before(stints, code, lap_no),
+            compound_after=_compound_after(stints, code, lap_no),
+            source="openf1", confidence="high" if dur else "low",
+            explanation="OpenF1 pit_duration (time stationary + pit-lane).",
+        ))
+    return stops
 
 
 def _gap_str(v):

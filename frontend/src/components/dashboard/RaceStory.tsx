@@ -44,6 +44,15 @@ export function RaceStory({ bundle, onJump }: {
   const story = (!simple && strategy.story_advanced?.length)
     ? strategy.story_advanced : strategy.story;
 
+  /* COUNTED ONLY FROM AN OFFICIAL RESULT. `retired` is false on every row of
+     a provisional running order — not because every car finished, but because
+     nothing has been classified yet — so counting "not retired" over one said
+     22/22 still running, with no retirements card, for a race in which six
+     cars stopped. The backend's `settled` flag is the one word for whether
+     these fields exist yet; until they do the figures are unknown, and an
+     unknown is shown as one rather than as a number that happens to be wrong.
+     See backend data_source_manager._reconcile_results. */
+  const settled = session.settled !== false;
   const finishers = cls.filter((c) => !c.retired).length;
   const retirements = cls.length - finishers;
   const windows = deriveWindows(session);
@@ -60,9 +69,12 @@ export function RaceStory({ bundle, onJump }: {
     { label: "Winner", value: lastName(winner?.name ?? winner?.driver ?? "—"), tone: "accent" },
     ...(runnerUp
       ? [{ label: "Margin", term: "margin", value: fmtGap(2, runnerUp.gap),
-           sub: `to ${runnerUp.driver}`, tone: "speed" as const }] : []),
-    { label: "Finishers", term: "finishers", value: `${finishers}/${cls.length}`, sub: "still running at the flag" },
-    ...(retirements
+           sub: settled ? `to ${runnerUp.driver}` : "official result pending",
+           tone: "speed" as const }] : []),
+    { label: "Finishers", term: "finishers",
+      value: settled ? `${finishers}/${cls.length}` : "—",
+      sub: settled ? "still running at the flag" : "official result pending" },
+    ...(settled && retirements
       ? [{ label: "Retirements", term: "retirements", value: retirements, tone: "bad" as const }] : []),
     {
       label: "Neutralisations",
@@ -104,7 +116,7 @@ export function RaceStory({ bundle, onJump }: {
               Led from pole
             </span>
           ) : undefined}
-          takeaway={runnerUp ? `${fmtGap(2, runnerUp.gap)} clear of ${runnerUp.driver}.`
+          takeaway={runnerUp?.gap ? `${fmtGap(2, runnerUp.gap)} clear of ${runnerUp.driver}.`
             : "Took the chequered flag first."}
           detail={
             <p>

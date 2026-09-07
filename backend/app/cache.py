@@ -57,3 +57,30 @@ def save(session: RaceSession) -> Path:
 
 def has(year: int, gp: str, session_type: str) -> bool:
     return _path(year, gp, session_type).exists()
+
+
+def age_seconds(year: int, gp: str, session_type: str) -> float | None:
+    """How long ago this entry was written or last revalidated; None if absent.
+
+    The docstring at the top of this file says a completed session never
+    changes, and that is true of the session — not of the sources' RECORD of
+    it, which lands feed by feed in the hours after the flag. An entry written
+    before the official classification was published is real data and an
+    incomplete record at once; its age is what decides when it is worth asking
+    the sources again. See data_source_manager.load_session.
+    """
+    p = _path(year, gp, session_type)
+    if not p.exists():
+        return None
+    return max(0.0, time.time() - p.stat().st_mtime)
+
+
+def touch(year: int, gp: str, session_type: str) -> None:
+    """Mark an entry as revalidated without rewriting it.
+
+    Asked the sources, nothing new — the answer is not worth a write, but the
+    asking is worth remembering, so the next reader is not sent to ask again
+    inside the same window."""
+    p = _path(year, gp, session_type)
+    if p.exists():
+        p.touch()
