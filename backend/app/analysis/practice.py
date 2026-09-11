@@ -23,6 +23,11 @@ from ..models import (
 
 MIN_LONG_RUN = 5          # laps needed to count as a "long run"
 LOW_RUNNING_LAPS = 4      # at/below this = not representative
+# A lap more than this far off the quickest lap of its own stint is not a lap of
+# the run — it is a cool-down, a tow-hunting crawl or a lap behind a yellow. Over
+# five 2026 practice sessions the field's laps sat within 10% of their stint's
+# quickest lap or beyond 25% of it, with almost nothing in between.
+RUN_RHYTHM = 1.12
 
 
 def compute_practice(session: RaceSession) -> PracticeSummary:
@@ -81,19 +86,53 @@ def compute_practice(session: RaceSession) -> PracticeSummary:
 
 # --------------------------------------------------------------------------- #
 def _long_run(stints: list[Stint], laps: list[Lap]) -> tuple[float | None, int]:
-    """Median pace of the driver's longest clean run (>= MIN_LONG_RUN laps)."""
-    best = None
-    best_len = 0
+    """Median pace of the driver's longest run, and how many laps it was.
+
+    A run is consecutive flying laps inside one stint. The timing feeds only flag
+    pit laps and missing laps as outliers, so a Friday stint that alternates push
+    laps with cool-down laps half a minute slower arrives looking like a nine-lap
+    run — and its median then lands on whichever kind of lap happens to sit in the
+    middle. Leclerc's Madrid FP2 "long run" of 1:35.5 was four qualifying laps
+    interleaved with three 2:25s, ranked ahead of his real eleven-lap race run.
+
+    So: laps more than RUN_RHYTHM off the stint's own quickest lap are dropped,
+    the run must be consecutive, it must be at least MIN_LONG_RUN - 1 flying laps
+    (a MIN_LONG_RUN-lap stint less its out-lap), and the longest run wins — on a
+    tie the later one, because race simulations come at the end of a session.
+    """
+    best: float | None = None
+    best_key: tuple[int, int] | None = None
     for s in stints:
         if s.laps < MIN_LONG_RUN:
             continue
-        times = [l.lap_time for l in laps
-                 if l.stint == s.stint and l.lap_time and not l.is_outlier]
-        if len(times) >= MIN_LONG_RUN - 1:
-            med = round(statistics.median(times), 3)
-            if len(times) > best_len:
-                best, best_len = med, len(times)
-    return best, best_len
+        flying = sorted((l for l in laps
+                         if l.stint == s.stint and l.lap_time and not l.is_outlier),
+                        key=lambda l: l.lap)
+        if not flying:
+            continue
+        ceiling = min(l.lap_time for l in flying) * RUN_RHYTHM
+        run = _longest_consecutive([l for l in flying if l.lap_time <= ceiling])
+        if len(run) < MIN_LONG_RUN - 1:
+            continue
+        key = (len(run), s.stint)
+        if best_key is None or key > best_key:
+            best = round(statistics.median(l.lap_time for l in run), 3)
+            best_key = key
+    return best, (best_key[0] if best_key else 0)
+
+
+def _longest_consecutive(laps: list[Lap]) -> list[Lap]:
+    """The longest stretch of laps whose lap numbers step by exactly one."""
+    best: list[Lap] = []
+    current: list[Lap] = []
+    for l in laps:
+        if current and l.lap == current[-1].lap + 1:
+            current.append(l)
+        else:
+            current = [l]
+        if len(current) > len(best):
+            best = current
+    return best
 
 
 def _improvement(laps: list[Lap]) -> float | None:
