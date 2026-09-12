@@ -244,7 +244,10 @@ def _merge_missing_facets(session: RaceSession, primary: str) -> None:
     """Facet-level multi-source fallback. A primary source can return a session
     that exists but is hollow (no laps / results / pit stops); rather than
     accepting a 'partial' shell, pull those facets from Jolpica."""
-    if primary == "jolpica" or session.category not in ("race", "sprint"):
+    # Races only: Jolpica's laps, pit stops and results are the Grand Prix's.
+    # Filling a hollow sprint with them would put the race's laps under the
+    # sprint's title — the same wrong-session answer the adapters refuse.
+    if primary == "jolpica" or session.category != "race":
         return
     if not session.laps:
         try:
