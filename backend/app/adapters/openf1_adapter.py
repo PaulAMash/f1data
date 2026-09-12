@@ -11,7 +11,7 @@ degrades the session to `partial` rather than failing the whole fetch.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -164,7 +164,12 @@ _GENERIC_TOKENS = {"grand", "prix", "gp", "the", "formula", "1", "f1"}
 
 def _name_tokens(text: str) -> set[str]:
     import re
-    return {t for t in re.sub(r"[^a-z0-9 ]", " ", (text or "").lower()).split()
+    import unicodedata
+    # São Paulo and Sao Paulo are one place: the sources disagree on accents
+    # and an accent is never what tells two events apart.
+    folded = "".join(c for c in unicodedata.normalize("NFKD", text or "")
+                     if not unicodedata.combining(c))
+    return {t for t in re.sub(r"[^a-z0-9 ]", " ", folded.lower()).split()
             if t and t not in _GENERIC_TOKENS}
 
 
@@ -391,7 +396,11 @@ def fetch_session(year: int, gp: str, session_type: str) -> RaceSession:
 
     # --- per-lap position + gap mapping from time series ---
     lap_windows = _lap_windows(laps_raw, code_of)
-    pos_by_lap = _timeseries_to_lap(pos_raw, "position", lap_windows, code_of)
+    # A position is a STATE: OpenF1 publishes the initial placement and every
+    # change, so a car that held P4 for thirty laps has one sample. The last
+    # known value therefore carries across the laps it held (`carry`). A gap is
+    # a MEASUREMENT sampled every few seconds and is never carried.
+    pos_by_lap = _timeseries_to_lap(pos_raw, "position", lap_windows, code_of, carry=True)
     gap_by_lap = _timeseries_to_lap(interval_raw, "gap_to_leader", lap_windows, code_of)
 
     # --- laps ---
@@ -521,15 +530,31 @@ def _lap_windows(laps_raw, code_of):
         rows.sort(key=lambda r: r[1])
         out = []
         for i, (n, ds, dur) in enumerate(rows):
-            end = rows[i + 1][1] if i + 1 < len(rows) else (ds + (dur or 100))
+            # THE LINE THAT TOOK OPENF1 OUT OF THE SOURCE CHAIN (V50 to V106).
+            #
+            # A driver's last lap closed its window with `ds + (dur or 100)`:
+            # a datetime plus a float, which raises TypeError. Every real
+            # session has lap rows with a start time, so every OpenF1 fetch
+            # died here, was logged as "source openf1 failed (error)", and the
+            # chain fell through to the archive and Jolpica. The documented
+            # primary for 2023+ never served a session, and the first weekend
+            # the fallbacks could not cover (Bahrain 2026) had nothing left to
+            # fall back from. A lap with no published duration is closed at a
+            # generous hundred seconds, as before.
+            end = rows[i + 1][1] if i + 1 < len(rows) else ds + timedelta(seconds=dur or 100)
             out.append((n, ds, end))
         windows[code] = out
     return windows
 
 
-def _timeseries_to_lap(rows, field, lap_windows, code_of) -> dict:
+def _timeseries_to_lap(rows, field, lap_windows, code_of, carry: bool = False) -> dict:
     """Map a time-series (position/intervals) to the lap active at each sample,
-    keeping the last value seen within each lap window."""
+    keeping the last value seen within each lap window.
+
+    With `carry`, a lap with no sample inherits the driver's last known value
+    from an earlier lap — for series that describe a state which persists until
+    the next change (position), not for measurements (gaps).
+    """
     out: dict[tuple[str, int], object] = {}
     for r in rows:
         code = code_of(r.get("driver_number"))
@@ -541,6 +566,14 @@ def _timeseries_to_lap(rows, field, lap_windows, code_of) -> dict:
             if start <= t < end:
                 out[(code, n)] = val
                 break
+    if carry:
+        for code, windows in lap_windows.items():
+            last = None
+            for n, _start, _end in windows:
+                if (code, n) in out:
+                    last = out[(code, n)]
+                elif last is not None:
+                    out[(code, n)] = last
     return out
 
 

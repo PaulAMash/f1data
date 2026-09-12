@@ -216,6 +216,16 @@ def _resolve_round(year: int, gp: str) -> tuple[int | None, dict | None]:
         score = sum(1 for tok in stem.split() if tok in text)
         if score > best_score:
             best, best_score = (int(r["round"]), r), score
+    # THE NEAREST ROUND IS NOT AN ANSWER. Scoring picks the round sharing the
+    # most words with the request, and a name this calendar does not carry at
+    # all — a placeholder meeting, a renamed round — still shares one word with
+    # something: "Bahrain Grand Prix in Malaysia" scored one on April's Bahrain
+    # and was handed April's laps and results under October's name. The same
+    # rule the archive routes apply: every identifying word of the request must
+    # appear in the round it is answered with, or there is no round.
+    from .openf1_adapter import names_agree
+    if best and not names_agree(gp, blob(best[1])):
+        return None, None
     return best if best else (None, None)
 
 
@@ -327,6 +337,16 @@ def fetch_quali_segments(year: int, gp: str) -> dict[str, dict]:
 
 def fetch_session(year: int, gp: str, session_type: str) -> RaceSession:
     cat = session_category(session_type)
+    # JOLPICA DESCRIBES THE GRAND PRIX. Its results, laps and pit stops are the
+    # race's, and it has no practice or sprint record at all — so serving the
+    # race's classification under a "Practice 1" or "Sprint" title is a
+    # wrong-session answer wearing the right label. Those are refused here and
+    # the chain ends honestly (no_source_coverage). Qualifying is still built
+    # from the Grand Prix's record and enriched with the official Q1/Q2/Q3
+    # times downstream, as before.
+    if cat in ("practice", "sprint", "sprint_qualifying"):
+        raise JolpicaError(f"No {session_type} record for {gp} {year}: Jolpica publishes "
+                           "the Grand Prix's results and qualifying only")
     drivers, classification, meta = fetch_classification(year, gp)
     rnd = _int(meta.get("round"))
     code_by_id = {}
